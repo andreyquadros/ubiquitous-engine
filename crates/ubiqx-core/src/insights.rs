@@ -291,6 +291,7 @@ mod tests {
             description: String::new(),
             keywords: vec![],
             report_time: None,
+            report_template: None,
             is_productive: productive,
             is_system: false,
             archived: false,
@@ -317,6 +318,13 @@ mod tests {
             screenshot_id: None,
             sample_count: 1,
             is_open: false,
+            classify_attempts: 0,
+            next_attempt_at: None,
+            needs_review: false,
+            ai_payload: None,
+            ai_sent_at: None,
+            is_manual: false,
+            note: None,
         }
     }
 

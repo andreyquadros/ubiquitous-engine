@@ -72,6 +72,7 @@ mod tests {
             description: String::new(),
             keywords: vec![],
             report_time: time.map(|(h, m)| NaiveTime::from_hms_opt(h, m, 0).unwrap()),
+            report_template: None,
             is_productive: true,
             is_system: false,
             archived: false,

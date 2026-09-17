@@ -10,7 +10,8 @@
 //!   [`segmenter`] (samples → blocks), [`rules`] (deterministic classification),
 //!   [`learning`] (turning corrections into rules and few-shot examples), [`insights`]
 //!   (focus score and nudges), [`scheduler`] (when daily reports are due) and
-//!   [`normalize`] (title/domain normalisation and similarity).
+//!   [`normalize`] (title/domain normalisation and similarity) and [`redact`] (what may leave
+//!   the machine).
 //!
 //! This crate must never depend on an operating-system API, a database driver or an HTTP client.
 
@@ -21,6 +22,7 @@ pub mod learning;
 pub mod model;
 pub mod normalize;
 pub mod ports;
+pub mod redact;
 pub mod rules;
 pub mod scheduler;
 pub mod segmenter;

@@ -12,12 +12,9 @@
 
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-
-use crate::error::CoreResult;
 use crate::model::*;
 use crate::normalize::{activity_similarity, is_generic_title};
-use crate::ports::{Classification, ClassificationContext, ClassificationExample, Classifier};
+use crate::ports::{Classification, ClassificationContext, ClassificationExample, LocalClassifier};
 
 /// Similarity above which a user-labelled block is trusted as a match.
 pub const MEMORY_MATCH_THRESHOLD: f32 = 0.85;
@@ -25,55 +22,75 @@ pub const MEMORY_MATCH_THRESHOLD: f32 = 0.85;
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MemoryClassifier;
 
-#[async_trait]
-impl Classifier for MemoryClassifier {
+impl LocalClassifier for MemoryClassifier {
     fn name(&self) -> &'static str {
         "memory"
     }
 
-    async fn classify(
-        &self,
-        blocks: &[ActivityBlock],
-        ctx: &ClassificationContext,
-    ) -> CoreResult<Vec<Classification>> {
-        Ok(blocks
+    fn classify(&self, b: &ActivityBlock, ctx: &ClassificationContext) -> Option<Classification> {
+        // Generic titles (e.g. "WhatsApp") match each other trivially; a memory hit there
+        // would just replay the last label forever, so skip them.
+        if is_generic_title(&b.title_key) {
+            return None;
+        }
+        let (score, u) = ctx
+            .user_classified
             .iter()
-            .map(|b| {
-                let best = ctx
-                    .user_classified
-                    .iter()
-                    .filter(|u| u.category_id.is_some())
-                    .map(|u| {
-                        (
-                            activity_similarity(
-                                &b.app_id,
-                                &b.title_key,
-                                b.domain.as_deref(),
-                                &u.app_id,
-                                &u.title_key,
-                                u.domain.as_deref(),
-                            ),
-                            u,
-                        )
-                    })
-                    .filter(|(s, _)| *s >= MEMORY_MATCH_THRESHOLD)
-                    .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-                match best {
-                    // Generic titles (e.g. "WhatsApp") match each other trivially; a memory
-                    // hit there would just replay the last label forever, so skip them.
-                    Some((score, u)) if !is_generic_title(&b.title_key) => Classification {
-                        block_id: b.id.clone(),
-                        category_id: u.category_id.clone(),
-                        confidence: score.min(0.95),
-                        source: ClassificationSource::Memory,
-                        description: None,
-                        needs_vision: false,
-                    },
-                    _ => Classification::unknown(&b.id, ClassificationSource::Memory),
-                }
+            .filter(|u| u.category_id.is_some())
+            .map(|u| {
+                (
+                    activity_similarity(
+                        &b.app_id,
+                        &b.title_key,
+                        b.domain.as_deref(),
+                        &u.app_id,
+                        &u.title_key,
+                        u.domain.as_deref(),
+                    ),
+                    u,
+                )
             })
-            .collect())
+            .filter(|(s, _)| *s >= MEMORY_MATCH_THRESHOLD)
+            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))?;
+        Some(Classification {
+            block_id: b.id.clone(),
+            category_id: u.category_id.clone(),
+            confidence: score.min(0.95),
+            source: ClassificationSource::Memory,
+            description: None,
+            needs_vision: false,
+            rule_id: None,
+        })
     }
+}
+
+/// Domains shared by many projects at once; a learned rule on them would be wrong by design.
+pub const MULTI_TENANT_DOMAINS: &[&str] = &[
+    "mail.google.com",
+    "outlook.live.com",
+    "outlook.office.com",
+    "web.whatsapp.com",
+    "web.telegram.org",
+    "teams.microsoft.com",
+    "slack.com",
+    "app.slack.com",
+    "discord.com",
+    "notion.so",
+    "github.com",
+    "gitlab.com",
+    "docs.google.com",
+    "drive.google.com",
+    "calendar.google.com",
+    "meet.google.com",
+    "chat.openai.com",
+    "chatgpt.com",
+    "claude.ai",
+    "youtube.com",
+    "localhost",
+];
+
+pub fn is_multi_tenant_domain(domain: &str) -> bool {
+    MULTI_TENANT_DOMAINS.iter().any(|d| crate::normalize::domain_matches(domain, d))
 }
 
 /// Minimum number of agreeing corrections before a rule is suggested.
@@ -136,12 +153,15 @@ pub fn suggest_rules(
                     key.pattern
                 ),
             };
+            let auto_apply_safe =
+                key.matcher == RuleMatcher::Domain && !is_multi_tenant_domain(&key.pattern);
             Some(RuleSuggestion {
                 category_id: cat,
                 matcher: key.matcher,
                 pattern: key.pattern,
                 support: n,
                 rationale,
+                auto_apply_safe,
             })
         })
         .collect();
@@ -254,6 +274,8 @@ mod tests {
             enabled: true,
             created_at: Utc::now(),
             hit_count: 0,
+            miss_count: 0,
+            last_contradicted_at: None,
         }];
         assert!(suggest_rules(&cs, &existing, 2).is_empty());
     }
@@ -282,14 +304,37 @@ mod tests {
             screenshot_id: None,
             sample_count: 1,
             is_open: false,
+            classify_attempts: 0,
+            next_attempt_at: None,
+            needs_review: false,
+            ai_payload: None,
+            ai_sent_at: None,
+            is_manual: false,
+            note: None,
         };
         let ex = select_examples(&cs, &[b], 5);
         assert_eq!(ex.len(), 2);
         assert_eq!(ex[0].category_id, "ifro");
     }
 
-    #[tokio::test]
-    async fn memory_classifier_matches_similar_user_blocks() {
+    #[test]
+    fn multi_tenant_domains_are_never_auto_applied() {
+        let cs = vec![
+            correction("chrome", "inbox", Some("mail.google.com"), "ifro"),
+            correction("chrome", "inbox", Some("mail.google.com"), "ifro"),
+        ];
+        let s = suggest_rules(&cs, &[], 2);
+        assert_eq!(s.len(), 1);
+        assert!(!s[0].auto_apply_safe);
+        let cs = vec![
+            correction("chrome", "sei", Some("sei.ifro.edu.br"), "ifro"),
+            correction("chrome", "sei", Some("sei.ifro.edu.br"), "ifro"),
+        ];
+        assert!(suggest_rules(&cs, &[], 2)[0].auto_apply_safe);
+    }
+
+    #[test]
+    fn memory_classifier_matches_similar_user_blocks() {
         let mut labelled = ActivityBlock {
             id: new_id(),
             started_at: Utc::now(),
@@ -307,6 +352,13 @@ mod tests {
             screenshot_id: None,
             sample_count: 1,
             is_open: false,
+            classify_attempts: 0,
+            next_attempt_at: None,
+            needs_review: false,
+            ai_payload: None,
+            ai_sent_at: None,
+            is_manual: false,
+            note: None,
         };
         let mut fresh = labelled.clone();
         fresh.id = new_id();
@@ -320,10 +372,12 @@ mod tests {
             user_classified: vec![labelled.clone()],
             language: "pt-BR".into(),
             min_confidence: 0.6,
+            models: AiModels::default(),
+            user_profile: None,
         };
-        let out = MemoryClassifier.classify(&[fresh.clone()], &ctx).await.unwrap();
-        assert_eq!(out[0].category_id.as_deref(), Some("ifro"));
-        assert_eq!(out[0].source, ClassificationSource::Memory);
+        let out = MemoryClassifier.classify(&fresh, &ctx).unwrap();
+        assert_eq!(out.category_id.as_deref(), Some("ifro"));
+        assert_eq!(out.source, ClassificationSource::Memory);
 
         // Generic titles never match through memory.
         labelled.title_key = "whatsapp".into();
@@ -331,7 +385,6 @@ mod tests {
         fresh.title_key = "whatsapp".into();
         fresh.domain = None;
         let ctx = ClassificationContext { user_classified: vec![labelled], ..ctx };
-        let out = MemoryClassifier.classify(&[fresh], &ctx).await.unwrap();
-        assert!(out[0].category_id.is_none());
+        assert!(MemoryClassifier.classify(&fresh, &ctx).is_none());
     }
 }

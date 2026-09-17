@@ -155,6 +155,13 @@ impl Segmenter {
             screenshot_id: None,
             sample_count: 1,
             is_open: true,
+            classify_attempts: 0,
+            next_attempt_at: None,
+            needs_review: false,
+            ai_payload: None,
+            ai_sent_at: None,
+            is_manual: false,
+            note: None,
         };
         self.open = Some(OpenBlock { titles: vec![(sample.window_title.clone(), 1)], block: block.clone() });
         out.opened = Some(block.clone());
@@ -239,6 +246,7 @@ mod tests {
             window_title: title.into(),
             url: url.map(|u| u.to_string()),
             idle_secs: Some(0.0),
+            window_id: None,
         }
     }
 
@@ -338,6 +346,13 @@ mod tests {
             screenshot_id: None,
             sample_count: 1,
             is_open: false,
+            classify_attempts: 0,
+            next_attempt_at: None,
+            needs_review: false,
+            ai_payload: None,
+            ai_sent_at: None,
+            is_manual: false,
+            note: None,
         };
         let merged = merge_short_blocks(vec![mk(0, 100, "A"), mk(100, 105, "A"), mk(105, 110, "B")], 20);
         assert_eq!(merged.len(), 2);

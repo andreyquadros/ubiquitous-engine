@@ -26,6 +26,10 @@ pub struct ForegroundWindow {
     /// Window title as reported by the OS. May be empty when the permission to read it is missing.
     pub window_title: String,
     pub pid: Option<u32>,
+    /// OS window identifier (macOS `kCGWindowNumber`), used for per-window screenshots.
+    pub window_id: Option<u32>,
+    /// Window bounds in screen points `(x, y, width, height)`, when known.
+    pub bounds: Option<(i32, i32, u32, u32)>,
 }
 
 /// One raw observation of user activity. Produced every `sample_interval_secs` by the sampler.
@@ -39,6 +43,7 @@ pub struct ActivitySample {
     pub url: Option<String>,
     /// Seconds since the last keyboard/mouse input. `None` when the platform cannot tell.
     pub idle_secs: Option<f64>,
+    pub window_id: Option<u32>,
 }
 
 impl ActivitySample {
@@ -114,9 +119,55 @@ pub struct ActivityBlock {
     pub sample_count: u32,
     /// True while the sampler may still extend the block. Only closed blocks are classified.
     pub is_open: bool,
+    /// How many times a remote classifier failed on this block (for exponential backoff).
+    pub classify_attempts: u32,
+    /// Do not send this block to a remote classifier before this instant.
+    pub next_attempt_at: Option<DateTime<Utc>>,
+    /// The block could not be classified automatically and waits for the user.
+    pub needs_review: bool,
+    /// Exact (redacted) text that was sent to the AI for this block, for transparency.
+    pub ai_payload: Option<String>,
+    pub ai_sent_at: Option<DateTime<Utc>>,
+    /// Blocks created by hand ("reunião presencial 14:00–15:30") rather than by the sampler.
+    pub is_manual: bool,
+    pub note: Option<String>,
 }
 
 impl ActivityBlock {
+    /// Creates an empty, closed block for the given span. Used by manual entries and tests.
+    pub fn new_manual(
+        started_at: DateTime<Utc>,
+        ended_at: DateTime<Utc>,
+        category_id: Id,
+        note: Option<String>,
+    ) -> Self {
+        Self {
+            id: new_id(),
+            started_at,
+            ended_at,
+            app_name: "Manual".into(),
+            app_id: "manual".into(),
+            title: note.clone().unwrap_or_default(),
+            title_key: note.clone().unwrap_or_default().to_lowercase(),
+            url: None,
+            domain: None,
+            category_id: Some(category_id),
+            confidence: 1.0,
+            source: Some(ClassificationSource::User),
+            description: note.clone(),
+            screenshot_id: None,
+            sample_count: 0,
+            is_open: false,
+            classify_attempts: 0,
+            next_attempt_at: None,
+            needs_review: false,
+            ai_payload: None,
+            ai_sent_at: None,
+            is_manual: true,
+            note,
+        }
+    }
+
     pub fn duration_secs(&self) -> i64 {
         (self.ended_at - self.started_at).num_seconds().max(0)
     }
@@ -163,6 +214,9 @@ pub struct Category {
     /// Local time at which the daily report for this category is generated. `None` = use the
     /// global default from settings.
     pub report_time: Option<NaiveTime>,
+    /// Free text describing how this institution wants activities written
+    /// (voice, sections, what to emphasise). Fed to the report writer.
+    pub report_template: Option<String>,
     /// Whether time spent here counts as productive for the focus score.
     pub is_productive: bool,
     /// Built-in categories (Uncategorized, Distraction) cannot be deleted.
@@ -177,6 +231,8 @@ pub mod system_categories {
     pub const UNCATEGORIZED: &str = "sys-uncategorized";
     pub const DISTRACTION: &str = "sys-distraction";
     pub const BREAK: &str = "sys-break";
+    /// Time in blocked apps / private mode. Kept so daily totals stay honest, never sent to AI.
+    pub const PRIVATE: &str = "sys-private";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -253,6 +309,16 @@ pub struct Rule {
     pub created_at: DateTime<Utc>,
     /// How many blocks this rule has classified (for the UI and for pruning useless rules).
     pub hit_count: u32,
+    /// How many times the user corrected a block this rule had classified.
+    pub miss_count: u32,
+    pub last_contradicted_at: Option<DateTime<Utc>>,
+}
+
+impl Rule {
+    /// A rule that keeps being contradicted is disabled automatically.
+    pub fn should_auto_disable(&self) -> bool {
+        self.miss_count >= 2 || (self.hit_count >= 5 && self.miss_count as f32 / self.hit_count as f32 > 0.3)
+    }
 }
 
 /// A user correction of a block's category. This is the learning signal of the system.
@@ -279,19 +345,88 @@ pub struct RuleSuggestion {
     /// Number of corrections supporting this suggestion.
     pub support: u32,
     pub rationale: String,
+    /// Safe to apply without confirmation (specific domain, not a multi-tenant service).
+    pub auto_apply_safe: bool,
 }
 
 // ---------------------------------------------------------------------------------------------
 // Reports and insights
 // ---------------------------------------------------------------------------------------------
 
+/// Kind of activity, used to group and phrase items in institutional reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivityKind {
+    Desenvolvimento,
+    Reuniao,
+    Comunicacao,
+    Documentacao,
+    Ensino,
+    Pesquisa,
+    Extensao,
+    Gestao,
+    Outro,
+}
+
+impl ActivityKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ActivityKind::Desenvolvimento => "desenvolvimento",
+            ActivityKind::Reuniao => "reuniao",
+            ActivityKind::Comunicacao => "comunicacao",
+            ActivityKind::Documentacao => "documentacao",
+            ActivityKind::Ensino => "ensino",
+            ActivityKind::Pesquisa => "pesquisa",
+            ActivityKind::Extensao => "extensao",
+            ActivityKind::Gestao => "gestao",
+            ActivityKind::Outro => "outro",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "desenvolvimento" => Some(Self::Desenvolvimento),
+            "reuniao" => Some(Self::Reuniao),
+            "comunicacao" => Some(Self::Comunicacao),
+            "documentacao" => Some(Self::Documentacao),
+            "ensino" => Some(Self::Ensino),
+            "pesquisa" => Some(Self::Pesquisa),
+            "extensao" => Some(Self::Extensao),
+            "gestao" => Some(Self::Gestao),
+            "outro" => Some(Self::Outro),
+            _ => None,
+        }
+    }
+
+    pub fn label_pt(&self) -> &'static str {
+        match self {
+            ActivityKind::Desenvolvimento => "Desenvolvimento",
+            ActivityKind::Reuniao => "Reunião",
+            ActivityKind::Comunicacao => "Comunicação",
+            ActivityKind::Documentacao => "Documentação",
+            ActivityKind::Ensino => "Ensino",
+            ActivityKind::Pesquisa => "Pesquisa",
+            ActivityKind::Extensao => "Extensão",
+            ActivityKind::Gestao => "Gestão",
+            ActivityKind::Outro => "Outro",
+        }
+    }
+}
+
+/// One line of a report: what was done, for how long, with which evidence. Items are the
+/// product — the monthly report is assembled from them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReportItem {
-    /// Local time range, e.g. "09:10–10:25".
-    pub time_range: String,
+    /// Activity in the past tense, first person, in the report language.
     pub activity: String,
-    pub duration_secs: i64,
-    pub apps: Vec<String>,
+    pub kind: ActivityKind,
+    pub minutes: u32,
+    /// Apps, documents, domains or project names that support the item (never people).
+    pub evidence: Vec<String>,
+    /// Local time range, e.g. "09:10–10:25", or empty when the item spans the day.
+    pub time_range: String,
+    /// When this continues an item from a previous day, its activity text.
+    pub continuation_of: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -309,6 +444,10 @@ pub struct DailyReport {
     pub model: String,
     pub input_tokens: u32,
     pub output_tokens: u32,
+    /// Blocks changed after generation; the UI offers "Regenerar".
+    pub stale: bool,
+    /// The user edited the items by hand; automatic regeneration must not overwrite them.
+    pub edited: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -451,6 +590,74 @@ impl QuietHours {
     }
 }
 
+/// Which screenshots may be sent to the vision model.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum VisionPolicy {
+    /// Screenshots stay on this machine; the AI only ever sees text.
+    Never,
+    /// Only screenshots of these application ids may be sent.
+    OnlyApps { apps: Vec<String> },
+    /// Any app except `blocked_apps` and `vision_denied_apps`.
+    AllExceptBlocked,
+}
+
+impl VisionPolicy {
+    pub fn allows(&self, app_id: &str, app_name: &str, blocked: &[String], denied: &[String]) -> bool {
+        let is_in = |list: &[String]| {
+            list.iter().any(|b| b.eq_ignore_ascii_case(app_id) || b.eq_ignore_ascii_case(app_name))
+        };
+        match self {
+            VisionPolicy::Never => false,
+            VisionPolicy::OnlyApps { apps } => is_in(apps) && !is_in(blocked),
+            VisionPolicy::AllExceptBlocked => !is_in(blocked) && !is_in(denied),
+        }
+    }
+}
+
+/// Per-kind switches for UBI's nudges.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NudgeSettings {
+    pub enabled: bool,
+    pub unproductive: bool,
+    pub distracted: bool,
+    pub break_suggested: bool,
+    pub praise: bool,
+    pub idle: bool,
+    /// Hard cap of nudges per local day (report-ready and attention nudges are exempt).
+    pub max_per_day: u32,
+    /// Minutes between nudges of the same kind.
+    pub cooldown_mins: u32,
+    /// Apps in which UBI stays silent (meetings, presentations).
+    pub silent_apps: Vec<String>,
+    /// Snoozed until this instant (set from the tray).
+    pub snoozed_until: Option<DateTime<Utc>>,
+}
+
+impl Default for NudgeSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            unproductive: true,
+            distracted: true,
+            break_suggested: true,
+            praise: true,
+            idle: false,
+            max_per_day: 4,
+            cooldown_mins: 60,
+            silent_apps: vec![
+                "us.zoom.xos".into(),
+                "com.microsoft.teams2".into(),
+                "com.microsoft.teams".into(),
+                "com.apple.iWork.Keynote".into(),
+                "com.google.Chrome.app.meet".into(),
+            ],
+            snoozed_until: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -466,25 +673,42 @@ pub struct Settings {
     pub screenshot_interval_secs: u32,
     /// Longest edge of stored screenshots, in pixels.
     pub screenshot_max_edge: u32,
-    /// Days to keep screenshots on disk.
-    pub screenshot_retention_days: u32,
+    /// Hours to keep screenshots on disk after they were taken (they are deleted right after
+    /// classification unless `keep_screenshots_for_review` is on).
+    pub screenshot_retention_hours: u32,
+    pub keep_screenshots_for_review: bool,
+    pub vision_policy: VisionPolicy,
+    /// Apps the user explicitly excluded from vision even under `AllExceptBlocked`.
+    pub vision_denied_apps: Vec<String>,
     /// Application ids / names that are never sampled nor captured.
     pub blocked_apps: Vec<String>,
     /// Web domains that are never recorded (the block keeps app name only).
     pub blocked_domains: Vec<String>,
-    /// Pauses sampling and screenshots without stopping the app.
+    /// Pauses sampling and screenshots without stopping the app. Timed: `private_until = None`
+    /// with `private_mode = true` means "until I turn it off".
     pub private_mode: bool,
+    pub private_until: Option<DateTime<Utc>>,
     pub models: AiModels,
     /// Maximum screenshots sent to the vision model per hour.
     pub max_vision_per_hour: u32,
+    /// Hard monthly cap on estimated AI spend. At 80% UBI warns; at 100% remote classifiers stop.
+    pub ai_monthly_budget_usd: f64,
+    /// Flush pending blocks to the remote classifier when at least this many are waiting…
+    pub classify_batch_min: u32,
+    /// …or when the oldest pending block is at least this old (seconds).
+    pub classify_max_wait_secs: u32,
+    /// Local mode: never call a remote AI (classification stops after rules/memory).
+    pub local_only: bool,
     /// Blocks with confidence below this go to the next classifier in the chain.
     pub min_confidence: f32,
     /// Default local time for daily reports when a category has none.
     pub report_default_time: NaiveTime,
     /// Language for AI-generated text (BCP-47).
     pub language: String,
+    /// Who the user is, in their own words. Given to the report writer for context.
+    pub user_profile: Option<String>,
     pub quiet_hours: QuietHours,
-    pub nudges_enabled: bool,
+    pub nudges: NudgeSettings,
     pub launch_at_login: bool,
     /// Onboarding finished (permissions granted, key stored, categories created).
     pub onboarding_done: bool,
@@ -498,27 +722,84 @@ impl Default for Settings {
             idle_threshold_secs: 180,
             min_block_secs: 20,
             screenshot_interval_secs: 120,
-            screenshot_max_edge: 1024,
-            screenshot_retention_days: 7,
+            screenshot_max_edge: 1280,
+            screenshot_retention_hours: 24,
+            keep_screenshots_for_review: false,
+            vision_policy: VisionPolicy::AllExceptBlocked,
+            vision_denied_apps: vec![],
             blocked_apps: vec![
                 "com.1password.1password".into(),
                 "com.agilebits.onepassword7".into(),
                 "com.apple.keychainaccess".into(),
                 "com.bitwarden.desktop".into(),
+                "com.apple.Passwords".into(),
+                "com.apple.Passbook".into(),
             ],
             blocked_domains: vec![],
             private_mode: false,
+            private_until: None,
             models: AiModels::default(),
             max_vision_per_hour: 20,
+            ai_monthly_budget_usd: 5.0,
+            classify_batch_min: 8,
+            classify_max_wait_secs: 240,
+            local_only: false,
             min_confidence: 0.6,
             report_default_time: NaiveTime::from_hms_opt(18, 0, 0).expect("valid"),
             language: "pt-BR".into(),
+            user_profile: None,
             quiet_hours: QuietHours::default(),
-            nudges_enabled: true,
+            nudges: NudgeSettings::default(),
             launch_at_login: true,
             onboarding_done: false,
         }
     }
+}
+
+impl Settings {
+    /// Whether private mode is active at `now` (a timed private mode expires on its own).
+    pub fn is_private(&self, now: DateTime<Utc>) -> bool {
+        self.private_mode && self.private_until.map(|t| now < t).unwrap_or(true)
+    }
+}
+
+/// Events the engine emits for the UI shells (Tauri, CLI). Defined here so the engine never
+/// depends on a concrete shell.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum EngineEvent {
+    BlockOpened { block: ActivityBlock },
+    BlockClosed { block: ActivityBlock },
+    BlocksClassified { block_ids: Vec<Id> },
+    ReportReady { report: DailyReport },
+    Nudge { nudge: Nudge },
+    TrackerState { state: TrackerState },
+    AiHealth { health: AiHealth },
+    PermissionRequired { permission: String },
+    ScreenshotTaken { screenshot_id: Id, block_id: Option<Id> },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrackerState {
+    Running,
+    Paused,
+    Private,
+    Idle,
+    /// A required permission is missing; sampling produces no useful data.
+    Blocked,
+}
+
+/// Health of the remote AI path, surfaced through UBI's mood and the settings screen.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum AiHealth {
+    Ok,
+    NotConfigured,
+    /// Temporarily paused after transient failures; retried automatically.
+    Degraded { reason: String, until: DateTime<Utc> },
+    /// Stopped until the user acts (invalid key, budget exhausted).
+    Paused { reason: String },
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -601,6 +882,46 @@ mod tests {
             NudgeKind::Attention,
         ] {
             assert_eq!(NudgeKind::parse(k.as_str()), Some(k));
+        }
+    }
+
+    #[test]
+    fn vision_policy() {
+        let blocked = vec!["com.1password".to_string()];
+        assert!(!VisionPolicy::Never.allows("a", "A", &blocked, &[]));
+        assert!(VisionPolicy::AllExceptBlocked.allows("a", "A", &blocked, &[]));
+        assert!(!VisionPolicy::AllExceptBlocked.allows("com.1password", "1Password", &blocked, &[]));
+        assert!(!VisionPolicy::AllExceptBlocked.allows("a", "A", &blocked, &["A".into()]));
+        let only = VisionPolicy::OnlyApps { apps: vec!["a".into()] };
+        assert!(only.allows("a", "A", &blocked, &[]));
+        assert!(!only.allows("b", "B", &blocked, &[]));
+    }
+
+    #[test]
+    fn timed_private_mode() {
+        let now = Utc::now();
+        let mut s = Settings { private_mode: true, ..Default::default() };
+        assert!(s.is_private(now));
+        s.private_until = Some(now - chrono::Duration::minutes(1));
+        assert!(!s.is_private(now));
+        s.private_until = Some(now + chrono::Duration::minutes(1));
+        assert!(s.is_private(now));
+    }
+
+    #[test]
+    fn activity_kind_round_trip() {
+        for k in [
+            ActivityKind::Desenvolvimento,
+            ActivityKind::Reuniao,
+            ActivityKind::Comunicacao,
+            ActivityKind::Documentacao,
+            ActivityKind::Ensino,
+            ActivityKind::Pesquisa,
+            ActivityKind::Extensao,
+            ActivityKind::Gestao,
+            ActivityKind::Outro,
+        ] {
+            assert_eq!(ActivityKind::parse(k.as_str()), Some(k));
         }
     }
 

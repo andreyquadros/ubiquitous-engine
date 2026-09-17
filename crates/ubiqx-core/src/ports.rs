@@ -42,10 +42,24 @@ pub struct EncodedImage {
     pub height: u32,
 }
 
-/// Captures the primary display.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptureTarget {
+    /// Only the window with this OS id (preferred: never includes other apps' windows).
+    Window(u32),
+    /// The display that contains the given point, or the primary display.
+    DisplayAt { x: i32, y: i32 },
+    PrimaryDisplay,
+}
+
+/// Captures screen content.
 pub trait ScreenCapturer: Send + Sync {
-    /// Captures, downsizes so that the longest edge is `max_edge` and encodes the result.
-    fn capture(&self, max_edge: u32) -> CoreResult<EncodedImage>;
+    /// Captures `target`, downsizes so that the longest edge is at most `max_edge` and encodes
+    /// the result.
+    fn capture(&self, target: CaptureTarget, max_edge: u32) -> CoreResult<EncodedImage>;
+
+    /// Application names/ids that currently have a window on screen. The engine refuses to
+    /// capture when a blocked application is visible anywhere.
+    fn visible_apps(&self) -> CoreResult<Vec<String>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,8 +124,30 @@ pub trait BlockRepo: Send + Sync {
     fn open_block(&self) -> CoreResult<Option<ActivityBlock>>;
     /// Closed blocks overlapping `range`, ordered by `started_at`.
     fn list_in_range(&self, range: TimeRange) -> CoreResult<Vec<ActivityBlock>>;
-    /// Closed blocks without a category, oldest first.
+    /// Closed blocks without a category that a remote classifier may try now
+    /// (`needs_review = false`, `next_attempt_at` unset or in the past), oldest first.
+    fn list_pending_remote(&self, now: DateTime<Utc>, limit: usize) -> CoreResult<Vec<ActivityBlock>>;
+    /// Closed blocks without a category, regardless of retry state, oldest first.
     fn list_unclassified(&self, limit: usize) -> CoreResult<Vec<ActivityBlock>>;
+    /// Blocks flagged for manual review, newest first.
+    fn list_needs_review(&self, limit: usize) -> CoreResult<Vec<ActivityBlock>>;
+    /// Records a failed remote attempt and when the block may be retried.
+    fn record_attempt(&self, id: &str, attempts: u32, next_attempt_at: Option<DateTime<Utc>>, needs_review: bool) -> CoreResult<()>;
+    /// Stores what was sent to the AI for this block (redacted text) and when.
+    fn set_ai_payload(&self, id: &str, payload: &str, at: DateTime<Utc>) -> CoreResult<()>;
+    /// Splits a block at `at` into two blocks; returns the id of the new (second) block.
+    fn split(&self, id: &str, at: DateTime<Utc>) -> CoreResult<Id>;
+    /// Reassigns every non-user-classified block matching the key (app id and, when given,
+    /// domain) inside `range` to `category_id`. Returns the number of blocks changed.
+    fn backfill_category(
+        &self,
+        app_id: &str,
+        domain: Option<&str>,
+        range: TimeRange,
+        category_id: &str,
+        source: ClassificationSource,
+    ) -> CoreResult<u64>;
+    fn delete(&self, id: &str) -> CoreResult<()>;
     fn set_classification(
         &self,
         id: &str,
@@ -139,6 +175,7 @@ pub trait RuleRepo: Send + Sync {
     fn upsert(&self, rule: &Rule) -> CoreResult<()>;
     fn delete(&self, id: &str) -> CoreResult<()>;
     fn increment_hits(&self, id: &str) -> CoreResult<()>;
+    fn record_miss(&self, id: &str, at: DateTime<Utc>) -> CoreResult<()>;
 }
 
 pub trait CorrectionRepo: Send + Sync {
@@ -165,6 +202,8 @@ pub trait ReportRepo: Send + Sync {
     fn get(&self, date: NaiveDate, category_id: &str) -> CoreResult<Option<DailyReport>>;
     fn list_for_date(&self, date: NaiveDate) -> CoreResult<Vec<DailyReport>>;
     fn list_between(&self, from: NaiveDate, to: NaiveDate) -> CoreResult<Vec<DailyReport>>;
+    /// Flags reports of that day as stale (blocks changed after generation).
+    fn mark_stale(&self, date: NaiveDate) -> CoreResult<()>;
     fn delete(&self, id: &str) -> CoreResult<()>;
 }
 
@@ -174,6 +213,28 @@ pub trait NudgeRepo: Send + Sync {
     fn mark_seen(&self, id: &str) -> CoreResult<()>;
     fn mark_all_seen(&self) -> CoreResult<()>;
     fn last_of_kind(&self, kind: NudgeKind) -> CoreResult<Option<DateTime<Utc>>>;
+    /// Number of nudges emitted since `since` (for the daily cap).
+    fn count_since(&self, since: DateTime<Utc>) -> CoreResult<u64>;
+}
+
+/// Small key/value store for engine state that must survive restarts
+/// (e.g. `last_report_check`).
+pub trait KvRepo: Send + Sync {
+    fn get(&self, key: &str) -> CoreResult<Option<String>>;
+    fn set(&self, key: &str, value: &str) -> CoreResult<()>;
+}
+
+/// Outbound event channel from the engine to whichever shell hosts it.
+pub trait EventSink: Send + Sync {
+    fn emit(&self, event: EngineEvent);
+}
+
+/// Event sink that drops everything (tests, CLI in quiet mode).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NullEventSink;
+
+impl EventSink for NullEventSink {
+    fn emit(&self, _event: EngineEvent) {}
 }
 
 pub trait SettingsRepo: Send + Sync {
@@ -262,6 +323,10 @@ pub struct ClassificationContext {
     pub user_classified: Vec<ActivityBlock>,
     pub language: String,
     pub min_confidence: f32,
+    /// Model ids to use for this request (from settings).
+    pub models: AiModels,
+    /// Free text about the user, so the model understands ambiguous titles.
+    pub user_profile: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -274,6 +339,8 @@ pub struct Classification {
     pub description: Option<String>,
     /// The classifier is sure the block needs a screenshot to be understood.
     pub needs_vision: bool,
+    /// The rule that produced this classification (so contradictions can be attributed).
+    pub rule_id: Option<Id>,
 }
 
 impl Classification {
@@ -285,6 +352,7 @@ impl Classification {
             source,
             description: None,
             needs_vision: false,
+            rule_id: None,
         }
     }
 
@@ -293,14 +361,22 @@ impl Classification {
     }
 }
 
-/// A classifier in the chain. Implementations must be cheap to call with an empty slice.
+/// A cheap, synchronous, infallible classifier (rules, memory). Runs on every block before
+/// anything is sent to a remote model.
+pub trait LocalClassifier: Send + Sync {
+    fn name(&self) -> &'static str;
+    /// `None` means "I don't know".
+    fn classify(&self, block: &ActivityBlock, ctx: &ClassificationContext) -> Option<Classification>;
+}
+
+/// A remote (paid, fallible, batched) classifier.
 #[async_trait]
-pub trait Classifier: Send + Sync {
+pub trait RemoteClassifier: Send + Sync {
     fn name(&self) -> &'static str;
 
-    /// Returns one classification per input block, in the same order. Blocks the classifier
-    /// cannot decide are returned with `category_id = None`.
-    async fn classify(
+    /// Returns classifications keyed by block id. Blocks missing from the result are treated
+    /// as unclassified by the caller; ids not in `blocks` are ignored.
+    async fn classify_batch(
         &self,
         blocks: &[ActivityBlock],
         ctx: &ClassificationContext,
@@ -324,12 +400,15 @@ pub struct ReportRequest {
     pub category: Category,
     /// Closed blocks of the day already filtered to this category, ordered by time.
     pub blocks: Vec<ActivityBlock>,
-    /// Descriptions of what the user did, gathered from vision/LLM, keyed by block id.
+    /// Items from the previous few days of the same category, so the writer can say
+    /// "continuou X" instead of inventing a new start.
+    pub previous_items: Vec<ReportItem>,
     pub language: String,
     /// Local UTC offset in seconds for rendering times.
     pub utc_offset_secs: i32,
     /// Optional free text the user wants the writer to know (role, institution, expectations).
     pub user_profile: Option<String>,
+    pub model: String,
 }
 
 #[async_trait]
@@ -345,6 +424,7 @@ pub struct AdviceRequest {
     pub top_apps: Vec<AppTotal>,
     pub recent_nudges: Vec<NudgeKind>,
     pub user_profile: Option<String>,
+    pub model: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -358,58 +438,4 @@ pub struct Advice {
 #[async_trait]
 pub trait Advisor: Send + Sync {
     async fn advise(&self, req: &AdviceRequest) -> CoreResult<Advice>;
-}
-
-// ---------------------------------------------------------------------------------------------
-// Generic LLM client (vendor-agnostic request/response so the AI crate can be swapped)
-// ---------------------------------------------------------------------------------------------
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum LlmContent {
-    Text { text: String },
-    Image { mime: String, base64: String },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LlmRole {
-    User,
-    Assistant,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LlmMessage {
-    pub role: LlmRole,
-    pub content: Vec<LlmContent>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LlmRequest {
-    pub model: String,
-    /// Stable instructions; providers that support prompt caching cache this part.
-    pub system: String,
-    pub messages: Vec<LlmMessage>,
-    pub max_tokens: u32,
-    /// When set, the provider is asked to constrain the answer to this JSON schema.
-    pub json_schema: Option<serde_json::Value>,
-    pub usage_kind: AiUsageKind,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LlmResponse {
-    pub text: String,
-    pub model: String,
-    pub input_tokens: u32,
-    pub output_tokens: u32,
-    pub cache_read_tokens: u32,
-    pub cache_write_tokens: u32,
-    pub stop_reason: String,
-}
-
-#[async_trait]
-pub trait LlmClient: Send + Sync {
-    async fn complete(&self, req: &LlmRequest) -> CoreResult<LlmResponse>;
-    /// Cheap connectivity/credential check used by the settings screen.
-    async fn ping(&self) -> CoreResult<()>;
 }
