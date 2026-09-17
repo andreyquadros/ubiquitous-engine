@@ -110,7 +110,8 @@ cd apps/desktop && pnpm tauri dev
 ```
 
 Variáveis úteis: `UBIQX_LOG=debug` (log), `UBIQX_FAKE_AI=1` (IA falsa no app desktop), `UBIQX_SCRIPTED=1`
-(plataforma roteirizada — o app "trabalha sozinho" para demonstração), `UBIQX_ANTHROPIC_API_KEY` (CLI).
+(plataforma roteirizada — o app "trabalha sozinho" para demonstração, sempre com IA falsa a menos que
+`UBIQX_ALLOW_REAL_AI=1`), `UBIQX_ANTHROPIC_API_KEY` (CLI).
 
 CLI: `ubiqx status [data]`, `ubiqx classify`, `ubiqx report <data> --category <id>`, `ubiqx monthly --category <id> --year 2026 --month 9`, `ubiqx export`.
 

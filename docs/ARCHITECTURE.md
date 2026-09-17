@@ -158,13 +158,23 @@ UBI: modelo 3D (`public/ubi/Ubi.glb`, react-three-fiber) com fallback SVG; humor
 
 ## 7. Segurança & privacidade
 
-- Chave de API só no Keychain (`keyring`, serviço `ai.ubiqx`), nunca em arquivo; validada com `GET /v1/models`.
+- Chave de API só no Keychain (`keyring`, serviço `ai.ubiqx`), nunca em arquivo; validada com `GET /v1/models` e
+  uma mensagem de 1 token, para que conta sem créditos ou modelo indisponível apareçam como erro claro
+  (`CoreError::AiRejected`), não como chave "válida" que falha em silêncio depois.
+- Nada é registrado nem enviado antes do consentimento: rastreamento, prints e toda chamada remota exigem
+  `onboarding_done`; até lá o tracker aparece como pausado.
 - Só sai da máquina o que a UI mostra em "Dados enviados à IA": linhas redigidas por bloco e, quando permitido,
   o print da janela ativa. `local_only` desliga qualquer chamada remota.
 - Prints em `~/Library/Application Support/ai.ubiqx.app/screenshots.noindex/` (0700), apagados após uso.
 - Apps bloqueados (gerenciadores de senha por padrão), domínios bloqueados, janelas anônimas e modo privado
   (30 min / 1 h / até amanhã / indefinido, pelo tray) viram blocos "[privado]".
-- "Exportar meus dados" (JSON) e "Apagar todos os dados" (banco, prints e chave).
+- "Exportar meus dados" (JSON) e "Apagar todos os dados": blocos, prints, correções, relatórios, avisos, uso de IA,
+  cache de conselhos, regras aprendidas e a pasta de exportações, em uma transação (`MaintenanceRepo::wipe_user_data`).
+  Configurações, categorias, regras criadas pelo usuário e a chave de API permanecem.
+- O tracker persiste só as colunas que o segmentador possui (`BlockRepo::touch` / `set_screenshot`); uma
+  reclassificação feita pelo usuário no bloco em andamento nunca é sobrescrita.
+- Cmd+Q apenas esconde a janela; o único caminho para encerrar o rastreador é "Sair" no tray, que espera o
+  bloco aberto ser gravado.
 - Permissões macOS: **Gravação de Tela** (títulos + prints), **Automação** (URL do navegador). Ver `docs/MACOS-TESTING.md`
   — inclusive a assinatura estável do binário para as permissões sobreviverem a rebuilds.
 

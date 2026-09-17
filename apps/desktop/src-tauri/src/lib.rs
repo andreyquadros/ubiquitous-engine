@@ -238,6 +238,15 @@ pub fn run() {
                 .map_err(|e| format!("engine start: {e}"))?;
             if ubiqx.scripted.is_some() {
                 let _ = ubiqx_app::demo::seed(ubiqx.engine.state().deps.repos.categories.as_ref());
+                // The demo "works by itself": tracking and AI calls are gated on onboarding
+                // consent, which the scripted scenario grants up front.
+                let mut settings = ubiqx.engine.settings();
+                if !settings.onboarding_done {
+                    settings.onboarding_done = true;
+                    if let Err(e) = ubiqx.engine.update_settings(settings) {
+                        tracing::warn!(error = %e, "could not mark the demo onboarding as done");
+                    }
+                }
             }
 
             // Keep the login-item setting in sync with the persisted preference.

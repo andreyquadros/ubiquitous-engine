@@ -547,6 +547,12 @@ pub async fn set_api_key(
                 valid: false,
                 message: format!("Chave recusada: {msg}"),
             }),
+            // Billing / model rejections: the key is real but the account cannot be used
+            // (no credits, disabled key, unknown model). The message is already in pt-BR.
+            Err(CoreError::AiRejected(msg)) => Ok(ApiKeyResult {
+                valid: false,
+                message: msg,
+            }),
             Err(err) => Ok(ApiKeyResult {
                 valid: false,
                 message: format!("Não foi possível validar: {err}"),

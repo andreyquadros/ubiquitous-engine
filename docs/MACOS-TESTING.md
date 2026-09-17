@@ -48,7 +48,9 @@ uso de Apple Events) e as notificações não aparecem.
    o macOS só aplica a permissão em um processo novo. Sem ela os títulos de janela chegam
    vazios e a captura falha (o app detecta e avisa).
 3. **Automação** — para ler a URL do navegador ativo. O sistema pergunta uma vez por navegador
-   (Safari, Chrome, Arc, Brave, Edge…). Firefox não expõe a URL: fica só o título.
+   (Safari, Chrome, Arc, Brave, Edge…) e **só para os navegadores abertos naquele momento**: abra o
+   navegador que você usa antes de clicar em "Pedir permissão". A primeira consulta a cada navegador
+   espera até 2 min pela sua resposta ao alerta. Firefox não expõe a URL: fica só o título.
 4. **Categorias** — crie IFRO, Incubadora, Cidades Inteligentes… com uma descrição de
    *o que conta como trabalho desta categoria*. A IA usa exatamente esse texto.
 5. **Horário do relatório** por categoria (padrão 18:00) e **iniciar com o sistema**.
@@ -73,4 +75,7 @@ exatamente o texto enviado à IA por bloco e permite apagar tudo.
 | Permissão pedida de novo a cada build | Binário sem assinatura estável | `scripts/codesign-dev.sh` |
 | URL do navegador não aparece | Automação negada (`-1743`) | Ajustes → Privacidade → Automação → ubiqX → marcar o navegador |
 | "IA não configurada" | Chave ausente/inválida | Configurações → IA → validar chave |
+| "IA indisponível: cobrança…" | Conta sem créditos ou chave desativada | Adicionar créditos no console da Anthropic e salvar a chave de novo |
+| Cmd+Q "não fecha" o app | Esperado: Cmd+Q só esconde a janela | Para encerrar de verdade: tray → **Sair** |
+| Log sem linhas do rastreador | Nível de log baixo | `UBIQX_LOG=debug` antes de abrir o app; o arquivo fica em `~/Library/Logs/ai.ubiqx.app/` |
 | macOS 15 mostra aviso periódico de captura de tela | Comportamento do sistema para apps que usam captura | Esperado; clique em *Continuar a permitir* |
