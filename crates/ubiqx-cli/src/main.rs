@@ -166,6 +166,8 @@ async fn main() -> Result<()> {
             }
             // Speed up: 2 s samples so a short run covers a few minutes of "activity".
             let mut s = app.engine.settings();
+            // Running the simulation is the consent the desktop collects in onboarding.
+            s.onboarding_done = true;
             s.sample_interval_secs = 1;
             s.min_block_secs = 2;
             s.classify_batch_min = 1;
@@ -180,13 +182,19 @@ async fn main() -> Result<()> {
         }
         Cmd::Track { events } => {
             let app = App::start(base, Arc::new(PrintSink(*events))).context("start engine")?;
+            // Nothing is recorded or sent before consent; invoking `track` is that consent.
+            let mut s = app.engine.settings();
+            if !s.onboarding_done {
+                s.onboarding_done = true;
+                app.engine.update_settings(s)?;
+            }
             println!(
                 "Rastreando… (Ctrl-C para sair). Dados em {}",
                 app.data_dir.display()
             );
             tokio::signal::ctrl_c().await?;
+            // Waits for the tracker to persist the open block.
             app.engine.shutdown();
-            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         }
         Cmd::Status { date } => {
             let app = App::start(

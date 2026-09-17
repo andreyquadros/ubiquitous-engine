@@ -21,7 +21,7 @@ pub mod permissions;
 /// Builds the real macOS services.
 pub fn services() -> PlatformServices {
     PlatformServices {
-        activity: Arc::new(frontmost::AppKitActivitySource::default()),
+        activity: Arc::new(frontmost::AppKitActivitySource),
         urls: Arc::new(crate::browser::OsascriptUrlResolver::default()),
         idle: Arc::new(idle::CgIdleDetector),
         capturer: Arc::new(capture::CgScreenCapturer),

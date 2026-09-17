@@ -9,12 +9,14 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
-/// Application ids/names whose window titles are personal by nature.
+/// Application ids/names whose window titles are personal by nature. Names are matched as
+/// reported by the OS, which is localized (macOS pt-BR calls Messages "Mensagens").
 const MESSAGING_APPS: &[&str] = &[
     "net.whatsapp.WhatsApp",
     "whatsapp",
     "com.apple.MobileSMS",
     "messages",
+    "mensagens",
     "ru.keepcoder.Telegram",
     "telegram",
     "com.apple.mail",
@@ -29,6 +31,21 @@ const MESSAGING_APPS: &[&str] = &[
     "messenger",
     "com.microsoft.teams2",
     "microsoft teams",
+];
+
+/// Bundle-id prefixes of messaging/mail apps, so variants (`net.whatsapp.WhatsApp.Desktop`,
+/// Teams classic vs. new, Telegram builds) are caught even when the exact id is not listed.
+const MESSAGING_BUNDLE_PREFIXES: &[&str] = &[
+    "net.whatsapp.",
+    "com.apple.MobileSMS",
+    "com.apple.mail",
+    "ru.keepcoder.Telegram",
+    "org.telegram.",
+    "com.tinyspeck.",
+    "com.hnc.Discord",
+    "com.facebook.archon",
+    "com.microsoft.teams",
+    "com.microsoft.Outlook",
 ];
 
 fn re(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
@@ -79,6 +96,11 @@ pub fn is_messaging_app(app_id: &str, app_name: &str) -> bool {
     MESSAGING_APPS
         .iter()
         .any(|m| m.eq_ignore_ascii_case(app_id) || m.eq_ignore_ascii_case(app_name))
+        || MESSAGING_BUNDLE_PREFIXES.iter().any(|p| {
+            app_id
+                .get(..p.len())
+                .is_some_and(|head| head.eq_ignore_ascii_case(p))
+        })
 }
 
 /// Text describing a block that is safe to send to a remote model.
@@ -150,5 +172,33 @@ mod tests {
         assert_eq!(r.title, "WhatsApp");
         let r = redact_block("com.apple.dt.Xcode", "Xcode", "main.swift", None, None);
         assert_eq!(r.title, "main.swift");
+    }
+
+    #[test]
+    fn messaging_apps_match_localized_names_and_bundle_prefixes() {
+        // Localized macOS name (pt-BR) with the exact bundle id.
+        assert!(is_messaging_app("com.apple.MobileSMS", "Mensagens"));
+        // Localized name alone (id unknown to the list).
+        assert!(is_messaging_app("", "mensagens"));
+        // Bundle-id variants.
+        assert!(is_messaging_app(
+            "net.whatsapp.WhatsApp.Desktop",
+            "WhatsApp Desktop"
+        ));
+        assert!(is_messaging_app(
+            "com.microsoft.teams",
+            "Microsoft Teams classic"
+        ));
+        assert!(is_messaging_app("COM.HNC.DISCORD", "Discord"));
+        assert!(!is_messaging_app("com.apple.Safari", "Safari"));
+        assert!(!is_messaging_app("net.whats", "x"));
+        let r = redact_block(
+            "com.apple.MobileSMS",
+            "Mensagens",
+            "maria souza",
+            None,
+            None,
+        );
+        assert_eq!(r.title, "Mensagens");
     }
 }

@@ -55,16 +55,46 @@ impl PermissionChecker for MacPermissions {
                 Ok(())
             }
             PermissionKind::Automation => {
-                // Trigger the Apple Events prompt for every supported browser that is running
-                // by asking each for its name.
+                use objc2_app_kit::NSWorkspace;
+                // Running browsers, checked from AppKit (no TCC involved) instead of via
+                // System Events, which would raise its own, unrelated Automation prompt.
+                let running: Vec<String> = NSWorkspace::sharedWorkspace()
+                    .runningApplications()
+                    .iter()
+                    .filter_map(|a| a.bundleIdentifier().map(|s| s.to_string()))
+                    .collect();
+                let mut denied = Vec::new();
                 for id in crate::browser::supported_browsers() {
-                    let script = format!(
-                        "tell application \"System Events\" to if exists (application process 1 whose bundle identifier is \"{id}\") then tell application id \"{id}\" to get name"
-                    );
-                    let _ =
-                        crate::browser::run_osascript(&script, std::time::Duration::from_secs(5));
+                    if !running.iter().any(|r| r == id) {
+                        continue;
+                    }
+                    // Trigger the Apple-events consent alert by asking the browser for its
+                    // name. The send blocks inside osascript until the user answers, so give
+                    // them time to read it.
+                    let script = format!("tell application id \"{id}\" to get name");
+                    match crate::browser::run_osascript(
+                        &script,
+                        crate::browser::FIRST_CONTACT_TIMEOUT,
+                    ) {
+                        Ok((false, _, err)) if crate::browser::is_automation_denied(&err) => {
+                            tracing::warn!(app = %id, "automation denied");
+                            denied.push(id.to_string());
+                        }
+                        Ok((false, _, err)) => {
+                            tracing::debug!(app = %id, stderr = %err.trim(), "osascript failed")
+                        }
+                        Err(e) => tracing::warn!(app = %id, error = %e, "automation prompt failed"),
+                        Ok(_) => {}
+                    }
                 }
-                Ok(())
+                if denied.is_empty() {
+                    Ok(())
+                } else {
+                    Err(ubiqx_core::CoreError::Permission(format!(
+                        "automation denied for {}",
+                        denied.join(", ")
+                    )))
+                }
             }
         }
     }

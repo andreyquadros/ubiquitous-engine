@@ -1,6 +1,6 @@
 //! Decides when daily reports are due. Pure function of (categories, settings, now, last run).
 
-use chrono::{DateTime, Local, NaiveDate, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveTime, TimeZone, Utc};
 
 use crate::model::*;
 
@@ -57,6 +57,15 @@ fn local_datetime(day: NaiveDate, time: NaiveTime) -> Option<DateTime<Utc>> {
         chrono::LocalResult::Ambiguous(a, _) => Some(a.with_timezone(&Utc)),
         chrono::LocalResult::None => None,
     }
+}
+
+/// The local calendar month containing `now`, from its first local midnight up to and
+/// including `now`. Used for the AI budget and the dashboard's monthly usage, so both agree
+/// and reset at the user's midnight rather than at UTC midnight.
+pub fn month_range(now: DateTime<Utc>) -> TimeRange {
+    let local = now.with_timezone(&Local).date_naive();
+    let first = NaiveDate::from_ymd_opt(local.year(), local.month(), 1).unwrap_or(local);
+    TimeRange::new(day_range(first).from, now + chrono::Duration::seconds(1))
 }
 
 /// Local day boundaries `[start, end)` for a date, in UTC.
@@ -123,6 +132,17 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["b", "a"]
         );
+    }
+
+    #[test]
+    fn month_range_starts_at_local_first_of_month() {
+        let now = Utc::now();
+        let r = month_range(now);
+        let start = r.from.with_timezone(&Local);
+        assert_eq!(start.day(), 1);
+        assert_eq!(start.time(), NaiveTime::MIN);
+        assert_eq!(start.month(), now.with_timezone(&Local).month());
+        assert!(r.contains(now));
     }
 
     #[test]

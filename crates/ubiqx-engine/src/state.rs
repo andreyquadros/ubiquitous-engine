@@ -1,10 +1,11 @@
 //! Shared mutable state of a running engine.
 
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Condvar, Mutex, RwLock};
 use ubiqx_core::segmenter::{Segmenter, SegmenterConfig};
 use ubiqx_core::*;
 
@@ -22,6 +23,13 @@ pub struct EngineState {
     pub paused: RwLock<bool>,
     /// Emitted once per missing permission so the UI is not flooded.
     pub permission_warned: Mutex<bool>,
+    /// Set while `AiHealth::Paused` was caused by the monthly budget (as opposed to a rejected
+    /// key), so the budget check is the only thing that lifts it.
+    pub budget_paused: AtomicBool,
+    /// Flipped by the tracker task once it has persisted the open block on shutdown, so
+    /// `EngineHandle::shutdown` can wait for it.
+    pub tracker_stopped: Mutex<bool>,
+    pub tracker_stopped_cv: Condvar,
 }
 
 impl EngineState {
@@ -55,6 +63,9 @@ impl EngineState {
             last_capture: Mutex::new(HashMap::new()),
             paused: RwLock::new(false),
             permission_warned: Mutex::new(false),
+            budget_paused: AtomicBool::new(false),
+            tracker_stopped: Mutex::new(false),
+            tracker_stopped_cv: Condvar::new(),
         })
     }
 
@@ -67,13 +78,39 @@ impl EngineState {
     }
 
     /// Recomputes derived state after a settings change and persists the settings.
+    ///
+    /// Turning tracking off (or flipping private mode) closes the open block right away, so the
+    /// dashboard never keeps extending a block while nothing is being sampled.
     pub fn apply_settings(&self, settings: Settings) -> CoreResult<()> {
         self.deps.repos.settings.save(&settings)?;
+        let now = self.now();
         let mut cfg = SegmenterConfig::from(&settings);
-        cfg.private_mode = settings.is_private(self.now());
-        self.segmenter.lock().update_config(cfg);
+        cfg.private_mode = settings.is_private(now);
+        let (closing, budget_changed) = {
+            let cur = self.settings.read();
+            (
+                (cur.tracking_enabled && !settings.tracking_enabled)
+                    || cur.is_private(now) != cfg.private_mode,
+                cur.ai_monthly_budget_usd != settings.ai_monthly_budget_usd,
+            )
+        };
+        let closed = {
+            let mut seg = self.segmenter.lock();
+            let closed = if closing { seg.close(now) } else { None };
+            seg.update_config(cfg);
+            closed
+        };
+        if let Some(block) = closed {
+            self.deps.repos.blocks.touch(&block)?;
+            self.last_capture.lock().remove(&block.id);
+        }
         *self.settings.write() = settings;
         self.refresh_tracker_state();
+        // A raised (or removed) budget resumes the AI immediately instead of on the next pass;
+        // health is otherwise left alone because this path also serves snooze/private toggles.
+        if budget_changed && self.budget_paused.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = crate::classify::budget_allows(self);
+        }
         Ok(())
     }
 
@@ -92,10 +129,11 @@ impl EngineState {
         }
     }
 
-    /// Derives the tracker state from pause flag, settings and private mode.
+    /// Derives the tracker state from pause flag, settings and private mode. Nothing is
+    /// recorded before onboarding is done (the user has not consented yet).
     pub fn refresh_tracker_state(&self) {
         let s = self.settings.read();
-        let state = if *self.paused.read() || !s.tracking_enabled {
+        let state = if *self.paused.read() || !s.tracking_enabled || !s.onboarding_done {
             TrackerState::Paused
         } else if s.is_private(self.now()) {
             TrackerState::Private
@@ -130,10 +168,15 @@ impl EngineState {
         self.ai_health.read().clone()
     }
 
-    /// Whether remote classifiers may be called right now.
+    /// Whether remote classifiers may be called right now. Remote AI is armed by consent, not
+    /// by key presence alone: a Keychain key left over from a previous install must not send
+    /// anything before the user finishes onboarding.
     pub fn remote_allowed(&self) -> bool {
-        if self.settings.read().local_only {
-            return false;
+        {
+            let s = self.settings.read();
+            if s.local_only || !s.onboarding_done {
+                return false;
+            }
         }
         match self.ai_health() {
             AiHealth::Ok => true,

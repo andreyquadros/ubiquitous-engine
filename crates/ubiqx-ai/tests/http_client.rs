@@ -409,11 +409,62 @@ async fn refusal_is_an_error_but_usage_is_recorded() {
         .complete(&request("claude-haiku-4-5"))
         .await
         .unwrap_err();
+    assert!(matches!(err, CoreError::AiRefused), "{err:?}");
+    assert_eq!(usage.records().len(), 1);
+}
+
+#[tokio::test]
+async fn zero_credit_account_is_rejected_and_not_retried() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(error_body(
+            "invalid_request_error",
+            "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+        )))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let usage = Arc::new(MemoryUsageRepo::new());
+    let err = client(&server, usage.clone())
+        .complete(&request("claude-haiku-4-5"))
+        .await
+        .unwrap_err();
     assert!(
-        matches!(err, CoreError::Ai(ref m) if m.contains("refus")),
+        matches!(err, CoreError::AiRejected(ref m) if m.starts_with("cobrança:")),
         "{err:?}"
     );
-    assert_eq!(usage.records().len(), 1);
+    assert!(!err.is_transient());
+    assert!(usage.records().is_empty());
+}
+
+#[tokio::test]
+async fn unknown_model_is_rejected() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(
+            ResponseTemplate::new(404)
+                .set_body_json(error_body("not_found_error", "model: claude-haiku-9")),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let err = client(&server, Arc::new(MemoryUsageRepo::new()))
+        .complete(&request("claude-haiku-9"))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, CoreError::AiRejected(ref m) if m.contains("claude-haiku-9")),
+        "{err:?}"
+    );
+}
+
+fn models_listing() -> Value {
+    json!({
+        "data": [{"id": "claude-sonnet-5", "type": "model"}, {"id": "claude-haiku-4-5", "type": "model"}],
+        "has_more": false
+    })
 }
 
 #[tokio::test]
@@ -423,14 +474,24 @@ async fn validate_key_ok_and_unauthorized() {
         .and(path("/v1/models"))
         .and(header("x-api-key", KEY))
         .and(header("anthropic-version", "2023-06-01"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({"data": [], "has_more": false})),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(models_listing()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    // The billing probe: one token with the cheapest listed model.
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(header("x-api-key", KEY))
+        .respond_with(ResponseTemplate::new(200).set_body_json(ok_body("x", "max_tokens")))
         .expect(1)
         .mount(&server)
         .await;
     let usage = Arc::new(MemoryUsageRepo::new());
     client(&server, usage.clone()).validate_key().await.unwrap();
+    let probe = &server.received_requests().await.unwrap()[1];
+    let body = body_of(probe);
+    assert_eq!(body["model"], "claude-haiku-4-5");
+    assert_eq!(body["max_tokens"], 1);
     assert!(
         usage.records().is_empty(),
         "key validation is not billed usage"
@@ -451,6 +512,58 @@ async fn validate_key_ok_and_unauthorized() {
         matches!(err, CoreError::Ai(ref m) if m.contains("invalid api key")),
         "{err:?}"
     );
+}
+
+#[tokio::test]
+async fn validate_key_reports_missing_credits() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(models_listing()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(error_body(
+            "invalid_request_error",
+            "Your credit balance is too low to access the Anthropic API.",
+        )))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let err = client(&server, Arc::new(MemoryUsageRepo::new()))
+        .validate_key()
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, CoreError::AiRejected(ref m) if m.contains("créditos")),
+        "{err:?}"
+    );
+}
+
+#[tokio::test]
+async fn validate_key_ignores_inconclusive_probe() {
+    // A probe that fails for any reason other than billing (here: an outage that exhausts
+    // the retries) must not turn a valid key into a rejection.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(models_listing()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(
+            ResponseTemplate::new(529).set_body_json(error_body("overloaded_error", "Overloaded")),
+        )
+        .mount(&server)
+        .await;
+    client(&server, Arc::new(MemoryUsageRepo::new()))
+        .validate_key()
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

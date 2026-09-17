@@ -189,6 +189,14 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .build(),
         )
+        .menu(build_app_menu)
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == HIDE_WINDOW_ID {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
+        })
         .setup(move |app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -200,15 +208,24 @@ pub fn run() {
                 .map_err(|e| format!("app data dir: {e}"))?;
             let sink: Arc<dyn EventSink> = Arc::new(TauriSink(handle.clone()));
             let notifier: Arc<dyn Notifier> = Arc::new(TauriNotifier(handle.clone()));
-            let ai = if std::env::var("UBIQX_FAKE_AI").is_ok() {
-                ubiqx_app::AiBackend::Fake
-            } else {
-                ubiqx_app::AiBackend::Anthropic
-            };
             let scripted = if std::env::var("UBIQX_SCRIPTED").is_ok() {
                 Some(ubiqx_app::ubiqx_platform::mock::Scenario::demo_day().looping())
             } else {
                 None
+            };
+            let ai = if std::env::var("UBIQX_FAKE_AI").is_ok() {
+                ubiqx_app::AiBackend::Fake
+            } else if scripted.is_some() && std::env::var("UBIQX_ALLOW_REAL_AI").as_deref() != Ok("1")
+            {
+                // The scripted platform reads the API key from the environment (a store meant
+                // for the CLI only): never spend real API calls on the demo scenario unless a
+                // developer opts in explicitly.
+                tracing::info!(
+                    "UBIQX_SCRIPTED: using the fake AI backend (set UBIQX_ALLOW_REAL_AI=1 to use Anthropic)"
+                );
+                ubiqx_app::AiBackend::Fake
+            } else {
+                ubiqx_app::AiBackend::Anthropic
             };
             let config = AppConfig {
                 data_dir: Some(data_dir),
@@ -251,8 +268,8 @@ pub fn run() {
         .invoke_handler(commands::handler())
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
-            if let RunEvent::ExitRequested { api, code, .. } = event {
+        .run(|app, event| match event {
+            RunEvent::ExitRequested { api, code, .. } => {
                 // Only the tray "Sair" item (which calls app.exit) may end the process.
                 if code.is_none() {
                     api.prevent_exit();
@@ -260,5 +277,72 @@ pub fn run() {
                     state.app.engine.shutdown();
                 }
             }
+            RunEvent::Exit => {
+                // Logout / system shutdown send `terminate:` without an ExitRequested we can
+                // veto: at least stop the engine before the process goes away.
+                if let Some(state) = app.try_state::<AppState>() {
+                    state.app.engine.shutdown();
+                }
+            }
+            _ => {}
         });
+}
+
+/// Menu id of the item that owns the Cmd+Q accelerator.
+const HIDE_WINDOW_ID: &str = "hide_window";
+
+/// Application menu: Tauri's default minus the predefined Quit item. That item sends
+/// `terminate:` straight to NSApplication, which ends the process (and tracking) without any
+/// `ExitRequested` we could veto; Cmd+Q instead hides the dashboard, exactly like closing
+/// it, and the tray "Sair" item stays the only exit path. Edit and Window are kept so
+/// Cmd+C/V/X/A and Cmd+W still work in the webview of an Accessory app (Cmd+W goes through
+/// `performClose:` → `CloseRequested`, which is turned into hide above).
+fn build_app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let name = app.package_info().name.clone();
+    let hide_window = MenuItem::with_id(
+        app,
+        HIDE_WINDOW_ID,
+        "Fechar janela",
+        true,
+        Some("CmdOrCtrl+Q"),
+    )?;
+    let app_menu = Submenu::with_items(
+        app,
+        name,
+        true,
+        &[
+            &PredefinedMenuItem::about(app, None, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::services(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &hide_window,
+        ],
+    )?;
+    let edit = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+    let window = Submenu::with_items(
+        app,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+    Menu::with_items(app, &[&app_menu, &edit, &window])
 }

@@ -44,8 +44,9 @@ pub fn should_capture(state: &EngineState, block: &ActivityBlock, now: DateTime<
     }
 }
 
-/// Captures the block's window (or the display containing it), stores the file and the
-/// metadata row, and attaches it to the block. Blocking: call inside `spawn_blocking`.
+/// Captures the block's window (or, without a window id, the display containing `bounds`),
+/// stores the file and the metadata row, and attaches it to the block. Blocking: call inside
+/// `spawn_blocking`.
 pub fn capture_for_block(
     state: &Arc<EngineState>,
     block: &ActivityBlock,
@@ -75,25 +76,12 @@ pub fn capture_for_block(
         },
         _ => CaptureTarget::PrimaryDisplay,
     };
-    let image = match platform
+    // No display fallback when the window capture fails: a whole-display grab would include
+    // other apps' windows (password managers' panels, other users' content), which the
+    // "active window only" promise forbids. The caller just skips this capture.
+    let image = platform
         .capturer
-        .capture(target, settings.screenshot_max_edge)
-    {
-        Ok(img) => img,
-        Err(CoreError::Platform(msg)) if matches!(target, CaptureTarget::Window(_)) => {
-            tracing::debug!(%msg, "window capture failed; falling back to display");
-            let fallback = bounds
-                .map(|(x, y, w, h)| CaptureTarget::DisplayAt {
-                    x: x + (w as i32) / 2,
-                    y: y + (h as i32) / 2,
-                })
-                .unwrap_or(CaptureTarget::PrimaryDisplay);
-            platform
-                .capturer
-                .capture(fallback, settings.screenshot_max_edge)?
-        }
-        Err(e) => return Err(e),
-    };
+        .capture(target, settings.screenshot_max_edge)?;
 
     let dir = screenshots_dir(&state.deps.data_dir).join(now.format("%Y-%m-%d").to_string());
     std::fs::create_dir_all(&dir).map_err(|e| CoreError::Platform(format!("mkdir: {e}")))?;

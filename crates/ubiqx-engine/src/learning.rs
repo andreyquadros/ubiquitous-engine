@@ -104,7 +104,11 @@ pub fn reclassify(
             now + Duration::days(1),
         )),
     };
-    if let Some(range) = range {
+    // A browser block without a domain (URL not resolvable, e.g. Automation not granted yet)
+    // has no trustworthy key: spreading it would rewrite every block of the browser.
+    let browser_without_domain =
+        block.domain.is_none() && state.deps.platform.urls.supports(&block.app_id);
+    if let Some(range) = range.filter(|_| !browser_without_domain) {
         outcome.backfilled = repos.blocks.backfill_category(
             &block.app_id,
             block.domain.as_deref(),

@@ -57,14 +57,27 @@ impl ScreenCapturer for CgScreenCapturer {
         downscale_and_encode(img, max_edge)
     }
 
+    /// Owner names *and* bundle ids of every on-screen normal-layer window, so callers may
+    /// match a block list written either way (the default one uses bundle ids).
     fn visible_apps(&self) -> CoreResult<Vec<String>> {
-        let mut owners: Vec<String> = super::frontmost::list_windows()
+        use objc2_app_kit::NSRunningApplication;
+        let mut out: Vec<String> = Vec::new();
+        for w in super::frontmost::list_windows()
             .into_iter()
             .filter(|w| w.layer == 0)
-            .map(|w| w.owner)
-            .collect();
-        owners.sort();
-        owners.dedup();
-        Ok(owners)
+        {
+            if !w.owner.is_empty() {
+                out.push(w.owner.clone());
+            }
+            if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(w.pid)
+            {
+                if let Some(bid) = app.bundleIdentifier() {
+                    out.push(bid.to_string());
+                }
+            }
+        }
+        out.sort();
+        out.dedup();
+        Ok(out)
     }
 }

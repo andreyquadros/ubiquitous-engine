@@ -197,7 +197,7 @@ export function Timeline() {
                     </div>
                   )}
                 </div>
-                {!isPrivate && !isIdle && (
+                {!isPrivate && !isIdle && !b.is_open && (
                   <IconButton label="Dividir bloco" size="sm" onClick={() => setSplitting(b)} className="self-start">
                     <Scissors className="size-3.5" />
                   </IconButton>

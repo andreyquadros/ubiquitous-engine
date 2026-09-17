@@ -3,10 +3,13 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Datelike, Duration, TimeZone, Utc};
+use std::sync::atomic::Ordering;
+
+use chrono::{DateTime, Duration, Utc};
 use ubiqx_core::learning::{select_examples, MemoryClassifier};
 use ubiqx_core::ports::*;
 use ubiqx_core::rules::RuleClassifier;
+use ubiqx_core::scheduler::month_range;
 use ubiqx_core::*;
 
 use crate::screenshots;
@@ -84,23 +87,27 @@ pub fn classify_locally(
     None
 }
 
-fn month_range(now: DateTime<Utc>) -> TimeRange {
-    let start = Utc
-        .with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)
-        .single()
-        .unwrap_or(now);
-    TimeRange::new(start, now + Duration::seconds(1))
+/// Lifts a pause that this budget check itself imposed. A `Paused` caused by a rejected key
+/// is left alone: only a new key clears that one.
+fn clear_budget_pause(state: &EngineState) {
+    if state.budget_paused.swap(false, Ordering::SeqCst) {
+        state.set_ai_health(AiHealth::Ok);
+    }
 }
 
-/// Checks the monthly budget; updates health and returns whether remote calls may proceed.
+/// Checks the monthly (local calendar) budget; updates health and returns whether remote
+/// calls may proceed. It is the single owner of budget pauses, so it must run before the
+/// health gate: a month rollover or a raised budget resumes the AI on the next call.
 pub fn budget_allows(state: &EngineState) -> CoreResult<bool> {
     let settings = state.settings();
     if settings.ai_monthly_budget_usd <= 0.0 {
+        clear_budget_pause(state);
         return Ok(true);
     }
     let totals = state.deps.repos.usage.totals(month_range(state.now()))?;
     let ratio = totals.cost_usd / settings.ai_monthly_budget_usd;
     if ratio >= 1.0 {
+        state.budget_paused.store(true, Ordering::SeqCst);
         state.set_ai_health(AiHealth::Paused {
             reason: format!(
                 "Orçamento mensal de IA atingido (US$ {:.2} de US$ {:.2}).",
@@ -109,6 +116,7 @@ pub fn budget_allows(state: &EngineState) -> CoreResult<bool> {
         });
         return Ok(false);
     }
+    clear_budget_pause(state);
     if ratio >= 0.8 {
         let key = format!("budget_warned_{}", state.now().format("%Y-%m"));
         if state.deps.repos.kv.get(&key)?.is_none() {
@@ -128,6 +136,11 @@ pub fn budget_allows(state: &EngineState) -> CoreResult<bool> {
 }
 
 /// Maps a remote failure onto health state and per-block backoff.
+///
+/// Only failures caused by the batch itself (`Invalid`, `AiRefused`) are charged to the
+/// blocks. Everything else is infrastructure-level (offline, rate limit, rejected key or
+/// account) and is throttled by the health state alone, so a couple of hours offline never
+/// pushes blocks into the review queue.
 fn handle_remote_failure(state: &EngineState, blocks: &[ActivityBlock], err: &CoreError) {
     let now = state.now();
     match err {
@@ -150,12 +163,39 @@ fn handle_remote_failure(state: &EngineState, blocks: &[ActivityBlock], err: &Co
                 "A chave de API foi recusada. Verifique em Configurações → IA.",
             );
         }
+        CoreError::AiRejected(msg) => {
+            // Billing/model rejection: not transient and not the blocks' fault. Stays paused
+            // until the user saves a key again (`EngineHandle::set_api_key` resets health).
+            let already_paused = matches!(state.ai_health(), AiHealth::Paused { .. });
+            state.set_ai_health(AiHealth::Paused {
+                reason: format!("IA indisponível: {msg}"),
+            });
+            if !already_paused {
+                crate::nudges::emit_attention(
+                    state,
+                    "IA pausada",
+                    "O provedor recusou a conta ou o modelo. Verifique créditos e modelo em Configurações → IA.",
+                );
+            }
+        }
+        CoreError::AiRefused => {
+            // Per-content decision, not an outage: retrying the same payload only bills it
+            // again. The batch goes straight to review; AI health is untouched.
+            for b in blocks {
+                let _ = state
+                    .deps
+                    .repos
+                    .blocks
+                    .record_attempt(&b.id, MAX_ATTEMPTS, None, true);
+            }
+        }
         CoreError::Ai(msg) => state.set_ai_health(AiHealth::Degraded {
             reason: msg.clone(),
             until: now + Duration::minutes(15),
         }),
         CoreError::Invalid(_) => {
-            // Our request was rejected: do not hammer the API with the same batch.
+            // Our request was rejected: the batch itself is the problem, so back off per block
+            // and eventually send it to review.
             for b in blocks {
                 let attempts = b.classify_attempts + 1;
                 let review = attempts >= MAX_ATTEMPTS;
@@ -166,19 +206,8 @@ fn handle_remote_failure(state: &EngineState, blocks: &[ActivityBlock], err: &Co
                     review,
                 );
             }
-            return;
         }
         _ => {}
-    }
-    for b in blocks {
-        let attempts = b.classify_attempts + 1;
-        let review = attempts >= MAX_ATTEMPTS;
-        let _ = state.deps.repos.blocks.record_attempt(
-            &b.id,
-            attempts,
-            Some(now + backoff_for(attempts)),
-            review,
-        );
     }
 }
 
@@ -244,7 +273,8 @@ pub async fn run_once(state: &Arc<EngineState>, force: bool) -> CoreResult<Class
         report.skipped_remote = true;
         return Ok(report);
     };
-    if !due || !state.remote_allowed() || !budget_allows(state)? {
+    // The budget check runs before the health gate: it is what lifts a budget pause.
+    if !due || !budget_allows(state)? || !state.remote_allowed() {
         report.skipped_remote = true;
         return Ok(report);
     }
@@ -300,6 +330,11 @@ pub async fn run_once(state: &Arc<EngineState>, force: bool) -> CoreResult<Class
             Err(e) => {
                 tracing::warn!(error = %e, "remote classification failed");
                 handle_remote_failure(state, chunk, &e);
+                if matches!(e, CoreError::AiRefused) {
+                    // Only this batch is affected; the remaining chunks are still worth sending.
+                    report.needs_review += chunk.len();
+                    continue;
+                }
                 report.skipped_remote = true;
                 return Ok(report);
             }
@@ -369,6 +404,11 @@ pub async fn run_once(state: &Arc<EngineState>, force: bool) -> CoreResult<Class
                 Err(e) => {
                     tracing::warn!(error = %e, "vision classification failed");
                     handle_remote_failure(state, std::slice::from_ref(b), &e);
+                    if matches!(e, CoreError::AiRefused) {
+                        // Only this screenshot was refused; the other candidates still get theirs.
+                        report.needs_review += 1;
+                        continue;
+                    }
                     break;
                 }
             }

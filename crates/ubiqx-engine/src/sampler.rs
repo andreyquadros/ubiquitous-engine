@@ -28,7 +28,7 @@ fn run(state: Arc<EngineState>, tx: mpsc::Sender<ActivitySample>, cancel: Cancel
         let interval = state.settings.read().sample_interval_secs.clamp(1, 60);
         let tracking = {
             let s = state.settings.read();
-            s.tracking_enabled && !*state.paused.read()
+            s.tracking_enabled && s.onboarding_done && !*state.paused.read()
         };
         if tracking {
             match take_sample(&state, &mut last_title, &mut last_url) {

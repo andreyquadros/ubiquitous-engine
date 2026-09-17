@@ -29,6 +29,7 @@ pub struct Repos {
     pub settings: Arc<dyn SettingsRepo>,
     pub usage: Arc<dyn UsageRepo>,
     pub kv: Arc<dyn KvRepo>,
+    pub maintenance: Arc<dyn MaintenanceRepo>,
 }
 
 impl Repos {
@@ -45,6 +46,7 @@ impl Repos {
             + SettingsRepo
             + UsageRepo
             + KvRepo
+            + MaintenanceRepo
             + 'static,
     {
         Self {
@@ -57,7 +59,8 @@ impl Repos {
             nudges: store.clone(),
             settings: store.clone(),
             usage: store.clone(),
-            kv: store,
+            kv: store.clone(),
+            maintenance: store,
         }
     }
 }

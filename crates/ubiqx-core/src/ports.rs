@@ -121,7 +121,17 @@ pub mod secret_keys {
 
 pub trait BlockRepo: Send + Sync {
     fn insert(&self, block: &ActivityBlock) -> CoreResult<()>;
+    /// Full-row update. Only for callers holding a freshly read row: it overwrites every
+    /// column, including classification and screenshot link. The tracker uses [`touch`].
+    ///
+    /// [`touch`]: BlockRepo::touch
     fn update(&self, block: &ActivityBlock) -> CoreResult<()>;
+    /// Persists only the columns the segmenter owns (`ended_at`, `sample_count`, `title`,
+    /// `url`, `is_open`), so a concurrent user reclassification or screenshot link is never
+    /// reverted by the in-memory copy of the open block.
+    fn touch(&self, block: &ActivityBlock) -> CoreResult<()>;
+    /// Links a screenshot to a block without touching any other column.
+    fn set_screenshot(&self, id: &str, screenshot_id: &str) -> CoreResult<()>;
     fn get(&self, id: &str) -> CoreResult<Option<ActivityBlock>>;
     /// The block currently being extended by the sampler, if any.
     fn open_block(&self) -> CoreResult<Option<ActivityBlock>>;
@@ -226,7 +236,8 @@ pub trait NudgeRepo: Send + Sync {
     fn mark_seen(&self, id: &str) -> CoreResult<()>;
     fn mark_all_seen(&self) -> CoreResult<()>;
     fn last_of_kind(&self, kind: NudgeKind) -> CoreResult<Option<DateTime<Utc>>>;
-    /// Number of nudges emitted since `since` (for the daily cap).
+    /// Number of policy nudges emitted since `since` (for the daily cap). `ReportReady` and
+    /// `Attention` nudges are exempt from the cap and are not counted.
     fn count_since(&self, since: DateTime<Utc>) -> CoreResult<u64>;
 }
 
@@ -235,6 +246,14 @@ pub trait NudgeRepo: Send + Sync {
 pub trait KvRepo: Send + Sync {
     fn get(&self, key: &str) -> CoreResult<Option<String>>;
     fn set(&self, key: &str, value: &str) -> CoreResult<()>;
+}
+
+/// Bulk maintenance of the store ("Apagar todos os dados").
+pub trait MaintenanceRepo: Send + Sync {
+    /// Removes every activity-derived row in one transaction: blocks (open ones included),
+    /// screenshots, corrections, reports, nudges, AI usage, the key/value cache and learned
+    /// rules. Categories, user-authored rules and settings are kept.
+    fn wipe_user_data(&self) -> CoreResult<()>;
 }
 
 /// Outbound event channel from the engine to whichever shell hosts it.

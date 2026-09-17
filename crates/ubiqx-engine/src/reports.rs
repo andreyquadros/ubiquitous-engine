@@ -91,7 +91,9 @@ pub fn template_report(
     report
 }
 
-/// Generates (or regenerates) the report for one day and category.
+/// Generates (or regenerates) the report for one day and category. `force` regenerates even
+/// when the stored report is fresh or hand-edited: it is meant for an explicit user request;
+/// the scheduler (`run_due`) skips edited reports before calling this.
 pub async fn generate(
     state: &Arc<EngineState>,
     date: NaiveDate,
@@ -125,7 +127,7 @@ pub async fn generate(
 
     let mut report = None;
     if let Some(writer) = state.deps.ai.report_writer.clone() {
-        if !blocks.is_empty() && state.remote_allowed() && crate::classify::budget_allows(state)? {
+        if !blocks.is_empty() && crate::classify::budget_allows(state)? && state.remote_allowed() {
             let req = ReportRequest {
                 date,
                 category: category.clone(),
@@ -136,6 +138,19 @@ pub async fn generate(
                 user_profile: settings.user_profile.clone(),
                 model: settings.models.report.clone(),
             };
+            // Transparency: every block whose text is about to leave the machine gets the
+            // exact report line stamped as its payload, so the "Dados enviados à IA" view
+            // also lists blocks that were classified locally and never met the classifier.
+            for b in &req.blocks {
+                let line = writer.describe_payload(b, req.utc_offset_secs);
+                let payload = match b.ai_payload.as_deref() {
+                    Some(prev) if !prev.is_empty() => format!("{prev}\n[relatório] {line}"),
+                    _ => format!("[relatório] {line}"),
+                };
+                if let Err(e) = repos.blocks.set_ai_payload(&b.id, &payload, now) {
+                    tracing::debug!(error = %e, block = %b.id, "could not record report payload");
+                }
+            }
             match writer.write_daily(&req).await {
                 Ok(mut r) => {
                     state.set_ai_health(AiHealth::Ok);
@@ -179,6 +194,18 @@ pub async fn run_due(state: &Arc<EngineState>) -> CoreResult<usize> {
     let due = due_reports(&categories, &settings, last, now);
     let mut generated = 0;
     for d in due {
+        // Hand-edited reports are never overwritten by the scheduler. `force` stays on for
+        // the others so blocks closed after a manual generation are picked up.
+        if let Ok(Some(existing)) = repos.reports.get(d.date, &d.category_id) {
+            if existing.edited {
+                tracing::info!(
+                    category = %d.category_id,
+                    date = %d.date,
+                    "scheduled report skipped: edited by the user"
+                );
+                continue;
+            }
+        }
         match generate(state, d.date, &d.category_id, true).await {
             Ok(r) => {
                 generated += 1;

@@ -82,6 +82,13 @@ const UPDATE: &str = "UPDATE blocks SET started_at = :started_at, ended_at = :en
      ai_payload = :ai_payload, ai_sent_at = :ai_sent_at, is_manual = :is_manual, note = :note \
      WHERE id = :id";
 
+/// The columns `Segmenter::feed`/`close` mutate on an existing block; everything else
+/// (classification, screenshot link, retry state) is owned by other writers.
+const TOUCH: &str = "UPDATE blocks SET ended_at = :ended_at, sample_count = :sample_count, \
+     title = :title, url = :url, is_open = :is_open WHERE id = :id";
+
+const SET_SCREENSHOT: &str = "UPDATE blocks SET screenshot_id = :screenshot_id WHERE id = :id";
+
 const RECORD_ATTEMPT: &str = "UPDATE blocks SET classify_attempts = :attempts, \
      next_attempt_at = :next_attempt_at, needs_review = :needs_review WHERE id = :id";
 
@@ -104,7 +111,7 @@ const BACKFILL: &str = "UPDATE blocks SET category_id = :category_id, source = :
      confidence = :confidence, needs_review = 0, next_attempt_at = NULL \
      WHERE is_open = 0 AND started_at < :to AND ended_at > :from \
      AND lower(app_id) = lower(:app_id) \
-     AND (:domain IS NULL OR lower(domain) = lower(:domain)) \
+     AND ((:domain IS NULL AND domain IS NULL) OR lower(domain) = lower(:domain)) \
      AND (source IS NULL OR source != 'user') \
      AND (category_id IS NULL OR category_id != :category_id)";
 
@@ -260,6 +267,37 @@ impl BlockRepo for SqliteStore {
         })
     }
 
+    fn touch(&self, block: &ActivityBlock) -> CoreResult<()> {
+        self.with(|conn| {
+            execute_expecting_row(
+                conn,
+                TOUCH,
+                named_params! {
+                    ":id": block.id,
+                    ":ended_at": ms(block.ended_at),
+                    ":sample_count": block.sample_count,
+                    ":title": block.title,
+                    ":url": block.url,
+                    ":is_open": block.is_open,
+                },
+                "block",
+                &block.id,
+            )
+        })
+    }
+
+    fn set_screenshot(&self, id: &str, screenshot_id: &str) -> CoreResult<()> {
+        self.with(|conn| {
+            execute_expecting_row(
+                conn,
+                SET_SCREENSHOT,
+                named_params! { ":id": id, ":screenshot_id": screenshot_id },
+                "block",
+                id,
+            )
+        })
+    }
+
     fn get(&self, id: &str) -> CoreResult<Option<ActivityBlock>> {
         self.with(|conn| get_block(conn, id))
     }
@@ -353,14 +391,20 @@ impl BlockRepo for SqliteStore {
 
     /// The new block covers `[at, ended_at)` and inherits app, title, URL, domain,
     /// classification, description and manual flag/note; the original is trimmed to
-    /// `[started_at, at)`. Sample counts are apportioned by duration. If the original was still
-    /// open, the tail becomes the open block. Screenshot link, AI payload and retry state are
-    /// not copied.
+    /// `[started_at, at)`. Sample counts are apportioned by duration. Screenshot link, AI
+    /// payload and retry state are not copied. An open block is rejected with
+    /// [`CoreError::Invalid`](ubiqx_core::CoreError::Invalid): the segmenter owns it in memory
+    /// and would re-open the head on the next sample, leaving an orphaned open tail.
     fn split(&self, id: &str, at: DateTime<Utc>) -> CoreResult<Id> {
         self.with(|conn| {
             let tx = conn.transaction()?;
             let head =
                 get_block(&tx, id)?.ok_or_else(|| StorageError::NotFound(format!("block {id}")))?;
+            if head.is_open {
+                return Err(StorageError::Invalid(format!(
+                    "block {id} is still open and cannot be split"
+                )));
+            }
             if at <= head.started_at || at >= head.ended_at {
                 return Err(StorageError::Invalid(format!(
                     "split point {at} is not strictly inside block {id} [{}, {})",
@@ -375,6 +419,7 @@ impl BlockRepo for SqliteStore {
                 started_at: at,
                 screenshot_id: None,
                 sample_count: tail_samples,
+                is_open: false,
                 classify_attempts: 0,
                 next_attempt_at: None,
                 ai_payload: None,

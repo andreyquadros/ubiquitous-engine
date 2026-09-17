@@ -5612,6 +5612,7 @@ dependencies = [
  "ubiqx-app",
  "ubiqx-core",
  "ubiqx-engine",
+ "url",
 ]
 
 [[package]]

@@ -602,10 +602,14 @@ pub async fn export_data(state: State<'_, AppState>) -> IpcResult<String> {
 
 #[tauri::command]
 pub async fn open_external(url: String) -> IpcResult<()> {
-    if !(url.starts_with("https://") || url.starts_with("http://") || url.starts_with("file://")) {
-        return Err(CoreError::Invalid("url".into()).into());
+    // Only web links: `open_url` from Rust bypasses the opener plugin's scope, and a
+    // `file://` URL would run local files/apps from anything injected into the webview.
+    let parsed = url::Url::parse(url.trim()).map_err(|_| CoreError::Invalid("url".into()))?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return Err(CoreError::Invalid("url: apenas links http(s)".into()).into());
     }
-    tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| IpcError::from(e.to_string()))
+    tauri_plugin_opener::open_url(parsed.as_str(), None::<&str>)
+        .map_err(|e| IpcError::from(e.to_string()))
 }
 
 #[tauri::command]

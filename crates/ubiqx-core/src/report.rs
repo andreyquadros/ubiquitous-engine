@@ -206,9 +206,15 @@ pub fn render_monthly_md(
         month,
         year
     ));
+    // Reports exist for every scheduled day, including days without any block in the
+    // category: only the ones carrying activity count as active days.
+    let active_days = by_date
+        .values()
+        .filter(|r| !r.items.is_empty() || r.total_secs > 0)
+        .count();
     out.push_str(&format!(
         "**Dias com atividade:** {} · **Tempo total:** {}\n\n",
-        by_date.len(),
+        active_days,
         format_minutes(secs_to_minutes(total_secs))
     ));
 
@@ -397,6 +403,12 @@ mod tests {
                     Some("Finalizou o edital 12/2026"),
                 )],
             ),
+            // A scheduled report for a day without activity: not an active day.
+            {
+                let mut empty = report((2026, 9, 6), "c1", vec![]);
+                empty.total_secs = 0;
+                empty
+            },
             // Other month and other category: ignored.
             report(
                 (2026, 8, 30),

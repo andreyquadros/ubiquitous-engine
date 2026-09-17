@@ -22,10 +22,13 @@ use crate::prompts;
 
 /// Largest number of blocks in one request.
 pub const MAX_BATCH: usize = 25;
-/// Output budget per block (`max_tokens = TOKENS_PER_BLOCK * n + TOKENS_BASE`).
-pub const TOKENS_PER_BLOCK: u32 = 120;
+/// Output budget per block (`max_tokens = TOKENS_PER_BLOCK * n + TOKENS_BASE`). Block and
+/// category ids are UUIDs (≈ 20-25 tokens each), so one result with a pt-BR description is
+/// ≈ 100-150 tokens; the ceiling is generous because only generated tokens are billed and a
+/// truncated batch is re-sent whole.
+pub const TOKENS_PER_BLOCK: u32 = 220;
 /// Fixed part of the output budget.
-pub const TOKENS_BASE: u32 = 200;
+pub const TOKENS_BASE: u32 = 300;
 
 /// JSON schema of the answer (structured outputs: every object closed, all properties required).
 pub fn classification_schema() -> Value {
@@ -341,7 +344,7 @@ mod tests {
         let c = ctx(vec![category("cat-ifro", "IFRO")]);
         let req = LlmTextClassifier::build_request(&blocks(4), &c);
         assert_eq!(req.model, "claude-haiku-4-5");
-        assert_eq!(req.max_tokens, 120 * 4 + 200);
+        assert_eq!(req.max_tokens, max_tokens_for(4));
         assert!(!req.disable_thinking);
         assert!(!req.system[0].cache);
         assert_eq!(req.usage_kind, AiUsageKind::Classify);
@@ -374,11 +377,11 @@ mod tests {
         assert!(out[25].needs_vision);
         let reqs = client.requests();
         assert_eq!(reqs.len(), 3);
-        assert_eq!(reqs[0].max_tokens, 120 * 25 + 200);
-        assert_eq!(reqs[1].max_tokens, 120 * 2 + 200);
+        assert_eq!(reqs[0].max_tokens, max_tokens_for(25));
+        assert_eq!(reqs[1].max_tokens, max_tokens_for(2));
         assert_eq!(
             reqs[2].max_tokens,
-            (120 * 2 + 200) * 2,
+            max_tokens_for(2) * 2,
             "retry doubles the budget"
         );
         assert!(

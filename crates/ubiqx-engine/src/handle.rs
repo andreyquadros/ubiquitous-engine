@@ -30,6 +30,9 @@ pub enum PrivateModeDuration {
     Indefinite,
 }
 
+/// How long `shutdown` waits for the tracker task to persist the open block.
+pub const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
 #[derive(Clone)]
 pub struct EngineHandle {
     pub(crate) state: Arc<EngineState>,
@@ -61,7 +64,8 @@ impl EngineHandle {
         *self.state.paused.write() = true;
         let now = self.state.now();
         if let Some(block) = self.state.segmenter.lock().close(now) {
-            let _ = self.state.deps.repos.blocks.update(&block);
+            let _ = self.state.deps.repos.blocks.touch(&block);
+            self.state.last_capture.lock().remove(&block.id);
         }
         self.state.refresh_tracker_state();
     }
@@ -102,7 +106,8 @@ impl EngineHandle {
         }
         // Close the open block so the private span starts cleanly.
         if let Some(block) = self.state.segmenter.lock().close(now) {
-            self.state.deps.repos.blocks.update(&block)?;
+            self.state.deps.repos.blocks.touch(&block)?;
+            self.state.last_capture.lock().remove(&block.id);
         }
         self.state.apply_settings(s)
     }
@@ -194,7 +199,7 @@ impl EngineHandle {
         let Some(advisor) = state.deps.ai.advisor.clone() else {
             return Err(CoreError::AiNotConfigured);
         };
-        if !state.remote_allowed() {
+        if !crate::classify::budget_allows(&state)? || !state.remote_allowed() {
             return Err(CoreError::AiNotConfigured);
         }
         let settings = state.settings();
@@ -294,30 +299,59 @@ impl EngineHandle {
         self.state.deps.platform.permissions.request(kind)
     }
 
-    /// Deletes every block, report, nudge, screenshot and the stored key. Irreversible.
+    /// Deletes everything derived from activity: blocks (the open one included), screenshots
+    /// (rows and files), reports, corrections, learned rules, nudges, the AI usage ledger, the
+    /// key/value cache (advice, report scheduling) and the JSON exports folder. Categories,
+    /// user rules, settings and the API key are kept, as the confirmation dialog promises.
+    /// Irreversible.
     pub fn delete_all_data(&self) -> CoreResult<()> {
         let repos = &self.state.deps.repos;
-        let far_future = self.state.now() + Duration::days(3650);
         let now = self.state.now();
-        if let Some(block) = self.state.segmenter.lock().close(now) {
-            let _ = repos.blocks.update(&block);
-        }
-        for shot in repos.screenshots.delete_before(far_future)? {
+        // Drop the in-memory open block; its row is about to be deleted anyway.
+        let _ = self.state.segmenter.lock().close(now);
+        self.state.last_capture.lock().clear();
+        // Collect the file paths before the rows disappear.
+        let shots = repos
+            .screenshots
+            .delete_before(now + Duration::days(3650))?;
+        repos.maintenance.wipe_user_data()?;
+        for shot in shots {
             crate::screenshots::unlink(&shot);
         }
-        repos.blocks.delete_before(far_future)?;
-        for r in repos.reports.list_between(
-            NaiveDate::from_ymd_opt(2000, 1, 1).unwrap_or_default(),
-            NaiveDate::from_ymd_opt(2100, 1, 1).unwrap_or_default(),
-        )? {
-            repos.reports.delete(&r.id)?;
+        let _ = std::fs::remove_dir_all(crate::screenshots::screenshots_dir(
+            &self.state.deps.data_dir,
+        ));
+        let _ = std::fs::remove_dir_all(self.state.deps.data_dir.join("exports"));
+        // The usage ledger is empty now: lift a budget pause right away.
+        if self
+            .state
+            .budget_paused
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            let _ = crate::classify::budget_allows(&self.state);
         }
-        self.set_api_key(None)?;
         Ok(())
     }
 
+    /// Stops the loops and waits (at most [`SHUTDOWN_GRACE`]) for the tracker to persist the
+    /// open block, so a shell may exit the process right after this returns. If the tracker
+    /// does not answer in time, the block is closed and persisted from here.
     pub fn shutdown(&self) {
         self.cancel.cancel();
+        {
+            let mut stopped = self.state.tracker_stopped.lock();
+            if !*stopped {
+                self.state
+                    .tracker_stopped_cv
+                    .wait_for(&mut stopped, SHUTDOWN_GRACE);
+            }
+        }
+        let now = self.state.now();
+        if let Some(block) = self.state.segmenter.lock().close(now) {
+            if let Err(e) = self.state.deps.repos.blocks.touch(&block) {
+                tracing::warn!(error = %e, "could not persist block on shutdown");
+            }
+        }
     }
 
     pub fn is_running(&self) -> bool {

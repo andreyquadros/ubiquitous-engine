@@ -972,6 +972,26 @@ mod tests {
     }
 
     #[test]
+    fn examples_from_messaging_apps_are_redacted_by_bundle_id() {
+        // The macOS adapter reports localized names ("Mensagens" for Messages on pt-BR), so
+        // the redaction must key on the bundle id carried by the example, not on the name.
+        let cats = vec![category("cat-ifro", "IFRO")];
+        let examples = vec![ClassificationExample {
+            app_id: "com.apple.MobileSMS".into(),
+            app_name: "Mensagens".into(),
+            title: "maria souza".into(),
+            domain: None,
+            category_id: "cat-ifro".into(),
+        }];
+        let rendered = render_examples(&examples, &cats);
+        assert_eq!(
+            rendered,
+            "- app=Mensagens | title=Mensagens → category_id=cat-ifro"
+        );
+        assert!(!rendered.contains("maria"), "{rendered}");
+    }
+
+    #[test]
     fn helpers() {
         assert_eq!(language_or_default(""), "pt-BR");
         assert_eq!(language_or_default(" en "), "en");

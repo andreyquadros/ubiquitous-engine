@@ -6,6 +6,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
+use ubiqx_core::segmenter::SegmenterConfig;
 use ubiqx_core::*;
 
 use crate::deps::EngineDeps;
@@ -52,7 +53,7 @@ impl Engine {
         std::fs::create_dir_all(&deps.data_dir)
             .map_err(|e| CoreError::Platform(format!("data dir: {e}")))?;
         let settings = deps.repos.settings.load()?;
-        let open_block = deps.repos.blocks.open_block()?;
+        let open_block = restore_open_block(&deps, &settings)?;
         let state = EngineState::new(deps, settings, open_block);
         let cancel = CancellationToken::new();
         let (tx, rx) = mpsc::channel::<ActivitySample>(256);
@@ -85,6 +86,24 @@ impl Engine {
         tracing::info!("ubiqX engine started");
         Ok((EngineHandle { state, cancel }, tx))
     }
+}
+
+/// Loads the open block left by the previous run. A block whose end is older than the
+/// segmenter's gap tolerance (abrupt exit) or that cannot be extended because tracking is off
+/// is closed and persisted now, instead of showing on the dashboard as still running.
+fn restore_open_block(deps: &EngineDeps, settings: &Settings) -> CoreResult<Option<ActivityBlock>> {
+    let Some(mut block) = deps.repos.blocks.open_block()? else {
+        return Ok(None);
+    };
+    let now = deps.clock.now();
+    let max_gap = chrono::Duration::seconds(SegmenterConfig::from(settings).max_gap_secs as i64);
+    if settings.tracking_enabled && now - block.ended_at <= max_gap {
+        return Ok(Some(block));
+    }
+    block.is_open = false;
+    deps.repos.blocks.touch(&block)?;
+    tracing::info!(block = %block.id, "closed stale open block from a previous run");
+    Ok(None)
 }
 
 fn interval(period: Duration) -> tokio::time::Interval {

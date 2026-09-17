@@ -27,6 +27,9 @@ use crate::pricing;
 
 /// Production endpoint.
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
+/// Preferred (cheapest) model for the one-token billing probe in
+/// [`AnthropicClient::validate_key`], used when the account's models listing includes it.
+const KEY_PROBE_MODEL: &str = "claude-haiku-4-5";
 /// Value of the `anthropic-version` header.
 pub const API_VERSION: &str = "2023-06-01";
 /// Total per-request timeout for classification and advice calls.
@@ -387,21 +390,47 @@ struct ErrorBody {
     message: Option<String>,
 }
 
+/// `(type, message)` of an API error envelope, when the body is one.
+fn parse_error(body: &str) -> Option<(String, String)> {
+    let env = serde_json::from_str::<ErrorEnvelope>(body).ok()?;
+    let err = env.error?;
+    let kind = err.kind.unwrap_or_default();
+    let msg = err.message.unwrap_or_default();
+    (!kind.is_empty() || !msg.is_empty()).then_some((kind, msg))
+}
+
 /// Extracts a short, loggable message from an API error body.
 fn error_message(body: &str) -> String {
-    if let Ok(env) = serde_json::from_str::<ErrorEnvelope>(body) {
-        if let Some(err) = env.error {
-            let kind = err.kind.unwrap_or_default();
-            let msg = err.message.unwrap_or_default();
-            if !kind.is_empty() || !msg.is_empty() {
-                return format!("{kind}: {msg}")
-                    .trim_matches([':', ' '])
-                    .to_string();
-            }
-        }
+    if let Some((kind, msg)) = parse_error(body) {
+        return format!("{kind}: {msg}")
+            .trim_matches([':', ' '])
+            .to_string();
     }
     let trimmed: String = body.chars().take(200).collect();
     trimmed.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Provider-side rejections that are neither transient nor the request's fault: a billing
+/// problem (no credits) or a model the account cannot use. The user has to act, so the
+/// message is written for them (pt-BR), keeping the provider's own text.
+fn rejection(code: u16, body: &str) -> Option<CoreError> {
+    let (kind, msg) = parse_error(body)?;
+    let lower = msg.to_ascii_lowercase();
+    let billing = (code == 400
+        && kind == "invalid_request_error"
+        && (lower.contains("credit balance") || lower.contains("plans & billing")))
+        || (code == 402 && kind == "billing_error");
+    if billing {
+        return Some(CoreError::AiRejected(format!(
+            "cobrança: sua conta Anthropic não tem créditos disponíveis ({msg}). Adicione créditos em console.anthropic.com → Plans & Billing."
+        )));
+    }
+    if code == 404 && kind == "not_found_error" && lower.starts_with("model:") {
+        return Some(CoreError::AiRejected(format!(
+            "modelo não encontrado ou indisponível para a sua conta ({msg}). Verifique o modelo em Configurações → IA."
+        )));
+    }
+    None
 }
 
 /// Parses a `retry-after` header given in seconds (integer or decimal). HTTP dates are ignored.
@@ -412,6 +441,22 @@ fn parse_retry_after(value: Option<&reqwest::header::HeaderValue>) -> Option<u64
     }
     let secs: f64 = text.parse().ok()?;
     (secs.is_finite() && secs >= 0.0).then(|| secs.ceil() as u64)
+}
+
+/// Model id for the billing probe from a `GET /v1/models` body: [`KEY_PROBE_MODEL`] when listed,
+/// otherwise the first listed model; `None` when the listing is empty or unparseable.
+fn probe_model(models_body: &str) -> Option<String> {
+    let listing: Value = serde_json::from_str(models_body).ok()?;
+    let ids: Vec<&str> = listing
+        .get("data")?
+        .as_array()?
+        .iter()
+        .filter_map(|m| m.get("id").and_then(Value::as_str))
+        .collect();
+    ids.iter()
+        .find(|id| **id == KEY_PROBE_MODEL)
+        .or_else(|| ids.first())
+        .map(|id| id.to_string())
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -470,6 +515,9 @@ fn classify_response(
             "invalid api key (HTTP {code}): {}",
             error_message(&body)
         ))),
+        400 | 402 | 404 if rejection(code, &body).is_some() => {
+            Outcome::Fatal(rejection(code, &body).expect("checked above"))
+        }
         400 | 404 | 413 | 422 => Outcome::Fatal(CoreError::Invalid(format!(
             "HTTP {code}: {}",
             error_message(&body)
@@ -546,10 +594,12 @@ impl AnthropicClient {
     /// Sends one Messages API call, retrying transient failures, and records its usage.
     ///
     /// Returns [`CoreError::AiNotConfigured`] without any HTTP call when no key is available,
-    /// `CoreError::Ai("invalid api key …")` on 401/403, [`CoreError::Invalid`] on 4xx request
-    /// errors, [`CoreError::RateLimited`] when 429 persists and a transient [`CoreError::Ai`]
-    /// when 5xx/529/network errors persist. A `refusal` stop reason is an error too; a
-    /// `max_tokens` stop reason is returned to the caller as [`StopReason::MaxTokens`].
+    /// `CoreError::Ai("invalid api key …")` on 401/403, [`CoreError::AiRejected`] when the
+    /// provider reports a billing problem or an unusable model, [`CoreError::Invalid`] on other
+    /// 4xx request errors, [`CoreError::RateLimited`] when 429 persists and a transient
+    /// [`CoreError::Ai`] when 5xx/529/network errors persist. A `refusal` stop reason yields
+    /// [`CoreError::AiRefused`]; a `max_tokens` stop reason is returned to the caller as
+    /// [`StopReason::MaxTokens`].
     pub async fn complete(&self, req: &LlmRequest) -> CoreResult<LlmResponse> {
         validate_request(req)?;
         let key = self.key()?;
@@ -630,9 +680,9 @@ impl AnthropicClient {
         trace!(answer = %answer, "anthropic: response text");
 
         if stop_reason == StopReason::Refusal {
-            return Err(CoreError::Ai(
-                "model refused the request (stop_reason=refusal)".into(),
-            ));
+            // A per-content decision by the model, not an outage: the caller must not retry
+            // the same payload.
+            return Err(CoreError::AiRefused);
         }
         if stop_reason == StopReason::MaxTokens {
             warn!(model = %req.model, kind, max_tokens = req.max_tokens, "anthropic: output truncated");
@@ -653,22 +703,61 @@ impl AnthropicClient {
         })
     }
 
-    /// Checks the configured key with `GET /v1/models`. `Ok(())` means the key is accepted;
-    /// 401/403 yield `CoreError::Ai("invalid api key …")`; a missing key yields
-    /// [`CoreError::AiNotConfigured`] without any request.
+    /// Checks the configured key with `GET /v1/models`, then probes billing with a one-token
+    /// `POST /v1/messages` (the models listing succeeds for an account without credits, so a
+    /// key would otherwise look fine at setup and fail silently on every classification).
+    ///
+    /// `Ok(())` means the key is accepted and the account can be billed; 401/403 yield
+    /// `CoreError::Ai("invalid api key …")`; a billing rejection yields
+    /// [`CoreError::AiRejected`] with a message written for the user; a missing key yields
+    /// [`CoreError::AiNotConfigured`] without any request. Any other outcome of the probe
+    /// (the probe model not being available to the account, rate limits, outages) is not
+    /// held against the key.
     pub async fn validate_key(&self) -> CoreResult<()> {
         let key = self.key()?;
         let url = self.url("/v1/models");
         let timeout = self.config.timeout;
-        self.send_with_retry("models", || {
-            self.http
-                .get(&url)
-                .header("x-api-key", &key)
-                .header("anthropic-version", API_VERSION)
-                .timeout(timeout)
-        })
-        .await
-        .map(|_| ())
+        let listing = self
+            .send_with_retry("models", || {
+                self.http
+                    .get(&url)
+                    .header("x-api-key", &key)
+                    .header("anthropic-version", API_VERSION)
+                    .timeout(timeout)
+            })
+            .await?;
+
+        // Probe with a model the listing says this account can use, so a "model not found"
+        // answer cannot be mistaken for a bad key; the preferred one is the cheapest.
+        let Some(model) = probe_model(&listing) else {
+            debug!("anthropic: models listing is empty; skipping the billing probe");
+            return Ok(());
+        };
+        let url = self.url("/v1/messages");
+        let body = json!({
+            "model": model,
+            "max_tokens": 1,
+            "messages": [{"role": "user", "content": "ping"}],
+        });
+        match self
+            .send_with_retry("key probe", || {
+                self.http
+                    .post(&url)
+                    .header("x-api-key", &key)
+                    .header("anthropic-version", API_VERSION)
+                    .header("content-type", "application/json")
+                    .timeout(timeout)
+                    .json(&body)
+            })
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(err @ CoreError::AiRejected(_)) => Err(err),
+            Err(e) => {
+                debug!(error = %e, "anthropic: billing probe inconclusive; accepting the key");
+                Ok(())
+            }
+        }
     }
 
     async fn send_with_retry<F>(&self, what: &'static str, build: F) -> CoreResult<String>
@@ -903,6 +992,56 @@ mod tests {
             classify_response(StatusCode::PAYMENT_REQUIRED, None, "".into()),
             Outcome::Fatal(CoreError::Ai(_))
         ));
+    }
+
+    #[test]
+    fn billing_and_model_rejections_are_not_invalid_requests() {
+        use reqwest::StatusCode;
+        let credit = r#"{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}"#;
+        match classify_response(StatusCode::BAD_REQUEST, None, credit.into()) {
+            Outcome::Fatal(CoreError::AiRejected(msg)) => {
+                assert!(msg.starts_with("cobrança:"), "{msg}");
+                assert!(msg.contains("credit balance is too low"), "{msg}");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        let billing =
+            r#"{"type":"error","error":{"type":"billing_error","message":"Billing problem."}}"#;
+        assert!(matches!(
+            classify_response(StatusCode::PAYMENT_REQUIRED, None, billing.into()),
+            Outcome::Fatal(CoreError::AiRejected(m)) if m.starts_with("cobrança:")
+        ));
+        let model = r#"{"type":"error","error":{"type":"not_found_error","message":"model: claude-haiku-9"}}"#;
+        match classify_response(StatusCode::NOT_FOUND, None, model.into()) {
+            Outcome::Fatal(CoreError::AiRejected(msg)) => {
+                assert!(msg.starts_with("modelo não encontrado"), "{msg}");
+                assert!(msg.contains("claude-haiku-9"), "{msg}");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        // Other 400/404 bodies stay request errors.
+        let other400 = r#"{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: too large"}}"#;
+        assert!(matches!(
+            classify_response(StatusCode::BAD_REQUEST, None, other400.into()),
+            Outcome::Fatal(CoreError::Invalid(_))
+        ));
+        let other404 =
+            r#"{"type":"error","error":{"type":"not_found_error","message":"Not Found"}}"#;
+        assert!(matches!(
+            classify_response(StatusCode::NOT_FOUND, None, other404.into()),
+            Outcome::Fatal(CoreError::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn probe_model_prefers_cheapest_listed() {
+        let both =
+            r#"{"data":[{"id":"claude-sonnet-5"},{"id":"claude-haiku-4-5"}],"has_more":false}"#;
+        assert_eq!(probe_model(both).as_deref(), Some("claude-haiku-4-5"));
+        let one = r#"{"data":[{"id":"claude-sonnet-5"}],"has_more":false}"#;
+        assert_eq!(probe_model(one).as_deref(), Some("claude-sonnet-5"));
+        assert_eq!(probe_model(r#"{"data":[],"has_more":false}"#), None);
+        assert_eq!(probe_model("nope"), None);
     }
 
     #[test]

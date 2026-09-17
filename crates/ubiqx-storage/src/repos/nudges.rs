@@ -33,7 +33,8 @@ const MARK_ALL_SEEN: &str = "UPDATE nudges SET seen = 1 WHERE seen = 0";
 
 const LAST_OF_KIND: &str = "SELECT MAX(at) FROM nudges WHERE kind = ?1";
 
-const COUNT_SINCE: &str = "SELECT COUNT(*) FROM nudges WHERE at >= ?1";
+/// Only policy nudges count toward the daily cap; report and attention nudges bypass it.
+const COUNT_SINCE: &str = "SELECT COUNT(*) FROM nudges WHERE at >= ?1 AND kind NOT IN (?2, ?3)";
 
 fn row_to_nudge(row: &Row<'_>) -> StorageResult<Nudge> {
     let kind: String = row.get("kind")?;
@@ -87,6 +88,17 @@ impl NudgeRepo for SqliteStore {
     }
 
     fn count_since(&self, since: DateTime<Utc>) -> CoreResult<u64> {
-        self.with(|conn| query_one(conn, COUNT_SINCE, params![ms(since)], |row| count(row, 0)))
+        self.with(|conn| {
+            query_one(
+                conn,
+                COUNT_SINCE,
+                params![
+                    ms(since),
+                    NudgeKind::ReportReady.as_str(),
+                    NudgeKind::Attention.as_str()
+                ],
+                |row| count(row, 0),
+            )
+        })
     }
 }

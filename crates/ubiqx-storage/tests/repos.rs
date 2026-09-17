@@ -5,8 +5,8 @@ use std::collections::BTreeSet;
 
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use ubiqx_core::ports::{
-    AiUsage, AiUsageKind, BlockRepo, CategoryRepo, CorrectionRepo, KvRepo, NudgeRepo, ReportRepo,
-    RuleRepo, ScreenshotRepo, SettingsRepo, UsageRepo,
+    AiUsage, AiUsageKind, BlockRepo, CategoryRepo, CorrectionRepo, KvRepo, MaintenanceRepo,
+    NudgeRepo, ReportRepo, RuleRepo, ScreenshotRepo, SettingsRepo, UsageRepo,
 };
 use ubiqx_core::{
     system_categories, ActivityBlock, ActivityKind, Category, ClassificationSource, CoreError,
@@ -679,6 +679,11 @@ fn backfill_skips_user_blocks_and_matches_key_case_insensitively() {
                 domain: Some("github.com".into()),
                 ..block("other-domain", at(9, 30), at(9, 40))
             },
+            ActivityBlock {
+                url: None,
+                domain: None,
+                ..block("no-domain", at(9, 55), at(9, 58))
+            },
             same_domain("outside-range", at(12, 0), at(12, 10)),
             ActivityBlock {
                 is_open: true,
@@ -713,7 +718,14 @@ fn backfill_skips_user_blocks_and_matches_key_case_insensitively() {
             "{id} no longer pending"
         );
     }
-    for id in ["user", "other-domain", "outside-range", "open", "other-app"] {
+    for id in [
+        "user",
+        "other-domain",
+        "no-domain",
+        "outside-range",
+        "open",
+        "other-app",
+    ] {
         let b = blocks.get(id).expect("get").expect("some");
         assert_ne!(
             b.category_id.as_deref(),
@@ -724,7 +736,8 @@ fn backfill_skips_user_blocks_and_matches_key_case_insensitively() {
     let user = blocks.get("user").expect("get").expect("some");
     assert_eq!(user.category_id.as_deref(), Some("cat-b"));
 
-    // Without a domain the key is the app alone; already-assigned blocks are not counted.
+    // A `None` key matches only blocks without a domain: it is not a wildcard over every
+    // domain of the app, so a domain-less browser block never drags other sites along.
     let changed = blocks
         .backfill_category(
             "com.google.chrome",
@@ -735,10 +748,98 @@ fn backfill_skips_user_blocks_and_matches_key_case_insensitively() {
         )
         .expect("backfill");
     assert_eq!(changed, 1);
-    let b = blocks.get("other-domain").expect("get").expect("some");
+    let b = blocks.get("no-domain").expect("get").expect("some");
     assert_eq!(b.category_id.as_deref(), Some("cat-a"));
     assert_eq!(b.source, Some(ClassificationSource::Memory));
     assert!(b.confidence < 1.0);
+    let other = blocks.get("other-domain").expect("get").expect("some");
+    assert_eq!(other.category_id, None, "other domains are untouched");
+}
+
+#[test]
+fn touch_and_set_screenshot_leave_other_columns_alone() {
+    let s = store();
+    seed_categories(&s, &["cat-a"]);
+    insert_blocks(
+        &s,
+        &[ActivityBlock {
+            is_open: true,
+            ..block("b1", at(9, 0), at(9, 5))
+        }],
+    );
+    let blocks: &dyn BlockRepo = &s;
+
+    // Concurrent writers: a user reclassification and a screenshot link.
+    blocks
+        .set_classification("b1", Some("cat-a"), 1.0, ClassificationSource::User, None)
+        .expect("classify");
+    blocks.set_screenshot("b1", "shot-1").expect("screenshot");
+
+    // The segmenter's stale in-memory copy only carries the columns it owns.
+    let stale = ActivityBlock {
+        ended_at: at(9, 10),
+        sample_count: 24,
+        title: "Edital 12/2026 - SEI (v2)".into(),
+        is_open: false,
+        ..block("b1", at(9, 0), at(9, 5))
+    };
+    blocks.touch(&stale).expect("touch");
+
+    let b = blocks.get("b1").expect("get").expect("some");
+    assert_eq!(b.ended_at, at(9, 10));
+    assert_eq!(b.sample_count, 24);
+    assert_eq!(b.title, "Edital 12/2026 - SEI (v2)");
+    assert!(!b.is_open);
+    assert_eq!(
+        b.category_id.as_deref(),
+        Some("cat-a"),
+        "classification kept"
+    );
+    assert_eq!(b.source, Some(ClassificationSource::User));
+    assert_eq!(
+        b.screenshot_id.as_deref(),
+        Some("shot-1"),
+        "screenshot kept"
+    );
+
+    assert!(matches!(
+        blocks.touch(&block("ghost", at(9, 0), at(9, 5))),
+        Err(CoreError::NotFound(_))
+    ));
+    assert!(matches!(
+        blocks.set_screenshot("ghost", "shot-2"),
+        Err(CoreError::NotFound(_))
+    ));
+}
+
+#[test]
+fn split_rejects_open_blocks() {
+    let s = store();
+    insert_blocks(
+        &s,
+        &[
+            block("closed", at(8, 0), at(9, 0)),
+            ActivityBlock {
+                is_open: true,
+                ..block("open", at(9, 0), at(10, 0))
+            },
+        ],
+    );
+    let blocks: &dyn BlockRepo = &s;
+
+    assert!(matches!(
+        blocks.split("open", at(9, 30)),
+        Err(CoreError::Invalid(_))
+    ));
+    let open = blocks.open_block().expect("open").expect("some");
+    assert_eq!(open.id, "open");
+    assert_eq!((open.started_at, open.ended_at), (at(9, 0), at(10, 0)));
+    assert_eq!(
+        ids(&blocks
+            .list_in_range(range(at(0, 0), at(23, 59)))
+            .expect("list")),
+        ["closed"]
+    );
 }
 
 #[test]
@@ -1268,6 +1369,16 @@ fn nudges_lifecycle_and_rate_limit_queries() {
         nudges.mark_seen("nope"),
         Err(CoreError::NotFound(_))
     ));
+
+    // Report and attention nudges bypass the daily cap, so they are not counted.
+    nudges
+        .insert(&nudge("n4", at(10, 30), NudgeKind::ReportReady))
+        .expect("insert");
+    nudges
+        .insert(&nudge("n5", at(10, 45), NudgeKind::Attention))
+        .expect("insert");
+    assert_eq!(nudges.count_since(at(10, 0)).expect("count"), 2);
+    assert_eq!(nudges.list_recent(10).expect("list").len(), 5);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1394,4 +1505,122 @@ fn kv_get_set_and_overwrite() {
     );
     kv.set("empty", "").expect("empty value");
     assert_eq!(kv.get("empty").expect("get").as_deref(), Some(""));
+}
+
+// ---------------------------------------------------------------------------------------------
+// MaintenanceRepo
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn wipe_user_data_keeps_categories_settings_and_user_rules() {
+    let s = store();
+    seed_categories(&s, &["cat-a"]);
+    insert_blocks(
+        &s,
+        &[
+            classified(
+                "b1",
+                at(9, 0),
+                at(9, 30),
+                "cat-a",
+                ClassificationSource::Llm,
+            ),
+            ActivityBlock {
+                is_open: true,
+                ..block("orphan-open", at(9, 30), at(9, 40))
+            },
+        ],
+    );
+    ScreenshotRepo::insert(&s, &screenshot("s1", at(9, 10), Some("b1"))).expect("screenshot");
+    CorrectionRepo::insert(
+        &s,
+        &Correction {
+            id: "c1".into(),
+            block_id: "b1".into(),
+            from_category_id: None,
+            to_category_id: "cat-a".into(),
+            app_id: "com.google.Chrome".into(),
+            app_name: "Google Chrome".into(),
+            title_key: "edital 12/2026 - sei".into(),
+            domain: Some("sei.ifro.edu.br".into()),
+            note: Some("era do IFRO".into()),
+            at: at(9, 35),
+        },
+    )
+    .expect("correction");
+    ReportRepo::upsert(&s, &report("r1", "cat-a", day(), "Resumo")).expect("report");
+    NudgeRepo::insert(&s, &nudge("n1", at(10, 0), NudgeKind::Praise)).expect("nudge");
+    UsageRepo::record(
+        &s,
+        &AiUsage {
+            at: at(10, 0),
+            kind: AiUsageKind::Classify,
+            model: "m".into(),
+            input_tokens: 10,
+            output_tokens: 5,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            cost_usd: 0.01,
+        },
+    )
+    .expect("usage");
+    KvRepo::set(&s, "advice_2026-09-17", "{}").expect("kv");
+    RuleRepo::upsert(
+        &s,
+        &Rule {
+            origin: RuleOrigin::User,
+            ..rule("user-rule", "cat-a", 1)
+        },
+    )
+    .expect("rule");
+    RuleRepo::upsert(&s, &rule("learned-rule", "cat-a", 0)).expect("rule");
+    let settings = Settings {
+        user_profile: Some("Servidor do IFRO".into()),
+        ..Settings::default()
+    };
+    SettingsRepo::save(&s, &settings).expect("settings");
+
+    MaintenanceRepo::wipe_user_data(&s).expect("wipe");
+
+    let blocks: &dyn BlockRepo = &s;
+    assert_eq!(blocks.get("b1").expect("get"), None);
+    assert_eq!(
+        blocks.open_block().expect("open"),
+        None,
+        "orphan open row gone"
+    );
+    assert_eq!(ScreenshotRepo::get(&s, "s1").expect("get"), None);
+    assert_eq!(CorrectionRepo::count(&s).expect("count"), 0);
+    assert!(CorrectionRepo::list_recent(&s, 10)
+        .expect("list")
+        .is_empty());
+    assert!(ReportRepo::list_for_date(&s, day())
+        .expect("list")
+        .is_empty());
+    assert!(NudgeRepo::list_recent(&s, 10).expect("list").is_empty());
+    assert_eq!(
+        UsageRepo::totals(&s, range(at(0, 0), at(23, 59)))
+            .expect("totals")
+            .calls,
+        0
+    );
+    assert_eq!(KvRepo::get(&s, "advice_2026-09-17").expect("kv"), None);
+
+    let rules = RuleRepo::list(&s).expect("rules");
+    assert_eq!(
+        rules.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+        ["user-rule"]
+    );
+    assert!(CategoryRepo::get(&s, "cat-a").expect("get").is_some());
+    assert_eq!(
+        SettingsRepo::load(&s)
+            .expect("settings")
+            .user_profile
+            .as_deref(),
+        Some("Servidor do IFRO")
+    );
+
+    // The store keeps working after the VACUUM.
+    insert_blocks(&s, &[block("b2", at(11, 0), at(11, 30))]);
+    assert!(blocks.get("b2").expect("get").is_some());
 }

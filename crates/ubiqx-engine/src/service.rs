@@ -3,11 +3,11 @@
 
 use std::collections::HashMap;
 
-use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone, Utc};
+use chrono::{Duration, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use ubiqx_core::insights::compute_stats;
 use ubiqx_core::ports::*;
-use ubiqx_core::scheduler::day_range;
+use ubiqx_core::scheduler::{day_range, month_range};
 use ubiqx_core::*;
 
 use crate::state::EngineState;
@@ -128,14 +128,6 @@ pub fn dashboard(state: &EngineState, date: NaiveDate) -> CoreResult<DashboardDa
         needs_review,
         hourly_focus,
     })
-}
-
-fn month_range(now: chrono::DateTime<Utc>) -> TimeRange {
-    let start = Utc
-        .with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)
-        .single()
-        .unwrap_or(now);
-    TimeRange::new(start, now + Duration::seconds(1))
 }
 
 /// Gaps between blocks inside the range count as idle (the sampler drops idle samples).
@@ -300,6 +292,7 @@ pub fn ai_sent_blocks(state: &EngineState, date: NaiveDate) -> CoreResult<Vec<Ac
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     fn blk(s: i64, e: i64) -> ActivityBlock {
         let base = Utc.with_ymd_and_hms(2026, 9, 17, 12, 0, 0).unwrap();

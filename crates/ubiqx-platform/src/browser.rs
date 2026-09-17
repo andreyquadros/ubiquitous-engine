@@ -4,7 +4,7 @@
 //! does not, so it reports `supports() == false` and the tracker keeps the window title only.
 //! Everything except the actual `osascript` spawn is pure and unit-tested here.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -115,13 +115,22 @@ pub fn run_osascript(script: &str, timeout: Duration) -> CoreResult<(bool, Strin
 const DENIED_BACKOFF: Duration = Duration::from_secs(30 * 60);
 /// How long a resolved (app, title) pair is reused without re-querying.
 const CACHE_TTL: Duration = Duration::from_secs(20);
+/// Budget for the first `osascript` call per browser: it blocks inside the Apple-events send
+/// while the system shows the Automation consent alert, which the user needs time to read
+/// and answer. Killing it early tears the alert down before it can be answered and records
+/// neither a URL nor a denial.
+pub const FIRST_CONTACT_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// `BrowserUrlResolver` backed by `osascript`. Throttles calls per (app, title), remembers
-/// Automation denials and never blocks longer than `timeout`.
+/// Automation denials and never blocks longer than `timeout`, except for the first completed
+/// call per browser (see [`FIRST_CONTACT_TIMEOUT`]).
 pub struct OsascriptUrlResolver {
     timeout: Duration,
     cache: Mutex<HashMap<CacheKey, CacheEntry>>,
     denied: Mutex<HashMap<String, Instant>>,
+    /// Browsers for which at least one `osascript` run has *completed* (any exit status). A
+    /// timed-out first contact is not recorded, so the next call is again a long attempt.
+    contacted: Mutex<HashSet<String>>,
 }
 
 /// `(app_id, window_title)`.
@@ -141,7 +150,23 @@ impl OsascriptUrlResolver {
             timeout,
             cache: Mutex::new(HashMap::new()),
             denied: Mutex::new(HashMap::new()),
+            contacted: Mutex::new(HashSet::new()),
         }
+    }
+
+    /// Timeout of one `osascript` run for `app_id`: the long first-contact budget until a
+    /// run has completed for that browser, the configured short budget afterwards.
+    pub fn budget_for(&self, app_id: &str) -> Duration {
+        if self.contacted.lock().contains(app_id) {
+            self.timeout
+        } else {
+            FIRST_CONTACT_TIMEOUT
+        }
+    }
+
+    /// Records that an `osascript` run for `app_id` completed (with any exit status).
+    fn mark_contacted(&self, app_id: &str) {
+        self.contacted.lock().insert(app_id.to_string());
     }
 
     /// Browsers whose Automation permission was denied recently.
@@ -181,7 +206,10 @@ impl BrowserUrlResolver for OsascriptUrlResolver {
                 return Ok(url.clone());
             }
         }
-        let (ok, out, err) = run_osascript(&script, self.timeout)?;
+        // On `Err` (timeout) the browser stays uncontacted, so the next call is again a
+        // long first-contact attempt rather than a 1.5 s one that kills the consent alert.
+        let (ok, out, err) = run_osascript(&script, self.budget_for(&window.app_id))?;
+        self.mark_contacted(&window.app_id);
         if !ok {
             if is_automation_denied(&err) {
                 tracing::warn!(app = %window.app_id, "browser automation denied; backing off");
@@ -235,6 +263,17 @@ mod tests {
         );
         assert_eq!(parse_url_output("missing value"), None);
         assert_eq!(parse_url_output(""), None);
+    }
+
+    #[test]
+    fn first_contact_gets_the_long_budget_then_the_short_one() {
+        let short = Duration::from_millis(1500);
+        let r = OsascriptUrlResolver::new(short);
+        assert_eq!(r.budget_for("com.apple.Safari"), FIRST_CONTACT_TIMEOUT);
+        r.mark_contacted("com.apple.Safari");
+        assert_eq!(r.budget_for("com.apple.Safari"), short);
+        // Per browser: Chrome has not been contacted yet.
+        assert_eq!(r.budget_for("com.google.Chrome"), FIRST_CONTACT_TIMEOUT);
     }
 
     #[test]
