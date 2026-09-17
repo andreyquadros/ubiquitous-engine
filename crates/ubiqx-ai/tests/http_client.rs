@@ -615,3 +615,49 @@ async fn unparseable_success_body_is_an_ai_error() {
     );
     assert!(usage.records().is_empty());
 }
+
+#[tokio::test]
+async fn list_models_returns_sorted_ids() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .and(header("x-api-key", KEY))
+        .and(header("anthropic-version", "2023-06-01"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [
+                {"id": "claude-sonnet-5", "type": "model"},
+                {"id": "claude-haiku-4-5", "type": "model"},
+                {"id": "claude-opus-5", "type": "model"},
+                {"id": "claude-haiku-4-5", "type": "model"}
+            ],
+            "has_more": false
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let usage = Arc::new(MemoryUsageRepo::new());
+    let ids = client(&server, usage.clone()).list_models().await.unwrap();
+    assert_eq!(
+        ids,
+        vec!["claude-haiku-4-5", "claude-opus-5", "claude-sonnet-5"]
+    );
+    assert!(usage.records().is_empty());
+    let sent = server.received_requests().await.unwrap();
+    assert_eq!(sent[0].url.query(), Some("limit=1000"));
+
+    let server2 = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(
+            ResponseTemplate::new(401)
+                .set_body_json(error_body("authentication_error", "invalid x-api-key")),
+        )
+        .expect(1)
+        .mount(&server2)
+        .await;
+    let err = client(&server2, usage).list_models().await.unwrap_err();
+    assert!(
+        matches!(err, CoreError::Ai(ref m) if m.contains("invalid api key")),
+        "{err:?}"
+    );
+}

@@ -49,7 +49,8 @@ try {
     const page = await context.newPage();
     page.on('pageerror', (err) => console.error(`[${theme}] page error:`, err.message));
     for (const [name, route, testId] of PAGES) {
-      const query = `?theme=${theme}${name === 'onboarding' ? '&onboarding=1' : ''}`;
+      // the onboarding capture lands on step 2 (provider chooser); `?step=` is optional, step 1 is the default
+      const query = `?theme=${theme}${name === 'onboarding' ? '&onboarding=1&step=2' : ''}`;
       await page.goto(`${base}/${query}#${route}`, { waitUntil: 'networkidle' });
       await page.waitForSelector(`[data-testid="${testId}"]`, { timeout: 15000 });
       // let data, charts and the UBI probe settle

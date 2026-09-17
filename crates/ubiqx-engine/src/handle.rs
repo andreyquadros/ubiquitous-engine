@@ -118,30 +118,49 @@ impl EngineHandle {
         self.state.apply_settings(s)
     }
 
-    /// Stores the API key and re-arms the AI path.
-    pub fn set_api_key(&self, key: Option<&str>) -> CoreResult<()> {
+    /// Stores (or, with `None`/blank, deletes) the API key of `provider` under
+    /// [`AiProvider::secret_key`]. When `provider` is the one selected in settings the AI path
+    /// is re-armed (`Ok`) or disarmed (`NotConfigured`); keys of the other vendors are kept
+    /// for a later switch and never touch health.
+    pub fn set_api_key(&self, provider: AiProvider, key: Option<&str>) -> CoreResult<()> {
         let secrets = &self.state.deps.platform.secrets;
+        let selected = self.state.settings.read().ai_provider == provider;
         match key.map(str::trim).filter(|k| !k.is_empty()) {
             Some(k) => {
-                secrets.set(secret_keys::ANTHROPIC_API_KEY, k)?;
-                self.state.set_ai_health(AiHealth::Ok);
+                secrets.set(provider.secret_key(), k)?;
+                if selected {
+                    self.state.set_ai_health(AiHealth::Ok);
+                }
             }
             None => {
-                secrets.delete(secret_keys::ANTHROPIC_API_KEY)?;
-                self.state.set_ai_health(AiHealth::NotConfigured);
+                secrets.delete(provider.secret_key())?;
+                if selected {
+                    self.state.set_ai_health(AiHealth::NotConfigured);
+                }
             }
         }
         Ok(())
     }
 
-    pub fn api_key_hint(&self) -> CoreResult<Option<String>> {
+    /// The last four characters of `provider`'s stored key (`…abcd`), or `None` when it has
+    /// no key.
+    pub fn api_key_hint(&self, provider: AiProvider) -> CoreResult<Option<String>> {
         Ok(self
             .state
             .deps
             .platform
             .secrets
-            .get(secret_keys::ANTHROPIC_API_KEY)?
+            .get(provider.secret_key())?
+            .filter(|k| !k.trim().is_empty())
             .map(|k| format!("…{}", &k[k.len().saturating_sub(4)..])))
+    }
+
+    /// Key hint per provider, in [`AiProvider::ALL`] order.
+    pub fn api_key_status(&self) -> CoreResult<Vec<(AiProvider, Option<String>)>> {
+        AiProvider::ALL
+            .into_iter()
+            .map(|p| Ok((p, self.api_key_hint(p)?)))
+            .collect()
     }
 
     pub fn reclassify(

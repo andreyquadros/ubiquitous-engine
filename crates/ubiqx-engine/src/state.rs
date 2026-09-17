@@ -40,20 +40,7 @@ impl EngineState {
     ) -> Arc<Self> {
         let mut cfg = SegmenterConfig::from(&settings);
         cfg.private_mode = settings.is_private(deps.clock.now());
-        let health = if deps.ai.remote.is_none() && deps.ai.report_writer.is_none() {
-            AiHealth::NotConfigured
-        } else if settings.local_only || !deps.ai.requires_api_key {
-            AiHealth::Ok
-        } else {
-            match deps
-                .platform
-                .secrets
-                .get(ports::secret_keys::ANTHROPIC_API_KEY)
-            {
-                Ok(Some(k)) if !k.trim().is_empty() => AiHealth::Ok,
-                _ => AiHealth::NotConfigured,
-            }
-        };
+        let health = key_health(&deps, &settings);
         Arc::new(Self {
             deps,
             settings: RwLock::new(settings),
@@ -81,17 +68,20 @@ impl EngineState {
     ///
     /// Turning tracking off (or flipping private mode) closes the open block right away, so the
     /// dashboard never keeps extending a block while nothing is being sampled.
-    pub fn apply_settings(&self, settings: Settings) -> CoreResult<()> {
+    pub fn apply_settings(&self, mut settings: Settings) -> CoreResult<()> {
+        // Model ids of another vendor never survive a provider switch.
+        settings.reconcile_models();
         self.deps.repos.settings.save(&settings)?;
         let now = self.now();
         let mut cfg = SegmenterConfig::from(&settings);
         cfg.private_mode = settings.is_private(now);
-        let (closing, budget_changed) = {
+        let (closing, budget_changed, provider_changed) = {
             let cur = self.settings.read();
             (
                 (cur.tracking_enabled && !settings.tracking_enabled)
                     || cur.is_private(now) != cfg.private_mode,
                 cur.ai_monthly_budget_usd != settings.ai_monthly_budget_usd,
+                cur.ai_provider != settings.ai_provider,
             )
         };
         let closed = {
@@ -104,8 +94,14 @@ impl EngineState {
             self.deps.repos.blocks.touch(&block)?;
             self.last_capture.lock().remove(&block.id);
         }
+        // Another vendor answers from now on: its stored key decides whether the AI path is
+        // armed, exactly like at start-up (a pause caused by the old vendor's key is over).
+        let health = provider_changed.then(|| key_health(&self.deps, &settings));
         *self.settings.write() = settings;
         self.refresh_tracker_state();
+        if let Some(health) = health {
+            self.set_ai_health(health);
+        }
         // A raised (or removed) budget resumes the AI immediately instead of on the next pass;
         // health is otherwise left alone because this path also serves snooze/private toggles.
         if budget_changed && self.budget_paused.load(std::sync::atomic::Ordering::SeqCst) {
@@ -182,6 +178,23 @@ impl EngineState {
             AiHealth::Ok => true,
             AiHealth::Degraded { until, .. } => self.now() >= until,
             AiHealth::NotConfigured | AiHealth::Paused { .. } => false,
+        }
+    }
+}
+
+/// AI health derived from the deps and the key of the selected provider: `NotConfigured`
+/// without any remote component, `Ok` when no key is needed (local mode, fakes) and
+/// otherwise `Ok`/`NotConfigured` by the presence of `settings.ai_provider`'s key in the
+/// secret store.
+pub(crate) fn key_health(deps: &EngineDeps, settings: &Settings) -> AiHealth {
+    if deps.ai.remote.is_none() && deps.ai.report_writer.is_none() {
+        AiHealth::NotConfigured
+    } else if settings.local_only || !deps.ai.requires_api_key {
+        AiHealth::Ok
+    } else {
+        match deps.platform.secrets.get(settings.ai_provider.secret_key()) {
+            Ok(Some(k)) if !k.trim().is_empty() => AiHealth::Ok,
+            _ => AiHealth::NotConfigured,
         }
     }
 }

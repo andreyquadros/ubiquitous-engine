@@ -221,11 +221,11 @@ pub fn run() {
                 // for the CLI only): never spend real API calls on the demo scenario unless a
                 // developer opts in explicitly.
                 tracing::info!(
-                    "UBIQX_SCRIPTED: using the fake AI backend (set UBIQX_ALLOW_REAL_AI=1 to use Anthropic)"
+                    "UBIQX_SCRIPTED: using the fake AI backend (set UBIQX_ALLOW_REAL_AI=1 to use the real vendors)"
                 );
                 ubiqx_app::AiBackend::Fake
             } else {
-                ubiqx_app::AiBackend::Anthropic
+                ubiqx_app::AiBackend::Remote
             };
             let config = AppConfig {
                 data_dir: Some(data_dir),

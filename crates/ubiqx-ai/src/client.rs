@@ -16,7 +16,6 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use chrono::Utc;
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::{debug, info, trace, warn};
@@ -24,6 +23,8 @@ use ubiqx_core::ports::{AiUsage, AiUsageKind, UsageRepo};
 use ubiqx_core::{CoreError, CoreResult};
 
 use crate::pricing;
+pub use crate::retry::backoff_delay;
+use crate::retry::{self, Outcome, RetryPolicy, RetryableError};
 
 /// Production endpoint.
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
@@ -319,7 +320,9 @@ pub fn request_body(req: &LlmRequest) -> Value {
     body
 }
 
-fn validate_request(req: &LlmRequest) -> CoreResult<()> {
+/// Sanity checks shared by every vendor client: a model id, a positive token cap, at least one
+/// message, the last one from the user (no assistant prefill) and no empty message.
+pub(crate) fn validate_request(req: &LlmRequest) -> CoreResult<()> {
     if req.model.trim().is_empty() {
         return Err(CoreError::Invalid("model id is empty".into()));
     }
@@ -433,16 +436,6 @@ fn rejection(code: u16, body: &str) -> Option<CoreError> {
     None
 }
 
-/// Parses a `retry-after` header given in seconds (integer or decimal). HTTP dates are ignored.
-fn parse_retry_after(value: Option<&reqwest::header::HeaderValue>) -> Option<u64> {
-    let text = value?.to_str().ok()?.trim();
-    if let Ok(secs) = text.parse::<u64>() {
-        return Some(secs);
-    }
-    let secs: f64 = text.parse().ok()?;
-    (secs.is_finite() && secs >= 0.0).then(|| secs.ceil() as u64)
-}
-
 /// Model id for the billing probe from a `GET /v1/models` body: [`KEY_PROBE_MODEL`] when listed,
 /// otherwise the first listed model; `None` when the listing is empty or unparseable.
 fn probe_model(models_body: &str) -> Option<String> {
@@ -459,49 +452,30 @@ fn probe_model(models_body: &str) -> Option<String> {
         .map(|id| id.to_string())
 }
 
+/// Sorted, de-duplicated model ids of a `GET /v1/models` body (empty when unparseable).
+fn model_ids(models_body: &str) -> Vec<String> {
+    let Ok(listing) = serde_json::from_str::<Value>(models_body) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<String> = listing
+        .get("data")
+        .and_then(Value::as_array)
+        .map(|models| {
+            models
+                .iter()
+                .filter_map(|m| m.get("id").and_then(Value::as_str))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
 // ---------------------------------------------------------------------------------------------
-// Retry policy
+// Status mapping (the retry loop itself lives in `crate::retry`)
 // ---------------------------------------------------------------------------------------------
-
-/// Wait before retrying after the `attempt`-th failure (1-based): `base * 2^(attempt-1)`, capped
-/// at `cap`, then scaled by `0.75 + 0.5 * jitter` (`jitter` in `[0, 1)`) and capped again.
-pub fn backoff_delay(attempt: u32, base: Duration, cap: Duration, jitter: f64) -> Duration {
-    let exp = attempt.saturating_sub(1).min(16);
-    let raw = base.saturating_mul(1u32 << exp).min(cap);
-    let factor = 0.75 + 0.5 * jitter.clamp(0.0, 1.0);
-    raw.mul_f64(factor).min(cap)
-}
-
-/// What to do with an HTTP outcome.
-#[derive(Debug)]
-enum Outcome {
-    Ok(String),
-    Fatal(CoreError),
-    /// Retry after an optional server-mandated wait (from `retry-after`).
-    Retry {
-        error: RetryableError,
-        wait: Option<Duration>,
-    },
-}
-
-#[derive(Debug, thiserror::Error)]
-enum RetryableError {
-    #[error("rate limited")]
-    RateLimited { retry_after_secs: Option<u64> },
-    #[error("transient failure: {0}")]
-    Transient(String),
-}
-
-impl RetryableError {
-    fn into_core(self, fallback_wait: Duration) -> CoreError {
-        match self {
-            RetryableError::RateLimited { retry_after_secs } => CoreError::RateLimited {
-                retry_after_secs: retry_after_secs.unwrap_or(fallback_wait.as_secs().max(1)),
-            },
-            RetryableError::Transient(msg) => CoreError::Ai(msg),
-        }
-    }
-}
 
 fn classify_response(
     status: reqwest::StatusCode,
@@ -760,75 +734,47 @@ impl AnthropicClient {
         }
     }
 
+    /// Model ids the key can use, from the first page of `GET /v1/models` (requested with
+    /// `limit=1000`, which covers the whole catalogue today), sorted and de-duplicated.
+    /// Errors map exactly like [`AnthropicClient::validate_key`]'s listing step.
+    pub async fn list_models(&self) -> CoreResult<Vec<String>> {
+        let key = self.key()?;
+        let url = self.url("/v1/models?limit=1000");
+        let timeout = self.config.timeout;
+        let listing = self
+            .send_with_retry("models", || {
+                self.http
+                    .get(&url)
+                    .header("x-api-key", &key)
+                    .header("anthropic-version", API_VERSION)
+                    .timeout(timeout)
+            })
+            .await?;
+        let ids = model_ids(&listing);
+        debug!(count = ids.len(), "anthropic: listed models");
+        Ok(ids)
+    }
+
+    fn retry_policy(&self) -> RetryPolicy {
+        RetryPolicy {
+            max_attempts: self.config.max_attempts,
+            backoff_base: self.config.backoff_base,
+            backoff_cap: self.config.backoff_cap,
+        }
+    }
+
     async fn send_with_retry<F>(&self, what: &'static str, build: F) -> CoreResult<String>
     where
         F: Fn() -> reqwest::RequestBuilder,
     {
-        let max_attempts = self.config.max_attempts.max(1);
-        let mut attempt: u32 = 1;
-        loop {
-            let outcome = match build().send().await {
-                Ok(resp) => {
-                    let status = resp.status();
-                    let retry_after = parse_retry_after(resp.headers().get("retry-after"));
-                    let body = resp.text().await.unwrap_or_default();
-                    classify_response(status, retry_after, body)
-                }
-                Err(e) => {
-                    let msg = if e.is_timeout() {
-                        format!("request timed out: {e}")
-                    } else {
-                        format!("network error: {e}")
-                    };
-                    Outcome::Retry {
-                        error: RetryableError::Transient(msg),
-                        wait: None,
-                    }
-                }
-            };
-
-            match outcome {
-                Outcome::Ok(body) => return Ok(body),
-                Outcome::Fatal(err) => {
-                    warn!(what, attempt, error = %err, "anthropic: request failed");
-                    return Err(err);
-                }
-                Outcome::Retry { error, wait } => {
-                    let backoff = backoff_delay(
-                        attempt,
-                        self.config.backoff_base,
-                        self.config.backoff_cap,
-                        rand::thread_rng().gen::<f64>(),
-                    );
-                    let delay = match wait {
-                        Some(w) if w > self.config.backoff_cap => {
-                            warn!(
-                                what,
-                                attempt,
-                                wait_secs = w.as_secs(),
-                                "anthropic: retry-after exceeds cap, giving up"
-                            );
-                            return Err(error.into_core(w));
-                        }
-                        Some(w) => w,
-                        None => backoff,
-                    };
-                    if attempt >= max_attempts {
-                        warn!(what, attempt, error = %error, "anthropic: giving up after retries");
-                        return Err(error.into_core(delay));
-                    }
-                    warn!(
-                        what,
-                        attempt,
-                        delay_ms = delay.as_millis() as u64,
-                        error = %error,
-                        "anthropic: retrying"
-                    );
-                    tokio::time::sleep(delay).await;
-                    attempt += 1;
-                }
-            }
-        }
+        retry::send_with_retry(
+            self.retry_policy(),
+            "anthropic",
+            what,
+            build,
+            classify_response,
+        )
+        .await
     }
 }
 
@@ -913,30 +859,6 @@ mod tests {
         assert!(matches!(validate_request(&req), Err(CoreError::Invalid(_))));
         req.messages.clear();
         assert!(matches!(validate_request(&req), Err(CoreError::Invalid(_))));
-    }
-
-    #[test]
-    fn backoff_schedule() {
-        let base = Duration::from_secs(2);
-        let cap = Duration::from_secs(30);
-        // jitter 0.5 → factor 1.0
-        assert_eq!(backoff_delay(1, base, cap, 0.5), Duration::from_secs(2));
-        assert_eq!(backoff_delay(2, base, cap, 0.5), Duration::from_secs(4));
-        assert_eq!(backoff_delay(3, base, cap, 0.5), Duration::from_secs(8));
-        assert_eq!(backoff_delay(4, base, cap, 0.5), Duration::from_secs(16));
-        assert_eq!(backoff_delay(5, base, cap, 0.5), Duration::from_secs(30));
-        assert_eq!(backoff_delay(40, base, cap, 0.5), Duration::from_secs(30));
-        // Jitter stays within ±25 % and never exceeds the cap.
-        assert_eq!(
-            backoff_delay(1, base, cap, 0.0),
-            Duration::from_millis(1500)
-        );
-        assert_eq!(
-            backoff_delay(1, base, cap, 1.0),
-            Duration::from_millis(2500)
-        );
-        assert_eq!(backoff_delay(5, base, cap, 1.0), cap);
-        assert_eq!(backoff_delay(0, base, cap, 0.5), Duration::from_secs(2));
     }
 
     #[test]
@@ -1045,23 +967,11 @@ mod tests {
     }
 
     #[test]
-    fn retry_after_parsing() {
-        use reqwest::header::HeaderValue;
-        assert_eq!(parse_retry_after(None), None);
-        assert_eq!(
-            parse_retry_after(Some(&HeaderValue::from_static("12"))),
-            Some(12)
-        );
-        assert_eq!(
-            parse_retry_after(Some(&HeaderValue::from_static("1.2"))),
-            Some(2)
-        );
-        assert_eq!(
-            parse_retry_after(Some(&HeaderValue::from_static(
-                "Wed, 21 Oct 2015 07:28:00 GMT"
-            ))),
-            None
-        );
+    fn model_ids_are_sorted_and_deduplicated() {
+        let body = r#"{"data":[{"id":"claude-sonnet-5"},{"id":"claude-haiku-4-5"},{"id":"claude-sonnet-5"}],"has_more":false}"#;
+        assert_eq!(model_ids(body), vec!["claude-haiku-4-5", "claude-sonnet-5"]);
+        assert!(model_ids("nope").is_empty());
+        assert!(model_ids(r#"{"data":[]}"#).is_empty());
     }
 
     #[test]

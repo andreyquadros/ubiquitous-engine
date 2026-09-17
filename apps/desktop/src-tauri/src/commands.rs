@@ -443,11 +443,47 @@ pub async fn get_advice(state: State<'_, AppState>, force: Option<bool>) -> IpcR
 // Settings, tracking, permissions
 // ------------------------------------------------------------------------------------------
 
+/// One selectable AI vendor, with everything the UI needs to describe it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderInfo {
+    pub id: AiProvider,
+    pub label: String,
+    pub console_url: String,
+    pub key_prefix: String,
+    pub default_models: AiModels,
+}
+
+impl ProviderInfo {
+    fn of(id: AiProvider) -> Self {
+        Self {
+            id,
+            label: id.label().into(),
+            console_url: id.console_url().into(),
+            key_prefix: id.key_prefix().into(),
+            default_models: AiModels::for_provider(id),
+        }
+    }
+}
+
+/// Whether a vendor has a key in the secret store, and its last characters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKeyStatus {
+    pub provider: AiProvider,
+    pub configured: bool,
+    pub hint: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SettingsView {
     pub settings: Settings,
+    /// Whether the SELECTED provider (`settings.ai_provider`) has a key.
     pub api_key_configured: bool,
+    /// Hint of the SELECTED provider's key.
     pub api_key_hint: Option<String>,
+    /// Key status of every provider, in [`AiProvider::ALL`] order.
+    pub api_keys: Vec<ApiKeyStatus>,
+    /// Every selectable provider, in [`AiProvider::ALL`] order.
+    pub providers: Vec<ProviderInfo>,
     pub permissions: PermissionStatus,
     pub ai_health: AiHealth,
     pub tracker_state: TrackerState,
@@ -457,11 +493,26 @@ pub struct SettingsView {
 }
 
 fn settings_view(app: &AppHandle, e: &EngineHandle) -> CoreResult<SettingsView> {
-    let hint = e.api_key_hint()?;
+    let settings = e.settings();
+    let api_keys: Vec<ApiKeyStatus> = e
+        .api_key_status()?
+        .into_iter()
+        .map(|(provider, hint)| ApiKeyStatus {
+            provider,
+            configured: hint.is_some(),
+            hint,
+        })
+        .collect();
+    let selected = api_keys
+        .iter()
+        .find(|k| k.provider == settings.ai_provider)
+        .and_then(|k| k.hint.clone());
     Ok(SettingsView {
-        settings: e.settings(),
-        api_key_configured: hint.is_some(),
-        api_key_hint: hint,
+        settings,
+        api_key_configured: selected.is_some(),
+        api_key_hint: selected,
+        api_keys,
+        providers: AiProvider::ALL.into_iter().map(ProviderInfo::of).collect(),
         permissions: e.permissions(),
         ai_health: e.ai_health(),
         tracker_state: e.tracker_state(),
@@ -520,27 +571,32 @@ pub struct ApiKeyResult {
     pub message: String,
 }
 
+/// Validates and stores the API key of `provider` (or deletes it with `key: null`).
 #[tauri::command]
 pub async fn set_api_key(
     state: State<'_, AppState>,
+    provider: AiProvider,
     key: Option<String>,
 ) -> IpcResult<ApiKeyResult> {
     let e = engine(&state);
     let key = key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty());
     match key {
         None => {
-            blocking(e, |e| e.set_api_key(None)).await?;
+            blocking(e, move |e| e.set_api_key(provider, None)).await?;
             Ok(ApiKeyResult {
                 valid: true,
-                message: "Chave removida.".into(),
+                message: format!("Chave da {} removida.", provider.label()),
             })
         }
-        Some(k) => match state.app.validate_api_key(&k).await {
+        Some(k) => match state.app.validate_api_key(provider, &k).await {
             Ok(()) => {
-                blocking(e, move |e| e.set_api_key(Some(&k))).await?;
+                blocking(e, move |e| e.set_api_key(provider, Some(&k))).await?;
                 Ok(ApiKeyResult {
                     valid: true,
-                    message: "Chave válida e guardada no Keychain.".into(),
+                    message: format!(
+                        "Chave da {} válida e guardada no Keychain.",
+                        provider.label()
+                    ),
                 })
             }
             Err(CoreError::Ai(msg)) => Ok(ApiKeyResult {
@@ -559,6 +615,25 @@ pub async fn set_api_key(
             }),
         },
     }
+}
+
+/// Chat-capable model ids the stored key of `provider` can use (sorted).
+#[tauri::command]
+pub async fn list_models(
+    state: State<'_, AppState>,
+    provider: AiProvider,
+) -> IpcResult<Vec<String>> {
+    state.app.list_models(provider).await.map_err(|e| match e {
+        // Shown verbatim in the UI next to the "Listar modelos da conta" button.
+        CoreError::AiNotConfigured => IpcError {
+            code: "ai_not_configured".into(),
+            message: format!(
+                "Nenhuma chave salva para {}. Salve a chave primeiro.",
+                provider.label()
+            ),
+        },
+        other => IpcError::from(other),
+    })
 }
 
 #[tauri::command]
@@ -654,6 +729,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         get_settings,
         update_settings,
         set_api_key,
+        list_models,
         set_tracking,
         set_private_mode,
         request_permission,

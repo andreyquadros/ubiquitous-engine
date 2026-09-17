@@ -9,7 +9,11 @@
 //! ubiqx classify                             # force one classification pass
 //! ubiqx report 2026-09-17 --category <id>    # generate/print a daily report
 //! ubiqx categories                           # list categories
+//! ubiqx --provider openai classify           # switch the AI vendor, then run the command
 //! ```
+//!
+//! API keys come from the environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`
+//! or their `UBIQX_`-prefixed variants) through the platform secret store.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -20,7 +24,7 @@ use clap::{Parser, Subcommand};
 use ubiqx_app::ubiqx_platform::mock::Scenario;
 use ubiqx_app::{AiBackend, App, AppConfig};
 use ubiqx_core::ports::EventSink;
-use ubiqx_core::EngineEvent;
+use ubiqx_core::{AiProvider, EngineEvent};
 
 #[derive(Parser)]
 #[command(name = "ubiqx", version, about = "ubiqX headless engine")]
@@ -31,12 +35,17 @@ struct Cli {
     /// Use an in-memory database (nothing is persisted).
     #[arg(long, global = true)]
     ephemeral: bool,
-    /// Use deterministic fake AI instead of the Anthropic API.
+    /// Use deterministic fake AI instead of the vendor APIs.
     #[arg(long, global = true)]
     fake_ai: bool,
     /// Disable remote AI entirely (rules + memory only).
     #[arg(long, global = true)]
     no_ai: bool,
+    /// Provedor de IA que responde às chamadas remotas (anthropic, openai ou xai). Fica salvo
+    /// nas configurações; a chave vem do ambiente (ANTHROPIC_API_KEY, OPENAI_API_KEY,
+    /// XAI_API_KEY).
+    #[arg(long, global = true, value_parser = parse_provider, value_name = "PROVEDOR")]
+    provider: Option<AiProvider>,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -136,8 +145,43 @@ fn ai_backend(cli: &Cli) -> AiBackend {
     } else if cli.fake_ai {
         AiBackend::Fake
     } else {
-        AiBackend::Anthropic
+        AiBackend::Remote
     }
+}
+
+fn parse_provider(s: &str) -> Result<AiProvider, String> {
+    AiProvider::parse(s).ok_or_else(|| {
+        format!(
+            "provedor desconhecido \"{s}\"; use {}",
+            AiProvider::ALL
+                .iter()
+                .map(|p| p.id())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    })
+}
+
+/// Persists `--provider` (and the models it implies) before the subcommand runs, so this
+/// invocation and the next ones use that vendor.
+fn apply_provider(app: &App, provider: Option<AiProvider>) -> Result<()> {
+    let Some(provider) = provider else {
+        return Ok(());
+    };
+    let mut s = app.engine.settings();
+    if s.ai_provider != provider {
+        s.ai_provider = provider;
+        s.reconcile_models();
+        app.engine.update_settings(s).context("save provider")?;
+    }
+    Ok(())
+}
+
+/// Starts the engine and applies the global flags that change persisted settings.
+fn start(cli: &Cli, config: AppConfig, sink: Arc<dyn EventSink>) -> Result<App> {
+    let app = App::start(config, sink).context("start engine")?;
+    apply_provider(&app, cli.provider)?;
+    Ok(app)
 }
 
 #[tokio::main]
@@ -158,7 +202,7 @@ async fn main() -> Result<()> {
                 scripted_platform: Some(Scenario::demo_day_with(1)),
                 ..base
             };
-            let app = App::start(config, Arc::new(PrintSink(*events))).context("start engine")?;
+            let app = start(&cli, config, Arc::new(PrintSink(*events)))?;
             if ubiqx_app::demo::seed(app.engine.state().deps.repos.categories.as_ref())? {
                 println!(
                     "Categorias de demonstração criadas (IFRO, Incubadora, Cidades Inteligentes)."
@@ -181,7 +225,7 @@ async fn main() -> Result<()> {
             app.engine.shutdown();
         }
         Cmd::Track { events } => {
-            let app = App::start(base, Arc::new(PrintSink(*events))).context("start engine")?;
+            let app = start(&cli, base, Arc::new(PrintSink(*events)))?;
             // Nothing is recorded or sent before consent; invoking `track` is that consent.
             let mut s = app.engine.settings();
             if !s.onboarding_done {
@@ -197,7 +241,8 @@ async fn main() -> Result<()> {
             app.engine.shutdown();
         }
         Cmd::Status { date } => {
-            let app = App::start(
+            let app = start(
+                &cli,
                 AppConfig {
                     scripted_platform: Some(Scenario::new(vec![])),
                     ..base
@@ -209,7 +254,8 @@ async fn main() -> Result<()> {
             app.engine.shutdown();
         }
         Cmd::Classify => {
-            let app = App::start(
+            let app = start(
+                &cli,
                 AppConfig {
                     scripted_platform: Some(Scenario::new(vec![])),
                     ..base
@@ -222,7 +268,8 @@ async fn main() -> Result<()> {
             app.engine.shutdown();
         }
         Cmd::Report { date, category } => {
-            let app = App::start(
+            let app = start(
+                &cli,
                 AppConfig {
                     scripted_platform: Some(Scenario::new(vec![])),
                     ..base
@@ -242,7 +289,8 @@ async fn main() -> Result<()> {
             year,
             month,
         } => {
-            let app = App::start(
+            let app = start(
+                &cli,
                 AppConfig {
                     scripted_platform: Some(Scenario::new(vec![])),
                     ..base
@@ -257,7 +305,8 @@ async fn main() -> Result<()> {
             app.engine.shutdown();
         }
         Cmd::Categories => {
-            let app = App::start(
+            let app = start(
+                &cli,
                 AppConfig {
                     scripted_platform: Some(Scenario::new(vec![])),
                     ..base
@@ -277,7 +326,8 @@ async fn main() -> Result<()> {
             app.engine.shutdown();
         }
         Cmd::Export => {
-            let app = App::start(
+            let app = start(
+                &cli,
                 AppConfig {
                     scripted_platform: Some(Scenario::new(vec![])),
                     ..base

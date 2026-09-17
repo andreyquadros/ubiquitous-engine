@@ -34,8 +34,13 @@ function aiStatus(h: AiHealth): { label: string; color: string; detail?: string 
 export function UbiCard({ data, nudge }: { data: DashboardData; nudge: Nudge | null }) {
   const speech = useAppStore((s) => s.ubiSpeech);
   const aiHealth = useAppStore((s) => s.aiHealth);
+  const providerLabel = useAppStore((s) => {
+    const v = s.settingsView;
+    return v ? (v.providers.find((p) => p.id === v.settings.ai_provider)?.label ?? null) : null;
+  });
   const mood = data.stats.mood;
   const status = aiStatus(aiHealth);
+  const detail = status.detail ?? (aiHealth.state === 'ok' && providerLabel ? providerLabel : undefined);
   const NudgeIcon = nudge ? NUDGE_ICON[nudge.kind] : Bell;
   const usagePct = data.budget_usd > 0 ? data.usage_month.cost_usd / data.budget_usd : 0;
 
@@ -70,7 +75,7 @@ export function UbiCard({ data, nudge }: { data: DashboardData; nudge: Nudge | n
           <BrainCircuit className="size-4 text-ink-3" />
           <span className="size-2 rounded-full" style={{ background: status.color }} />
           <span className="font-medium">{status.label}</span>
-          {status.detail && <span className="truncate text-ink-3">· {status.detail}</span>}
+          {detail && <span className="truncate text-ink-3">· {detail}</span>}
         </div>
         <div>
           <div className="mb-1 flex justify-between text-ink-2">

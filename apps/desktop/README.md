@@ -6,7 +6,7 @@ Frontend do ubiqX: rastreador de produtividade para macOS com IA nativa e o masc
 
 | Comando | O que faz |
 |---------|-----------|
-| `pnpm dev` | Vite em `http://localhost:1420` com dados **mock** (fora do Tauri). Use `?onboarding=1` para ver o onboarding e `?theme=dark` para forçar o tema. |
+| `pnpm dev` | Vite em `http://localhost:1420` com dados **mock** (fora do Tauri). Use `?onboarding=1` para ver o onboarding (`&step=N` abre o passo N) e `?theme=dark` para forçar o tema. |
 | `pnpm tauri dev` | App nativo (macOS) com o backend Rust. |
 | `pnpm typecheck` | `tsc --noEmit`. |
 | `pnpm test -- --run` | Testes (Vitest + Testing Library, jsdom). |

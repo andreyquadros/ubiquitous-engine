@@ -1,11 +1,11 @@
 import clsx from 'clsx';
-import { AlertTriangle, Bell, BrainCircuit, Camera, Check, Download, ExternalLink, Info, KeyRound, Loader2, RefreshCw, Shield, ShieldCheck, Trash2, type LucideIcon } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Bell, BrainCircuit, Camera, Check, Download, ExternalLink, Info, KeyRound, ListRestart, Loader2, RefreshCw, Shield, ShieldCheck, Trash2, type LucideIcon } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Badge, StatusPill } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
 import { Dialog } from '../components/ui/Dialog';
-import { Field, Input, Select, Textarea } from '../components/ui/Field';
+import { Field, Input, Textarea } from '../components/ui/Field';
 import { EmptyState } from '../components/ui/misc';
 import { PageHeader } from '../components/ui/PageHeader';
 import { TagInput } from '../components/ui/TagInput';
@@ -14,10 +14,10 @@ import { fmtDateTime, fmtTime, hhmmToInput, inputToHhmm } from '../lib/format';
 import { ipc } from '../lib/ipc';
 import { useAppStore } from '../lib/store';
 import { useToast } from '../lib/toast';
-import type { PermissionKind, PermissionState, Settings, SettingsView, VisionPolicy } from '../lib/types';
+import { PROVIDER_PITCH, keyStatus, providerInfo, reconcileModels, sameModels } from '../lib/providers';
+import type { AiModels, AiProvider, PermissionKind, PermissionState, Settings, SettingsView, VisionPolicy } from '../lib/types';
 import { useAsync } from '../lib/useAsync';
 
-export const MODEL_OPTIONS = ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5'];
 export const REPO_URL = 'https://github.com/andreyquadros/ubiquitous-engine';
 
 const SECTIONS: { id: string; label: string; Icon: LucideIcon }[] = [
@@ -160,24 +160,33 @@ function NumberField({ label, hint, value, onChange, min, max, step, suffix }: {
   );
 }
 
-export function ApiKeyForm({ view, onSaved, compact }: { view: SettingsView; onSaved?: () => void; compact?: boolean }) {
+export function ApiKeyForm({ view, provider, onSaved, compact }: { view: SettingsView; provider: AiProvider; onSaved?: () => void; compact?: boolean }) {
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ valid: boolean; message: string } | null>(null);
   const loadSettings = useAppStore((s) => s.loadSettings);
   const toast = useToast();
+  const info = providerInfo(view, provider);
+  const status = keyStatus(view, provider);
+  const label = info?.label ?? provider;
+
+  // a different provider = a different key: forget the draft and the last result
+  useEffect(() => {
+    setKey('');
+    setResult(null);
+  }, [provider]);
 
   const submit = async (value: string | null) => {
     setBusy(true);
     setResult(null);
     try {
-      const r = await ipc.setApiKey(value);
+      const r = await ipc.setApiKey(provider, value);
       setResult(r);
       if (r.valid) {
         setKey('');
         await loadSettings();
         onSaved?.();
-        toast.success(value ? 'Chave salva no Keychain' : 'Chave removida');
+        toast.success(value ? `Chave da ${label} salva no Keychain` : `Chave da ${label} removida`);
       }
     } catch (e) {
       setResult({ valid: false, message: e instanceof Error ? e.message : String(e) });
@@ -186,21 +195,37 @@ export function ApiKeyForm({ view, onSaved, compact }: { view: SettingsView; onS
     }
   };
 
+  const openConsole = () => {
+    if (info) ipc.openExternal(info.console_url).catch((e: unknown) => toast.error('Não foi possível abrir', e instanceof Error ? e.message : String(e)));
+  };
+
   return (
-    <div className="flex flex-col gap-3">
-      {view.api_key_configured && (
+    <div className="flex flex-col gap-3" data-testid={`api-key-form-${provider}`}>
+      {status.configured && (
         <div className="flex items-center gap-2 text-sm">
           <KeyRound className="size-4 text-emerald-500" />
-          Chave configurada <span className="font-mono text-ink-2">{view.api_key_hint ?? '…'}</span>
+          Chave configurada <span className="font-mono text-ink-2">{status.hint ?? '…'}</span>
           <Button size="sm" variant="ghost" onClick={() => void submit(null)} loading={busy}>
             Remover
           </Button>
         </div>
       )}
-      <Field label={view.api_key_configured ? 'Trocar chave de API' : 'Chave de API da Anthropic'} hint={compact ? undefined : 'Armazenada apenas no Keychain do macOS. Nunca é gravada em arquivo.'}>
+      <Field
+        label={status.configured ? `Trocar chave de API da ${label}` : `Chave de API da ${label}`}
+        hint={
+          <span className="inline-flex flex-wrap items-center gap-x-1">
+            {!compact && <span>Armazenada apenas no Keychain do macOS. Nunca é gravada em arquivo.</span>}
+            {info && (
+              <button type="button" onClick={openConsole} className="inline-flex items-center gap-1 text-brand-600 underline underline-offset-2 hover:text-brand-700 dark:text-brand-400">
+                Criar chave <ExternalLink className="size-3" />
+              </button>
+            )}
+          </span>
+        }
+      >
         {(id) => (
           <div className="flex gap-2">
-            <Input id={id} type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-api03-…" className="font-mono" />
+            <Input id={id} type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={`${info?.key_prefix ?? ''}…`} className="font-mono" />
             <Button variant="primary" className="shrink-0 whitespace-nowrap" onClick={() => void submit(key.trim())} disabled={!key.trim()} loading={busy}>
               Validar e salvar
             </Button>
@@ -217,6 +242,116 @@ export function ApiKeyForm({ view, onSaved, compact }: { view: SettingsView; onS
   );
 }
 
+/** Segmented control over the providers the backend knows; shows a key icon on the ones with a stored key. */
+export function ProviderPicker({ view, value, onChange, size = 'md' }: { view: SettingsView; value: AiProvider; onChange: (p: AiProvider) => void; size?: 'md' | 'lg' }) {
+  return (
+    <div role="radiogroup" aria-label="Provedor de IA" className="inline-flex flex-wrap items-center gap-0.5 rounded-xl bg-surface-2 p-1">
+      {view.providers.map((p) => {
+        const configured = keyStatus(view, p.id).configured;
+        const active = value === p.id;
+        return (
+          <button
+            key={p.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(p.id)}
+            className={clsx('inline-flex items-center gap-1.5 rounded-lg px-3 font-medium transition-colors', size === 'lg' ? 'h-9 text-sm' : 'h-8 text-sm', active ? 'bg-surface text-ink shadow-sm' : 'text-ink-2 hover:text-ink')}
+          >
+            {p.label}
+            {configured && <KeyRound className="size-3.5 text-emerald-500" aria-label="chave configurada" />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Settings patch for switching to `provider`: keeps custom model ids of the same vendor,
+ * otherwise adopts the provider's defaults (same rule as `Settings::reconcile_models`).
+ */
+export function providerSwitchPatch(view: SettingsView, draft: Settings, provider: AiProvider): Partial<Settings> {
+  const next = providerInfo(view, provider);
+  const current = providerInfo(view, draft.ai_provider);
+  if (!next) return { ai_provider: provider };
+  const customised = current ? !sameModels(draft.models, current.default_models) : true;
+  return { ai_provider: provider, models: customised ? reconcileModels(draft.models, next) : { ...next.default_models } };
+}
+
+const MODEL_SLOTS: { key: keyof AiModels; label: string; hint: string }[] = [
+  { key: 'classify', label: 'Modelo de classificação', hint: 'Chamado a cada lote de blocos; escolha o mais barato.' },
+  { key: 'vision', label: 'Modelo de visão', hint: 'Precisa aceitar imagens.' },
+  { key: 'report', label: 'Modelo de relatórios', hint: 'Escreve os relatórios e as recomendações.' },
+];
+
+/** The three model fields as free text with a datalist of the account's models. */
+function ModelFields({ draft, patch, view }: SectionProps & { view: SettingsView }) {
+  const provider = draft.ai_provider;
+  const info = providerInfo(view, provider);
+  const hasKey = keyStatus(view, provider).configured;
+  const listId = useId();
+  const [models, setModels] = useState<{ provider: AiProvider; ids: string[] } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const listModels = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const ids = await ipc.listModels(provider);
+      setModels({ provider, ids });
+    } catch (e) {
+      setModels(null);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const options = models?.provider === provider ? models.ids : [];
+  const isDefault = info ? sameModels(draft.models, info.default_models) : true;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[13px] font-medium">Modelos</span>
+        <span className="text-xs text-ink-3">{info?.label ?? provider}</span>
+        <div className="ml-auto flex items-center gap-2">
+          <Button size="sm" icon={<RefreshCw className="size-3.5" />} onClick={() => void listModels()} loading={loading} disabled={!hasKey} title={hasKey ? undefined : 'Salve a chave deste provedor para listar os modelos'}>
+            Listar modelos da conta
+          </Button>
+          <Button size="sm" variant="ghost" icon={<ListRestart className="size-3.5" />} disabled={!info || isDefault} onClick={() => info && patch({ models: { ...info.default_models } })}>
+            Padrões do provedor
+          </Button>
+        </div>
+      </div>
+      {error && (
+        <p className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400" role="status">
+          <AlertTriangle className="size-3.5" /> Não foi possível listar os modelos: {error}
+        </p>
+      )}
+      {models?.provider === provider && !error && (
+        <p className="text-xs text-ink-3" role="status">
+          {models.ids.length} modelos disponíveis na conta — digite ou escolha nos campos abaixo.
+        </p>
+      )}
+      <datalist id={listId}>
+        {options.map((m) => (
+          <option key={m} value={m} />
+        ))}
+      </datalist>
+      <div className="grid grid-cols-3 gap-4">
+        {MODEL_SLOTS.map((slot) => (
+          <Field key={slot.key} label={slot.label} hint={slot.hint}>
+            {(id) => <Input id={id} list={listId} value={draft.models[slot.key]} spellCheck={false} autoComplete="off" placeholder={info?.default_models[slot.key]} onChange={(e) => patch({ models: { ...draft.models, [slot.key]: e.target.value } })} className="font-mono text-xs" />}
+          </Field>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AiSection({ draft, patch, view }: SectionProps & { view: SettingsView }) {
   const health = view.ai_health;
   const pill =
@@ -229,26 +364,16 @@ function AiSection({ draft, patch, view }: SectionProps & { view: SettingsView }
           : { color: '#ef4444', text: `Instável — ${health.reason} (até ${fmtTime(health.until)})` };
 
   return (
-    <Section id="ia" title="IA" description="Classificação, análise visual e relatórios usam a API da Anthropic com a sua chave.">
-      <div className="flex items-center justify-between">
+    <Section id="ia" title="IA" description="Classificação, análise visual e relatórios usam a API do provedor escolhido com a sua chave. Você pode trocar de provedor a qualquer momento; cada um guarda a própria chave.">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <StatusPill color={pill.color}>{pill.text}</StatusPill>
+        <span className="text-xs text-ink-3">{PROVIDER_PITCH[draft.ai_provider].cost} estimados com 8 h/dia</span>
       </div>
-      <ApiKeyForm view={view} />
-      <div className="grid grid-cols-3 gap-4">
-        {(['classify', 'vision', 'report'] as const).map((k) => (
-          <Field key={k} label={k === 'classify' ? 'Modelo de classificação' : k === 'vision' ? 'Modelo de visão' : 'Modelo de relatórios'}>
-            {(id) => (
-              <Select id={id} value={draft.models[k]} onChange={(e) => patch({ models: { ...draft.models, [k]: e.target.value } })}>
-                {MODEL_OPTIONS.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
-        ))}
-      </div>
+      <Field label="Provedor de IA" hint="O ícone de chave indica os provedores que já têm chave salva.">
+        {() => <ProviderPicker view={view} value={draft.ai_provider} onChange={(p) => patch(providerSwitchPatch(view, draft, p))} />}
+      </Field>
+      <ApiKeyForm view={view} provider={draft.ai_provider} />
+      <ModelFields draft={draft} patch={patch} view={view} />
       <div className="grid grid-cols-2 gap-4">
         <NumberField label="Orçamento mensal" hint="Ao atingir, a IA pausa até o próximo mês (a classificação local continua)." value={draft.ai_monthly_budget_usd} min={0} step={0.5} onChange={(v) => patch({ ai_monthly_budget_usd: v })} suffix="US$/mês" />
         <NumberField label="Máximo de imagens por hora" hint="Limita quantos screenshots vão para o modelo de visão." value={draft.max_vision_per_hour} min={0} max={60} onChange={(v) => patch({ max_vision_per_hour: v })} suffix="imagens/h" />
@@ -333,7 +458,7 @@ function PrivacySection({ draft, patch }: SectionProps) {
           <Shield className="size-4 text-brand-600" /> O que sai da sua máquina
         </p>
         <p>
-          Para a API da Anthropic vão apenas: <strong>nome do app, título da janela, domínio</strong> (nunca a URL completa nem o conteúdo da página) e, quando a
+          Para a IA escolhida (Anthropic, OpenAI ou xAI) vão apenas: <strong>nome do app, título da janela, domínio</strong> (nunca a URL completa nem o conteúdo da página) e, quando a
           política visual permite, um <strong>screenshot reduzido da janela ativa</strong> em blocos ambíguos. Apps e domínios bloqueados nunca são registrados.
           Nada mais — sem telemetria, sem sincronização.
         </p>

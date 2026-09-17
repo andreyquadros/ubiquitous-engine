@@ -1,6 +1,7 @@
 //! End-to-end test of the engine with the in-memory SQLite store, the scripted platform and
 //! fake AI: samples flow in, blocks are closed, classified, corrected and reported.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -40,6 +41,27 @@ fn category(id: &str, name: &str, productive: bool) -> Category {
         archived: false,
         sort_order: 0,
         created_at: Utc::now(),
+    }
+}
+
+/// In-memory secret store that never falls back to environment variables, so the tests keep
+/// their outcome on a developer machine with real vendor keys exported.
+#[derive(Default)]
+struct MemorySecrets(Mutex<HashMap<String, String>>);
+
+impl SecretStore for MemorySecrets {
+    fn get(&self, key: &str) -> CoreResult<Option<String>> {
+        Ok(self.0.lock().get(key).cloned())
+    }
+
+    fn set(&self, key: &str, value: &str) -> CoreResult<()> {
+        self.0.lock().insert(key.into(), value.into());
+        Ok(())
+    }
+
+    fn delete(&self, key: &str) -> CoreResult<()> {
+        self.0.lock().remove(key);
+        Ok(())
     }
 }
 
@@ -104,6 +126,8 @@ struct HarnessOptions {
     /// Runs against the store before the engine starts (e.g. leave an open block behind).
     seed: fn(&SqliteStore),
     onboarding_done: bool,
+    /// Keys stored before the engine starts, per provider.
+    keys: Vec<(AiProvider, &'static str)>,
 }
 
 impl Default for HarnessOptions {
@@ -112,6 +136,7 @@ impl Default for HarnessOptions {
             ai: fake_ai(),
             seed: |_| {},
             onboarding_done: true,
+            keys: vec![],
         }
     }
 }
@@ -128,6 +153,10 @@ async fn harness_with(opts: HarnessOptions) -> Harness {
     (opts.seed)(store.as_ref());
     let (platform, scripted) =
         PlatformServices::scripted(Scenario::new(vec![Step::app("A", "a", "t", 1)]));
+    let secrets: Arc<dyn SecretStore> = Arc::new(MemorySecrets::default());
+    for (provider, key) in &opts.keys {
+        secrets.set(provider.secret_key(), key).unwrap();
+    }
     let sink = Arc::new(CollectSink(Mutex::new(vec![])));
     let clock = FixedClock::new(fixed_now());
     let deps = EngineDeps {
@@ -137,7 +166,7 @@ async fn harness_with(opts: HarnessOptions) -> Harness {
             idle: platform.idle.clone(),
             capturer: platform.capturer.clone(),
             permissions: platform.permissions.clone(),
-            secrets: platform.secrets.clone(),
+            secrets,
             notifier: platform.notifier.clone(),
         },
         repos: Repos::from_store(store.clone()),
@@ -621,7 +650,9 @@ async fn rejected_account_pauses_ai_until_a_new_key_is_saved() {
     assert_eq!(nudges_of(&h, NudgeKind::Attention), 1);
 
     // Saving a key re-arms the AI path.
-    h.handle.set_api_key(Some("sk-ant-new")).unwrap();
+    h.handle
+        .set_api_key(AiProvider::Anthropic, Some("sk-ant-new"))
+        .unwrap();
     assert_eq!(h.handle.ai_health(), AiHealth::Ok);
     h.handle.shutdown();
 }
@@ -877,7 +908,9 @@ async fn day_scope_does_not_spread_a_domainless_browser_block() {
 async fn delete_all_data_wipes_derived_data_but_keeps_settings_and_key() {
     let h = harness().await;
     let today = h.clock.now().with_timezone(&Local).date_naive();
-    h.handle.set_api_key(Some("sk-ant-keep")).unwrap();
+    h.handle
+        .set_api_key(AiProvider::Anthropic, Some("sk-ant-keep"))
+        .unwrap();
     let mut s = h.handle.settings();
     s.user_profile = Some("Servidor do IFRO".into());
     h.handle.update_settings(s).unwrap();
@@ -913,7 +946,10 @@ async fn delete_all_data_wipes_derived_data_but_keeps_settings_and_key() {
     assert!(!export.exists(), "exports folder removed");
     assert!(!h.tmp.path().join("exports").exists());
     assert_eq!(
-        h.handle.api_key_hint().unwrap().as_deref(),
+        h.handle
+            .api_key_hint(AiProvider::Anthropic)
+            .unwrap()
+            .as_deref(),
         Some("…keep"),
         "the key is kept, as the dialog promises"
     );
@@ -1022,5 +1058,136 @@ async fn stale_open_block_from_an_abrupt_exit_is_closed_at_start() {
     let today = fixed_now().with_timezone(&Local).date_naive();
     let d = dashboard(h.handle.state(), today).unwrap();
     assert!(d.open_block.is_none());
+    h.handle.shutdown();
+}
+
+/// Fake AI that still requires a key, so health follows the secret store like in production.
+fn keyed_fake_ai() -> AiPorts {
+    AiPorts {
+        requires_api_key: true,
+        ..fake_ai()
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn switching_provider_flips_health_by_stored_keys() {
+    let h = harness_with(HarnessOptions {
+        ai: keyed_fake_ai(),
+        keys: vec![(AiProvider::OpenAi, "sk-openai-1234")],
+        ..Default::default()
+    })
+    .await;
+    // Anthropic is selected and has no key.
+    assert_eq!(h.handle.ai_health(), AiHealth::NotConfigured);
+
+    let mut s = h.handle.settings();
+    s.ai_provider = AiProvider::OpenAi;
+    h.handle.update_settings(s).unwrap();
+    assert_eq!(h.handle.ai_health(), AiHealth::Ok, "OpenAI has a key");
+    assert!(h
+        .sink
+        .0
+        .lock()
+        .iter()
+        .any(|e| matches!(e, EngineEvent::AiHealth { health } if *health == AiHealth::Ok)));
+
+    let mut s = h.handle.settings();
+    s.ai_provider = AiProvider::Xai;
+    h.handle.update_settings(s).unwrap();
+    assert_eq!(
+        h.handle.ai_health(),
+        AiHealth::NotConfigured,
+        "xAI has no key"
+    );
+
+    // A pause caused by the previous vendor ends with the switch.
+    let mut s = h.handle.settings();
+    s.ai_provider = AiProvider::OpenAi;
+    h.handle.update_settings(s).unwrap();
+    h.handle.state().set_ai_health(AiHealth::Paused {
+        reason: "IA indisponível: créditos esgotados".into(),
+    });
+    let mut s = h.handle.settings();
+    s.ai_provider = AiProvider::Anthropic;
+    h.handle.update_settings(s).unwrap();
+    assert_eq!(h.handle.ai_health(), AiHealth::NotConfigured);
+
+    // Saving other settings does not recompute health.
+    h.handle.state().set_ai_health(AiHealth::Ok);
+    let mut s = h.handle.settings();
+    s.user_profile = Some("x".into());
+    h.handle.update_settings(s).unwrap();
+    assert_eq!(h.handle.ai_health(), AiHealth::Ok);
+    h.handle.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn key_of_a_non_selected_provider_never_changes_health() {
+    let h = harness_with(HarnessOptions {
+        ai: keyed_fake_ai(),
+        ..Default::default()
+    })
+    .await;
+    assert_eq!(h.handle.ai_health(), AiHealth::NotConfigured);
+
+    h.handle
+        .set_api_key(AiProvider::Xai, Some("xai-abcd1234"))
+        .unwrap();
+    assert_eq!(h.handle.ai_health(), AiHealth::NotConfigured);
+    assert_eq!(
+        h.handle.api_key_hint(AiProvider::Xai).unwrap().as_deref(),
+        Some("…1234")
+    );
+    assert_eq!(h.handle.api_key_hint(AiProvider::Anthropic).unwrap(), None);
+    assert_eq!(
+        h.handle.api_key_status().unwrap(),
+        vec![
+            (AiProvider::Anthropic, None),
+            (AiProvider::OpenAi, None),
+            (AiProvider::Xai, Some("…1234".into())),
+        ]
+    );
+
+    // The selected provider's key arms and disarms the AI path.
+    h.handle
+        .set_api_key(AiProvider::Anthropic, Some("sk-ant-9999"))
+        .unwrap();
+    assert_eq!(h.handle.ai_health(), AiHealth::Ok);
+    h.handle.set_api_key(AiProvider::Xai, None).unwrap();
+    assert_eq!(h.handle.ai_health(), AiHealth::Ok, "xAI is not selected");
+    assert_eq!(h.handle.api_key_hint(AiProvider::Xai).unwrap(), None);
+    h.handle
+        .set_api_key(AiProvider::Anthropic, Some("  "))
+        .unwrap();
+    assert_eq!(h.handle.ai_health(), AiHealth::NotConfigured);
+    h.handle.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn models_are_reconciled_when_the_provider_changes() {
+    let h = harness().await;
+    let mut s = h.handle.settings();
+    assert_eq!(s.models, AiModels::for_provider(AiProvider::Anthropic));
+    s.ai_provider = AiProvider::Xai;
+    s.models.report = "my-custom-model".into();
+    h.handle.update_settings(s).unwrap();
+
+    let s = h.handle.settings();
+    let xai = AiModels::for_provider(AiProvider::Xai);
+    assert_eq!(s.models.classify, xai.classify, "claude-* id replaced");
+    assert_eq!(s.models.vision, xai.vision);
+    assert_eq!(s.models.report, "my-custom-model", "unknown ids are kept");
+    // The reconciled models are what got persisted too.
+    assert_eq!(
+        SettingsRepo::load(h.store.as_ref()).unwrap().models,
+        s.models
+    );
+
+    let mut s = h.handle.settings();
+    s.ai_provider = AiProvider::OpenAi;
+    h.handle.update_settings(s).unwrap();
+    let s = h.handle.settings();
+    assert_eq!(s.models.classify, "gpt-5-mini");
+    assert_eq!(s.models.report, "my-custom-model");
     h.handle.shutdown();
 }

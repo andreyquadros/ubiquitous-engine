@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { ArrowLeft, ArrowRight, Check, Eye, KeyRound, Lock, Rocket, Shield, ShieldCheck, Tags, Timer } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BrainCircuit, Check, Eye, Info, KeyRound, Lock, Rocket, Shield, ShieldCheck, Tags, Timer } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Ubi } from '../components/ubi/Ubi';
@@ -11,18 +11,29 @@ import { hhmmToInput, inputToHhmm } from '../lib/format';
 import { ipc } from '../lib/ipc';
 import { useAppStore } from '../lib/store';
 import { Toaster, useToast } from '../lib/toast';
-import type { Category, Mood, Settings, SettingsView, VisionPolicy } from '../lib/types';
-import { ApiKeyForm, PermissionRows } from './Settings';
+import { PROVIDER_PITCH, keyStatus, providerInfo } from '../lib/providers';
+import type { AiProvider, Category, Mood, Settings, SettingsView, VisionPolicy } from '../lib/types';
+import { ApiKeyForm, PermissionRows, providerSwitchPatch } from './Settings';
 
 const STEPS = [
   { id: 'intro', title: 'Como funciona', Icon: Shield },
-  { id: 'key', title: 'Chave de API', Icon: KeyRound },
+  { id: 'ai', title: 'Escolha sua IA', Icon: BrainCircuit },
   { id: 'perms', title: 'Permissões', Icon: ShieldCheck },
   { id: 'cats', title: 'Categorias', Icon: Tags },
   { id: 'times', title: 'Horários', Icon: Timer },
   { id: 'vision', title: 'Análise visual', Icon: Eye },
   { id: 'finish', title: 'Concluir', Icon: Rocket },
 ] as const;
+
+/** `?step=N` (1-based) opens the wizard on that step — used by the screenshot script; defaults to step 1. */
+function stepFromQuery(): number {
+  try {
+    const n = Number(new URLSearchParams(window.location.search).get('step'));
+    return Number.isInteger(n) && n >= 1 && n <= STEPS.length ? n - 1 : 0;
+  } catch {
+    return 0;
+  }
+}
 
 interface CatDraft {
   id: string;
@@ -46,7 +57,7 @@ export function Onboarding() {
   const loadCategories = useAppStore((s) => s.loadCategories);
   const navigate = useNavigate();
   const toast = useToast();
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(stepFromQuery);
   const [draft, setDraft] = useState<Settings | null>(settingsView?.settings ?? null);
   const [cats, setCats] = useState<CatDraft[]>([]);
   const [busy, setBusy] = useState(false);
@@ -64,6 +75,19 @@ export function Onboarding() {
   }, []);
 
   const patch = (p: Partial<Settings>) => setDraft((d) => (d ? { ...d, ...p } : d));
+
+  /** Picking a provider card persists it right away so the key form and the backend health follow. */
+  const selectProvider = async (provider: AiProvider) => {
+    if (!draft || !settingsView || provider === draft.ai_provider) return;
+    const p = providerSwitchPatch(settingsView, draft, provider);
+    patch(p);
+    try {
+      const v = await saveSettings(p);
+      if (v) patch({ ai_provider: v.settings.ai_provider, models: v.settings.models });
+    } catch (e) {
+      toast.error('Não foi possível trocar o provedor', e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const mood: Mood = useMemo(() => (step === 0 ? 'calm' : step === STEPS.length - 1 ? 'excited' : 'focused'), [step]);
 
@@ -175,12 +199,12 @@ export function Onboarding() {
               Passo {step + 1} de {STEPS.length}
             </p>
             {current.id === 'intro' && <IntroStep />}
-            {current.id === 'key' && <KeyStep view={settingsView} />}
+            {current.id === 'ai' && <AiStep view={settingsView} draft={draft} onSelect={(p) => void selectProvider(p)} />}
             {current.id === 'perms' && <PermsStep view={settingsView} />}
             {current.id === 'cats' && <CatsStep cats={cats} setCats={setCats} />}
             {current.id === 'times' && <TimesStep draft={draft} patch={patch} />}
             {current.id === 'vision' && <VisionStep draft={draft} patch={patch} />}
-            {current.id === 'finish' && <FinishStep draft={draft} patch={patch} />}
+            {current.id === 'finish' && <FinishStep draft={draft} patch={patch} view={settingsView} />}
           </div>
         </div>
         <div className="flex items-center justify-between border-t border-line bg-surface/70 px-10 py-4">
@@ -188,7 +212,7 @@ export function Onboarding() {
             Voltar
           </Button>
           <div className="flex items-center gap-2">
-            {current.id === 'key' && (
+            {current.id === 'ai' && (
               <Button variant="ghost" onClick={() => setStep((s) => s + 1)}>
                 Pular por enquanto
               </Button>
@@ -223,7 +247,7 @@ function IntroStep() {
   const items: { Icon: typeof Shield; title: string; text: string }[] = [
     { Icon: Timer, title: 'O que é registrado', text: 'A cada poucos segundos: nome do app, título da janela e, em navegadores, o domínio da aba ativa. Isso vira blocos de atividade (ex.: “45 min no SEI”).' },
     { Icon: Eye, title: 'Screenshots', text: 'Esparsos, só da janela ativa, reduzidos a 1024 px e apagados em 48 h. Servem para a IA entender blocos ambíguos (WhatsApp, Finder…). Você controla a política no passo 6.' },
-    { Icon: Shield, title: 'O que vai para a Anthropic', text: 'Apenas app + título + domínio dos blocos a classificar e, quando permitido, um screenshot reduzido. Nunca a URL completa, o conteúdo da página ou o que você digita.' },
+    { Icon: Shield, title: 'O que vai para a IA escolhida (Anthropic, OpenAI ou xAI)', text: 'Apenas app + título + domínio dos blocos a classificar e, quando permitido, um screenshot reduzido. Nunca a URL completa, o conteúdo da página ou o que você digita.' },
     { Icon: Lock, title: 'Nada mais sai do seu Mac', text: 'Banco SQLite local, chave no Keychain, sem contas, sem telemetria. Apps bloqueados (bancos, 1Password) nunca são registrados e o Modo privado pausa tudo com um clique.' },
   ];
   return (
@@ -246,15 +270,61 @@ function IntroStep() {
   );
 }
 
-function KeyStep({ view }: { view: SettingsView }) {
+function AiStep({ view, draft, onSelect }: { view: SettingsView; draft: Settings; onSelect: (p: AiProvider) => void }) {
+  const selected = draft.ai_provider;
+  const info = providerInfo(view, selected);
   return (
     <>
-      <StepTitle title="Chave de API da Anthropic">
-        A classificação usa o <span className="font-mono">claude-haiku-4-5</span> (centavos por dia) e os relatórios o <span className="font-mono">claude-sonnet-5</span>. Estimativa: US$ 3–6 por mês com 8 h/dia. Sem chave, o ubiqX funciona só com regras e memória.
+      <StepTitle title="Escolha sua IA">
+        Quem vai ler os blocos ambíguos e escrever os seus relatórios. Cada provedor usa a própria chave de API, guardada no Keychain do macOS — dá para trocar depois em Configurações → IA. Sem chave, o ubiqX funciona só com regras e memória.
       </StepTitle>
-      <div className="card p-5">
-        <ApiKeyForm view={view} compact />
-        <p className="mt-3 text-xs text-ink-3">Crie uma chave em console.anthropic.com → API keys. Ela fica no Keychain do macOS e pode ser trocada em Configurações → IA.</p>
+      <div role="radiogroup" aria-label="Provedor de IA" className="grid grid-cols-3 gap-3" data-testid="provider-cards">
+        {view.providers.map((p) => {
+          const pitch = PROVIDER_PITCH[p.id];
+          const status = keyStatus(view, p.id);
+          const active = selected === p.id;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              aria-label={p.label}
+              onClick={() => onSelect(p.id)}
+              className={clsx('card flex h-full flex-col items-start gap-2 p-4 text-left transition-colors', active ? 'border-brand-500 ring-2 ring-brand-500/20' : 'hover:bg-surface-2')}
+            >
+              <span className="flex w-full items-center justify-between gap-2">
+                <span className="text-base font-semibold tracking-tight">{pitch.short}</span>
+                <span className={clsx('flex size-5 shrink-0 items-center justify-center rounded-full', active ? 'bg-brand-600 text-white' : 'bg-surface-3 text-ink-3')}>{active ? <Check className="size-3" /> : status.configured ? <KeyRound className="size-3" /> : null}</span>
+              </span>
+              <span className="-mt-1 text-xs text-ink-3">{p.label}</span>
+              <span className="text-sm leading-5 text-ink-2">{pitch.pitch}</span>
+              <span className="text-[11px] leading-4 text-ink-3">
+                Recomendados: <span className="font-mono">{p.default_models.classify}</span> para classificar e <span className="font-mono">{p.default_models.report}</span> para relatórios.
+              </span>
+              <span className="mt-auto pt-1 text-xs">
+                <strong className="text-ink">{pitch.cost}</strong> <span className="text-ink-3">· estimativa com 8 h/dia</span>
+              </span>
+              {status.configured && <span className="text-[11px] text-emerald-600 dark:text-emerald-400">Chave configurada {status.hint}</span>}
+            </button>
+          );
+        })}
+      </div>
+      {view.providers
+        .filter((p) => PROVIDER_PITCH[p.id].note)
+        .map((p) => (
+          <p key={p.id} className="mt-3 flex items-start gap-2 text-xs leading-5 text-ink-3">
+            <Info className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              <strong className="font-medium text-ink-2">{PROVIDER_PITCH[p.id].short}:</strong> {PROVIDER_PITCH[p.id].note}
+            </span>
+          </p>
+        ))}
+      <div className="card mt-4 p-5">
+        <ApiKeyForm view={view} provider={selected} compact />
+        <p className="mt-3 text-xs text-ink-3">
+          {info ? `Crie a chave em ${info.console_url.replace(/^https?:\/\//, '')} (link “Criar chave” acima). ` : ''}Ela fica no Keychain do macOS e pode ser trocada em Configurações → IA.
+        </p>
       </div>
     </>
   );
@@ -379,10 +449,23 @@ function VisionStep({ draft, patch }: { draft: Settings; patch: (p: Partial<Sett
   );
 }
 
-function FinishStep({ draft, patch }: { draft: Settings; patch: (p: Partial<Settings>) => void }) {
+function FinishStep({ draft, patch, view }: { draft: Settings; patch: (p: Partial<Settings>) => void; view: SettingsView }) {
+  const info = providerInfo(view, draft.ai_provider);
+  const key = keyStatus(view, draft.ai_provider);
   return (
     <>
       <StepTitle title="Quase lá">O UBI vai morar na barra de menus. Deixe-o iniciar com o sistema para não perder nenhum dia.</StepTitle>
+      <div className="mb-4 flex items-center gap-3 rounded-xl border border-line bg-surface-2/60 px-4 py-3 text-sm" data-testid="finish-ai-summary">
+        <BrainCircuit className="size-4 shrink-0 text-brand-600" />
+        <span className="min-w-0">
+          <span className="font-medium">IA: {info?.label ?? draft.ai_provider}</span>
+          <span className="text-ink-3">
+            {' '}
+            · <span className="font-mono">{draft.models.classify}</span> para classificar, <span className="font-mono">{draft.models.report}</span> para relatórios ·{' '}
+          </span>
+          {key.configured ? <span className="text-emerald-600 dark:text-emerald-400">chave configurada {key.hint}</span> : <span className="text-amber-600 dark:text-amber-400">sem chave — só regras e memória até configurar em Configurações → IA</span>}
+        </span>
+      </div>
       <div className="card flex flex-col gap-5 p-5">
         <Field label="Iniciar com o sistema" hint="Abre o ubiqX na barra de menus ao fazer login. Pode mudar em Configurações → Rastreamento." inline>
           {(id) => <Toggle id={id} checked={draft.launch_at_login} onChange={(v) => patch({ launch_at_login: v })} />}

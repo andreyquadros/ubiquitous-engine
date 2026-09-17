@@ -1,6 +1,6 @@
 [package]
 name = "ubiqx-ai"
-description = "ubiqX adapter: Anthropic Messages API client, prompts, LLM classifiers, report writer and advisor"
+description = "ubiqX adapter: Anthropic / OpenAI / xAI HTTP clients, prompts, LLM classifiers, report writer and advisor"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -22,5 +22,6 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+parking_lot.workspace = true
 tokio.workspace = true
 wiremock = "0.6"

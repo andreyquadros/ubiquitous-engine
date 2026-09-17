@@ -31,7 +31,12 @@ import {
   type SettingsView,
   type TrackerState,
   type AiUsageTotals,
+  type AiModels,
+  type AiProvider,
+  type ApiKeyStatus,
+  type ProviderInfo,
 } from './types';
+import { PROVIDER_IDS, reconcileModels } from './providers';
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                             */
@@ -417,6 +422,53 @@ const seedNudges = (date: IsoDate): Nudge[] => [
   { id: uid('ndg'), at: atLocal(date, 16, 25), kind: 'break_suggested', title: 'Hora de uma pausa', message: 'Você está há 1h50 sem pausa. Que tal esticar as pernas por 5 minutos antes de lançar as notas?', seen: false },
 ];
 
+/* ------------------------------------------------------------------ */
+/* AI providers                                                        */
+/* ------------------------------------------------------------------ */
+
+/** Mirrors `AiProvider::{label, console_url, key_prefix}` and `AiModels::for_provider` in ubiqx-core. */
+const PROVIDERS: ProviderInfo[] = [
+  {
+    id: 'anthropic',
+    label: 'Anthropic Claude',
+    console_url: 'https://console.anthropic.com/settings/keys',
+    key_prefix: 'sk-ant-',
+    default_models: { classify: 'claude-haiku-4-5', vision: 'claude-haiku-4-5', report: 'claude-sonnet-5' },
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    console_url: 'https://platform.openai.com/api-keys',
+    key_prefix: 'sk-',
+    default_models: { classify: 'gpt-5-mini', vision: 'gpt-5-mini', report: 'gpt-5' },
+  },
+  {
+    id: 'xai',
+    label: 'xAI Grok',
+    console_url: 'https://console.x.ai',
+    key_prefix: 'xai-',
+    default_models: { classify: 'grok-4-1-fast-non-reasoning', vision: 'grok-4-1-fast-non-reasoning', report: 'grok-4-1-fast-reasoning' },
+  },
+];
+
+/** What `GET /models` of each account would return (chat-capable ids only), sorted. */
+const ACCOUNT_MODELS: Record<AiProvider, string[]> = {
+  anthropic: ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5'],
+  openai: ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5.1', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-4.1-mini', 'gpt-4o-mini', 'o4-mini'],
+  xai: ['grok-4', 'grok-4-1-fast-reasoning', 'grok-4-1-fast-non-reasoning', 'grok-4-fast-reasoning', 'grok-4-fast-non-reasoning', 'grok-3-mini', 'grok-4.6'],
+};
+for (const list of Object.values(ACCOUNT_MODELS)) list.sort((a, b) => a.localeCompare(b));
+
+const providerInfo = (id: AiProvider): ProviderInfo => PROVIDERS.find((p) => p.id === id) ?? PROVIDERS[0]!;
+const isProvider = (v: unknown): v is AiProvider => typeof v === 'string' && (PROVIDER_IDS as string[]).includes(v);
+
+/** Simulates the key validation the real backend does with a probe call. */
+function keyLooksValid(provider: AiProvider, key: string): boolean {
+  if (key.length < 20) return false;
+  const prefixes = provider === 'openai' ? ['sk-proj-', 'sk-'] : [providerInfo(provider).key_prefix];
+  return prefixes.some((p) => key.startsWith(p)) && (provider !== 'openai' || !key.startsWith('sk-ant-'));
+}
+
 const defaultSettings = (): Settings => ({
   tracking_enabled: true,
   sample_interval_secs: 5,
@@ -432,7 +484,8 @@ const defaultSettings = (): Settings => ({
   blocked_domains: ['bb.com.br', 'nubank.com.br', 'sicoob.com.br'],
   private_mode: false,
   private_until: null,
-  models: { classify: 'claude-haiku-4-5', vision: 'claude-haiku-4-5', report: 'claude-sonnet-5' },
+  ai_provider: 'anthropic',
+  models: { ...PROVIDERS[0]!.default_models },
   max_vision_per_hour: 6,
   ai_monthly_budget_usd: 5,
   classify_batch_min: 5,
@@ -471,8 +524,8 @@ interface State {
   reports: DailyReport[];
   nudges: Nudge[];
   settings: Settings;
-  apiKeyConfigured: boolean;
-  apiKeyHint: string | null;
+  /** Last 4 chars of the stored key per provider (null = no key in the Keychain). */
+  keyHints: Record<AiProvider, string | null>;
   permissions: PermissionStatus;
   aiHealth: AiHealth;
   trackerState: TrackerState;
@@ -500,8 +553,7 @@ function freshState(): State {
     reports: seedReports(t),
     nudges: seedNudges(t),
     settings,
-    apiKeyConfigured: true,
-    apiKeyHint: '…k3Qa',
+    keyHints: { anthropic: 'f3a9', openai: null, xai: null },
     permissions: { screen_recording: 'granted', automation: 'granted', accessibility: 'unknown' },
     aiHealth: { state: 'ok' },
     trackerState: 'running',
@@ -889,15 +941,23 @@ function monthlyReport(categoryId: Id, year: number, month: number): string {
     `Total no mês: **${(totalSecs / 3600).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} h** em ${rows.length} dia(s) com atividade.\n\n` +
     `## Por tipo de atividade\n\n${kindRows || '- (sem dados)'}\n\n` +
     `## Por dia\n\n| Dia | Horas | Atividade principal |\n|-----|-------|----------------------|\n${rows.join('\n') || '| — | — | — |'}\n\n` +
-    `_Gerado pelo ubiqX com ${S.settings.models.report}._\n`
+    `_Gerado pelo ubiqX com ${activeModel('report')}._\n`
   );
 }
 
+const keyConfigured = (p: AiProvider = S.settings.ai_provider): boolean => S.keyHints[p] !== null;
+const keyStatus = (p: AiProvider): ApiKeyStatus => ({ provider: p, configured: keyConfigured(p), hint: S.keyHints[p] ? `…${S.keyHints[p]}` : null });
+/** Provider + model that would answer a remote call right now, for user-facing strings. */
+const activeModel = (slot: keyof AiModels): string => `${providerInfo(S.settings.ai_provider).label} · ${S.settings.models[slot]}`;
+
 function settingsView(): SettingsView {
+  const selected = keyStatus(S.settings.ai_provider);
   return {
     settings: structuredClone(S.settings),
-    api_key_configured: S.apiKeyConfigured,
-    api_key_hint: S.apiKeyConfigured ? S.apiKeyHint : null,
+    api_key_configured: selected.configured,
+    api_key_hint: selected.hint,
+    api_keys: PROVIDER_IDS.map(keyStatus),
+    providers: structuredClone(PROVIDERS),
     permissions: { ...S.permissions },
     ai_health: S.aiHealth,
     tracker_state: S.trackerState,
@@ -908,7 +968,7 @@ function settingsView(): SettingsView {
 }
 
 function refreshAiHealth(): void {
-  if (!S.apiKeyConfigured) S.aiHealth = { state: 'not_configured' };
+  if (!keyConfigured()) S.aiHealth = { state: 'not_configured' };
   else if (S.settings.local_only) S.aiHealth = { state: 'paused', reason: 'Modo somente local ativado' };
   else if (S.usage.cost_usd >= S.settings.ai_monthly_budget_usd) S.aiHealth = { state: 'paused', reason: 'Orçamento mensal atingido' };
   else S.aiHealth = { state: 'ok' };
@@ -1079,7 +1139,7 @@ const commands: Record<string, Cmd> = {
     return block;
   },
   classify_now: () => {
-    const report: ClassifyReport = { local: 0, remote: 0, vision: 0, needs_review: 0, skipped_remote: S.settings.local_only || !S.apiKeyConfigured };
+    const report: ClassifyReport = { local: 0, remote: 0, vision: 0, needs_review: 0, skipped_remote: S.settings.local_only || !keyConfigured() };
     for (const b of dayBlocks(today())) {
       if (b.category_id || !isRealBlock(b)) continue;
       const rule = S.rules.find((r) => r.enabled && ((r.matcher === 'domain' && r.pattern === b.domain) || (r.matcher === 'app' && r.pattern === b.app_name)));
@@ -1205,7 +1265,11 @@ const commands: Record<string, Cmd> = {
 
   get_settings: () => settingsView(),
   update_settings: (a) => {
-    S.settings = { ...S.settings, ...(a.settings as Settings) };
+    const incoming = a.settings as Settings;
+    const provider = isProvider(incoming.ai_provider) ? incoming.ai_provider : S.settings.ai_provider;
+    S.settings = { ...S.settings, ...incoming, ai_provider: provider };
+    // Settings::reconcile_models(): ids of another vendor make no sense for the selected provider.
+    S.settings.models = reconcileModels(S.settings.models, providerInfo(provider));
     if (!S.settings.tracking_enabled && S.trackerState === 'running') S.trackerState = 'paused';
     if (S.settings.tracking_enabled && S.trackerState === 'paused') S.trackerState = 'running';
     refreshAiHealth();
@@ -1213,20 +1277,28 @@ const commands: Record<string, Cmd> = {
   },
   set_api_key: async (a): Promise<ApiKeyResult> => {
     await sleep(LATENCY_MS ? 700 : 0);
-    const key = a.key as string | null;
+    const provider = isProvider(a.provider) ? a.provider : S.settings.ai_provider;
+    const info = providerInfo(provider);
+    const key = typeof a.key === 'string' ? a.key.trim() : null;
     if (key === null || key === '') {
-      S.apiKeyConfigured = false;
-      S.apiKeyHint = null;
+      S.keyHints[provider] = null;
       refreshAiHealth();
-      return { valid: true, message: 'Chave removida do Keychain.' };
+      return { valid: true, message: `Chave da ${info.label} removida do Keychain.` };
     }
-    if (key.startsWith('sk-ant-') && key.length >= 20) {
-      S.apiKeyConfigured = true;
-      S.apiKeyHint = `…${key.slice(-4)}`;
+    if (keyLooksValid(provider, key)) {
+      S.keyHints[provider] = key.slice(-4);
       refreshAiHealth();
-      return { valid: true, message: `Chave válida — ${S.settings.models.classify} respondeu em 412 ms.` };
+      const model = provider === S.settings.ai_provider ? S.settings.models.classify : info.default_models.classify;
+      return { valid: true, message: `Chave válida — ${info.label} (${model}) respondeu em 412 ms.` };
     }
-    return { valid: false, message: 'Chave inválida: a API da Anthropic respondeu 401 (authentication_error).' };
+    const hint = provider === 'openai' ? 'sk-… ou sk-proj-…' : `${info.key_prefix}…`;
+    return { valid: false, message: `Chave inválida: a API da ${info.label} respondeu 401 (authentication_error). Chaves da ${info.label} começam com ${hint}.` };
+  },
+  list_models: async (a): Promise<string[]> => {
+    await sleep(LATENCY_MS ? 500 : 0);
+    const provider = isProvider(a.provider) ? a.provider : S.settings.ai_provider;
+    if (!keyConfigured(provider)) throw new Error(`chave não configurada para ${providerInfo(provider).label}`);
+    return [...ACCOUNT_MODELS[provider]];
   },
   set_tracking: (a) => {
     const enabled = a.enabled === true;

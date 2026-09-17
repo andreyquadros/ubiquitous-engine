@@ -1,14 +1,20 @@
 //! Composition root shared by the desktop shell and the CLI.
 //!
 //! Everything concrete is chosen here: SQLite for persistence, the native platform adapters
-//! (or the scripted mock), and the Anthropic-backed AI components (or fakes).
+//! (or the scripted mock), and the hosted AI components (or fakes). With
+//! [`AiBackend::Remote`] one HTTP client per vendor (Anthropic, OpenAI, xAI) is built and the
+//! port implementations talk to a [`RoutingLlmClient`] that forwards each call to the vendor
+//! selected in settings, so the user can switch providers without restarting.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ubiqx_ai::client::{AnthropicClient, AnthropicConfig, ApiKeySource, LlmClient};
-use ubiqx_core::ports::{secret_keys, EventSink, SecretStore};
-use ubiqx_core::{CoreError, CoreResult, SystemClock};
+use parking_lot::Mutex;
+use ubiqx_ai::client::{AnthropicClient, AnthropicConfig, ApiKeySource, LlmClient, StaticApiKey};
+use ubiqx_ai::openai::{OpenAiCompatClient, OpenAiCompatConfig};
+use ubiqx_ai::router::{ProviderSource, RoutingLlmClient};
+use ubiqx_core::ports::{EventSink, SecretStore, SettingsRepo};
+use ubiqx_core::{AiModels, AiProvider, CoreError, CoreResult, SystemClock};
 use ubiqx_engine::{AiPorts, Engine, EngineDeps, EngineHandle, PlatformPorts, Repos};
 use ubiqx_platform::PlatformServices;
 use ubiqx_storage::{Db, SqliteStore};
@@ -25,8 +31,9 @@ pub const APP_ID: &str = "ai.ubiqx.app";
 /// Which AI backend to wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AiBackend {
-    /// Real Anthropic API (key from the secret store).
-    Anthropic,
+    /// The real vendor APIs (Anthropic, OpenAI, xAI), routed by `settings.ai_provider`; each
+    /// key comes from the secret store.
+    Remote,
     /// Deterministic fakes (CI, demos, `--offline`).
     Fake,
     /// No remote AI at all.
@@ -52,7 +59,7 @@ impl Default for AppConfig {
             data_dir: None,
             in_memory_db: false,
             scripted_platform: None,
-            ai: AiBackend::Anthropic,
+            ai: AiBackend::Remote,
             notifier: None,
         }
     }
@@ -73,17 +80,110 @@ pub fn default_data_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".ubiqx"))
 }
 
-/// Bridges the engine's secret store to the AI client so a key pasted at runtime is used
-/// immediately, without rebuilding the client.
-struct SecretStoreKey(Arc<dyn SecretStore>);
+/// Bridges the engine's secret store to one vendor's client so a key pasted at runtime is
+/// used immediately, without rebuilding the client.
+struct SecretStoreKey(Arc<dyn SecretStore>, AiProvider);
 
 impl ApiKeySource for SecretStoreKey {
     fn api_key(&self) -> Option<String> {
         self.0
-            .get(secret_keys::ANTHROPIC_API_KEY)
+            .get(self.1.secret_key())
             .ok()
             .flatten()
             .filter(|k| !k.trim().is_empty())
+    }
+}
+
+/// [`ProviderSource`] backed by the settings row of the store: the engine persists every
+/// settings change before it applies it, so a read per call is always current (one small
+/// row, negligible next to the HTTP call it precedes). A failed read keeps the last value
+/// seen instead of silently routing to the default vendor.
+struct StoredProvider {
+    settings: Arc<dyn SettingsRepo>,
+    last: Mutex<AiProvider>,
+}
+
+impl StoredProvider {
+    fn new(settings: Arc<dyn SettingsRepo>) -> Self {
+        let last = settings.load().map(|s| s.ai_provider).unwrap_or_default();
+        Self {
+            settings,
+            last: Mutex::new(last),
+        }
+    }
+}
+
+impl ProviderSource for StoredProvider {
+    fn provider(&self) -> AiProvider {
+        match self.settings.load() {
+            Ok(s) => {
+                *self.last.lock() = s.ai_provider;
+                s.ai_provider
+            }
+            Err(e) => {
+                let last = *self.last.lock();
+                tracing::warn!(error = %e, provider = last.id(), "could not read the selected AI provider; keeping the last one");
+                last
+            }
+        }
+    }
+}
+
+/// The vendor clients behind [`AiBackend::Remote`], all reading their key from the secret
+/// store on every call.
+#[derive(Clone)]
+pub struct RemoteClients {
+    pub anthropic: Arc<AnthropicClient>,
+    pub openai: Arc<OpenAiCompatClient>,
+    pub xai: Arc<OpenAiCompatClient>,
+}
+
+impl RemoteClients {
+    fn build(secrets: &Arc<dyn SecretStore>, store: Arc<SqliteStore>) -> CoreResult<Self> {
+        let key = |p: AiProvider| -> Arc<dyn ApiKeySource> {
+            Arc::new(SecretStoreKey(secrets.clone(), p))
+        };
+        Ok(Self {
+            anthropic: Arc::new(AnthropicClient::new(
+                AnthropicConfig::default(),
+                key(AiProvider::Anthropic),
+                store.clone(),
+            )?),
+            openai: Arc::new(OpenAiCompatClient::new(
+                OpenAiCompatConfig::for_provider(AiProvider::OpenAi),
+                key(AiProvider::OpenAi),
+                store.clone(),
+            )?),
+            xai: Arc::new(OpenAiCompatClient::new(
+                OpenAiCompatConfig::for_provider(AiProvider::Xai),
+                key(AiProvider::Xai),
+                store,
+            )?),
+        })
+    }
+
+    /// The vendor's client as the trait object the router and the ports use.
+    pub fn llm(&self, provider: AiProvider) -> Arc<dyn LlmClient> {
+        match provider {
+            AiProvider::Anthropic => self.anthropic.clone(),
+            AiProvider::OpenAi => self.openai.clone(),
+            AiProvider::Xai => self.xai.clone(),
+        }
+    }
+
+    /// Chat-capable model ids the stored key of `provider` can use.
+    pub async fn list_models(&self, provider: AiProvider) -> CoreResult<Vec<String>> {
+        match provider {
+            AiProvider::Anthropic => self.anthropic.list_models().await,
+            AiProvider::OpenAi => self.openai.list_models().await,
+            AiProvider::Xai => self.xai.list_models().await,
+        }
+    }
+}
+
+impl std::fmt::Debug for RemoteClients {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemoteClients").finish_non_exhaustive()
     }
 }
 
@@ -93,7 +193,8 @@ pub struct App {
     pub engine: EngineHandle,
     pub store: Arc<SqliteStore>,
     pub platform: PlatformServices,
-    pub anthropic: Option<Arc<AnthropicClient>>,
+    /// The vendor clients, present with [`AiBackend::Remote`] only.
+    pub remote: Option<RemoteClients>,
     pub data_dir: PathBuf,
     pub scripted: Option<Arc<ubiqx_platform::mock::ScriptedPlatform>>,
 }
@@ -123,7 +224,7 @@ impl App {
             platform.notifier = n;
         }
 
-        let (ai, anthropic) = build_ai(config.ai, &platform, store.clone());
+        let (ai, remote) = build_ai(config.ai, &platform, store.clone());
 
         let deps = EngineDeps {
             platform: PlatformPorts {
@@ -146,18 +247,54 @@ impl App {
             engine,
             store,
             platform,
-            anthropic,
+            remote,
             data_dir,
             scripted,
         })
     }
 
-    /// Validates a candidate API key against the provider without storing it.
-    pub async fn validate_api_key(&self, key: &str) -> CoreResult<()> {
-        let source: Arc<dyn ApiKeySource> =
-            Arc::new(ubiqx_ai::client::StaticApiKey(key.trim().to_string()));
-        let client = AnthropicClient::new(AnthropicConfig::default(), source, self.store.clone())?;
-        client.validate_key().await
+    /// Validates a candidate API key of `provider` against that vendor without storing it.
+    /// The billing probe uses the engine's current classification model when it belongs to
+    /// `provider`, otherwise the vendor's recommended one, so a key is judged with the model
+    /// that will actually be billed.
+    pub async fn validate_api_key(&self, provider: AiProvider, key: &str) -> CoreResult<()> {
+        let source: Arc<dyn ApiKeySource> = Arc::new(StaticApiKey(key.trim().to_string()));
+        match provider {
+            AiProvider::Anthropic => {
+                AnthropicClient::new(AnthropicConfig::default(), source, self.store.clone())?
+                    .validate_key()
+                    .await
+            }
+            AiProvider::OpenAi | AiProvider::Xai => {
+                let current = self.engine.settings().models.classify;
+                let probe = if provider.owns_model(&current) {
+                    current
+                } else {
+                    AiModels::for_provider(provider).classify
+                };
+                OpenAiCompatClient::new(
+                    OpenAiCompatConfig::for_provider(provider),
+                    source,
+                    self.store.clone(),
+                )?
+                .validate_key(&probe)
+                .await
+            }
+        }
+    }
+
+    /// Chat-capable model ids the stored key of `provider` can use, sorted. Works with any
+    /// backend (the listing needs no port), returning [`CoreError::AiNotConfigured`] when
+    /// that provider has no key.
+    pub async fn list_models(&self, provider: AiProvider) -> CoreResult<Vec<String>> {
+        match &self.remote {
+            Some(remote) => remote.list_models(provider).await,
+            None => {
+                RemoteClients::build(&self.platform.secrets, self.store.clone())?
+                    .list_models(provider)
+                    .await
+            }
+        }
     }
 }
 
@@ -165,7 +302,7 @@ fn build_ai(
     backend: AiBackend,
     platform: &PlatformServices,
     store: Arc<SqliteStore>,
-) -> (AiPorts, Option<Arc<AnthropicClient>>) {
+) -> (AiPorts, Option<RemoteClients>) {
     match backend {
         AiBackend::None => (AiPorts::default(), None),
         AiBackend::Fake => (
@@ -181,16 +318,22 @@ fn build_ai(
             },
             None,
         ),
-        AiBackend::Anthropic => {
-            let key: Arc<dyn ApiKeySource> = Arc::new(SecretStoreKey(platform.secrets.clone()));
-            let client = match AnthropicClient::new(AnthropicConfig::default(), key, store) {
-                Ok(c) => Arc::new(c),
+        AiBackend::Remote => {
+            let remote = match RemoteClients::build(&platform.secrets, store.clone()) {
+                Ok(r) => r,
                 Err(e) => {
-                    tracing::error!(error = %e, "could not build the Anthropic client; running without remote AI");
+                    tracing::error!(error = %e, "could not build the AI clients; running without remote AI");
                     return (AiPorts::default(), None);
                 }
             };
-            let llm: Arc<dyn LlmClient> = client.clone();
+            let source: Arc<dyn ProviderSource> = Arc::new(StoredProvider::new(store));
+            let llm: Arc<dyn LlmClient> = Arc::new(RoutingLlmClient::new(
+                AiProvider::ALL
+                    .into_iter()
+                    .map(|p| (p, remote.llm(p)))
+                    .collect(),
+                source,
+            ));
             (
                 AiPorts {
                     remote: Some(Arc::new(ubiqx_ai::classifier::LlmTextClassifier::new(
@@ -205,7 +348,7 @@ fn build_ai(
                     advisor: Some(Arc::new(ubiqx_ai::advisor::LlmAdvisor::new(llm))),
                     requires_api_key: true,
                 },
-                Some(client),
+                Some(remote),
             )
         }
     }
