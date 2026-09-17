@@ -6,6 +6,7 @@ members = [
     "crates/ubiqx-platform",
     "crates/ubiqx-ai",
     "crates/ubiqx-engine",
+    "crates/ubiqx-app",
     "crates/ubiqx-cli",
     "apps/desktop/src-tauri",
 ]
@@ -17,6 +18,7 @@ default-members = [
     "crates/ubiqx-platform",
     "crates/ubiqx-ai",
     "crates/ubiqx-engine",
+    "crates/ubiqx-app",
     "crates/ubiqx-cli",
 ]
 
@@ -34,6 +36,7 @@ ubiqx-storage = { path = "crates/ubiqx-storage" }
 ubiqx-platform = { path = "crates/ubiqx-platform" }
 ubiqx-ai = { path = "crates/ubiqx-ai" }
 ubiqx-engine = { path = "crates/ubiqx-engine" }
+ubiqx-app = { path = "crates/ubiqx-app" }
 
 anyhow = "1.0"
 async-trait = "0.1"
@@ -46,8 +49,8 @@ parking_lot = "0.12"
 rand = "0.8"
 regex = "1.11"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-rusqlite = { version = "0.40", features = ["bundled", "chrono"] }
-rusqlite_migration = "2.6"
+rusqlite = { version = "0.39", features = ["bundled", "chrono"] }
+rusqlite_migration = "2.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
