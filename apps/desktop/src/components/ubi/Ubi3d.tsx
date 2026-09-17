@@ -6,9 +6,11 @@ import type { Mood } from '../../lib/types';
 import { MOOD_GLOW } from './moods';
 
 export const GLB_URL = '/ubi/Ubi.glb';
+/** Local Draco decoder (public/draco) — keeps compressed models offline and CSP-safe. */
+export const DRACO_PATH = '/draco/';
 
 function Model({ mood }: { mood: Mood }) {
-  const { scene } = useGLTF(GLB_URL);
+  const { scene } = useGLTF(GLB_URL, DRACO_PATH);
   const group = useRef<THREE.Group>(null);
   const normalized = useMemo(() => {
     const clone = scene.clone(true);
@@ -55,4 +57,4 @@ export default function Ubi3d({ mood, size }: { mood: Mood; size: number }) {
   );
 }
 
-useGLTF.preload(GLB_URL);
+useGLTF.preload(GLB_URL, DRACO_PATH);
