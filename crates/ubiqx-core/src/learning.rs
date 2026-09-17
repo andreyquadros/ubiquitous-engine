@@ -225,6 +225,7 @@ pub fn select_examples(
         })
         .take(limit)
         .map(|(_, c)| ClassificationExample {
+            app_id: c.app_id.clone(),
             app_name: c.app_name.clone(),
             title: c.title_key.clone(),
             domain: c.domain.clone(),

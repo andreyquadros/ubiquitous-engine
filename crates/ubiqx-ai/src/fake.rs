@@ -392,6 +392,10 @@ impl FakeReportWriter {
 
 #[async_trait]
 impl ReportWriter for FakeReportWriter {
+    fn describe_payload(&self, block: &ActivityBlock, utc_offset_secs: i32) -> String {
+        PromptBlock::from_block(block, utc_offset_secs).render_report_line()
+    }
+
     async fn write_daily(&self, req: &ReportRequest) -> CoreResult<DailyReport> {
         let items = Self::items_for(req);
         let highlights = items

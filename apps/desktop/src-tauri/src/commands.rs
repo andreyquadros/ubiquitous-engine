@@ -25,6 +25,8 @@ impl From<CoreError> for IpcError {
             CoreError::Permission(_) => "permission",
             CoreError::Ai(_) => "ai",
             CoreError::AiNotConfigured => "ai_not_configured",
+            CoreError::AiRejected(_) => "ai_rejected",
+            CoreError::AiRefused => "ai_refused",
             CoreError::RateLimited { .. } => "rate_limited",
             CoreError::Invalid(_) => "invalid",
             CoreError::NotFound(_) => "not_found",

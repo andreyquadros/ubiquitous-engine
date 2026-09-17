@@ -113,6 +113,10 @@ impl LlmReportWriter {
 
 #[async_trait]
 impl ReportWriter for LlmReportWriter {
+    fn describe_payload(&self, block: &ActivityBlock, utc_offset_secs: i32) -> String {
+        prompts::PromptBlock::from_block(block, utc_offset_secs).render_report_line()
+    }
+
     async fn write_daily(&self, req: &ReportRequest) -> CoreResult<DailyReport> {
         if req.blocks.is_empty() {
             // Nothing to write about: no call, no cost. The renderer prints

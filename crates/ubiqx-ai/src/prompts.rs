@@ -407,13 +407,7 @@ pub fn render_examples(examples: &[ClassificationExample], categories: &[Categor
         .filter(|e| allowed.contains(&e.category_id))
         .take(MAX_EXAMPLES)
         .map(|e| {
-            let r = redact_block(
-                &e.app_name,
-                &e.app_name,
-                &e.title,
-                None,
-                e.domain.as_deref(),
-            );
+            let r = redact_block(&e.app_id, &e.app_name, &e.title, None, e.domain.as_deref());
             let mut parts = vec![
                 format!("app={}", squash(&r.app_name, 60)),
                 format!("title={}", squash(&r.title, MAX_TITLE_CHARS)),
@@ -832,6 +826,7 @@ mod tests {
         c.categories[1].archived = true;
         c.examples = (0..15)
             .map(|i| ClassificationExample {
+                app_id: "com.google.Chrome".into(),
                 app_name: "Google Chrome".into(),
                 title: format!("edital {i} contato pessoa{i}@ifro.edu.br"),
                 domain: Some("sei.ifro.edu.br".into()),

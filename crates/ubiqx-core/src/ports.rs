@@ -319,6 +319,8 @@ pub trait UsageRepo: Send + Sync {
 /// A previously classified block used as a few-shot example for the LLM.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClassificationExample {
+    /// Bundle id (macOS) / executable id: drives redaction exactly like a block does.
+    pub app_id: String,
     pub app_name: String,
     pub title: String,
     pub domain: Option<String>,
@@ -451,6 +453,28 @@ pub struct ReportRequest {
 #[async_trait]
 pub trait ReportWriter: Send + Sync {
     async fn write_daily(&self, req: &ReportRequest) -> CoreResult<DailyReport>;
+
+    /// The exact (redacted) line this writer will send for `block` in a daily report, so the
+    /// engine can record it in the "data sent to AI" audit trail. `utc_offset_secs` is the
+    /// user's local offset used to print times. The default mirrors `redact_block`.
+    fn describe_payload(&self, block: &ActivityBlock, utc_offset_secs: i32) -> String {
+        let r = crate::redact::redact_block(
+            &block.app_id,
+            &block.app_name,
+            &block.title,
+            block.url.as_deref(),
+            block.domain.as_deref(),
+        );
+        let start = block.started_at + chrono::Duration::seconds(utc_offset_secs as i64);
+        let mut s = format!("{} app={}", start.format("%H:%M"), r.app_name);
+        if !r.title.is_empty() {
+            s.push_str(&format!(" title={}", r.title));
+        }
+        if let Some(d) = r.domain.as_deref() {
+            s.push_str(&format!(" domain={d}"));
+        }
+        s
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
