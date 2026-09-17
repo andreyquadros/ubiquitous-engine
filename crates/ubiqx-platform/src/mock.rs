@@ -82,7 +82,13 @@ impl Scenario {
     /// e-mail, SEI (IFRO), coding for the incubator, WhatsApp, a smart-cities document,
     /// a distraction and an idle stretch.
     pub fn demo_day() -> Self {
-        let m = |mins: u32| mins * 12; // samples per minute at 5 s
+        Self::demo_day_with(12)
+    }
+
+    /// The demo day with a custom number of samples per scenario minute (12 = real time at
+    /// 5-second samples; 1 = one sample per "minute", for fast simulations).
+    pub fn demo_day_with(samples_per_minute: u32) -> Self {
+        let m = |mins: u32| mins * samples_per_minute.max(1);
         Self::new(vec![
             Step::browser(
                 "Google Chrome",

@@ -29,7 +29,11 @@ pub fn due_reports(
         while day <= today {
             if let Some(at) = local_datetime(day, time) {
                 if at > last_check && at <= now {
-                    out.push(DueReport { category_id: c.id.clone(), date: day, scheduled_at: at });
+                    out.push(DueReport {
+                        category_id: c.id.clone(),
+                        date: day,
+                        scheduled_at: at,
+                    });
                 }
             }
             day = day.succ_opt().unwrap_or(day);
@@ -38,7 +42,11 @@ pub fn due_reports(
             }
         }
     }
-    out.sort_by(|a, b| a.scheduled_at.cmp(&b.scheduled_at).then(a.category_id.cmp(&b.category_id)));
+    out.sort_by(|a, b| {
+        a.scheduled_at
+            .cmp(&b.scheduled_at)
+            .then(a.category_id.cmp(&b.category_id))
+    });
     out
 }
 
@@ -53,7 +61,8 @@ fn local_datetime(day: NaiveDate, time: NaiveTime) -> Option<DateTime<Utc>> {
 
 /// Local day boundaries `[start, end)` for a date, in UTC.
 pub fn day_range(date: NaiveDate) -> TimeRange {
-    let start = local_datetime(date, NaiveTime::MIN).unwrap_or_else(|| Utc.from_utc_datetime(&date.and_time(NaiveTime::MIN)));
+    let start = local_datetime(date, NaiveTime::MIN)
+        .unwrap_or_else(|| Utc.from_utc_datetime(&date.and_time(NaiveTime::MIN)));
     let next = date.succ_opt().unwrap_or(date);
     let end = local_datetime(next, NaiveTime::MIN).unwrap_or(start + chrono::Duration::days(1));
     TimeRange::new(start, end)
@@ -86,9 +95,14 @@ mod tests {
         let cats = vec![cat("a", Some((18, 0))), cat("b", None), cat("sys", None)];
         let mut cats = cats;
         cats[2].is_system = true;
-        let settings = Settings { report_default_time: NaiveTime::from_hms_opt(17, 30, 0).unwrap(), ..Default::default() };
+        let settings = Settings {
+            report_default_time: NaiveTime::from_hms_opt(17, 30, 0).unwrap(),
+            ..Default::default()
+        };
         let today = Local::now().date_naive();
-        let at = |h: u32, m: u32| local_datetime(today, NaiveTime::from_hms_opt(h, m, 0).unwrap()).unwrap();
+        let at = |h: u32, m: u32| {
+            local_datetime(today, NaiveTime::from_hms_opt(h, m, 0).unwrap()).unwrap()
+        };
 
         let due = due_reports(&cats, &settings, at(17, 0), at(17, 45));
         assert_eq!(due.len(), 1);
@@ -103,7 +117,12 @@ mod tests {
 
         // A long sleep spanning both times yields both, ordered by time.
         let due = due_reports(&cats, &settings, at(9, 0), at(23, 0));
-        assert_eq!(due.iter().map(|d| d.category_id.as_str()).collect::<Vec<_>>(), vec!["b", "a"]);
+        assert_eq!(
+            due.iter()
+                .map(|d| d.category_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["b", "a"]
+        );
     }
 
     #[test]

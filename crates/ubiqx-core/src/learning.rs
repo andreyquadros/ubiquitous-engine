@@ -90,7 +90,9 @@ pub const MULTI_TENANT_DOMAINS: &[&str] = &[
 ];
 
 pub fn is_multi_tenant_domain(domain: &str) -> bool {
-    MULTI_TENANT_DOMAINS.iter().any(|d| crate::normalize::domain_matches(domain, d))
+    MULTI_TENANT_DOMAINS
+        .iter()
+        .any(|d| crate::normalize::domain_matches(domain, d))
 }
 
 /// Minimum number of agreeing corrections before a rule is suggested.
@@ -114,15 +116,25 @@ pub fn suggest_rules(
 
     for c in corrections {
         let key = match c.domain.as_deref().filter(|d| !d.is_empty()) {
-            Some(d) => Key { matcher: RuleMatcher::Domain, pattern: d.to_lowercase() },
+            Some(d) => Key {
+                matcher: RuleMatcher::Domain,
+                pattern: d.to_lowercase(),
+            },
             None => {
                 if c.app_id.is_empty() {
                     continue;
                 }
-                Key { matcher: RuleMatcher::App, pattern: c.app_id.clone() }
+                Key {
+                    matcher: RuleMatcher::App,
+                    pattern: c.app_id.clone(),
+                }
             }
         };
-        *votes.entry(key).or_default().entry(c.to_category_id.clone()).or_default() += 1;
+        *votes
+            .entry(key)
+            .or_default()
+            .entry(c.to_category_id.clone())
+            .or_default() += 1;
     }
 
     let mut out: Vec<RuleSuggestion> = votes
@@ -204,7 +216,13 @@ pub fn select_examples(
     let mut seen = std::collections::HashSet::new();
     scored
         .into_iter()
-        .filter(|(_, c)| seen.insert((c.app_id.clone(), c.title_key.clone(), c.to_category_id.clone())))
+        .filter(|(_, c)| {
+            seen.insert((
+                c.app_id.clone(),
+                c.title_key.clone(),
+                c.to_category_id.clone(),
+            ))
+        })
         .take(limit)
         .map(|(_, c)| ClassificationExample {
             app_name: c.app_name.clone(),
@@ -384,7 +402,10 @@ mod tests {
         labelled.domain = None;
         fresh.title_key = "whatsapp".into();
         fresh.domain = None;
-        let ctx = ClassificationContext { user_classified: vec![labelled], ..ctx };
+        let ctx = ClassificationContext {
+            user_classified: vec![labelled],
+            ..ctx
+        };
         assert!(MemoryClassifier.classify(&fresh, &ctx).is_none());
     }
 }

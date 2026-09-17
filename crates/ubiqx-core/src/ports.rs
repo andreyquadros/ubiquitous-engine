@@ -47,7 +47,10 @@ pub enum CaptureTarget {
     /// Only the window with this OS id (preferred: never includes other apps' windows).
     Window(u32),
     /// The display that contains the given point, or the primary display.
-    DisplayAt { x: i32, y: i32 },
+    DisplayAt {
+        x: i32,
+        y: i32,
+    },
     PrimaryDisplay,
 }
 
@@ -126,13 +129,23 @@ pub trait BlockRepo: Send + Sync {
     fn list_in_range(&self, range: TimeRange) -> CoreResult<Vec<ActivityBlock>>;
     /// Closed blocks without a category that a remote classifier may try now
     /// (`needs_review = false`, `next_attempt_at` unset or in the past), oldest first.
-    fn list_pending_remote(&self, now: DateTime<Utc>, limit: usize) -> CoreResult<Vec<ActivityBlock>>;
+    fn list_pending_remote(
+        &self,
+        now: DateTime<Utc>,
+        limit: usize,
+    ) -> CoreResult<Vec<ActivityBlock>>;
     /// Closed blocks without a category, regardless of retry state, oldest first.
     fn list_unclassified(&self, limit: usize) -> CoreResult<Vec<ActivityBlock>>;
     /// Blocks flagged for manual review, newest first.
     fn list_needs_review(&self, limit: usize) -> CoreResult<Vec<ActivityBlock>>;
     /// Records a failed remote attempt and when the block may be retried.
-    fn record_attempt(&self, id: &str, attempts: u32, next_attempt_at: Option<DateTime<Utc>>, needs_review: bool) -> CoreResult<()>;
+    fn record_attempt(
+        &self,
+        id: &str,
+        attempts: u32,
+        next_attempt_at: Option<DateTime<Utc>>,
+        needs_review: bool,
+    ) -> CoreResult<()>;
     /// Stores what was sent to the AI for this block (redacted text) and when.
     fn set_ai_payload(&self, id: &str, payload: &str, at: DateTime<Utc>) -> CoreResult<()>;
     /// Splits a block at `at` into two blocks; returns the id of the new (second) block.
@@ -366,13 +379,37 @@ impl Classification {
 pub trait LocalClassifier: Send + Sync {
     fn name(&self) -> &'static str;
     /// `None` means "I don't know".
-    fn classify(&self, block: &ActivityBlock, ctx: &ClassificationContext) -> Option<Classification>;
+    fn classify(
+        &self,
+        block: &ActivityBlock,
+        ctx: &ClassificationContext,
+    ) -> Option<Classification>;
 }
 
 /// A remote (paid, fallible, batched) classifier.
 #[async_trait]
 pub trait RemoteClassifier: Send + Sync {
     fn name(&self) -> &'static str;
+
+    /// The exact (redacted) text this classifier will send for `block`. The engine stores it
+    /// so the user can audit what left the machine. The default mirrors `redact_block`.
+    fn describe_payload(&self, block: &ActivityBlock) -> String {
+        let r = crate::redact::redact_block(
+            &block.app_id,
+            &block.app_name,
+            &block.title,
+            block.url.as_deref(),
+            block.domain.as_deref(),
+        );
+        format!(
+            "app={} | title={}{}",
+            r.app_name,
+            r.title,
+            r.domain
+                .map(|d| format!(" | domain={d}"))
+                .unwrap_or_default()
+        )
+    }
 
     /// Returns classifications keyed by block id. Blocks missing from the result are treated
     /// as unclassified by the caller; ids not in `blocks` are ignored.

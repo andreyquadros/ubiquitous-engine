@@ -90,7 +90,11 @@ pub fn compute_stats(
     let active = productive + distraction + uncategorized;
     let total = active + idle_secs;
     let hours = active as f32 / 3600.0;
-    let switches_per_hour = if hours > 0.05 { switches as f32 / hours } else { 0.0 };
+    let switches_per_hour = if hours > 0.05 {
+        switches as f32 / hours
+    } else {
+        0.0
+    };
     let focus_score = focus_score(productive, distraction, uncategorized, switches_per_hour);
 
     FocusStats {
@@ -108,7 +112,12 @@ pub fn compute_stats(
 
 /// 0–100. Share of productive time, penalised by heavy context switching. Uncategorised time
 /// counts half (we do not know yet), so a freshly installed app is not punished.
-pub fn focus_score(productive: i64, distraction: i64, uncategorized: i64, switches_per_hour: f32) -> u8 {
+pub fn focus_score(
+    productive: i64,
+    distraction: i64,
+    uncategorized: i64,
+    switches_per_hour: f32,
+) -> u8 {
     let active = (productive + distraction + uncategorized) as f32;
     if active < 60.0 {
         return 0;
@@ -172,8 +181,11 @@ impl NudgePolicy {
         if input.quiet {
             return vec![];
         }
-        let cats: HashMap<&str, &Category> =
-            input.categories.iter().map(|c| (c.id.as_str(), c)).collect();
+        let cats: HashMap<&str, &Category> = input
+            .categories
+            .iter()
+            .map(|c| (c.id.as_str(), c))
+            .collect();
         let mut out = Vec::new();
 
         // Walk backwards from now: continuous run of the same kind.
@@ -364,21 +376,48 @@ mod tests {
         let recent = vec![block(0, 30, "yt", Some("fun"))];
         let mut last = HashMap::new();
         let policy = NudgePolicy::default();
-        let n = policy.evaluate(&NudgeInput { now: t(30), recent: &recent, categories: &cats, last_emitted: &last, quiet: false });
+        let n = policy.evaluate(&NudgeInput {
+            now: t(30),
+            recent: &recent,
+            categories: &cats,
+            last_emitted: &last,
+            quiet: false,
+        });
         assert_eq!(n.len(), 1);
         assert_eq!(n[0].kind, NudgeKind::Unproductive);
         last.insert(NudgeKind::Unproductive, t(30));
-        let n = policy.evaluate(&NudgeInput { now: t(40), recent: &recent, categories: &cats, last_emitted: &last, quiet: false });
+        let n = policy.evaluate(&NudgeInput {
+            now: t(40),
+            recent: &recent,
+            categories: &cats,
+            last_emitted: &last,
+            quiet: false,
+        });
         assert!(n.is_empty(), "cooldown should suppress");
-        let n = policy.evaluate(&NudgeInput { now: t(30), recent: &recent, categories: &cats, last_emitted: &HashMap::new(), quiet: true });
+        let n = policy.evaluate(&NudgeInput {
+            now: t(30),
+            recent: &recent,
+            categories: &cats,
+            last_emitted: &HashMap::new(),
+            quiet: true,
+        });
         assert!(n.is_empty(), "quiet hours suppress");
     }
 
     #[test]
     fn break_nudge_after_long_focus() {
         let cats = vec![cat("work", true)];
-        let recent = vec![block(0, 50, "a", Some("work")), block(50, 95, "a", Some("work"))];
-        let n = NudgePolicy::default().evaluate(&NudgeInput { now: t(95), recent: &recent, categories: &cats, last_emitted: &HashMap::new(), quiet: false });
+        let recent = vec![
+            block(0, 50, "a", Some("work")),
+            block(50, 95, "a", Some("work")),
+        ];
+        let n = NudgePolicy::default().evaluate(&NudgeInput {
+            now: t(95),
+            recent: &recent,
+            categories: &cats,
+            last_emitted: &HashMap::new(),
+            quiet: false,
+        });
         assert!(n.iter().any(|n| n.kind == NudgeKind::BreakSuggested));
     }
 
@@ -387,9 +426,20 @@ mod tests {
         let cats = vec![cat("work", true)];
         let mut recent = Vec::new();
         for i in 0..30 {
-            recent.push(block(i, i + 1, if i % 2 == 0 { "a" } else { "b" }, Some("work")));
+            recent.push(block(
+                i,
+                i + 1,
+                if i % 2 == 0 { "a" } else { "b" },
+                Some("work"),
+            ));
         }
-        let n = NudgePolicy::default().evaluate(&NudgeInput { now: t(30), recent: &recent, categories: &cats, last_emitted: &HashMap::new(), quiet: false });
+        let n = NudgePolicy::default().evaluate(&NudgeInput {
+            now: t(30),
+            recent: &recent,
+            categories: &cats,
+            last_emitted: &HashMap::new(),
+            quiet: false,
+        });
         assert!(n.iter().any(|n| n.kind == NudgeKind::Distracted));
     }
 }

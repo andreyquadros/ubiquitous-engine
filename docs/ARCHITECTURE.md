@@ -39,108 +39,145 @@ Modelo default de custo (uso típico 8 h/dia): ~100 blocos/dia classificados por
 ubiqx/
 ├── Cargo.toml                    # workspace
 ├── crates/
-│   ├── ubiqx-core/               # DOMÍNIO: modelos, ports (traits), segmentação, insights, agendamento — sem I/O
-│   ├── ubiqx-storage/            # ADAPTER: SQLite (repositórios), migrações
-│   ├── ubiqx-platform/           # ADAPTER: macOS (janela ativa, screenshot, idle, URL) + implementação mock p/ outros SOs
-│   ├── ubiqx-ai/                 # ADAPTER: cliente Anthropic, prompts, classificador LLM, redator de relatórios
-│   ├── ubiqx-engine/             # APLICAÇÃO: orquestra tracker, pipeline de classificação, scheduler, nudges
-│   └── ubiqx-cli/                # CLI headless (simulação, relatórios, debug) — roda em Linux/CI
+│   ├── ubiqx-core/               # DOMÍNIO: modelos, ports (traits), segmentação, regras, aprendizado,
+│   │                             #   insights, agendamento, redação de dados, renderização de relatórios — sem I/O
+│   ├── ubiqx-storage/            # ADAPTER: SQLite (rusqlite) — repositórios e migrações
+│   ├── ubiqx-platform/           # ADAPTER: macOS (janela ativa, título, idle, print por janela, URL, permissões,
+│   │                             #   Keychain) + plataforma roteirizada (mock) para Linux/CI
+│   ├── ubiqx-ai/                 # ADAPTER: cliente Anthropic (HTTP), prompts, classificadores texto/visão,
+│   │                             #   redator de relatórios, conselheiro, fakes para testes
+│   ├── ubiqx-engine/             # APLICAÇÃO: amostrador, tracker, worker de classificação, agendador de
+│   │                             #   relatórios, nudges, retenção, correções (aprendizado), fachada de leitura
+│   ├── ubiqx-app/                # COMPOSIÇÃO: monta engine + SQLite + plataforma + IA (usado pelo desktop e CLI)
+│   └── ubiqx-cli/                # CLI headless: simulação, status, classificação, relatórios (roda em Linux)
 ├── apps/desktop/
-│   ├── src/                      # React (UI)
-│   └── src-tauri/                # Tauri: comandos IPC, tray, composição (DI) do engine
-├── assets/ubi/                   # Mascote UBI (SVG + estados)
-├── docs/                         # Arquitetura, decisões, screenshots
-└── .github/workflows/            # CI (Linux: core/storage/ai/engine/cli + frontend; macOS: build do app)
+│   ├── src/                      # React 19 + TypeScript + Tailwind 4 (UI)
+│   └── src-tauri/                # Tauri 2: tray de barra de menus, comandos IPC, eventos, notificações
+├── docs/                         # Arquitetura, guia de teste no macOS, screenshots
+├── scripts/                      # assinatura de dev, instalação do modelo 3D do UBI
+└── .github/workflows/            # CI: testes Linux + type-check macOS + frontend + build do app no macOS
 ```
 
-Regra de dependência (hexagonal): `core` ← `storage | platform | ai` ← `engine` ← `desktop | cli`.
+Regra de dependência (hexagonal): `core` ← `storage | platform | ai` ← `engine` ← `app` ← `desktop | cli`.
 `core` não depende de nenhum adapter; adapters dependem só de `core`; `engine` usa apenas as traits de `core`
-e recebe as implementações por injeção (composition root em `src-tauri/src/main.rs` e `ubiqx-cli`).
+e recebe as implementações por injeção (`EngineDeps`), montadas em `ubiqx-app`.
 
 ## 4. Domínio (`ubiqx-core`)
 
 ```
-ActivitySample  { at, app_name, bundle_id, window_title, url, idle_secs }        // amostra bruta (a cada ~5 s)
-ActivityBlock   { id, started_at, ended_at, app_name, bundle_id, title, url, domain,
-                  category_id?, confidence, source(Rule|Memory|Llm|Vision|User), description?, screenshot_id? }
-Category        { id, name, color, icon, description, keywords[], report_time (HH:MM)?, is_productive, archived }
-Rule            { id, category_id, matcher(App|Domain|TitleContains|Regex), pattern, priority, origin(User|Learned) }
-Correction      { id, block_id, from_category?, to_category, note?, at }          // alimenta aprendizado
-Screenshot      { id, at, path, width, height, block_id?, sent_to_ai }
-DailyReport     { id, date, category_id, generated_at, summary_md, items[], total_secs, model, tokens }
-Nudge           { id, at, kind(Unproductive|Distracted|LongSession|BreakSuggested|Praise|Idle), message, seen }
-Settings        { sample_interval, screenshot_interval, idle_threshold, blocked_apps[], private_mode,
-                  retention_days, models{classify,report}, max_vision_per_hour, quiet_hours, report_default_time }
+ActivitySample  { at, app_name, app_id, window_title, url, idle_secs, window_id }        // amostra bruta (~5 s)
+ActivityBlock   { id, started_at, ended_at, app_name, app_id, title, title_key, url, domain,
+                  category_id?, confidence, source(Rule|Memory|Llm|Vision|User), description?, screenshot_id?,
+                  classify_attempts, next_attempt_at?, needs_review, ai_payload?, ai_sent_at?, is_manual, note? }
+Category        { id, name, color, icon, description, keywords[], report_time?, report_template?,
+                  is_productive, is_system, archived }
+Rule            { id, category_id, matcher(App|Domain|TitleContains|Regex), pattern, priority,
+                  origin(User|Learned), enabled, hit_count, miss_count, last_contradicted_at? }
+Correction      { block_id, from_category?, to_category, app_id, title_key, domain?, at }   // sinal de aprendizado
+Screenshot      { id, at, path, width, height, app_id, block_id?, sent_to_ai }
+DailyReport     { id, date, category_id, items[{activity, kind, minutes, evidence[], time_range, continuation_of?}],
+                  highlights[], summary_md (renderizado localmente), stale, edited, model, tokens }
+Nudge           { kind(Unproductive|Distracted|BreakSuggested|Praise|Idle|ReportReady|Attention), title, message }
+Settings        { intervalos, limiar de idle, apps/domínios bloqueados, modo privado com prazo, vision_policy
+                  (Never|OnlyApps|AllExceptBlocked), modelos, orçamento mensal de IA, lote/espera de classificação,
+                  local_only, horário padrão de relatório, perfil do usuário, horário silencioso, nudges }
+EngineEvent     { BlockOpened, BlockClosed, BlocksClassified, ReportReady, Nudge, TrackerState, AiHealth,
+                  PermissionRequired, ScreenshotTaken }                                       // engine → UI
 ```
 
 **Ports (traits)** — todas `Send + Sync`:
 
-- `ActivitySource::current()` → `Option<ForegroundWindow>` (app, bundle id, título, pid)
-- `BrowserUrlResolver::url_for(app) -> Option<Url>`
-- `IdleDetector::idle_secs()`
-- `ScreenCapturer::capture_primary() -> Image`
-- `Repositories`: `BlockRepo`, `CategoryRepo`, `RuleRepo`, `CorrectionRepo`, `ScreenshotRepo`, `ReportRepo`, `NudgeRepo`, `SettingsRepo`
-- `Classifier::classify(&[ActivityBlock], &Context) -> Vec<Classification>` (implementado por Rule, Memory, Llm; encadeados por `ClassifierChain`)
-- `LlmClient::complete(request) -> response` (JSON estruturado; `AnthropicClient` é a implementação)
-- `ReportWriter::write(date, category, blocks) -> DailyReport`
-- `Notifier::notify(Nudge)`
-- `Clock::now()` (permite testes determinísticos)
+- Plataforma: `ActivitySource::foreground()`, `BrowserUrlResolver`, `IdleDetector`, `ScreenCapturer::capture(target, max_edge)`
+  (por janela, display ou primário) + `visible_apps()`, `PermissionChecker`, `SecretStore`, `Notifier`.
+- Persistência (síncronas; o engine as chama em `spawn_blocking`): `BlockRepo`, `CategoryRepo`, `RuleRepo`,
+  `CorrectionRepo`, `ScreenshotRepo`, `ReportRepo`, `NudgeRepo`, `SettingsRepo`, `UsageRepo`, `KvRepo`.
+- Classificação: `LocalClassifier` (síncrono, infalível: regras, memória) e `RemoteClassifier` (assíncrono, em lote),
+  `VisionClassifier`, `ReportWriter`, `Advisor`. O formato de requisição HTTP fica **dentro** de `ubiqx-ai`.
+- `EventSink` (engine → shell) e `Clock` (testes determinísticos).
 
-**Lógica pura em core (testável sem I/O):** `Segmenter` (amostras → blocos), `InsightEngine` (blocos → nudges/score de foco),
-`ReportScheduler` (quando gerar cada relatório), `RuleMatcher`, `TitleNormalizer`.
+**Lógica pura em core (testada sem I/O):** `Segmenter`, `RuleClassifier`/`best_rule`, `MemoryClassifier`,
+`suggest_rules`/`select_examples`, `compute_stats`/`NudgePolicy`, `due_reports`, `redact_*`,
+`render_summary_md`/`render_monthly_md`.
 
 ## 5. Pipeline em tempo de execução (`ubiqx-engine`)
 
 ```
- ┌──────────┐ 5 s  ┌───────────┐       ┌──────────┐ blocos   ┌────────────────┐ pendentes ┌───────────────┐
- │ Sampler  │─────▶│ Segmenter │──────▶│ BlockRepo│─────────▶│ ClassifyWorker │──────────▶│ ClassifierChain│
- └──────────┘      └───────────┘       └──────────┘          └────────────────┘           │ Rule→Memory→LLM│
-      │ a cada N min (se ativo e app permitido)                                            └───────┬───────┘
-      ▼                                                                                            │ ambíguo
- ┌────────────┐  downscale 1024px, WebP q60                                               ┌────────▼──────┐
- │ Screenshot │────────────────────────────────▶ disco + ScreenshotRepo                     │ VisionClassif.│
- └────────────┘                                                                            └───────────────┘
- ┌──────────────┐ cron interno   ┌──────────────┐   ┌──────────┐      ┌────────────┐
- │ ReportSched. │───────────────▶│ ReportWriter │──▶│ReportRepo│ ───▶ │ Notifier+UI│
- └──────────────┘                └──────────────┘   └──────────┘      └────────────┘
- ┌──────────────┐ a cada 1 min   ┌────────┐
- │ InsightEngine│───────────────▶│ Nudges │──▶ UBI (UI) + notificação macOS
- └──────────────┘                └────────┘
+ thread "ubiqx-sampler" (bloqueante)        tarefas tokio
+ ┌──────────┐ 5 s  mpsc  ┌───────────┐ blocos ┌──────────┐   30 s  ┌────────────────────────────────────┐
+ │ Sampler  │───────────▶│ Tracker   │───────▶│ BlockRepo│────────▶│ ClassifyWorker                     │
+ │ app/título│           │ Segmenter │        └──────────┘         │ regras do usuário → memória →      │
+ │ idle, URL │           │ + print   │ (janela ativa, ≥20 s,       │ regras aprendidas → LLM (lote,     │
+ └──────────┘           │ por bloco)│  política de visão)         │ texto redigido) → visão (print)    │
+                        └───────────┘                             │ backoff 1m→4h, 5 tentativas → revisão│
+ ┌──────────────┐ 30 s (relógio de parede, last_check persistido)  └────────────────────────────────────┘
+ │ ReportSched. │──▶ due_reports → ReportWriter (Sonnet, thinking off) ou template local → ReportRepo → evento
+ ├──────────────┤ 60 s
+ │ Nudges       │──▶ NudgePolicy (cooldown, teto diário, silencioso, apps de reunião, snooze) → UBI + notificação
+ ├──────────────┤ 1 h
+ │ Retenção     │──▶ apaga prints além de `screenshot_retention_hours`
+ └──────────────┘
 ```
 
-- **Sampler**: lê `ActivitySource` + `IdleDetector` (+ `BrowserUrlResolver` quando o app é navegador e o título mudou).
-- **Segmenter**: agrupa amostras consecutivas iguais (app + título normalizado/domínio); fecha bloco em troca de contexto,
-  idle > limiar ou pausa; descarta blocos < 15 s (configurável) mesclando ao vizinho.
-- **ClassifyWorker**: a cada 60 s pega blocos `category_id = NULL` fechados; roda a cadeia. LLM recebe **lotes** (até 25 blocos) em texto.
-  Bloco é "ambíguo" se confiança < 0,6 ou título genérico (WhatsApp, Mail, Finder…) → um screenshot associado vai ao modelo de visão,
-  que devolve `{category, description}`; `description` enriquece o relatório ("respondeu mensagens sobre edital X").
-- **Aprendizado**: `Correction` → (a) `Rule` sugerida (domínio/app/título) com `origin=Learned` (usuário confirma ou o sistema aplica
-  automaticamente após 2 correções coerentes); (b) top-K exemplos semelhantes (Jaccard sobre tokens do título + app) entram no prompt.
-- **ReportScheduler**: para cada categoria com `report_time` (ou default), gera o relatório do dia; regenera sob demanda.
-- **InsightEngine** (local, sem custo): score de foco (0–100) por hora e por dia, taxa de troca de contexto, tempo em apps
-  "distração" (categorias não produtivas), sessões > 90 min sem pausa, ociosidade longa → `Nudge`. UBI muda de humor conforme o score.
+- **Sampler**: lê `ActivitySource` + `IdleDetector`; URL só para navegadores e só quando o título muda
+  (negações de Automação são lembradas por 30 min). Cada amostra é carimbada com relógio de parede, então
+  suspensão/tampa fechada vira apenas um *gap* (bloco fechado), nunca tempo inflado.
+- **Segmenter**: agrupa amostras consecutivas iguais (app + título normalizado, ou app + domínio no navegador);
+  fecha em troca de contexto, ociosidade ou gap > 6 intervalos; blocos < `min_block_secs` são descartados.
+  Apps bloqueados, janelas anônimas e modo privado geram blocos **"[privado]"** na categoria `sys-private`:
+  o tempo continua contando, o conteúdo não.
+- **Prints**: dirigidos pelo bloco (nunca por timer cego): só depois de 20 s no mesmo bloco, só da **janela ativa**
+  (`CGWindowListCreateImage` via xcap), nunca se um app bloqueado estiver visível, repetidos a cada
+  `screenshot_interval_secs` enquanto o bloco continua. Reduzidos a 1280 px e JPEG q60; apagados após a
+  classificação (ou após `screenshot_retention_hours` se guardados para revisão).
+- **ClassifyWorker**: pega blocos pendentes (`next_attempt_at` respeitado); cadeia local é grátis; o LLM só é
+  chamado quando há ≥ `classify_batch_min` blocos ou o mais antigo espera ≥ `classify_max_wait_secs`; lote máximo 25;
+  antes de enviar, cada bloco passa por `redact_block` (sem query string, sem e-mail/telefone/CPF/CNPJ; títulos de
+  apps de mensagens viram só o nome do app) e o texto exato enviado fica em `ai_payload` para auditoria na UI.
+  Visão só para blocos ambíguos com print, dentro de `vision_policy` e `max_vision_per_hour`.
+- **Saúde da IA / custo**: 401/403 → pausa até trocar a chave; 429/5xx → degradado por 15 min; orçamento mensal
+  (`ai_monthly_budget_usd`, padrão US$ 5) — aviso a 80 %, parada a 100 %. Sem chave, tudo funciona em modo local.
+- **Aprendizado**: uma correção (1) reclassifica o bloco (`source=User`, definitivo), (2) grava `Correction`,
+  (3) penaliza a regra que errou (`miss_count`; auto-desativa com 2 erros ou >30 % de erro), (4) opcionalmente
+  reaplica ao dia/mês (mesmo app+domínio), (5) sugere "Sempre: X → categoria" — aplicado automaticamente apenas para
+  domínios específicos (nunca para apps ou serviços multi-inquilino como Gmail/WhatsApp/Docs), senão pede confirmação.
+  A memória compara com blocos já corrigidos (similaridade app/domínio/título ≥ 0,85) e ignora títulos genéricos.
+- **Relatórios**: o produto são os `items` (atividade no passado, tipo, minutos, evidências, continuação); o
+  Markdown diário e o **relatório mensal por categoria** são renderizados localmente e exportáveis. O redator recebe
+  perfil do usuário, descrição/template da categoria e itens dos 5 dias anteriores. Sem IA, um template local
+  agrupa por app/domínio. Relatórios ficam `stale` quando blocos do dia mudam e podem ser regenerados; editados à
+  mão nunca são sobrescritos.
 
 ## 6. Interface (React)
 
-Páginas: **Dashboard** (hoje: tempo por categoria, timeline, score de foco, UBI com dica), **Timeline/Revisão** (blocos com
-reclassificação inline em 1 clique — é aqui que o sistema aprende), **Relatórios** (por dia/categoria, Markdown, copiar/exportar),
-**Categorias & Regras**, **Insights** (tendências, recomendações), **Configurações** (chave de API, modelos, intervalos,
-apps bloqueados, horários de relatório, privacidade, iniciar com o sistema).
-Design: tema claro/escuro, cards arredondados, paleta azul/laranja do UBI, tipografia Inter, gráficos suaves (Recharts).
+Páginas: **Hoje** (score de foco, tempo por categoria, linha do tempo 24 h, foco por hora, UBI com dica, saúde da IA
+e orçamento), **Timeline** (blocos com reclassificação em 1 clique, divisão, entrada manual, badge "enviado à IA"),
+**Revisão** (grupos por app/domínio ordenados por duração × incerteza, atalhos de teclado, sugestões "Sempre"),
+**Relatórios** (diário editável + mensal exportável), **Categorias & Regras**, **Insights** (semana, recomendações do
+UBI), **Configurações** (IA, rastreamento, privacidade, permissões, UBI) e **Onboarding** em 7 passos.
+UBI: modelo 3D (`public/ubi/Ubi.glb`, react-three-fiber) com fallback SVG; humor derivado do score de foco.
 
 ## 7. Segurança & privacidade
 
-- Chave de API só no Keychain (`keyring`), nunca em arquivo. Nada sai da máquina além das chamadas à API configurada.
-- Screenshots: JPEG/WebP reduzido, sem OCR local por padrão, retenção de 7 dias (configurável), apagados após uso.
-- Apps bloqueados (1Password, bancos…) nunca são capturados; "Modo privado" pausa tudo com 1 clique no tray.
-- Permissões macOS necessárias: **Gravação de Tela** (títulos de janela + screenshots), **Automação** (URL do navegador) —
-  a UI guia o usuário na primeira execução.
+- Chave de API só no Keychain (`keyring`, serviço `ai.ubiqx`), nunca em arquivo; validada com `GET /v1/models`.
+- Só sai da máquina o que a UI mostra em "Dados enviados à IA": linhas redigidas por bloco e, quando permitido,
+  o print da janela ativa. `local_only` desliga qualquer chamada remota.
+- Prints em `~/Library/Application Support/ai.ubiqx.app/screenshots.noindex/` (0700), apagados após uso.
+- Apps bloqueados (gerenciadores de senha por padrão), domínios bloqueados, janelas anônimas e modo privado
+  (30 min / 1 h / até amanhã / indefinido, pelo tray) viram blocos "[privado]".
+- "Exportar meus dados" (JSON) e "Apagar todos os dados" (banco, prints e chave).
+- Permissões macOS: **Gravação de Tela** (títulos + prints), **Automação** (URL do navegador). Ver `docs/MACOS-TESTING.md`
+  — inclusive a assinatura estável do binário para as permissões sobreviverem a rebuilds.
 
 ## 8. Decisões (ADRs resumidas)
 
-1. **Rust + Tauri em vez de Electron/Swift**: menor consumo em background, um core reutilizável em outros SOs, UI web bonita.
-2. **Texto antes de imagem**: 90 % dos blocos são classificáveis pelo título/URL; visão só em ambíguos → custo baixo.
-3. **Cadeia de classificadores**: regras (determinístico, grátis) > memória (grátis) > LLM. Facilita testes e troca de provedor.
-4. **Saída estruturada** (`json_schema`) elimina parsing frágil; **prompt caching** no system prompt (categorias + regras + exemplos).
-5. **rusqlite** em vez de sqlx: sem runtime async no banco, mais simples para um app desktop; acesso serializado por `Mutex`.
-6. **CLI headless** para desenvolver/testar o core em Linux/CI com uma fonte de atividade simulada.
+1. **Rust + Tauri em vez de Electron/Swift**: menor consumo em background, core reutilizável em outros SOs, UI web bonita.
+2. **Texto antes de imagem**: a maioria dos blocos é classificável por título/URL; visão só em ambíguos e sob política.
+3. **Cadeia de classificadores** com split local/remoto: regras e memória são síncronas, grátis e testáveis; o LLM é
+   assíncrono, em lote, com backoff e orçamento.
+4. **Saída estruturada** (`output_config.format = json_schema`) elimina parsing frágil. **Prompt caching** só onde
+   vale: no redator (Sonnet 5, prefixo ≥ 1024 tokens); no Haiku 4.5 o mínimo é 4096 tokens, então o prompt de
+   classificação é mantido enxuto e sem `cache_control`. Sonnet 5 recebe `thinking: disabled` para não cobrar raciocínio.
+5. **rusqlite** atrás de `Mutex` com chamadas em `spawn_blocking`; nunca se segura o lock entre `await`s.
+6. **Plataforma roteirizada + CLI** para desenvolver e testar o pipeline inteiro em Linux/CI; o módulo macOS é
+   type-checked contra `aarch64-apple-darwin` na CI.
+7. **Tempo nunca some**: bloqueios e modo privado redigem, não descartam.

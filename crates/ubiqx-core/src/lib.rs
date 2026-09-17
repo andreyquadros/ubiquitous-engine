@@ -23,6 +23,7 @@ pub mod model;
 pub mod normalize;
 pub mod ports;
 pub mod redact;
+pub mod report;
 pub mod rules;
 pub mod scheduler;
 pub mod segmenter;

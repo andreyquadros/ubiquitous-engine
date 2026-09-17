@@ -53,10 +53,15 @@ pub fn redact_text(text: &str) -> String {
         .replace_all(&t, "[cpf]")
         .into_owned();
     // Long digit runs (cards, accounts, bare CPF/CNPJ) before phones, which are shorter.
-    t = re(&DIGITS, r"\b\d{9,}\b").replace_all(&t, "[número]").into_owned();
-    t = re(&PHONE, r"(?:\+?\d{1,3}[\s-]?)?\(?\d{2,3}\)?[\s-]?\d{4,5}[\s-]?\d{4}\b")
-        .replace_all(&t, "[telefone]")
+    t = re(&DIGITS, r"\b\d{9,}\b")
+        .replace_all(&t, "[número]")
         .into_owned();
+    t = re(
+        &PHONE,
+        r"(?:\+?\d{1,3}[\s-]?)?\(?\d{2,3}\)?[\s-]?\d{4,5}[\s-]?\d{4}\b",
+    )
+    .replace_all(&t, "[telefone]")
+    .into_owned();
     t
 }
 
@@ -85,7 +90,13 @@ pub struct RedactedBlock {
     pub domain: Option<String>,
 }
 
-pub fn redact_block(app_id: &str, app_name: &str, title: &str, url: Option<&str>, domain: Option<&str>) -> RedactedBlock {
+pub fn redact_block(
+    app_id: &str,
+    app_name: &str,
+    title: &str,
+    url: Option<&str>,
+    domain: Option<&str>,
+) -> RedactedBlock {
     let title = if is_messaging_app(app_id, app_name) {
         app_name.to_string()
     } else {
@@ -112,7 +123,10 @@ mod tests {
         assert!(t.contains("[cpf]"), "{t}");
         assert!(t.contains("[cnpj]"), "{t}");
         assert!(t.contains("[número]"), "{t}");
-        assert_eq!(redact_text("Edital 12/2026 - Incubadora"), "Edital 12/2026 - Incubadora");
+        assert_eq!(
+            redact_text("Edital 12/2026 - Incubadora"),
+            "Edital 12/2026 - Incubadora"
+        );
     }
 
     #[test]
@@ -126,7 +140,13 @@ mod tests {
 
     #[test]
     fn messaging_titles_become_app_name() {
-        let r = redact_block("net.whatsapp.WhatsApp", "WhatsApp", "Maria Souza", None, None);
+        let r = redact_block(
+            "net.whatsapp.WhatsApp",
+            "WhatsApp",
+            "Maria Souza",
+            None,
+            None,
+        );
         assert_eq!(r.title, "WhatsApp");
         let r = redact_block("com.apple.dt.Xcode", "Xcode", "main.swift", None, None);
         assert_eq!(r.title, "main.swift");

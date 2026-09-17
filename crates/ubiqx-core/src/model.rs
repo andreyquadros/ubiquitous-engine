@@ -317,7 +317,8 @@ pub struct Rule {
 impl Rule {
     /// A rule that keeps being contradicted is disabled automatically.
     pub fn should_auto_disable(&self) -> bool {
-        self.miss_count >= 2 || (self.hit_count >= 5 && self.miss_count as f32 / self.hit_count as f32 > 0.3)
+        self.miss_count >= 2
+            || (self.hit_count >= 5 && self.miss_count as f32 / self.hit_count as f32 > 0.3)
     }
 }
 
@@ -603,9 +604,16 @@ pub enum VisionPolicy {
 }
 
 impl VisionPolicy {
-    pub fn allows(&self, app_id: &str, app_name: &str, blocked: &[String], denied: &[String]) -> bool {
+    pub fn allows(
+        &self,
+        app_id: &str,
+        app_name: &str,
+        blocked: &[String],
+        denied: &[String],
+    ) -> bool {
         let is_in = |list: &[String]| {
-            list.iter().any(|b| b.eq_ignore_ascii_case(app_id) || b.eq_ignore_ascii_case(app_name))
+            list.iter()
+                .any(|b| b.eq_ignore_ascii_case(app_id) || b.eq_ignore_ascii_case(app_name))
         };
         match self {
             VisionPolicy::Never => false,
@@ -768,15 +776,34 @@ impl Settings {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EngineEvent {
-    BlockOpened { block: ActivityBlock },
-    BlockClosed { block: ActivityBlock },
-    BlocksClassified { block_ids: Vec<Id> },
-    ReportReady { report: DailyReport },
-    Nudge { nudge: Nudge },
-    TrackerState { state: TrackerState },
-    AiHealth { health: AiHealth },
-    PermissionRequired { permission: String },
-    ScreenshotTaken { screenshot_id: Id, block_id: Option<Id> },
+    BlockOpened {
+        block: ActivityBlock,
+    },
+    BlockClosed {
+        block: ActivityBlock,
+    },
+    BlocksClassified {
+        block_ids: Vec<Id>,
+    },
+    ReportReady {
+        report: DailyReport,
+    },
+    Nudge {
+        nudge: Nudge,
+    },
+    TrackerState {
+        state: TrackerState,
+    },
+    AiHealth {
+        health: AiHealth,
+    },
+    PermissionRequired {
+        permission: String,
+    },
+    ScreenshotTaken {
+        screenshot_id: Id,
+        block_id: Option<Id>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -797,9 +824,14 @@ pub enum AiHealth {
     Ok,
     NotConfigured,
     /// Temporarily paused after transient failures; retried automatically.
-    Degraded { reason: String, until: DateTime<Utc> },
+    Degraded {
+        reason: String,
+        until: DateTime<Utc>,
+    },
     /// Stopped until the user acts (invalid key, budget exhausted).
-    Paused { reason: String },
+    Paused {
+        reason: String,
+    },
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -849,7 +881,10 @@ mod tests {
         assert!(q.contains(NaiveTime::from_hms_opt(23, 0, 0).unwrap()));
         assert!(q.contains(NaiveTime::from_hms_opt(3, 0, 0).unwrap()));
         assert!(!q.contains(NaiveTime::from_hms_opt(12, 0, 0).unwrap()));
-        let q2 = QuietHours { enabled: false, ..q };
+        let q2 = QuietHours {
+            enabled: false,
+            ..q
+        };
         assert!(!q2.contains(NaiveTime::from_hms_opt(23, 0, 0).unwrap()));
     }
 
@@ -890,9 +925,16 @@ mod tests {
         let blocked = vec!["com.1password".to_string()];
         assert!(!VisionPolicy::Never.allows("a", "A", &blocked, &[]));
         assert!(VisionPolicy::AllExceptBlocked.allows("a", "A", &blocked, &[]));
-        assert!(!VisionPolicy::AllExceptBlocked.allows("com.1password", "1Password", &blocked, &[]));
+        assert!(!VisionPolicy::AllExceptBlocked.allows(
+            "com.1password",
+            "1Password",
+            &blocked,
+            &[]
+        ));
         assert!(!VisionPolicy::AllExceptBlocked.allows("a", "A", &blocked, &["A".into()]));
-        let only = VisionPolicy::OnlyApps { apps: vec!["a".into()] };
+        let only = VisionPolicy::OnlyApps {
+            apps: vec!["a".into()],
+        };
         assert!(only.allows("a", "A", &blocked, &[]));
         assert!(!only.allows("b", "B", &blocked, &[]));
     }
@@ -900,7 +942,10 @@ mod tests {
     #[test]
     fn timed_private_mode() {
         let now = Utc::now();
-        let mut s = Settings { private_mode: true, ..Default::default() };
+        let mut s = Settings {
+            private_mode: true,
+            ..Default::default()
+        };
         assert!(s.is_private(now));
         s.private_until = Some(now - chrono::Duration::minutes(1));
         assert!(!s.is_private(now));

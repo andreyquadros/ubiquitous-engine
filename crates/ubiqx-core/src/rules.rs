@@ -77,11 +77,15 @@ impl RuleClassifier {
     }
 
     pub fn user_only() -> Self {
-        Self { origin: Some(RuleOrigin::User) }
+        Self {
+            origin: Some(RuleOrigin::User),
+        }
     }
 
     pub fn learned_only() -> Self {
-        Self { origin: Some(RuleOrigin::Learned) }
+        Self {
+            origin: Some(RuleOrigin::Learned),
+        }
     }
 }
 
@@ -94,9 +98,18 @@ impl LocalClassifier for RuleClassifier {
         }
     }
 
-    fn classify(&self, block: &ActivityBlock, ctx: &ClassificationContext) -> Option<Classification> {
+    fn classify(
+        &self,
+        block: &ActivityBlock,
+        ctx: &ClassificationContext,
+    ) -> Option<Classification> {
         let rules: Vec<Rule> = match self.origin {
-            Some(o) => ctx.rules.iter().filter(|r| r.origin == o).cloned().collect(),
+            Some(o) => ctx
+                .rules
+                .iter()
+                .filter(|r| r.origin == o)
+                .cloned()
+                .collect(),
             None => ctx.rules.clone(),
         };
         best_rule(&rules, block).map(|rule| Classification {
@@ -177,13 +190,32 @@ mod tests {
 
     #[test]
     fn matchers() {
-        let b = block("Google Chrome", "SEI · Processo", Some("https://sei.ifro.edu.br/x"));
-        assert!(rule_matches(&rule(RuleMatcher::App, "google chrome", 0), &b));
-        assert!(rule_matches(&rule(RuleMatcher::App, "com.x.google chrome", 0), &b));
-        assert!(rule_matches(&rule(RuleMatcher::Domain, "ifro.edu.br", 0), &b));
-        assert!(rule_matches(&rule(RuleMatcher::TitleContains, "processo", 0), &b));
+        let b = block(
+            "Google Chrome",
+            "SEI · Processo",
+            Some("https://sei.ifro.edu.br/x"),
+        );
+        assert!(rule_matches(
+            &rule(RuleMatcher::App, "google chrome", 0),
+            &b
+        ));
+        assert!(rule_matches(
+            &rule(RuleMatcher::App, "com.x.google chrome", 0),
+            &b
+        ));
+        assert!(rule_matches(
+            &rule(RuleMatcher::Domain, "ifro.edu.br", 0),
+            &b
+        ));
+        assert!(rule_matches(
+            &rule(RuleMatcher::TitleContains, "processo", 0),
+            &b
+        ));
         assert!(rule_matches(&rule(RuleMatcher::Regex, r"sei\.ifro", 0), &b));
-        assert!(!rule_matches(&rule(RuleMatcher::Regex, r"(unclosed", 0), &b));
+        assert!(!rule_matches(
+            &rule(RuleMatcher::Regex, r"(unclosed", 0),
+            &b
+        ));
         let mut disabled = rule(RuleMatcher::App, "google chrome", 0);
         disabled.enabled = false;
         assert!(!rule_matches(&disabled, &b));
@@ -221,11 +253,18 @@ mod tests {
         let xcode = block("Xcode", "a", None);
         let slack = block("Slack", "b", None);
         let all = RuleClassifier::all();
-        assert_eq!(all.classify(&xcode, &ctx).unwrap().category_id.as_deref(), Some("cat-Xcode"));
+        assert_eq!(
+            all.classify(&xcode, &ctx).unwrap().category_id.as_deref(),
+            Some("cat-Xcode")
+        );
         assert!(all.classify(&block("Figma", "c", None), &ctx).is_none());
         assert!(RuleClassifier::user_only().classify(&slack, &ctx).is_none());
         assert_eq!(
-            RuleClassifier::learned_only().classify(&slack, &ctx).unwrap().category_id.as_deref(),
+            RuleClassifier::learned_only()
+                .classify(&slack, &ctx)
+                .unwrap()
+                .category_id
+                .as_deref(),
             Some("cat-Slack")
         );
     }
