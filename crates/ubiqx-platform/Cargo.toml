@@ -1,5 +1,6 @@
 [package]
 name = "ubiqx-platform"
+description = "ubiqX platform adapters: macOS foreground window, idle, screenshots, browser URL, permissions, keychain; plus scripted mocks for other OSes and tests"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,3 +10,22 @@ authors.workspace = true
 
 [dependencies]
 ubiqx-core.workspace = true
+chrono.workspace = true
+image.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+xcap = "0.9"
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-foundation = "0.3"
+objc2-core-foundation = "0.3"
+objc2-core-graphics = "0.3"
+keyring = { version = "3.6", features = ["apple-native"] }
+
+[dev-dependencies]
+tempfile.workspace = true

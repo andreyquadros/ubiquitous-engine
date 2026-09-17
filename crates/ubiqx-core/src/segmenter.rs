@@ -8,8 +8,13 @@ use chrono::{DateTime, Duration, Utc};
 use crate::model::*;
 use crate::normalize::{domain_of, normalize_title};
 
+/// Title given to blocks whose content must not be recorded.
+pub const PRIVATE_TITLE: &str = "[privado]";
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SegmenterConfig {
+    /// Private mode: every sample is recorded as a redacted "Privado" block.
+    pub private_mode: bool,
     pub idle_threshold_secs: u32,
     pub min_block_secs: u32,
     /// If two samples are farther apart than this, the open block is closed (machine slept).
@@ -21,6 +26,7 @@ pub struct SegmenterConfig {
 impl From<&Settings> for SegmenterConfig {
     fn from(s: &Settings) -> Self {
         Self {
+            private_mode: false,
             idle_threshold_secs: s.idle_threshold_secs,
             min_block_secs: s.min_block_secs,
             max_gap_secs: (s.sample_interval_secs * 6).max(30),
@@ -69,7 +75,10 @@ impl Segmenter {
 
     /// Restores an open block persisted by a previous run so no time is lost on restart.
     pub fn with_open_block(mut self, block: Option<ActivityBlock>) -> Self {
-        self.open = block.map(|b| OpenBlock { titles: vec![(b.title.clone(), b.sample_count)], block: b });
+        self.open = block.map(|b| OpenBlock {
+            titles: vec![(b.title.clone(), b.sample_count)],
+            block: b,
+        });
         self
     }
 
@@ -89,7 +98,7 @@ impl Segmenter {
         let app_blocked = self.cfg.blocked_apps.iter().any(|b| {
             b.eq_ignore_ascii_case(&sample.app_id) || b.eq_ignore_ascii_case(&sample.app_name)
         });
-        if app_blocked {
+        if app_blocked || crate::normalize::is_private_browsing_title(&sample.window_title) {
             return true;
         }
         if let Some(d) = sample.url.as_deref().and_then(domain_of) {
@@ -107,22 +116,51 @@ impl Segmenter {
     pub fn feed(&mut self, sample: &ActivitySample, sample_interval: Duration) -> SegmentOutcome {
         let mut out = SegmentOutcome::default();
 
-        // 1. Idle or blocked → close whatever is open, ignore the sample.
-        if sample.is_idle(self.cfg.idle_threshold_secs) || self.is_blocked(sample) {
+        // 1. Idle → close whatever is open, ignore the sample.
+        if sample.is_idle(self.cfg.idle_threshold_secs) {
             out.ignored = true;
             out.closed = self.close(sample.at);
             return out;
         }
 
+        // 2. Blocked app / private browsing / private mode → keep the time, drop the content.
+        let redacted;
+        let sample = if self.is_blocked(sample) || self.cfg.private_mode {
+            redacted = ActivitySample {
+                at: sample.at,
+                app_name: if self.cfg.private_mode {
+                    "Privado".into()
+                } else {
+                    sample.app_name.clone()
+                },
+                app_id: if self.cfg.private_mode {
+                    "privado".into()
+                } else {
+                    sample.app_id.clone()
+                },
+                window_title: PRIVATE_TITLE.into(),
+                url: None,
+                idle_secs: sample.idle_secs,
+                window_id: None,
+            };
+            &redacted
+        } else {
+            sample
+        };
+        let is_private = sample.window_title == PRIVATE_TITLE;
+
         let title_key = normalize_title(&sample.window_title, &sample.app_name);
         let domain = sample.url.as_deref().and_then(domain_of);
         let key = context_key(&sample.app_id, &title_key, domain.as_deref());
 
-        // 2. Same context and no big gap → extend.
+        // 3. Same context and no big gap → extend.
         if let Some(open) = self.open.as_mut() {
             let gap = sample.at - open.block.ended_at;
-            let same = context_key(&open.block.app_id, &open.block.title_key, open.block.domain.as_deref())
-                == key;
+            let same = context_key(
+                &open.block.app_id,
+                &open.block.title_key,
+                open.block.domain.as_deref(),
+            ) == key;
             if same && gap <= Duration::seconds(self.cfg.max_gap_secs as i64) {
                 open.block.ended_at = sample.at + sample_interval;
                 open.block.sample_count += 1;
@@ -136,7 +174,7 @@ impl Segmenter {
             }
         }
 
-        // 3. Different context → close the old block and open a new one.
+        // 4. Different context → close the old block and open a new one.
         out.closed = self.close(sample.at);
         let block = ActivityBlock {
             id: new_id(),
@@ -148,9 +186,10 @@ impl Segmenter {
             title_key,
             url: sample.url.clone(),
             domain,
-            category_id: None,
-            confidence: 0.0,
-            source: None,
+            // Private blocks are classified on the spot and never reach a remote model.
+            category_id: is_private.then(|| system_categories::PRIVATE.to_string()),
+            confidence: if is_private { 1.0 } else { 0.0 },
+            source: is_private.then_some(ClassificationSource::Rule),
             description: None,
             screenshot_id: None,
             sample_count: 1,
@@ -163,7 +202,10 @@ impl Segmenter {
             is_manual: false,
             note: None,
         };
-        self.open = Some(OpenBlock { titles: vec![(sample.window_title.clone(), 1)], block: block.clone() });
+        self.open = Some(OpenBlock {
+            titles: vec![(sample.window_title.clone(), 1)],
+            block: block.clone(),
+        });
         out.opened = Some(block.clone());
         out.open = Some(block);
         out
@@ -271,10 +313,29 @@ mod tests {
     fn browser_groups_by_domain_not_title() {
         let mut seg = Segmenter::new(SegmenterConfig::default());
         let iv = Duration::seconds(5);
-        seg.feed(&sample(0, "Google Chrome", "SEI - Proc 1", Some("https://sei.ifro.edu.br/a")), iv);
-        let o = seg.feed(&sample(5, "Google Chrome", "SEI - Proc 2", Some("https://sei.ifro.edu.br/b")), iv);
+        seg.feed(
+            &sample(
+                0,
+                "Google Chrome",
+                "SEI - Proc 1",
+                Some("https://sei.ifro.edu.br/a"),
+            ),
+            iv,
+        );
+        let o = seg.feed(
+            &sample(
+                5,
+                "Google Chrome",
+                "SEI - Proc 2",
+                Some("https://sei.ifro.edu.br/b"),
+            ),
+            iv,
+        );
         assert!(o.closed.is_none(), "same domain should extend");
-        let o = seg.feed(&sample(10, "Google Chrome", "YouTube", Some("https://youtube.com/")), iv);
+        let o = seg.feed(
+            &sample(10, "Google Chrome", "YouTube", Some("https://youtube.com/")),
+            iv,
+        );
         assert!(o.closed.is_some(), "different domain should close");
     }
 
@@ -294,12 +355,50 @@ mod tests {
     }
 
     #[test]
-    fn blocked_apps_are_never_recorded() {
-        let cfg = SegmenterConfig { blocked_apps: vec!["1Password".into()], ..Default::default() };
+    fn blocked_apps_become_private_blocks() {
+        let cfg = SegmenterConfig {
+            blocked_apps: vec!["1Password".into()],
+            ..Default::default()
+        };
         let mut seg = Segmenter::new(cfg);
         let o = seg.feed(&sample(0, "1Password", "Vault", None), Duration::seconds(5));
-        assert!(o.ignored);
-        assert!(o.opened.is_none());
+        assert!(!o.ignored);
+        let b = o.opened.unwrap();
+        assert_eq!(b.title, PRIVATE_TITLE);
+        assert_eq!(b.app_name, "1Password");
+        assert_eq!(b.category_id.as_deref(), Some(system_categories::PRIVATE));
+        assert!(b.url.is_none());
+        // Private browsing windows are treated the same way.
+        let o = seg.feed(
+            &sample(
+                5,
+                "Google Chrome",
+                "Google - Navegação anônima",
+                Some("https://x.com/secret"),
+            ),
+            Duration::seconds(5),
+        );
+        let b = o.opened.unwrap();
+        assert_eq!(b.title, PRIVATE_TITLE);
+        assert!(b.url.is_none());
+    }
+
+    #[test]
+    fn private_mode_records_time_only() {
+        let cfg = SegmenterConfig {
+            private_mode: true,
+            ..Default::default()
+        };
+        let mut seg = Segmenter::new(cfg);
+        let o = seg.feed(
+            &sample(0, "Xcode", "main.swift", None),
+            Duration::seconds(5),
+        );
+        let b = o.opened.unwrap();
+        assert_eq!(b.app_id, "privado");
+        assert_eq!(b.category_id.as_deref(), Some(system_categories::PRIVATE));
+        let o = seg.feed(&sample(5, "Slack", "general", None), Duration::seconds(5));
+        assert!(o.closed.is_none(), "all private samples share one block");
     }
 
     #[test]
@@ -320,9 +419,18 @@ mod tests {
         // Same title key? no — different titles are different contexts for non-browsers.
         // Use a browser so grouping is by domain and titles vary.
         let mut seg2 = Segmenter::new(SegmenterConfig::default());
-        seg2.feed(&sample(0, "Safari", "Doc A", Some("https://docs.google.com/1")), iv);
-        seg2.feed(&sample(5, "Safari", "Doc B", Some("https://docs.google.com/2")), iv);
-        let o = seg2.feed(&sample(10, "Safari", "Doc B", Some("https://docs.google.com/2")), iv);
+        seg2.feed(
+            &sample(0, "Safari", "Doc A", Some("https://docs.google.com/1")),
+            iv,
+        );
+        seg2.feed(
+            &sample(5, "Safari", "Doc B", Some("https://docs.google.com/2")),
+            iv,
+        );
+        let o = seg2.feed(
+            &sample(10, "Safari", "Doc B", Some("https://docs.google.com/2")),
+            iv,
+        );
         assert_eq!(o.open.unwrap().title, "Doc B");
         let _ = seg;
     }
@@ -354,7 +462,10 @@ mod tests {
             is_manual: false,
             note: None,
         };
-        let merged = merge_short_blocks(vec![mk(0, 100, "A"), mk(100, 105, "A"), mk(105, 110, "B")], 20);
+        let merged = merge_short_blocks(
+            vec![mk(0, 100, "A"), mk(100, 105, "A"), mk(105, 110, "B")],
+            20,
+        );
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[0].duration_secs(), 105);
     }
