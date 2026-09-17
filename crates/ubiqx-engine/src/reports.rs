@@ -70,7 +70,7 @@ pub fn template_report(
             continuation_of: None,
         })
         .collect();
-    items.sort_by(|a, b| b.minutes.cmp(&a.minutes));
+    items.sort_by_key(|a| std::cmp::Reverse(a.minutes));
     let total_secs: i64 = blocks.iter().map(|b| b.duration_secs()).sum();
     let mut report = DailyReport {
         id: new_id(),

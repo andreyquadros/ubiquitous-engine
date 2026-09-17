@@ -100,7 +100,7 @@ pub fn dashboard(state: &EngineState, date: NaiveDate) -> CoreResult<DashboardDa
             }),
         }
     }
-    totals.sort_by(|a, b| b.secs.cmp(&a.secs));
+    totals.sort_by_key(|a| std::cmp::Reverse(a.secs));
     let top_apps = repos.blocks.totals_by_app(range, 8)?;
     let unseen_nudges = repos
         .nudges
