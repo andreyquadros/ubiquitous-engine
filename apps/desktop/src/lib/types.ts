@@ -151,10 +151,29 @@ export interface FocusStats {
   mood: Mood;
 }
 
+/** Hosted LLM vendor answering the remote calls. Ids match the Rust `AiProvider` enum. */
+export type AiProvider = 'anthropic' | 'openai' | 'xai';
+
 export interface AiModels {
   classify: string;
   vision: string;
   report: string;
+}
+
+/** Static facts about a provider, served by the backend so the UI never hardcodes them. */
+export interface ProviderInfo {
+  id: AiProvider;
+  label: string;
+  console_url: string;
+  key_prefix: string;
+  default_models: AiModels;
+}
+
+/** Whether a key is stored for a provider (hint = last 4 chars). */
+export interface ApiKeyStatus {
+  provider: AiProvider;
+  configured: boolean;
+  hint: string | null;
 }
 
 export interface QuietHours {
@@ -196,6 +215,7 @@ export interface Settings {
   blocked_domains: string[];
   private_mode: boolean;
   private_until: IsoDateTime | null;
+  ai_provider: AiProvider;
   models: AiModels;
   max_vision_per_hour: number;
   ai_monthly_budget_usd: number;
@@ -302,8 +322,12 @@ export interface ClassifyReport {
 
 export interface SettingsView {
   settings: Settings;
+  /** Key status of the *selected* provider (`settings.ai_provider`). */
   api_key_configured: boolean;
   api_key_hint: string | null;
+  /** Key status of every provider, so switching shows what is already stored. */
+  api_keys: ApiKeyStatus[];
+  providers: ProviderInfo[];
   permissions: PermissionStatus;
   ai_health: AiHealth;
   tracker_state: TrackerState;

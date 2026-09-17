@@ -30,8 +30,11 @@ e ele aprende. O **UBI**, o mascote, mostra seu humor de foco e avisa quando voc
 - **Captura leve**: amostra o app/janela/URL ativo (sem teclas, sem conteúdo). Prints só depois de 20 s no mesmo
   contexto, só da janela em foco, nunca se um app bloqueado estiver visível.
 - **Classificação em cadeia, custo mínimo**: regras e memória de correções resolvem a maioria dos blocos de graça;
-  o restante vai ao modelo de texto em lote (Claude Haiku 4.5); prints só para blocos ambíguos e sob sua política.
-  Custo típico estimado: **US$ 3–6/mês**, com orçamento mensal configurável que pausa a IA ao ser atingido.
+  o restante vai ao modelo de texto em lote; prints só para blocos ambíguos e sob sua política.
+  Custo típico estimado: **US$ 3–6/mês** com Claude, menos com OpenAI ou Grok; orçamento mensal configurável
+  que pausa a IA ao ser atingido.
+- **Você escolhe a IA**: Anthropic Claude, OpenAI ou xAI Grok, cada uma com a sua própria chave de API guardada no
+  Keychain. Troque quando quiser em Configurações → IA; as chaves das outras ficam guardadas.
 - **Privacidade por padrão**: URLs sem query string, e-mails/telefones/CPF/CNPJ mascarados, títulos de apps de
   mensagens reduzidos ao nome do app; "Dados enviados à IA" mostra exatamente o que saiu da máquina. Modo privado
   com prazo, apps e domínios bloqueados e janelas anônimas viram blocos "[privado]" — o tempo conta, o conteúdo não.
@@ -67,7 +70,7 @@ e ele aprende. O **UBI**, o mascote, mostra seu humor de foco e avisa quando voc
 | Desktop | **Tauri 2** (tray na barra de menus, notificações, iniciar com o sistema) |
 | UI | **React 19 + TypeScript + Vite + Tailwind 4**, Recharts, Framer Motion, react-three-fiber (UBI em 3D) |
 | Dados | **SQLite** local (`rusqlite`, WAL) |
-| IA | **Anthropic Messages API** via HTTP — Haiku 4.5 para classificar, Sonnet 5 para redigir relatórios; saída estruturada JSON |
+| IA | **Anthropic Messages API**, **OpenAI Chat Completions** ou **xAI Grok** (API compatível com OpenAI) via HTTP, escolhida pelo usuário; saída estruturada JSON em todas |
 | Segredos | Keychain do macOS (`keyring`) |
 
 Detalhes em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
@@ -85,10 +88,19 @@ cd ../.. && scripts/codesign-dev.sh                # identidade "ubiqX Dev" — 
 open target/release/bundle/macos/ubiqX.app
 ```
 
-Na primeira execução o onboarding pede a **chave da API Anthropic** (crie em
-[console.anthropic.com](https://console.anthropic.com) num workspace com limite de gasto), a permissão de
+Na primeira execução o onboarding pede para **escolher a IA** e colar a chave correspondente, a permissão de
 **Gravação de Tela** (reinicie o app depois de conceder) e a **Automação** para o navegador; depois você cria as
 categorias e escolhe o horário dos relatórios.
+
+| Provedor | Modelos padrão (classificação / visão / relatórios) | Estimativa com 8 h/dia | Onde criar a chave |
+|---|---|---|---|
+| Anthropic Claude | `claude-haiku-4-5` / `claude-haiku-4-5` / `claude-sonnet-5` | US$ 3–6/mês | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
+| OpenAI | `gpt-5-mini` / `gpt-5-mini` / `gpt-5` | US$ 1–3/mês | [platform.openai.com](https://platform.openai.com/api-keys) |
+| xAI Grok | `grok-4-1-fast-non-reasoning` / idem / `grok-4-1-fast-reasoning` | US$ 0,50–2/mês | [console.x.ai](https://console.x.ai) |
+
+Os ids de modelo são editáveis e "Listar modelos da conta" mostra o que a sua chave pode usar. Crie a chave num
+projeto/workspace com limite de gasto: é a rede de segurança real. "Entrar com ChatGPT" (OAuth) hoje só identifica o
+usuário em apps parceiros da OpenAI e não dá acesso aos modelos; por isso a OpenAI entra por chave de API.
 
 Sem chave, tudo continua funcionando em modo local (regras + memória + relatórios por template).
 
@@ -111,7 +123,8 @@ cd apps/desktop && pnpm tauri dev
 
 Variáveis úteis: `UBIQX_LOG=debug` (log), `UBIQX_FAKE_AI=1` (IA falsa no app desktop), `UBIQX_SCRIPTED=1`
 (plataforma roteirizada — o app "trabalha sozinho" para demonstração, sempre com IA falsa a menos que
-`UBIQX_ALLOW_REAL_AI=1`), `UBIQX_ANTHROPIC_API_KEY` (CLI).
+`UBIQX_ALLOW_REAL_AI=1`), `UBIQX_ANTHROPIC_API_KEY` / `UBIQX_OPENAI_API_KEY` / `UBIQX_XAI_API_KEY` (CLI, junto com
+`--provider anthropic|openai|xai`).
 
 CLI: `ubiqx status [data]`, `ubiqx classify`, `ubiqx report <data> --category <id>`, `ubiqx monthly --category <id> --year 2026 --month 9`, `ubiqx export`.
 

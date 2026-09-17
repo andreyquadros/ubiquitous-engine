@@ -23,6 +23,7 @@ import type {
   RuleSuggestion,
   Settings,
   SettingsView,
+  AiProvider,
 } from './types';
 
 export const isTauri = (): boolean =>
@@ -84,7 +85,10 @@ export const ipc = {
   // Settings, tracking, permissions
   getSettings: () => call<SettingsView>('get_settings'),
   updateSettings: (settings: Settings) => call<SettingsView>('update_settings', { settings }),
-  setApiKey: (key: string | null) => call<ApiKeyResult>('set_api_key', { key }),
+  /** Validates the key against `provider` and stores it (null removes that provider's key). */
+  setApiKey: (provider: AiProvider, key: string | null) => call<ApiKeyResult>('set_api_key', { provider, key }),
+  /** Chat-capable model ids the provider's account can use (needs that provider's key). */
+  listModels: (provider: AiProvider) => call<string[]>('list_models', { provider }),
   setTracking: (enabled: boolean) => call<void>('set_tracking', { enabled }),
   setPrivateMode: (duration: PrivateModeDuration) =>
     call<void>('set_private_mode', { duration }),

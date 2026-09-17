@@ -41,9 +41,11 @@ uso de Apple Events) e as notificações não aparecem.
 
 ## 4. Primeira execução (onboarding)
 
-1. **Chave de API** — crie uma chave em https://console.anthropic.com em um *workspace
-   dedicado* com limite de gasto mensal (é a rede de segurança real). Cole no ubiqX; ele valida
-   e guarda no Keychain (clique em *Permitir sempre* na primeira vez).
+1. **Escolha a IA e cole a chave** — Anthropic Claude (https://console.anthropic.com), OpenAI
+   (https://platform.openai.com/api-keys) ou xAI Grok (https://console.x.ai). Crie a chave em um
+   *workspace/projeto dedicado* com limite de gasto mensal (é a rede de segurança real). O ubiqX
+   valida a chave com uma chamada mínima e a guarda no Keychain (clique em *Permitir sempre* na
+   primeira vez). Dá para trocar de provedor depois em Configurações → IA sem perder as chaves.
 2. **Gravação de Tela** — o ubiqX pede a permissão. Depois de conceder, **reinicie o app**:
    o macOS só aplica a permissão em um processo novo. Sem ela os títulos de janela chegam
    vazios e a captura falha (o app detecta e avisa).
@@ -62,7 +64,7 @@ uso de Apple Events) e as notificações não aparecem.
 | Banco de dados (SQLite) | `~/Library/Application Support/ai.ubiqx.app/ubiqx.db` |
 | Prints (JPEG, apagados após uso) | `~/Library/Application Support/ai.ubiqx.app/screenshots.noindex/` |
 | Logs | `~/Library/Logs/ai.ubiqx.app/` |
-| Chave de API | Keychain, serviço `ai.ubiqx` |
+| Chaves de API (uma por provedor) | Keychain, serviço `ai.ubiqx` |
 
 Nada além das chamadas à API configurada sai da máquina. *Configurações → Privacidade* mostra
 exatamente o texto enviado à IA por bloco e permite apagar tudo.

@@ -12,7 +12,8 @@
 | O3 | Aprender com correções | Cada correção vira regra sugerida + exemplo few-shot no prompt; similaridade com blocos já corrigidos |
 | O4 | Relatórios diários por categoria em horário configurável | Agendador interno; LLM redige o relatório a partir dos blocos classificados |
 | O5 | Recomendações de produtividade e alertas de improdutividade | Motor de insights local (heurísticas) + recomendações semanais por LLM; UBI comunica |
-| O6 | Custo de API mínimo | Só texto vai ao LLM por padrão; imagens só em blocos ambíguos, com limite/hora; modelo barato para classificação (Haiku 4.5) e modelo melhor só para relatórios (Sonnet 5) |
+| O6 | Custo de API mínimo | Só texto vai ao LLM por padrão; imagens só em blocos ambíguos, com limite/hora; modelo barato para classificação e modelo melhor só para relatórios, em qualquer provedor |
+| O6b | Provedor à escolha | Anthropic Claude, OpenAI ou xAI Grok, cada um com a própria chave; troca em tempo de execução sem reiniciar |
 | O7 | Privacidade | Tudo local (SQLite + imagens no disco do usuário); lista de apps bloqueados; modo privado; retenção configurável; chave no Keychain |
 | O8 | Portabilidade futura (Windows/Linux) | Toda dependência de SO isolada atrás de traits (`ActivitySource`, `ScreenCapturer`, `IdleDetector`) |
 
@@ -25,7 +26,7 @@
 | UI | **React 19 + TypeScript + Vite + Tailwind CSS 4** | UI rica estilo Rize; Recharts (gráficos), Framer Motion (animação do UBI), Zustand (estado), lucide-react (ícones) |
 | Banco | **SQLite (rusqlite, bundled) + rusqlite_migration** | Zero-config, local, rápido; WAL |
 | Captura macOS | `active-win-pos-rs` (app/janela ativa), `xcap` (screenshot), CoreGraphics (idle), `osascript` (URL do navegador) | Crates maduras; tudo por trás de traits |
-| IA | **Anthropic Messages API** via `reqwest` (sem SDK oficial em Rust) | `claude-haiku-4-5` para classificação (US$1/US$5 por MTok), `claude-sonnet-5` para relatórios; saída estruturada (`output_config.format = json_schema`); prompt caching no system prompt |
+| IA | **Anthropic Messages API** e **API compatível com OpenAI** (OpenAI, xAI) via `reqwest`, sem SDKs | Claude: `claude-haiku-4-5` para classificação (US$1/US$5 por MTok), `claude-sonnet-5` para relatórios, `output_config.format = json_schema`, prompt caching no system prompt. OpenAI: `gpt-5-mini` / `gpt-5`, `response_format = json_schema (strict)`, `max_completion_tokens`, `reasoning_effort = minimal` na classificação. xAI: `grok-4-1-fast-*`, mesmo formato com `max_tokens`. Um `RoutingLlmClient` escolhe o cliente pelo `ai_provider` das configurações |
 | Segredos | `keyring` (macOS Keychain) | Chave de API nunca em texto plano no disco |
 | Logs | `tracing` + `tauri-plugin-log` | Arquivo rotativo em `~/Library/Logs/ubiqX` |
 
@@ -44,7 +45,8 @@ ubiqx/
 │   ├── ubiqx-storage/            # ADAPTER: SQLite (rusqlite) — repositórios e migrações
 │   ├── ubiqx-platform/           # ADAPTER: macOS (janela ativa, título, idle, print por janela, URL, permissões,
 │   │                             #   Keychain) + plataforma roteirizada (mock) para Linux/CI
-│   ├── ubiqx-ai/                 # ADAPTER: cliente Anthropic (HTTP), prompts, classificadores texto/visão,
+│   ├── ubiqx-ai/                 # ADAPTER: clientes Anthropic e OpenAI-compatível (OpenAI, xAI) + roteador,
+│   │                             #   tabela de preços por provedor, prompts, classificadores texto/visão,
 │   │                             #   redator de relatórios, conselheiro, fakes para testes
 │   ├── ubiqx-engine/             # APLICAÇÃO: amostrador, tracker, worker de classificação, agendador de
 │   │                             #   relatórios, nudges, retenção, correções (aprendizado), fachada de leitura
@@ -134,8 +136,10 @@ EngineEvent     { BlockOpened, BlockClosed, BlocksClassified, ReportReady, Nudge
   antes de enviar, cada bloco passa por `redact_block` (sem query string, sem e-mail/telefone/CPF/CNPJ; títulos de
   apps de mensagens viram só o nome do app) e o texto exato enviado fica em `ai_payload` para auditoria na UI.
   Visão só para blocos ambíguos com print, dentro de `vision_policy` e `max_vision_per_hour`.
-- **Saúde da IA / custo**: 401/403 → pausa até trocar a chave; 429/5xx → degradado por 15 min; orçamento mensal
-  (`ai_monthly_budget_usd`, padrão US$ 5) — aviso a 80 %, parada a 100 %. Sem chave, tudo funciona em modo local.
+- **Saúde da IA / custo**: 401/403 → pausa até trocar a chave; conta sem créditos ou modelo inexistente
+  (`AiRejected`) → pausa com o motivo; 429/5xx → degradado por 15 min; orçamento mensal (`ai_monthly_budget_usd`,
+  padrão US$ 5) — aviso a 80 %, parada a 100 %. A saúde é avaliada para o provedor selecionado; trocar de provedor
+  reavalia pela chave dele. Sem chave, tudo funciona em modo local.
 - **Aprendizado**: uma correção (1) reclassifica o bloco (`source=User`, definitivo), (2) grava `Correction`,
   (3) penaliza a regra que errou (`miss_count`; auto-desativa com 2 erros ou >30 % de erro), (4) opcionalmente
   reaplica ao dia/mês (mesmo app+domínio), (5) sugere "Sempre: X → categoria" — aplicado automaticamente apenas para
@@ -158,9 +162,13 @@ UBI: modelo 3D (`public/ubi/Ubi.glb`, react-three-fiber) com fallback SVG; humor
 
 ## 7. Segurança & privacidade
 
-- Chave de API só no Keychain (`keyring`, serviço `ai.ubiqx`), nunca em arquivo; validada com `GET /v1/models` e
-  uma mensagem de 1 token, para que conta sem créditos ou modelo indisponível apareçam como erro claro
-  (`CoreError::AiRejected`), não como chave "válida" que falha em silêncio depois.
+- Chaves de API só no Keychain (`keyring`, serviço `ai.ubiqx`, uma conta por provedor: `anthropic_api_key`,
+  `openai_api_key`, `xai_api_key`), nunca em arquivo; cada uma é validada com `GET /models` e uma mensagem de
+  1 token, para que conta sem créditos ou modelo indisponível apareçam como erro claro (`CoreError::AiRejected`),
+  não como chave "válida" que falha em silêncio depois. Só o provedor selecionado recebe dados.
+- OAuth: "Entrar com ChatGPT" é, hoje, apenas identidade para apps parceiros da OpenAI, sem acesso aos modelos
+  pela assinatura; por isso todos os provedores entram por chave. A credencial é um `Bearer` genérico
+  (`ApiKeySource`), então um token OAuth pode ser plugado sem mudar o cliente quando isso existir oficialmente.
 - Nada é registrado nem enviado antes do consentimento: rastreamento, prints e toda chamada remota exigem
   `onboarding_done`; até lá o tracker aparece como pausado.
 - Só sai da máquina o que a UI mostra em "Dados enviados à IA": linhas redigidas por bloco e, quando permitido,
@@ -184,9 +192,11 @@ UBI: modelo 3D (`public/ubi/Ubi.glb`, react-three-fiber) com fallback SVG; humor
 2. **Texto antes de imagem**: a maioria dos blocos é classificável por título/URL; visão só em ambíguos e sob política.
 3. **Cadeia de classificadores** com split local/remoto: regras e memória são síncronas, grátis e testáveis; o LLM é
    assíncrono, em lote, com backoff e orçamento.
-4. **Saída estruturada** (`output_config.format = json_schema`) elimina parsing frágil. **Prompt caching** só onde
-   vale: no redator (Sonnet 5, prefixo ≥ 1024 tokens); no Haiku 4.5 o mínimo é 4096 tokens, então o prompt de
-   classificação é mantido enxuto e sem `cache_control`. Sonnet 5 recebe `thinking: disabled` para não cobrar raciocínio.
+4. **Saída estruturada** (`output_config.format = json_schema` na Anthropic, `response_format = json_schema`
+   estrito na OpenAI/xAI) elimina parsing frágil. **Prompt caching** só onde vale: no redator (Sonnet 5, prefixo
+   ≥ 1024 tokens); no Haiku 4.5 o mínimo é 4096 tokens, então o prompt de classificação é mantido enxuto e sem
+   `cache_control`. Sonnet 5 recebe `thinking: disabled` e os `gpt-5*` recebem `reasoning_effort: minimal` na
+   classificação para não cobrar raciocínio; os esquemas JSON são os mesmos para todos os provedores.
 5. **rusqlite** atrás de `Mutex` com chamadas em `spawn_blocking`; nunca se segura o lock entre `await`s.
 6. **Plataforma roteirizada + CLI** para desenvolver e testar o pipeline inteiro em Linux/CI; o módulo macOS é
    type-checked contra `aarch64-apple-darwin` na CI.

@@ -6,9 +6,10 @@ use parking_lot::RwLock;
 use ubiqx_core::ports::{secret_keys, SecretStore};
 use ubiqx_core::CoreResult;
 
-/// In-memory store seeded from environment variables (`UBIQX_ANTHROPIC_API_KEY` or
-/// `ANTHROPIC_API_KEY`). Values set at runtime live until the process exits. Intended for the
-/// CLI, CI and tests — never for the desktop app.
+/// In-memory store seeded from environment variables (`UBIQX_ANTHROPIC_API_KEY` /
+/// `ANTHROPIC_API_KEY`, `UBIQX_OPENAI_API_KEY` / `OPENAI_API_KEY`, `UBIQX_XAI_API_KEY` /
+/// `XAI_API_KEY`). Values set at runtime live until the process exits. Intended for the CLI,
+/// CI and tests — never for the desktop app.
 #[derive(Debug, Default)]
 pub struct EnvOrMemorySecretStore {
     values: RwLock<HashMap<String, String>>,
@@ -30,12 +31,18 @@ impl SecretStore for EnvOrMemorySecretStore {
         if let Some(v) = self.values.read().get(key) {
             return Ok(Some(v.clone()));
         }
-        if key == secret_keys::ANTHROPIC_API_KEY {
-            for var in ["UBIQX_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"] {
-                if let Ok(v) = std::env::var(var) {
-                    if !v.trim().is_empty() {
-                        return Ok(Some(v.trim().to_string()));
-                    }
+        let vars: &[&str] = match key {
+            k if k == secret_keys::ANTHROPIC_API_KEY => {
+                &["UBIQX_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]
+            }
+            k if k == secret_keys::OPENAI_API_KEY => &["UBIQX_OPENAI_API_KEY", "OPENAI_API_KEY"],
+            k if k == secret_keys::XAI_API_KEY => &["UBIQX_XAI_API_KEY", "XAI_API_KEY"],
+            _ => &[],
+        };
+        for var in vars {
+            if let Ok(v) = std::env::var(var) {
+                if !v.trim().is_empty() {
+                    return Ok(Some(v.trim().to_string()));
                 }
             }
         }

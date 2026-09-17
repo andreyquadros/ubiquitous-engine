@@ -540,6 +540,100 @@ pub struct FocusStats {
 // Settings
 // ---------------------------------------------------------------------------------------------
 
+/// Which hosted LLM vendor answers the remote calls. Every provider is reached through its
+/// own HTTP client; the user picks one in onboarding / settings and pastes that vendor's key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AiProvider {
+    #[default]
+    Anthropic,
+    #[serde(rename = "openai")]
+    OpenAi,
+    Xai,
+}
+
+impl AiProvider {
+    pub const ALL: [AiProvider; 3] = [AiProvider::Anthropic, AiProvider::OpenAi, AiProvider::Xai];
+
+    /// Stable id used in settings, secrets and the IPC contract.
+    pub fn id(self) -> &'static str {
+        match self {
+            AiProvider::Anthropic => "anthropic",
+            AiProvider::OpenAi => "openai",
+            AiProvider::Xai => "xai",
+        }
+    }
+
+    pub fn parse(id: &str) -> Option<Self> {
+        match id.trim().to_ascii_lowercase().as_str() {
+            "anthropic" => Some(AiProvider::Anthropic),
+            "openai" => Some(AiProvider::OpenAi),
+            "xai" | "grok" => Some(AiProvider::Xai),
+            _ => None,
+        }
+    }
+
+    /// Human label (vendor + product).
+    pub fn label(self) -> &'static str {
+        match self {
+            AiProvider::Anthropic => "Anthropic Claude",
+            AiProvider::OpenAi => "OpenAI",
+            AiProvider::Xai => "xAI Grok",
+        }
+    }
+
+    /// Where the user creates an API key.
+    pub fn console_url(self) -> &'static str {
+        match self {
+            AiProvider::Anthropic => "https://console.anthropic.com/settings/keys",
+            AiProvider::OpenAi => "https://platform.openai.com/api-keys",
+            AiProvider::Xai => "https://console.x.ai",
+        }
+    }
+
+    /// Typical key prefix, for placeholders and a soft sanity check in the UI.
+    pub fn key_prefix(self) -> &'static str {
+        match self {
+            AiProvider::Anthropic => "sk-ant-",
+            AiProvider::OpenAi => "sk-",
+            AiProvider::Xai => "xai-",
+        }
+    }
+
+    /// Secret-store key under which this provider's API key is stored.
+    pub fn secret_key(self) -> &'static str {
+        match self {
+            AiProvider::Anthropic => crate::ports::secret_keys::ANTHROPIC_API_KEY,
+            AiProvider::OpenAi => crate::ports::secret_keys::OPENAI_API_KEY,
+            AiProvider::Xai => crate::ports::secret_keys::XAI_API_KEY,
+        }
+    }
+
+    /// Whether a model id belongs to this vendor's naming scheme. Unknown ids belong to
+    /// nobody (`None` from [`AiProvider::for_model`]), so custom ids are never overwritten.
+    pub fn owns_model(self, model: &str) -> bool {
+        AiProvider::for_model(model) == Some(self)
+    }
+
+    /// Vendor inferred from a model id (`claude-*`, `gpt-*`/`o*`/`chatgpt-*`/`ft:*`, `grok-*`).
+    pub fn for_model(model: &str) -> Option<Self> {
+        let m = model.trim().to_ascii_lowercase();
+        if m.starts_with("claude") {
+            Some(AiProvider::Anthropic)
+        } else if m.starts_with("grok") {
+            Some(AiProvider::Xai)
+        } else if m.starts_with("gpt")
+            || m.starts_with("chatgpt")
+            || m.starts_with("ft:")
+            || (m.starts_with('o') && m[1..].starts_with(|c: char| c.is_ascii_digit()))
+        {
+            Some(AiProvider::OpenAi)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AiModels {
     /// Cheap model for high-volume block classification.
@@ -552,11 +646,47 @@ pub struct AiModels {
 
 impl Default for AiModels {
     fn default() -> Self {
-        Self {
-            classify: "claude-haiku-4-5".into(),
-            vision: "claude-haiku-4-5".into(),
-            report: "claude-sonnet-5".into(),
+        Self::for_provider(AiProvider::Anthropic)
+    }
+}
+
+impl AiModels {
+    /// Recommended models per vendor: a cheap multimodal model for the high-volume
+    /// classification and vision calls, a stronger one for the few daily reports.
+    pub fn for_provider(provider: AiProvider) -> Self {
+        match provider {
+            AiProvider::Anthropic => Self {
+                classify: "claude-haiku-4-5".into(),
+                vision: "claude-haiku-4-5".into(),
+                report: "claude-sonnet-5".into(),
+            },
+            AiProvider::OpenAi => Self {
+                classify: "gpt-5-mini".into(),
+                vision: "gpt-5-mini".into(),
+                report: "gpt-5".into(),
+            },
+            AiProvider::Xai => Self {
+                classify: "grok-4-1-fast-non-reasoning".into(),
+                vision: "grok-4-1-fast-non-reasoning".into(),
+                report: "grok-4-1-fast-reasoning".into(),
+            },
         }
+    }
+
+    /// Replaces every model id that visibly belongs to another vendor (or is blank) with the
+    /// provider's recommendation, keeping custom/unknown ids untouched.
+    pub fn reconciled_with(mut self, provider: AiProvider) -> Self {
+        let defaults = Self::for_provider(provider);
+        let fix = |current: &mut String, default: String| {
+            let foreign = AiProvider::for_model(current).is_some_and(|p| p != provider);
+            if current.trim().is_empty() || foreign {
+                *current = default;
+            }
+        };
+        fix(&mut self.classify, defaults.classify);
+        fix(&mut self.vision, defaults.vision);
+        fix(&mut self.report, defaults.report);
+        self
     }
 }
 
@@ -696,6 +826,10 @@ pub struct Settings {
     /// with `private_mode = true` means "until I turn it off".
     pub private_mode: bool,
     pub private_until: Option<DateTime<Utc>>,
+    /// Which vendor answers remote calls. Its key lives in the secret store under
+    /// [`AiProvider::secret_key`]; keys of the other vendors are kept so switching is free.
+    pub ai_provider: AiProvider,
+    /// Effective model ids for the selected provider (see [`AiModels::reconciled_with`]).
     pub models: AiModels,
     /// Maximum screenshots sent to the vision model per hour.
     pub max_vision_per_hour: u32,
@@ -746,6 +880,7 @@ impl Default for Settings {
             blocked_domains: vec![],
             private_mode: false,
             private_until: None,
+            ai_provider: AiProvider::Anthropic,
             models: AiModels::default(),
             max_vision_per_hour: 20,
             ai_monthly_budget_usd: 5.0,
@@ -765,6 +900,11 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Makes `models` consistent with `ai_provider` (call after any settings write from the UI).
+    pub fn reconcile_models(&mut self) {
+        self.models = self.models.clone().reconciled_with(self.ai_provider);
+    }
+
     /// Whether private mode is active at `now` (a timed private mode expires on its own).
     pub fn is_private(&self, now: DateTime<Utc>) -> bool {
         self.private_mode && self.private_until.map(|t| now < t).unwrap_or(true)

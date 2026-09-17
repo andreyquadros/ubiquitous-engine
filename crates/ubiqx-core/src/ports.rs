@@ -113,6 +113,8 @@ pub trait SecretStore: Send + Sync {
 
 pub mod secret_keys {
     pub const ANTHROPIC_API_KEY: &str = "anthropic_api_key";
+    pub const OPENAI_API_KEY: &str = "openai_api_key";
+    pub const XAI_API_KEY: &str = "xai_api_key";
 }
 
 // ---------------------------------------------------------------------------------------------
