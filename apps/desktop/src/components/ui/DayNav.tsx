@@ -1,0 +1,60 @@
+import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useRef } from 'react';
+import { fmtDateNumeric, fmtWeekday, isToday, shiftDate, todayIso } from '../../lib/format';
+import type { IsoDate } from '../../lib/types';
+import { IconButton } from './Button';
+import clsx from 'clsx';
+
+/** Prev / next day, a pt-BR formatted date that opens the native picker, and a "Hoje" shortcut. */
+export function DayNav({ date, onChange, className }: { date: IsoDate; onChange: (d: IsoDate) => void; className?: string }) {
+  const input = useRef<HTMLInputElement>(null);
+  const openPicker = () => {
+    const el = input.current;
+    if (!el) return;
+    if ('showPicker' in el && typeof el.showPicker === 'function') {
+      try {
+        el.showPicker();
+        return;
+      } catch {
+        /* fall through */
+      }
+    }
+    el.focus();
+    el.click();
+  };
+  return (
+    <div className={clsx('inline-flex h-9 items-center gap-0.5 rounded-xl border border-line bg-surface p-0.5', className)}>
+      <IconButton label="Dia anterior" size="sm" onClick={() => onChange(shiftDate(date, -1))}>
+        <ChevronLeft className="size-4" />
+      </IconButton>
+      <div className="relative">
+        <button type="button" onClick={openPicker} className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-sm font-medium tabular-nums hover:bg-surface-2" aria-label={`Escolher data (${fmtDateNumeric(date)})`}>
+          <CalendarDays className="size-3.5 text-ink-3" />
+          <span className="text-ink-3">{fmtWeekday(date)}</span>
+          {fmtDateNumeric(date)}
+        </button>
+        <input
+          ref={input}
+          type="date"
+          tabIndex={-1}
+          aria-hidden
+          value={date}
+          max={todayIso()}
+          onChange={(e) => e.target.value && onChange(e.target.value)}
+          className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
+        />
+      </div>
+      <IconButton label="Próximo dia" size="sm" disabled={isToday(date)} onClick={() => onChange(shiftDate(date, 1))}>
+        <ChevronRight className="size-4" />
+      </IconButton>
+      <button
+        type="button"
+        onClick={() => onChange(todayIso())}
+        disabled={isToday(date)}
+        className="h-7 rounded-lg px-2 text-xs font-medium text-brand-600 hover:bg-brand-50 disabled:text-ink-3 disabled:hover:bg-transparent dark:text-brand-400 dark:hover:bg-brand-900/30"
+      >
+        Hoje
+      </button>
+    </div>
+  );
+}

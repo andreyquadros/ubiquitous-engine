@@ -112,7 +112,10 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
         ],
     )?;
 
-    let icon = app.default_window_icon().cloned().expect("default icon");
+    // Monochrome (black + alpha) glyph rendered by macOS as a template image, so it
+    // follows the menubar appearance (light/dark). 44 px source keeps Retina crisp.
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray@2x.png"))
+        .expect("embedded tray icon is a valid PNG");
     TrayIconBuilder::with_id("main")
         .icon(icon)
         .icon_as_template(true)

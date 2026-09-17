@@ -54,7 +54,8 @@ async fn harness() -> Harness {
     let store = Arc::new(SqliteStore::new(Db::open_in_memory().unwrap()));
     CategoryRepo::upsert(store.as_ref(), &category("cat-ifro", "IFRO", true)).unwrap();
     CategoryRepo::upsert(store.as_ref(), &category("cat-inc", "Incubadora", true)).unwrap();
-    let (platform, _) = PlatformServices::scripted(Scenario::new(vec![Step::app("A", "a", "t", 1)]));
+    let (platform, _) =
+        PlatformServices::scripted(Scenario::new(vec![Step::app("A", "a", "t", 1)]));
     let sink = Arc::new(CollectSink(Mutex::new(vec![])));
     let deps = EngineDeps {
         platform: PlatformPorts {
@@ -72,7 +73,10 @@ async fn harness() -> Harness {
                 ("sei.ifro.edu.br", "cat-ifro"),
                 ("visual studio code", "cat-inc"),
             ]))),
-            vision: Some(Arc::new(FakeVisionClassifier::new(Some("cat-inc"), "Trabalhou no código"))),
+            vision: Some(Arc::new(FakeVisionClassifier::new(
+                Some("cat-inc"),
+                "Trabalhou no código",
+            ))),
             report_writer: Some(Arc::new(FakeReportWriter::new())),
             advisor: Some(Arc::new(FakeAdvisor::new())),
             requires_api_key: false,
@@ -96,10 +100,22 @@ async fn harness() -> Harness {
     s.classify_max_wait_secs = 0;
     s.screenshot_interval_secs = 0;
     handle.update_settings(s).unwrap();
-    Harness { handle, tx, store, sink, _tmp: tmp }
+    Harness {
+        handle,
+        tx,
+        store,
+        sink,
+        _tmp: tmp,
+    }
 }
 
-fn sample(at: chrono::DateTime<Utc>, app: &str, app_id: &str, title: &str, url: Option<&str>) -> ActivitySample {
+fn sample(
+    at: chrono::DateTime<Utc>,
+    app: &str,
+    app_id: &str,
+    title: &str,
+    url: Option<&str>,
+) -> ActivitySample {
     ActivitySample {
         at,
         app_name: app.into(),
@@ -121,60 +137,134 @@ async fn samples_become_classified_blocks_and_reports() {
     let t0 = Utc::now() - ChronoDuration::minutes(30);
     // 6 samples of SEI (30 s), then 6 samples of VS Code, then a switch to Slack (closes VS Code).
     for i in 0..6 {
-        h.tx.send(sample(t0 + ChronoDuration::seconds(i * 5), "Google Chrome", "com.google.Chrome", "SEI - Processo 1", Some("https://sei.ifro.edu.br/x?token=1"))).await.unwrap();
+        h.tx.send(sample(
+            t0 + ChronoDuration::seconds(i * 5),
+            "Google Chrome",
+            "com.google.Chrome",
+            "SEI - Processo 1",
+            Some("https://sei.ifro.edu.br/x?token=1"),
+        ))
+        .await
+        .unwrap();
     }
     for i in 6..12 {
-        h.tx.send(sample(t0 + ChronoDuration::seconds(i * 5), "Visual Studio Code", "com.microsoft.VSCode", "api — main.rs", None)).await.unwrap();
+        h.tx.send(sample(
+            t0 + ChronoDuration::seconds(i * 5),
+            "Visual Studio Code",
+            "com.microsoft.VSCode",
+            "api — main.rs",
+            None,
+        ))
+        .await
+        .unwrap();
     }
-    h.tx.send(sample(t0 + ChronoDuration::seconds(60), "Slack", "com.tinyspeck.slackmacgap", "general", None)).await.unwrap();
+    h.tx.send(sample(
+        t0 + ChronoDuration::seconds(60),
+        "Slack",
+        "com.tinyspeck.slackmacgap",
+        "general",
+        None,
+    ))
+    .await
+    .unwrap();
     settle().await;
 
     let today = Local::now().date_naive();
     let blocks = timeline(h.handle.state(), today).unwrap();
     let closed: Vec<_> = blocks.iter().filter(|b| !b.is_open).collect();
     assert_eq!(closed.len(), 2, "two closed blocks: {blocks:#?}");
-    let sei = closed.iter().find(|b| b.app_id == "com.google.Chrome").unwrap();
+    let sei = closed
+        .iter()
+        .find(|b| b.app_id == "com.google.Chrome")
+        .unwrap();
     assert_eq!(sei.domain.as_deref(), Some("sei.ifro.edu.br"));
-    assert_eq!(sei.category_id.as_deref(), Some("cat-ifro"), "fake remote classifier by domain");
+    assert_eq!(
+        sei.category_id.as_deref(),
+        Some("cat-ifro"),
+        "fake remote classifier by domain"
+    );
     assert_eq!(sei.source, Some(ClassificationSource::Llm));
     let payload = sei.ai_payload.as_deref().expect("payload recorded");
-    assert!(!payload.contains("token=1"), "query string must be redacted: {payload}");
-    let code = closed.iter().find(|b| b.app_id == "com.microsoft.VSCode").unwrap();
+    assert!(
+        !payload.contains("token=1"),
+        "query string must be redacted: {payload}"
+    );
+    let code = closed
+        .iter()
+        .find(|b| b.app_id == "com.microsoft.VSCode")
+        .unwrap();
     assert_eq!(code.category_id.as_deref(), Some("cat-inc"));
-    assert!(blocks.iter().any(|b| b.is_open && b.app_id == "com.tinyspeck.slackmacgap"));
+    assert!(blocks
+        .iter()
+        .any(|b| b.is_open && b.app_id == "com.tinyspeck.slackmacgap"));
 
     // Events were emitted for the UI.
     let events = h.sink.0.lock().clone();
-    assert!(events.iter().any(|e| matches!(e, EngineEvent::BlockClosed { .. })));
-    assert!(events.iter().any(|e| matches!(e, EngineEvent::BlocksClassified { .. })));
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, EngineEvent::BlockClosed { .. })));
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, EngineEvent::BlocksClassified { .. })));
 
     // Dashboard aggregates.
     let d = dashboard(h.handle.state(), today).unwrap();
     assert!(d.stats.productive_secs >= 55, "{:?}", d.stats);
-    assert!(d.totals.iter().any(|t| t.category_id.as_deref() == Some("cat-ifro")));
+    assert!(d
+        .totals
+        .iter()
+        .any(|t| t.category_id.as_deref() == Some("cat-ifro")));
 
     // Correction: move the SEI block to Incubadora, day scope; a rule suggestion is offered.
-    let out = h.handle.reclassify(&sei.id, "cat-inc", Some("era da incubadora".into()), ReclassifyScope::Day).unwrap();
-    assert!(out.suggestions.iter().any(|s| s.pattern == "sei.ifro.edu.br"), "{out:?}");
+    let out = h
+        .handle
+        .reclassify(
+            &sei.id,
+            "cat-inc",
+            Some("era da incubadora".into()),
+            ReclassifyScope::Day,
+        )
+        .unwrap();
+    assert!(
+        out.suggestions
+            .iter()
+            .any(|s| s.pattern == "sei.ifro.edu.br"),
+        "{out:?}"
+    );
     let corrected = BlockRepo::get(h.store.as_ref(), &sei.id).unwrap().unwrap();
     assert_eq!(corrected.category_id.as_deref(), Some("cat-inc"));
     assert_eq!(corrected.source, Some(ClassificationSource::User));
     assert_eq!(CorrectionRepo::count(h.store.as_ref()).unwrap(), 1);
     // Accepting the suggestion creates a learned rule.
-    let rule = h.handle.accept_rule_suggestion(&out.suggestions[0]).unwrap();
+    let rule = h
+        .handle
+        .accept_rule_suggestion(&out.suggestions[0])
+        .unwrap();
     assert_eq!(rule.origin, RuleOrigin::Learned);
 
     // Reports: the fake writer produces items from the blocks.
     let report = h.handle.generate_report(today, "cat-inc").await.unwrap();
     assert!(!report.items.is_empty(), "{report:?}");
     assert!(report.summary_md.contains("Incubadora"));
-    let monthly = monthly_report_md(h.handle.state(), "cat-inc", today.year(), today.month()).unwrap();
+    let monthly =
+        monthly_report_md(h.handle.state(), "cat-inc", today.year(), today.month()).unwrap();
     assert!(monthly.contains("Incubadora"));
 
     // Manual entry and split.
-    let manual = h.handle.add_manual_entry(t0 - ChronoDuration::hours(2), t0 - ChronoDuration::hours(1), "cat-ifro", Some("Reunião presencial".into())).unwrap();
+    let manual = h
+        .handle
+        .add_manual_entry(
+            t0 - ChronoDuration::hours(2),
+            t0 - ChronoDuration::hours(1),
+            "cat-ifro",
+            Some("Reunião presencial".into()),
+        )
+        .unwrap();
     assert!(manual.is_manual);
-    let new_id = h.handle.split_block(&manual.id, t0 - ChronoDuration::minutes(90)).unwrap();
+    let new_id = h
+        .handle
+        .split_block(&manual.id, t0 - ChronoDuration::minutes(90))
+        .unwrap();
     assert_ne!(new_id, manual.id);
 
     // Pause closes the open block; export writes a file.
@@ -190,22 +280,56 @@ async fn private_mode_and_blocked_apps_keep_time_without_content() {
     let h = harness().await;
     let t0 = Utc::now() - ChronoDuration::minutes(10);
     for i in 0..4 {
-        h.tx.send(sample(t0 + ChronoDuration::seconds(i * 5), "1Password", "com.1password.1password", "Vault", None)).await.unwrap();
+        h.tx.send(sample(
+            t0 + ChronoDuration::seconds(i * 5),
+            "1Password",
+            "com.1password.1password",
+            "Vault",
+            None,
+        ))
+        .await
+        .unwrap();
     }
     settle().await;
-    h.handle.set_private_mode(PrivateModeDuration::Minutes30).unwrap();
+    h.handle
+        .set_private_mode(PrivateModeDuration::Minutes30)
+        .unwrap();
     assert_eq!(h.handle.tracker_state(), TrackerState::Private);
     for i in 5..9 {
-        h.tx.send(sample(t0 + ChronoDuration::seconds(i * 5), "Google Chrome", "com.google.Chrome", "Banco - conta", Some("https://bank.example/secret"))).await.unwrap();
+        h.tx.send(sample(
+            t0 + ChronoDuration::seconds(i * 5),
+            "Google Chrome",
+            "com.google.Chrome",
+            "Banco - conta",
+            Some("https://bank.example/secret"),
+        ))
+        .await
+        .unwrap();
     }
-    h.tx.send(sample(t0 + ChronoDuration::seconds(60), "Slack", "com.tinyspeck.slackmacgap", "general", None)).await.unwrap();
+    h.tx.send(sample(
+        t0 + ChronoDuration::seconds(60),
+        "Slack",
+        "com.tinyspeck.slackmacgap",
+        "general",
+        None,
+    ))
+    .await
+    .unwrap();
     settle().await;
     let today = Local::now().date_naive();
     let blocks = timeline(h.handle.state(), today).unwrap();
-    let private: Vec<_> = blocks.iter().filter(|b| b.category_id.as_deref() == Some(system_categories::PRIVATE)).collect();
+    let private: Vec<_> = blocks
+        .iter()
+        .filter(|b| b.category_id.as_deref() == Some(system_categories::PRIVATE))
+        .collect();
     assert!(private.len() >= 2, "{blocks:#?}");
-    assert!(private.iter().all(|b| b.url.is_none() && b.title == ubiqx_core::segmenter::PRIVATE_TITLE));
-    assert!(private.iter().all(|b| b.ai_payload.is_none()), "private blocks never go to the AI");
+    assert!(private
+        .iter()
+        .all(|b| b.url.is_none() && b.title == ubiqx_core::segmenter::PRIVATE_TITLE));
+    assert!(
+        private.iter().all(|b| b.ai_payload.is_none()),
+        "private blocks never go to the AI"
+    );
     h.handle.set_private_mode(PrivateModeDuration::Off).unwrap();
     assert_ne!(h.handle.tracker_state(), TrackerState::Paused);
     h.handle.shutdown();
@@ -217,7 +341,12 @@ async fn nudges_fire_on_long_distraction() {
     let state = h.handle.state().clone();
     let now = Utc::now();
     // 40 minutes of YouTube classified as distraction, ending now.
-    let mut b = ActivityBlock::new_manual(now - ChronoDuration::minutes(40), now - ChronoDuration::seconds(30), system_categories::DISTRACTION.into(), None);
+    let mut b = ActivityBlock::new_manual(
+        now - ChronoDuration::minutes(40),
+        now - ChronoDuration::seconds(30),
+        system_categories::DISTRACTION.into(),
+        None,
+    );
     b.is_manual = false;
     b.app_id = "com.google.Chrome".into();
     b.app_name = "Google Chrome".into();
@@ -227,7 +356,10 @@ async fn nudges_fire_on_long_distraction() {
     s.quiet_hours.enabled = false;
     h.handle.update_settings(s).unwrap();
     let nudges = ubiqx_engine::nudges::run_once(&state).unwrap();
-    assert!(nudges.iter().any(|n| n.kind == NudgeKind::Unproductive), "{nudges:?}");
+    assert!(
+        nudges.iter().any(|n| n.kind == NudgeKind::Unproductive),
+        "{nudges:?}"
+    );
     // Second evaluation within the cooldown yields nothing.
     assert!(ubiqx_engine::nudges::run_once(&state).unwrap().is_empty());
     h.handle.shutdown();

@@ -1,0 +1,155 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---- Semantic surface tokens (light) ---- */
+:root {
+  --canvas: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #f1f3f9;
+  --surface-3: #e8ebf3;
+  --line: #e5e8f0;
+  --line-strong: #d3d8e4;
+  --ink: #0f172a;
+  --ink-2: #475569;
+  --ink-3: #94a3b8;
+  --shadow-soft: 0 1px 2px rgb(15 23 42 / 0.04), 0 10px 30px -14px rgb(15 23 42 / 0.16);
+  --shadow-pop: 0 4px 10px rgb(15 23 42 / 0.06), 0 24px 48px -20px rgb(15 23 42 / 0.28);
+  color-scheme: light;
+}
+
+.dark {
+  --canvas: #0b1020;
+  --surface: #121a2e;
+  --surface-2: #182238;
+  --surface-3: #1f2b45;
+  --line: #22304a;
+  --line-strong: #2f3f5e;
+  --ink: #e6ebf5;
+  --ink-2: #a3b0c6;
+  --ink-3: #64748b;
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 30px -14px rgb(0 0 0 / 0.6);
+  --shadow-pop: 0 4px 10px rgb(0 0 0 / 0.35), 0 24px 48px -20px rgb(0 0 0 / 0.7);
+  color-scheme: dark;
+}
+
+@theme {
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+
+  --color-accent-50: #fff7ed;
+  --color-accent-100: #ffedd5;
+  --color-accent-200: #fed7aa;
+  --color-accent-300: #fdba74;
+  --color-accent-400: #fb923c;
+  --color-accent-500: #f97316;
+  --color-accent-600: #ea580c;
+  --color-accent-700: #c2410c;
+
+  --shadow-soft: var(--shadow-soft);
+  --shadow-pop: var(--shadow-pop);
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-canvas text-ink;
+    margin: 0;
+    overflow: hidden;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--color-brand-500) 25%, transparent);
+  }
+  *:focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  button, input, select, textarea {
+    font: inherit;
+    color: inherit;
+  }
+  input[type="time"], input[type="month"], input[type="date"], input[type="number"] {
+    color-scheme: inherit;
+  }
+  kbd {
+    @apply inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-line-strong bg-surface-2 px-1 font-mono text-[10px] text-ink-2;
+  }
+  [data-tauri-drag-region] {
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-line bg-surface shadow-soft;
+  }
+  .hairline {
+    @apply border-line;
+  }
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+  .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px; }
+  .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+
+  /* Markdown rendering (relatórios) */
+  .md { @apply text-[14px] leading-6 text-ink; }
+  .md h1 { @apply mt-1 mb-3 text-xl font-semibold tracking-tight; }
+  .md h2 { @apply mt-5 mb-2 text-base font-semibold; }
+  .md h3 { @apply mt-4 mb-1.5 text-sm font-semibold; }
+  .md p { @apply my-2; }
+  .md ul { @apply my-2 list-disc pl-5; }
+  .md ol { @apply my-2 list-decimal pl-5; }
+  .md li { @apply my-0.5; }
+  .md strong { @apply font-semibold; }
+  .md a { @apply text-brand-600 underline underline-offset-2 dark:text-brand-400; }
+  .md code { @apply rounded bg-surface-2 px-1 py-0.5 font-mono text-[12px]; }
+  .md pre { @apply my-3 overflow-x-auto rounded-xl bg-surface-2 p-3 font-mono text-[12px]; }
+  .md blockquote { @apply my-2 border-l-2 border-line-strong pl-3 text-ink-2; }
+  .md table { @apply my-3 w-full border-collapse text-[13px]; }
+  .md th { @apply border-b border-line py-1.5 text-left font-semibold; }
+  .md td { @apply border-b border-line py-1.5 align-top; }
+  .md hr { @apply my-4 border-line; }
+}
+
+/* Recharts polish */
+.recharts-tooltip-cursor { fill: color-mix(in oklab, var(--ink) 6%, transparent) !important; }
+.recharts-cartesian-axis-tick text { fill: var(--ink-3); font-size: 11px; }
+.recharts-cartesian-grid line { stroke: var(--line); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
