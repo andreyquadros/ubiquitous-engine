@@ -1,0 +1,23 @@
+# Rust
+/target
+**/target
+# Node
+node_modules
+dist
+dist-ssr
+*.local
+# Tauri
+apps/desktop/src-tauri/gen/schemas
+# Env / secrets
+.env
+.env.*
+!.env.example
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea
+*.swp
+.vscode/*
+!.vscode/extensions.json
+# Local data created by the CLI during development
+/.ubiqx-dev

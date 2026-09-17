@@ -1,0 +1,73 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ubiqx-core",
+    "crates/ubiqx-storage",
+    "crates/ubiqx-platform",
+    "crates/ubiqx-ai",
+    "crates/ubiqx-engine",
+    "crates/ubiqx-cli",
+    "apps/desktop/src-tauri",
+]
+# The desktop app needs webkit/gtk on Linux; keep it out of the default build set so
+# `cargo test` / `cargo clippy` in CI exercise the portable crates only.
+default-members = [
+    "crates/ubiqx-core",
+    "crates/ubiqx-storage",
+    "crates/ubiqx-platform",
+    "crates/ubiqx-ai",
+    "crates/ubiqx-engine",
+    "crates/ubiqx-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/andreyquadros/ubiquitous-engine"
+authors = ["Andrey Quadros"]
+
+[workspace.dependencies]
+ubiqx-core = { path = "crates/ubiqx-core" }
+ubiqx-storage = { path = "crates/ubiqx-storage" }
+ubiqx-platform = { path = "crates/ubiqx-platform" }
+ubiqx-ai = { path = "crates/ubiqx-ai" }
+ubiqx-engine = { path = "crates/ubiqx-engine" }
+
+anyhow = "1.0"
+async-trait = "0.1"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde", "clock"] }
+clap = { version = "4.5", features = ["derive"] }
+directories = "6.0"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+keyring = { version = "3.6", features = ["apple-native", "sync-secret-service", "windows-native"] }
+parking_lot = "0.12"
+regex = "1.11"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rusqlite = { version = "0.40", features = ["bundled", "chrono"] }
+rusqlite_migration = "2.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+strsim = "0.11"
+tempfile = "3.20"
+thiserror = "2.0"
+tokio = { version = "1.47", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "process"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = "2.5"
+uuid = { version = "1.17", features = ["v4", "serde"] }
+
+# Optimisations from the Tauri size guide (profiles are only read from the workspace root).
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 1

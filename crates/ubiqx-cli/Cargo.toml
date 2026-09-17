@@ -1,0 +1,15 @@
+[package]
+name = "ubiqx-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "ubiqx"
+path = "src/main.rs"
+
+[dependencies]
+ubiqx-core.workspace = true
