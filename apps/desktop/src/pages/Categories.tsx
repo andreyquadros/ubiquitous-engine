@@ -7,11 +7,13 @@ import { Card, CardHeader } from '../components/ui/Card';
 import { CategoryChip } from '../components/ui/CategoryChip';
 import { Dialog } from '../components/ui/Dialog';
 import { Field, Input, Select, Textarea } from '../components/ui/Field';
+import { IconPicker } from '../components/ui/IconPicker';
 import { EmptyState } from '../components/ui/misc';
 import { PageHeader } from '../components/ui/PageHeader';
 import { TagInput } from '../components/ui/TagInput';
 import { Toggle } from '../components/ui/Toggle';
-import { blankCategory, COLOR_CHOICES, ICON_CHOICES, iconFor } from '../lib/categories';
+import { useT } from '../i18n';
+import { blankCategory, categoryDescription, categoryLabel, COLOR_CHOICES, iconFor } from '../lib/categories';
 import { fmtDateTime, hhmmToInput, inputToHhmm } from '../lib/format';
 import { ipc } from '../lib/ipc';
 import { useAppStore } from '../lib/store';
@@ -19,12 +21,8 @@ import { useToast } from '../lib/toast';
 import type { Category, Rule, RuleMatcher } from '../lib/types';
 import { useAsync } from '../lib/useAsync';
 
-const MATCHERS: { value: RuleMatcher; label: string; hint: string }[] = [
-  { value: 'domain', label: 'Domínio', hint: 'ex.: sei.ifro.edu.br' },
-  { value: 'app', label: 'App', hint: 'ex.: Microsoft Teams' },
-  { value: 'title_contains', label: 'Título contém', hint: 'ex.: incubadora' },
-  { value: 'regex', label: 'Regex', hint: 'ex.: cidades|sensor' },
-];
+/** Rule matchers in menu order; label and example hint come from t('categories.matcher.<m>') / t('categories.matcher_hint.<m>'). */
+const MATCHERS: readonly RuleMatcher[] = ['domain', 'app', 'title_contains', 'regex'];
 
 /** Tinted square with the category icon: the category's own colour, never a token. */
 function IconTile({ color, icon, size = 'md' }: { color: string; icon: string; size?: 'sm' | 'md' | 'lg' }) {
@@ -43,6 +41,7 @@ function IconTile({ color, icon, size = 'md' }: { color: string; icon: string; s
 }
 
 export function Categories() {
+  const t = useT();
   const { data: cats, reload: reloadCats, setData: setCats } = useAsync(() => ipc.listCategories(true), []);
   const loadCategories = useAppStore((s) => s.loadCategories);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -87,11 +86,11 @@ export function Categories() {
   const save = async () => {
     if (!draft) return;
     if (!draft.name.trim()) {
-      toast.error('Dê um nome à categoria');
+      toast.error(t('categories.toast.name_required'));
       return;
     }
     if (!draft.is_system && !draft.description.trim()) {
-      toast.error('Descreva o que conta como trabalho desta categoria', 'A IA usa a descrição para classificar com precisão.');
+      toast.error(t('categories.toast.description_required'), t('categories.toast.description_required_hint'));
       return;
     }
     try {
@@ -100,9 +99,9 @@ export function Categories() {
       await loadCategories();
       setIsNew(false);
       setSelectedId(saved.id);
-      toast.success('Categoria salva');
+      toast.success(t('categories.toast.saved'));
     } catch (e) {
-      toast.error('Não foi possível salvar', e instanceof Error ? e.message : String(e));
+      toast.error(t('categories.toast.save_failed'), e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -111,22 +110,22 @@ export function Categories() {
       await ipc.saveCategory({ ...c, archived });
       await reloadCats();
       await loadCategories();
-      toast.success(archived ? 'Categoria arquivada' : 'Categoria restaurada');
+      toast.success(archived ? t('categories.toast.archived') : t('categories.toast.restored'));
     } catch (e) {
-      toast.error('Não foi possível arquivar', e instanceof Error ? e.message : String(e));
+      toast.error(t('categories.toast.archive_failed'), e instanceof Error ? e.message : String(e));
     }
   };
 
   const remove = async (c: Category) => {
-    if (!window.confirm(`Remover “${c.name}”? Os blocos ficam sem categoria.`)) return;
+    if (!window.confirm(t('categories.confirm_remove', { name: categoryLabel(c) }))) return;
     try {
       await ipc.deleteCategory(c.id);
       setCats((cats ?? []).filter((x) => x.id !== c.id));
       await loadCategories();
       setSelectedId(null);
-      toast.success('Categoria removida');
+      toast.success(t('categories.toast.removed'));
     } catch (e) {
-      toast.error('Não foi possível remover', e instanceof Error ? e.message : String(e));
+      toast.error(t('categories.toast.remove_failed'), e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -144,7 +143,7 @@ export function Categories() {
       await reloadCats();
       await loadCategories();
     } catch (e) {
-      toast.error('Não foi possível reordenar', e instanceof Error ? e.message : String(e));
+      toast.error(t('categories.toast.reorder_failed'), e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -153,11 +152,11 @@ export function Categories() {
   return (
     <div data-testid="page-categories">
       <PageHeader
-        title="Categorias"
-        subtitle="Descrição, palavras-chave e horário de relatório de cada área do seu trabalho. A IA lê tudo isso antes de classificar."
+        title={t('categories.title')}
+        subtitle={t('categories.subtitle')}
         actions={
           <Button variant="primary" icon={<Plus className="size-4" strokeWidth={1.75} />} onClick={startNew}>
-            Nova categoria
+            {t('categories.new_category')}
           </Button>
         }
       />
@@ -167,19 +166,19 @@ export function Categories() {
           {cats && !hasUser && !isNew ? (
             <EmptyState
               icon={<Tags className="size-5" strokeWidth={1.75} />}
-              title="Nenhuma categoria sua ainda"
-              description="Crie uma para cada instituição ou projeto. Sem categorias, tudo fica em “Sem categoria”."
+              title={t('categories.empty.title')}
+              description={t('categories.empty.body')}
               action={
                 <Button variant="primary" size="sm" icon={<Plus className="size-3.5" strokeWidth={1.75} />} onClick={startNew}>
-                  Criar a primeira
+                  {t('categories.empty.action')}
                 </Button>
               }
             />
           ) : (
-            <CategoryList title="Suas categorias" items={sorted.user} selectedId={selectedId} onSelect={select} onMove={(c, d) => void move(c, d)} />
+            <CategoryList title={t('categories.list.yours')} items={sorted.user} selectedId={selectedId} onSelect={select} onMove={(c, d) => void move(c, d)} />
           )}
-          {sorted.archived.length > 0 && <CategoryList title="Arquivadas" items={sorted.archived} selectedId={selectedId} onSelect={select} muted />}
-          <CategoryList title="Do sistema" items={sorted.system} selectedId={selectedId} onSelect={select} locked />
+          {sorted.archived.length > 0 && <CategoryList title={t('categories.list.archived')} items={sorted.archived} selectedId={selectedId} onSelect={select} muted />}
+          <CategoryList title={t('categories.list.system')} items={sorted.system} selectedId={selectedId} onSelect={select} locked />
         </Card>
 
         <Card className="col-span-12 min-[1100px]:col-span-8">
@@ -196,11 +195,11 @@ export function Categories() {
           ) : (
             <EmptyState
               icon={<Tags className="size-5" strokeWidth={1.75} />}
-              title="Escolha uma categoria ao lado"
-              description="Ou crie uma nova para começar."
+              title={t('categories.pick.title')}
+              description={t('categories.pick.body')}
               action={
                 <Button size="sm" icon={<Plus className="size-3.5" strokeWidth={1.75} />} onClick={startNew}>
-                  Nova categoria
+                  {t('categories.new_category')}
                 </Button>
               }
             />
@@ -230,6 +229,7 @@ function CategoryList({
   locked?: boolean;
   muted?: boolean;
 }) {
+  const t = useT();
   return (
     <section className="border-b border-line last:border-b-0" aria-label={title}>
       <div className="flex items-baseline justify-between px-4 pt-3.5 pb-1">
@@ -239,7 +239,11 @@ function CategoryList({
       <ul className="px-2 pb-2">
         {items.map((c, i) => {
           const active = c.id === selectedId;
-          const meta = c.is_productive ? (c.report_time ? `Produtiva, relatório às ${hhmmToInput(c.report_time)}` : 'Produtiva') : 'Não conta como trabalho';
+          const meta = c.is_productive
+            ? c.report_time
+              ? t('categories.meta.productive_at', { time: hhmmToInput(c.report_time) })
+              : t('categories.meta.productive')
+            : t('categories.meta.not_work');
           return (
             <li key={c.id} className="group relative">
               {active && <span className="absolute top-2.5 bottom-2.5 -left-2 w-[3px] rounded-r-full bg-volt" aria-hidden />}
@@ -255,17 +259,17 @@ function CategoryList({
               >
                 <IconTile color={c.color} icon={c.icon} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{c.name}</span>
-                  <span className="block truncate text-[11px] text-ink-3">{c.is_system ? 'Categoria do sistema' : meta}</span>
+                  <span className="block truncate font-medium">{categoryLabel(c)}</span>
+                  <span className="block truncate text-[11px] text-ink-3">{c.is_system ? t('categories.meta.system') : meta}</span>
                 </span>
                 {locked && <Lock className="size-3.5 shrink-0 text-ink-4" strokeWidth={1.75} aria-hidden />}
               </button>
               {onMove && items.length > 1 && (
                 <span className={clsx('absolute top-1/2 right-1.5 flex -translate-y-1/2 flex-col opacity-0 transition-opacity duration-120 group-hover:opacity-100 focus-within:opacity-100', active && 'opacity-100')}>
-                  <IconButton label={`Mover ${c.name} para cima`} size="sm" className="size-5 rounded-[6px]" disabled={i === 0} onClick={() => onMove(c, -1)}>
+                  <IconButton label={t('categories.move_up', { name: c.name })} size="sm" className="size-5 rounded-[6px]" disabled={i === 0} onClick={() => onMove(c, -1)}>
                     <ChevronUp className="size-3.5" strokeWidth={1.75} />
                   </IconButton>
-                  <IconButton label={`Mover ${c.name} para baixo`} size="sm" className="size-5 rounded-[6px]" disabled={i === items.length - 1} onClick={() => onMove(c, 1)}>
+                  <IconButton label={t('categories.move_down', { name: c.name })} size="sm" className="size-5 rounded-[6px]" disabled={i === items.length - 1} onClick={() => onMove(c, 1)}>
                     <ChevronDown className="size-3.5" strokeWidth={1.75} />
                   </IconButton>
                 </span>
@@ -273,13 +277,14 @@ function CategoryList({
             </li>
           );
         })}
-        {!items.length && <li className="px-2.5 py-2 text-xs text-ink-3">Nenhuma por enquanto.</li>}
+        {!items.length && <li className="px-2.5 py-2 text-xs text-ink-3">{t('categories.list.empty')}</li>}
       </ul>
     </section>
   );
 }
 
 function CategoryForm({ draft, onChange, onSave, onArchive, onDelete, isNew }: { draft: Category; onChange: (c: Category) => void; onSave: () => void; onArchive: () => void; onDelete: () => void; isNew: boolean }) {
+  const t = useT();
   const ro = draft.is_system;
   const set = (patch: Partial<Category>) => onChange({ ...draft, ...patch });
   const selectedColor = draft.color.toUpperCase();
@@ -295,36 +300,40 @@ function CategoryForm({ draft, onChange, onSave, onArchive, onDelete, isNew }: {
       <div className="flex items-center gap-4">
         <IconTile color={draft.color} icon={draft.icon} size="lg" />
         <div className="min-w-0 flex-1">
-          <h2 className="display truncate text-[20px] leading-7">{draft.name || 'Nova categoria'}</h2>
-          <p className="mt-0.5 text-xs text-ink-3">{ro ? 'Categoria do sistema: só a cor e o ícone podem mudar.' : isNew ? 'Ainda não salva' : `Criada em ${fmtDateTime(draft.created_at)}`}</p>
+          <h2 className="display truncate text-[20px] leading-7">{categoryLabel(draft) || t('categories.new_category')}</h2>
+          <p className="mt-0.5 text-xs text-ink-3">
+            {ro ? t('categories.form.system_note') : isNew ? t('categories.form.unsaved') : t('categories.form.created_at', { date: fmtDateTime(draft.created_at) })}
+          </p>
         </div>
         {ro && (
           <Badge tone="neutral">
-            <Lock className="size-3" strokeWidth={1.75} aria-hidden /> sistema
+            <Lock className="size-3" strokeWidth={1.75} aria-hidden /> {t('categories.badge.system')}
           </Badge>
         )}
-        {draft.archived && <Badge tone="amber">arquivada</Badge>}
+        {draft.archived && <Badge tone="amber">{t('categories.badge.archived')}</Badge>}
       </div>
 
       <div className="grid grid-cols-1 gap-4 min-[720px]:grid-cols-2">
-        <Field label="Nome">{(id) => <Input id={id} value={draft.name} disabled={ro} onChange={(e) => set({ name: e.target.value })} placeholder="Ex.: IFRO" required />}</Field>
-        <Field label="Horário do relatório" hint="Vazio usa o horário padrão das configurações.">
+        <Field label={t('categories.field.name')}>
+          {(id) => <Input id={id} value={ro ? categoryLabel(draft) : draft.name} disabled={ro} onChange={(e) => set({ name: e.target.value })} placeholder={t('categories.field.name_placeholder')} required />}
+        </Field>
+        <Field label={t('categories.field.report_time')} hint={t('categories.field.report_time_hint')}>
           {(id) => <Input id={id} type="time" disabled={ro} value={hhmmToInput(draft.report_time)} onChange={(e) => set({ report_time: e.target.value ? inputToHhmm(e.target.value) : null })} className="num" />}
         </Field>
       </div>
 
-      <Field label="O que conta como trabalho desta categoria" hint="Seja específico: sistemas, projetos, pessoas, tipos de tarefa. A IA lê isto antes de classificar cada bloco.">
-        {(id) => <Textarea id={id} value={draft.description} disabled={ro} onChange={(e) => set({ description: e.target.value })} placeholder="Ex.: Aulas de Programação Web, orientação de TCC, SEI/SUAP, reuniões de colegiado…" className="min-h-24" />}
+      <Field label={t('categories.field.description')} hint={t('categories.field.description_hint')}>
+        {(id) => <Textarea id={id} value={ro ? categoryDescription(draft) : draft.description} disabled={ro} onChange={(e) => set({ description: e.target.value })} placeholder={t('categories.field.description_placeholder')} className="min-h-24" />}
       </Field>
 
-      <Field label="Palavras-chave" hint="Termos que, no título ou na URL, indicam fortemente esta categoria. Enter para adicionar.">
-        {(id) => <TagInput id={id} value={draft.keywords} disabled={ro} onChange={(keywords) => set({ keywords })} placeholder="sei, suap, tcc…" />}
+      <Field label={t('categories.field.keywords')} hint={t('categories.field.keywords_hint')}>
+        {(id) => <TagInput id={id} value={draft.keywords} disabled={ro} onChange={(keywords) => set({ keywords })} placeholder={t('categories.field.keywords_placeholder')} />}
       </Field>
 
       <div className="grid grid-cols-1 gap-5 min-[720px]:grid-cols-[auto_1fr] min-[720px]:gap-8">
         <div className="flex flex-col gap-2">
-          <span className="text-[13px] font-medium">Cor</span>
-          <div className="grid grid-cols-7 gap-2" role="radiogroup" aria-label="Cor">
+          <span className="text-[13px] font-medium">{t('categories.field.color')}</span>
+          <div className="grid grid-cols-7 gap-2" role="radiogroup" aria-label={t('categories.field.color')}>
             {COLOR_CHOICES.map((c) => {
               const on = selectedColor === c;
               return (
@@ -342,45 +351,28 @@ function CategoryForm({ draft, onChange, onSave, onArchive, onDelete, isNew }: {
             })}
             <label
               className="relative size-7 cursor-pointer overflow-hidden rounded-full transition-[box-shadow] duration-120"
-              title="Cor personalizada"
+              title={t('categories.field.custom_color')}
               style={{
                 background: COLOR_CHOICES.includes(selectedColor) ? 'conic-gradient(from 0deg, #ff7a1f, #ffc24d, #2ee6a6, #4d8dff, #9b8cff, #ff5c7a, #ff7a1f)' : draft.color,
                 boxShadow: COLOR_CHOICES.includes(selectedColor) ? undefined : `0 0 0 2px var(--panel), 0 0 0 4px ${draft.color}`,
               }}
             >
-              <input type="color" value={draft.color} onChange={(e) => set({ color: e.target.value.toUpperCase() })} className="absolute inset-0 size-full cursor-pointer opacity-0" aria-label="Cor personalizada" />
+              <input type="color" value={draft.color} onChange={(e) => set({ color: e.target.value.toUpperCase() })} className="absolute inset-0 size-full cursor-pointer opacity-0" aria-label={t('categories.field.custom_color')} />
               <Plus className="absolute top-1/2 left-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 text-white drop-shadow-[0_1px_1px_rgb(0_0_0/.5)]" strokeWidth={2.5} aria-hidden />
             </label>
           </div>
         </div>
         <div className="flex flex-col gap-2">
-          <span className="text-[13px] font-medium">Ícone</span>
-          <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Ícone">
-            {ICON_CHOICES.map(({ name, Icon: I }) => {
-              const on = draft.icon === name;
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  aria-label={name}
-                  onClick={() => set({ icon: name })}
-                  className={clsx('flex size-8 items-center justify-center rounded-[8px] border transition-colors duration-120', on ? 'border-volt/60 bg-volt-soft text-volt' : 'border-line text-ink-3 hover:bg-panel-2 hover:text-ink')}
-                >
-                  <I className="size-4" strokeWidth={1.75} />
-                </button>
-              );
-            })}
-          </div>
+          <span className="text-[13px] font-medium">{t('categories.field.icon')}</span>
+          <IconPicker value={draft.icon} onChange={(icon) => set({ icon })} color={draft.color} label={t('categories.field.icon')} className="max-w-md" />
         </div>
       </div>
 
-      <Field label="Template do relatório" hint="Opcional. Use {resumo}, {itens} e {proximos} como marcadores.">
-        {(id) => <Textarea id={id} value={draft.report_template ?? ''} disabled={ro} onChange={(e) => set({ report_template: e.target.value || null })} placeholder={'## Resumo\n\n{resumo}\n\n## Atividades\n\n{itens}'} className="font-mono text-xs" />}
+      <Field label={t('categories.field.template')} hint={t('categories.field.template_hint')}>
+        {(id) => <Textarea id={id} value={draft.report_template ?? ''} disabled={ro} onChange={(e) => set({ report_template: e.target.value || null })} placeholder={t('categories.field.template_placeholder')} className="font-mono text-xs" />}
       </Field>
 
-      <Field label="Conta como trabalho" hint="Entra no tempo produtivo e no score de foco." inline>
+      <Field label={t('categories.field.productive')} hint={t('categories.field.productive_hint')} inline>
         {(id) => <Toggle id={id} checked={draft.is_productive} disabled={ro} onChange={(v) => set({ is_productive: v })} />}
       </Field>
 
@@ -389,16 +381,16 @@ function CategoryForm({ draft, onChange, onSave, onArchive, onDelete, isNew }: {
           {!ro && !isNew && (
             <>
               <Button variant="ghost" icon={draft.archived ? <ArchiveRestore className="size-4" strokeWidth={1.75} /> : <Archive className="size-4" strokeWidth={1.75} />} onClick={onArchive}>
-                {draft.archived ? 'Restaurar' : 'Arquivar'}
+                {draft.archived ? t('categories.action.restore') : t('categories.action.archive')}
               </Button>
               <Button variant="ghost" className="text-rose hover:bg-rose/10 hover:text-rose" icon={<Trash2 className="size-4" strokeWidth={1.75} />} onClick={onDelete}>
-                Remover
+                {t('common.remove')}
               </Button>
             </>
           )}
         </div>
         <Button type="submit" variant="primary" size="lg">
-          {isNew ? 'Criar categoria' : 'Salvar alterações'}
+          {isNew ? t('categories.create_category') : t('common.save_changes')}
         </Button>
       </div>
     </form>
@@ -406,6 +398,7 @@ function CategoryForm({ draft, onChange, onSave, onArchive, onDelete, isNew }: {
 }
 
 function RulesSection({ categories }: { categories: Category[] }) {
+  const t = useT();
   const { data: rules, reload, setData } = useAsync(() => ipc.listRules(), []);
   const [open, setOpen] = useState(false);
   const [matcher, setMatcher] = useState<RuleMatcher>('domain');
@@ -424,7 +417,7 @@ function RulesSection({ categories }: { categories: Category[] }) {
       const saved = await ipc.saveRule({ ...r, enabled });
       setData((rules ?? []).map((x) => (x.id === saved.id ? saved : x)));
     } catch (e) {
-      toast.error('Não foi possível atualizar a regra', e instanceof Error ? e.message : String(e));
+      toast.error(t('categories.toast.rule_update_failed'), e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -432,9 +425,9 @@ function RulesSection({ categories }: { categories: Category[] }) {
     try {
       await ipc.deleteRule(r.id);
       setData((rules ?? []).filter((x) => x.id !== r.id));
-      toast.success('Regra removida');
+      toast.success(t('categories.toast.rule_removed'));
     } catch (e) {
-      toast.error('Não foi possível remover', e instanceof Error ? e.message : String(e));
+      toast.error(t('categories.toast.remove_failed'), e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -458,9 +451,9 @@ function RulesSection({ categories }: { categories: Category[] }) {
       await reload();
       setPattern('');
       setOpen(false);
-      toast.success('Regra criada');
+      toast.success(t('categories.toast.rule_created'));
     } catch (e) {
-      toast.error('Não foi possível criar', e instanceof Error ? e.message : String(e));
+      toast.error(t('categories.toast.rule_create_failed'), e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -472,15 +465,18 @@ function RulesSection({ categories }: { categories: Category[] }) {
     <Card className="mt-5" padded={false}>
       <div className="px-5 pt-5">
         <CardHeader
-          title="Regras"
+          title={t('categories.rules.title')}
           subtitle={
             rules?.length
-              ? `${rules.length} ${rules.length === 1 ? 'regra' : 'regras'}, ${learned} ${learned === 1 ? 'aprendida' : 'aprendidas'} das suas correções. Rodam antes da memória e da IA, sem custo.`
-              : 'Regras são determinísticas e gratuitas: rodam antes da memória e da IA. As aprendidas vêm das suas correções.'
+              ? t('categories.rules.subtitle', {
+                  rules: t('categories.rules.count', { count: rules.length }),
+                  learned: t('categories.rules.learned', { count: learned }),
+                })
+              : t('categories.rules.subtitle_empty')
           }
           action={
             <Button size="sm" icon={<Plus className="size-3.5" strokeWidth={1.75} />} onClick={() => setOpen(true)}>
-              Nova regra
+              {t('categories.rules.new')}
             </Button>
           }
         />
@@ -489,11 +485,11 @@ function RulesSection({ categories }: { categories: Category[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-y border-line text-left text-xs text-ink-3">
-              <th className="px-5 py-2 font-medium">Regra</th>
-              <th className="px-3 py-2 font-medium">Categoria</th>
-              <th className="px-3 py-2 font-medium">Origem</th>
-              <th className="px-3 py-2 text-right font-medium">Acertos e erros</th>
-              <th className="px-3 py-2 font-medium">Ativa</th>
+              <th className="px-5 py-2 font-medium">{t('categories.rules.col.rule')}</th>
+              <th className="px-3 py-2 font-medium">{t('common.category')}</th>
+              <th className="px-3 py-2 font-medium">{t('categories.rules.col.origin')}</th>
+              <th className="px-3 py-2 text-right font-medium">{t('categories.rules.col.hits')}</th>
+              <th className="px-3 py-2 font-medium">{t('categories.rules.col.enabled')}</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -501,28 +497,28 @@ function RulesSection({ categories }: { categories: Category[] }) {
             {rules.map((r) => (
               <tr key={r.id} className={clsx('transition-opacity duration-150', !r.enabled && 'opacity-50')}>
                 <td className="px-5 py-2.5">
-                  <span className="mr-2 inline-flex h-5 items-center rounded-md border border-line bg-panel-2 px-1.5 text-[11px] text-ink-3">{MATCHERS.find((m) => m.value === r.matcher)?.label}</span>
+                  <span className="mr-2 inline-flex h-5 items-center rounded-md border border-line bg-panel-2 px-1.5 text-[11px] text-ink-3">{t(`categories.matcher.${r.matcher}`)}</span>
                   <span className="font-mono text-[13px]">{r.pattern}</span>
                 </td>
                 <td className="px-3 py-2.5">
                   <CategoryChip categories={categories} categoryId={r.category_id} />
                 </td>
                 <td className="px-3 py-2.5">
-                  <Badge tone={r.origin === 'learned' ? 'violet' : 'volt'}>{r.origin === 'learned' ? 'Aprendida' : 'Sua'}</Badge>
+                  <Badge tone={r.origin === 'learned' ? 'violet' : 'volt'}>{r.origin === 'learned' ? t('categories.rules.origin.learned') : t('categories.rules.origin.user')}</Badge>
                 </td>
                 <td className="num px-3 py-2.5 text-right text-xs text-ink-2">
                   <span className="text-signal">{r.hit_count}</span>
                   <span className="mx-1 text-ink-4">/</span>
                   <span className={r.miss_count > 0 ? 'text-rose' : 'text-ink-3'}>{r.miss_count}</span>
                   {r.last_contradicted_at && (
-                    <AlertTriangle className="ml-1.5 inline size-3.5 align-[-2px] text-amber" strokeWidth={1.75} aria-label={`Última contradição: ${fmtDateTime(r.last_contradicted_at)}`} />
+                    <AlertTriangle className="ml-1.5 inline size-3.5 align-[-2px] text-amber" strokeWidth={1.75} aria-label={t('categories.rules.last_contradicted', { date: fmtDateTime(r.last_contradicted_at) })} />
                   )}
                 </td>
                 <td className="px-3 py-2.5">
-                  <Toggle size="sm" checked={r.enabled} onChange={(v) => void toggle(r, v)} label={`Ativar regra ${r.pattern}`} />
+                  <Toggle size="sm" checked={r.enabled} onChange={(v) => void toggle(r, v)} label={t('categories.rules.enable', { pattern: r.pattern })} />
                 </td>
                 <td className="px-3 py-2.5 text-right">
-                  <IconButton label="Remover regra" size="sm" onClick={() => void remove(r)}>
+                  <IconButton label={t('categories.rules.remove')} size="sm" onClick={() => void remove(r)}>
                     <Trash2 className="size-3.5" strokeWidth={1.75} />
                   </IconButton>
                 </td>
@@ -534,11 +530,11 @@ function RulesSection({ categories }: { categories: Category[] }) {
         <div className="border-t border-line">
           <EmptyState
             className="py-8"
-            title="Nenhuma regra ainda"
-            description="Corrija blocos na Revisão e aceite as sugestões, ou crie uma regra à mão."
+            title={t('categories.rules.empty.title')}
+            description={t('categories.rules.empty.body')}
             action={
               <Button size="sm" icon={<Plus className="size-3.5" strokeWidth={1.75} />} onClick={() => setOpen(true)}>
-                Criar regra
+                {t('categories.rules.create')}
               </Button>
             }
           />
@@ -548,41 +544,41 @@ function RulesSection({ categories }: { categories: Category[] }) {
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        title="Nova regra"
-        description="Quando o padrão bater, o bloco recebe a categoria sem passar pela IA."
+        title={t('categories.rules.new')}
+        description={t('categories.rules.dialog_body')}
         width="sm"
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>
-              Cancelar
+              {t('common.cancel')}
             </Button>
             <Button variant="primary" onClick={() => void create()} loading={busy} disabled={!pattern.trim()}>
-              Criar regra
+              {t('categories.rules.create')}
             </Button>
           </>
         }
       >
         <div className="flex flex-col gap-3">
-          <Field label="Tipo">
+          <Field label={t('categories.rules.field.type')}>
             {(id) => (
               <Select id={id} value={matcher} onChange={(e) => setMatcher(e.target.value as RuleMatcher)}>
                 {MATCHERS.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
+                  <option key={m} value={m}>
+                    {t(`categories.matcher.${m}`)}
                   </option>
                 ))}
               </Select>
             )}
           </Field>
-          <Field label="Padrão" hint={MATCHERS.find((m) => m.value === matcher)?.hint}>
+          <Field label={t('categories.rules.field.pattern')} hint={t(`categories.matcher_hint.${matcher}`)}>
             {(id) => <Input id={id} value={pattern} onChange={(e) => setPattern(e.target.value)} className="font-mono" />}
           </Field>
-          <Field label="Categoria">
+          <Field label={t('common.category')}>
             {(id) => (
               <Select id={id} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
                 {options.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}
+                    {categoryLabel(c)}
                   </option>
                 ))}
               </Select>

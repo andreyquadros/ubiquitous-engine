@@ -6,8 +6,10 @@
 //! by construction. [`render_block_line`] is the exact per-block line the classifier sends;
 //! the engine stores it as `ActivityBlock::ai_payload` so what is stored equals what was sent.
 //!
-//! Instruction text is written in English (compact and stable, good for caching); the
-//! language of the generated text comes from the request (`pt-BR` by default).
+//! Classification instructions are written in English (compact and stable, good for caching);
+//! the report writer and the advisor get instructions written in the language they must
+//! answer in, with examples in that language. The language comes from the request
+//! (`Settings.language`, `pt-BR` by default).
 
 use std::collections::HashSet;
 
@@ -17,7 +19,9 @@ use ubiqx_core::ports::{
 };
 use ubiqx_core::redact::{redact_block, redact_text, RedactedBlock};
 use ubiqx_core::report::format_minutes;
-use ubiqx_core::{system_categories, ActivityBlock, Category, Mood, NudgeKind, ReportItem};
+use ubiqx_core::{
+    system_categories, ActivityBlock, Category, Mood, NudgeKind, ReportItem, UiLanguage,
+};
 
 /// Language used when the request does not name one.
 pub const DEFAULT_LANGUAGE: &str = "pt-BR";
@@ -42,6 +46,19 @@ pub fn language_or_default(lang: &str) -> &str {
         DEFAULT_LANGUAGE
     } else {
         l
+    }
+}
+
+/// The UI language named by a request's `language` tag (unknown tags mean pt-BR).
+pub fn ui_language(lang: &str) -> UiLanguage {
+    UiLanguage::from_tag(language_or_default(lang))
+}
+
+/// How an English instruction names the answer language.
+fn language_name_en(lang: UiLanguage) -> &'static str {
+    match lang {
+        UiLanguage::PtBr => "Brazilian Portuguese",
+        UiLanguage::En => "English",
     }
 }
 
@@ -107,15 +124,22 @@ fn path_of(url: &str) -> Option<String> {
     }
 }
 
-fn weekday_pt(w: Weekday) -> &'static str {
-    match w {
-        Weekday::Mon => "segunda-feira",
-        Weekday::Tue => "terça-feira",
-        Weekday::Wed => "quarta-feira",
-        Weekday::Thu => "quinta-feira",
-        Weekday::Fri => "sexta-feira",
-        Weekday::Sat => "sábado",
-        Weekday::Sun => "domingo",
+fn weekday_name(w: Weekday, lang: UiLanguage) -> &'static str {
+    match (w, lang) {
+        (Weekday::Mon, UiLanguage::PtBr) => "segunda-feira",
+        (Weekday::Tue, UiLanguage::PtBr) => "terça-feira",
+        (Weekday::Wed, UiLanguage::PtBr) => "quarta-feira",
+        (Weekday::Thu, UiLanguage::PtBr) => "quinta-feira",
+        (Weekday::Fri, UiLanguage::PtBr) => "sexta-feira",
+        (Weekday::Sat, UiLanguage::PtBr) => "sábado",
+        (Weekday::Sun, UiLanguage::PtBr) => "domingo",
+        (Weekday::Mon, UiLanguage::En) => "Monday",
+        (Weekday::Tue, UiLanguage::En) => "Tuesday",
+        (Weekday::Wed, UiLanguage::En) => "Wednesday",
+        (Weekday::Thu, UiLanguage::En) => "Thursday",
+        (Weekday::Fri, UiLanguage::En) => "Friday",
+        (Weekday::Sat, UiLanguage::En) => "Saturday",
+        (Weekday::Sun, UiLanguage::En) => "Sunday",
     }
 }
 
@@ -309,10 +333,59 @@ pub fn allowed_category_ids(categories: &[Category]) -> HashSet<String> {
     ids
 }
 
-/// One line per category: `- id=… | nome=… | produtiva=sim | descrição=… | palavras-chave=…`,
-/// always ending with the `Distraction` and `Break` system categories when the caller did not
-/// include them.
-pub fn render_catalogue(categories: &[Category]) -> String {
+/// Field labels of a catalogue line, per language.
+struct CatalogueLabels {
+    name: &'static str,
+    productive: &'static str,
+    yes: &'static str,
+    no: &'static str,
+    description: &'static str,
+    keywords: &'static str,
+    distraction: (&'static str, &'static str),
+    brk: (&'static str, &'static str),
+}
+
+impl CatalogueLabels {
+    fn for_language(lang: UiLanguage) -> Self {
+        match lang {
+            UiLanguage::PtBr => Self {
+                name: "nome",
+                productive: "produtiva",
+                yes: "sim",
+                no: "não",
+                description: "descrição",
+                keywords: "palavras-chave",
+                distraction: (
+                    "Distração",
+                    "Entretenimento, redes sociais, vídeos, jogos ou compras sem relação com o trabalho",
+                ),
+                brk: (
+                    "Pausa",
+                    "Descanso, refeição ou pausa deliberada longe do trabalho",
+                ),
+            },
+            UiLanguage::En => Self {
+                name: "name",
+                productive: "productive",
+                yes: "yes",
+                no: "no",
+                description: "description",
+                keywords: "keywords",
+                distraction: (
+                    "Distraction",
+                    "Entertainment, social media, videos, games or shopping unrelated to work",
+                ),
+                brk: ("Break", "Rest, a meal or a deliberate pause away from work"),
+            },
+        }
+    }
+}
+
+/// One line per category: `- id=… | nome=… | produtiva=sim | descrição=… | palavras-chave=…`
+/// (labels in the UI language), always ending with the `Distraction` and `Break` system
+/// categories when the caller did not include them.
+pub fn render_catalogue(categories: &[Category], lang: UiLanguage) -> String {
+    let l = CatalogueLabels::for_language(lang);
     let mut lines = Vec::new();
     let mut has_distraction = false;
     let mut has_break = false;
@@ -324,14 +397,16 @@ pub fn render_catalogue(categories: &[Category]) -> String {
         has_distraction |= c.id == system_categories::DISTRACTION;
         has_break |= c.id == system_categories::BREAK;
         let mut line = format!(
-            "- id={} | nome={} | produtiva={}",
+            "- id={} | {}={} | {}={}",
             c.id,
+            l.name,
             squash(&c.name, 60),
-            if c.is_productive { "sim" } else { "não" }
+            l.productive,
+            if c.is_productive { l.yes } else { l.no }
         );
         let desc = squash(&c.description, 300);
         if !desc.is_empty() {
-            line.push_str(&format!(" | descrição={desc}"));
+            line.push_str(&format!(" | {}={desc}", l.description));
         }
         let keywords: Vec<String> = c
             .keywords
@@ -341,20 +416,32 @@ pub fn render_catalogue(categories: &[Category]) -> String {
             .take(20)
             .collect();
         if !keywords.is_empty() {
-            line.push_str(&format!(" | palavras-chave={}", keywords.join(", ")));
+            line.push_str(&format!(" | {}={}", l.keywords, keywords.join(", ")));
         }
         lines.push(line);
     }
     if !has_distraction {
         lines.push(format!(
-            "- id={} | nome=Distração | produtiva=não | descrição=Entretenimento, redes sociais, vídeos, jogos ou compras sem relação com o trabalho",
-            system_categories::DISTRACTION
+            "- id={} | {}={} | {}={} | {}={}",
+            system_categories::DISTRACTION,
+            l.name,
+            l.distraction.0,
+            l.productive,
+            l.no,
+            l.description,
+            l.distraction.1
         ));
     }
     if !has_break {
         lines.push(format!(
-            "- id={} | nome=Pausa | produtiva=não | descrição=Descanso, refeição ou pausa deliberada longe do trabalho",
-            system_categories::BREAK
+            "- id={} | {}={} | {}={} | {}={}",
+            system_categories::BREAK,
+            l.name,
+            l.brk.0,
+            l.productive,
+            l.no,
+            l.description,
+            l.brk.1
         ));
     }
     lines.join("\n")
@@ -376,19 +463,24 @@ fn profile_section(profile: Option<&str>, heading: &str) -> String {
 
 /// Lean, stable system prompt for batch classification (role, catalogue, rules, profile).
 pub fn classification_system_prompt(ctx: &ClassificationContext) -> String {
-    let language = language_or_default(&ctx.language);
+    let lang = ui_language(&ctx.language);
+    let language = language_name_en(lang);
+    let example = lang.pick(
+        "Editou a planilha de orçamento da incubadora",
+        "Edited the incubator's budget spreadsheet",
+    );
     let mut s = String::with_capacity(4096);
     s.push_str("You classify blocks of desktop activity into the user's categories.\n");
     s.push_str("A block is one stretch of time in one application/window, described by: app name, window title, web domain, URL path (query strings removed), duration in minutes and local time range. Titles were anonymised before reaching you (e-mail addresses, phone and document numbers are masked) and the titles of messaging or e-mail apps were replaced by the app name.\n\n");
     s.push_str("## Categories\n");
-    s.push_str(&render_catalogue(&ctx.categories));
+    s.push_str(&render_catalogue(&ctx.categories, lang));
     s.push_str("\n\n## Rules\n");
     s.push_str("- `category_id` must be one of the ids listed above, or null when the block cannot be placed with reasonable confidence. Never invent ids.\n");
     s.push_str("- Judge by app, title, domain and path together; match keywords loosely (synonyms, abbreviations, Portuguese and English variants). Neighbouring blocks of the same batch are context: work usually continues across apps.\n");
     s.push_str("- Messaging and e-mail apps (WhatsApp, Mail, Outlook, Slack, Teams, Telegram…) carry no topic in the title: decide by the app, the examples and the neighbouring blocks; when nothing indicates the topic answer null.\n");
     s.push_str("- `needs_vision` is true only when the text is insufficient AND a screenshot would probably settle it (generic titles such as \"Nova guia\", \"Finder\", \"Terminal\", messaging apps, file dialogs). Otherwise false.\n");
     s.push_str("- `confidence`: 0.9–1.0 for an obvious match, 0.6–0.8 when likely, below 0.5 for a guess (prefer null).\n");
-    s.push_str(&format!("- `description`: one short sentence in {language}, past tense, about the topic or task only, e.g. \"Editou a planilha de orçamento da incubadora\". Never include names of people, message or e-mail contents, quoted text or identifiers. Use null when nothing useful can be said.\n"));
+    s.push_str(&format!("- `description`: one short sentence in {language}, past tense, about the topic or task only, e.g. \"{example}\". Never include names of people, message or e-mail contents, quoted text or identifiers. Use null when nothing useful can be said.\n"));
     s.push_str(
         "- Answer with the JSON object only: one result per block id, every block exactly once.\n",
     );
@@ -455,11 +547,12 @@ pub fn classification_user_message(
 
 /// System prompt for the single-screenshot classifier.
 pub fn vision_system_prompt(ctx: &ClassificationContext) -> String {
-    let language = language_or_default(&ctx.language);
+    let lang = ui_language(&ctx.language);
+    let language = language_name_en(lang);
     let mut s = String::with_capacity(3072);
     s.push_str("You look at one screenshot of the user's desktop, describe the task or topic it shows, and classify it into one of the user's categories.\n\n");
     s.push_str("## Categories\n");
-    s.push_str(&render_catalogue(&ctx.categories));
+    s.push_str(&render_catalogue(&ctx.categories, lang));
     s.push_str("\n\n## Rules\n");
     s.push_str("- Describe only the task or topic (e.g. \"editing a spreadsheet about scholarship budgets\"). Never mention names of people, message or e-mail contents, addresses, numbers, credentials or anything personal, and never transcribe text from the screen.\n");
     s.push_str(
@@ -490,41 +583,85 @@ pub fn vision_user_text(block: &ActivityBlock) -> String {
 // Daily report
 // ---------------------------------------------------------------------------------------------
 
-/// Stable instructions of the report writer (first system block).
+/// Stable instructions of the report writer (first system block), written in the language
+/// the report must be in, with examples in that language. The JSON schema (field names, `kind`
+/// ids) is the same in both languages.
 pub fn report_instructions(language: &str) -> String {
-    let language = language_or_default(language);
     let mut s = String::with_capacity(3072);
-    s.push_str("Você redige relatórios diários de atividades profissionais a partir de blocos de uso do computador (aplicativo, título da janela, domínio, caminho, duração e horário local), já filtrados para a categoria informada. O texto compõe um relatório institucional mensal e precisa ser preciso, sóbrio e verificável.\n\n");
-    s.push_str("## Regras\n");
-    s.push_str(&format!("- Escreva em {language}, em voz institucional na terceira pessoa e no passado (\"Elaborou o parecer…\", \"Participou de reunião…\", \"Atualizou o sistema…\"), sem pronomes pessoais e sem juízo de valor.\n"));
-    s.push_str("- Agrupe os blocos em atividades significativas: uma atividade reúne todos os blocos sobre o mesmo assunto, mesmo em aplicativos diferentes. Não liste aplicativos nem blocos individualmente. Prefira nomes de documentos, projetos, sistemas, disciplinas e processos.\n");
-    s.push_str("- `minutes`: soma dos blocos da atividade, arredondada para múltiplos de 5.\n");
-    s.push_str("- Nunca cite nomes de pessoas, conteúdo de mensagens ou e-mails, nem reproduza títulos de janela entre aspas. O campo `descrição` dos blocos é a fonte principal do tema.\n");
-    s.push_str("- Não invente atividades, resultados ou detalhes ausentes dos blocos. Sem blocos: `items` vazio e `highlights` igual a [\"Sem atividade registrada\"].\n");
-    s.push_str("- `continuation_of`: quando a atividade continua um item de dias anteriores (lista fornecida), copie exatamente o texto daquele item; caso contrário null.\n");
-    s.push_str("- `kind`: desenvolvimento (código, sistemas, infraestrutura), reuniao (videoconferência, agenda), comunicacao (e-mail, mensagens, atendimento), documentacao (documentos, planilhas, pareceres, apresentações), ensino (aulas, materiais, avaliações), pesquisa (leitura, artigos, dados), extensao (projetos com a comunidade, eventos), gestao (SEI, processos, planejamento, orçamento), outro.\n");
-    s.push_str("- `evidence`: aplicativos, documentos, domínios, sistemas ou projetos que sustentam o item (nunca pessoas), até 4 por item.\n");
-    s.push_str("- `time_range`: \"HH:MM–HH:MM\" do primeiro ao último bloco da atividade; \"\" quando espalhada pelo dia.\n");
-    s.push_str("- `highlights`: até 3 frases curtas com o que foi mais relevante no dia.\n");
-    s.push_str("- Responda apenas com o objeto JSON.\n");
+    match ui_language(language) {
+        UiLanguage::PtBr => {
+            s.push_str("Você redige relatórios diários de atividades profissionais a partir de blocos de uso do computador (aplicativo, título da janela, domínio, caminho, duração e horário local), já filtrados para a categoria informada. O texto compõe um relatório institucional mensal e precisa ser preciso, sóbrio e verificável.\n\n");
+            s.push_str("## Regras\n");
+            s.push_str("- Escreva em português do Brasil, em voz institucional na terceira pessoa e no passado (\"Elaborou o parecer…\", \"Participou de reunião…\", \"Atualizou o sistema…\"), sem pronomes pessoais e sem juízo de valor.\n");
+            s.push_str("- Agrupe os blocos em atividades significativas: uma atividade reúne todos os blocos sobre o mesmo assunto, mesmo em aplicativos diferentes. Não liste aplicativos nem blocos individualmente. Prefira nomes de documentos, projetos, sistemas, disciplinas e processos.\n");
+            s.push_str(
+                "- `minutes`: soma dos blocos da atividade, arredondada para múltiplos de 5.\n",
+            );
+            s.push_str("- Nunca cite nomes de pessoas, conteúdo de mensagens ou e-mails, nem reproduza títulos de janela entre aspas. O campo `descrição` dos blocos é a fonte principal do tema.\n");
+            s.push_str("- Não invente atividades, resultados ou detalhes ausentes dos blocos. Sem blocos: `items` vazio e `highlights` igual a [\"Sem atividade registrada\"].\n");
+            s.push_str("- `continuation_of`: quando a atividade continua um item de dias anteriores (lista fornecida), copie exatamente o texto daquele item; caso contrário null.\n");
+            s.push_str("- `kind`: desenvolvimento (código, sistemas, infraestrutura), reuniao (videoconferência, agenda), comunicacao (e-mail, mensagens, atendimento), documentacao (documentos, planilhas, pareceres, apresentações), ensino (aulas, materiais, avaliações), pesquisa (leitura, artigos, dados), extensao (projetos com a comunidade, eventos), gestao (SEI, processos, planejamento, orçamento), outro.\n");
+            s.push_str("- `evidence`: aplicativos, documentos, domínios, sistemas ou projetos que sustentam o item (nunca pessoas), até 4 por item.\n");
+            s.push_str("- `time_range`: \"HH:MM–HH:MM\" do primeiro ao último bloco da atividade; \"\" quando espalhada pelo dia.\n");
+            s.push_str(
+                "- `highlights`: até 3 frases curtas com o que foi mais relevante no dia.\n",
+            );
+            s.push_str("- Responda apenas com o objeto JSON.\n");
+        }
+        UiLanguage::En => {
+            s.push_str("You write daily reports of professional activity from blocks of computer usage (application, window title, domain, path, duration and local time), already filtered to the given category. The text feeds a monthly institutional report and must be precise, sober and verifiable.\n\n");
+            s.push_str("## Rules\n");
+            s.push_str("- Write in English, in an institutional third-person voice and in the past tense (\"Drafted the opinion…\", \"Attended the planning meeting…\", \"Updated the system…\"), with no personal pronouns and no value judgements.\n");
+            s.push_str("- Group the blocks into meaningful activities: one activity gathers every block about the same subject, even across different applications. Do not list applications or individual blocks. Prefer the names of documents, projects, systems, courses and processes.\n");
+            s.push_str(
+                "- `minutes`: the sum of the activity's blocks, rounded to a multiple of 5.\n",
+            );
+            s.push_str("- Never name people, quote message or e-mail contents, or reproduce window titles in quotation marks. The blocks' `descrição` field is the main source for the topic.\n");
+            s.push_str("- Do not invent activities, outcomes or details absent from the blocks. With no blocks: `items` empty and `highlights` equal to [\"No activity recorded\"].\n");
+            s.push_str("- `continuation_of`: when the activity continues an item from previous days (list provided), copy that item's text exactly; otherwise null.\n");
+            s.push_str("- `kind`: desenvolvimento (code, systems, infrastructure), reuniao (video calls, calendar), comunicacao (e-mail, messaging, support), documentacao (documents, spreadsheets, opinions, slides), ensino (classes, course material, grading), pesquisa (reading, papers, data), extensao (community projects, events), gestao (administrative systems, processes, planning, budget), outro. Keep these ids exactly as written.\n");
+            s.push_str("- `evidence`: applications, documents, domains, systems or projects that support the item (never people), up to 4 per item.\n");
+            s.push_str("- `time_range`: \"HH:MM–HH:MM\" from the first to the last block of the activity; \"\" when it is spread across the day.\n");
+            s.push_str(
+                "- `highlights`: up to 3 short sentences with what mattered most that day.\n",
+            );
+            s.push_str("- Answer with the JSON object only.\n");
+        }
+    }
     s
 }
 
 /// Per-user/per-category context of the report writer (second system block, cached on Sonnet):
 /// profile, category and the institution's report template.
 pub fn report_context(req: &ReportRequest) -> String {
+    let lang = ui_language(&req.language);
+    let (profile, category, name, description, keywords, template) = match lang {
+        UiLanguage::PtBr => (
+            "Perfil do usuário",
+            "Categoria",
+            "Nome",
+            "Descrição",
+            "Palavras-chave",
+            "Modelo de relatório da instituição",
+        ),
+        UiLanguage::En => (
+            "About the user",
+            "Category",
+            "Name",
+            "Description",
+            "Keywords",
+            "The institution's report template",
+        ),
+    };
     let mut s = String::with_capacity(2048);
-    s.push_str(&profile_section(
-        req.user_profile.as_deref(),
-        "Perfil do usuário",
-    ));
-    s.push_str("\n## Categoria\n");
-    s.push_str(&format!("Nome: {}\n", squash(&req.category.name, 60)));
+    s.push_str(&profile_section(req.user_profile.as_deref(), profile));
+    s.push_str(&format!("\n## {category}\n"));
+    s.push_str(&format!("{name}: {}\n", squash(&req.category.name, 60)));
     let desc = squash(&req.category.description, 600);
     if !desc.is_empty() {
-        s.push_str(&format!("Descrição: {desc}\n"));
+        s.push_str(&format!("{description}: {desc}\n"));
     }
-    let keywords: Vec<String> = req
+    let kw: Vec<String> = req
         .category
         .keywords
         .iter()
@@ -532,8 +669,8 @@ pub fn report_context(req: &ReportRequest) -> String {
         .filter(|k| !k.is_empty())
         .take(20)
         .collect();
-    if !keywords.is_empty() {
-        s.push_str(&format!("Palavras-chave: {}\n", keywords.join(", ")));
+    if !kw.is_empty() {
+        s.push_str(&format!("{keywords}: {}\n", kw.join(", ")));
     }
     if let Some(t) = req
         .category
@@ -542,15 +679,15 @@ pub fn report_context(req: &ReportRequest) -> String {
         .map(|t| redact_text(t.trim()))
         .filter(|t| !t.is_empty())
     {
-        let template: String = t.chars().take(MAX_TEMPLATE_CHARS).collect();
-        s.push_str("\n## Modelo de relatório da instituição\n");
-        s.push_str(template.trim());
+        let tpl: String = t.chars().take(MAX_TEMPLATE_CHARS).collect();
+        s.push_str(&format!("\n## {template}\n"));
+        s.push_str(tpl.trim());
         s.push('\n');
     }
     s
 }
 
-fn render_previous_item(item: &ReportItem) -> String {
+fn render_previous_item(item: &ReportItem, lang: UiLanguage) -> String {
     let mut line = format!(
         "- [{}] {} ({})",
         item.kind.as_str(),
@@ -563,44 +700,56 @@ fn render_previous_item(item: &ReportItem) -> String {
         .map(|c| squash(c, 200))
         .filter(|c| !c.is_empty())
     {
-        line.push_str(&format!(" — continuação de: {c}"));
+        line.push_str(&format!(
+            " — {}: {c}",
+            lang.pick("continuação de", "continuation of")
+        ));
     }
     line
 }
 
 /// The day: date, previous items, redacted block lines with local times, total time.
 pub fn report_user_message(req: &ReportRequest) -> String {
+    let lang = ui_language(&req.language);
     let mut s = String::with_capacity(256 * req.blocks.len() + 1024);
     s.push_str(&format!(
-        "Data: {}, {} ({})\n",
-        weekday_pt(req.date.weekday()),
-        req.date.format("%d/%m/%Y"),
+        "{}: {}, {} ({})\n",
+        lang.pick("Data", "Date"),
+        weekday_name(req.date.weekday(), lang),
+        ubiqx_core::report::format_date(req.date, lang),
         format_offset(req.utc_offset_secs)
     ));
     let total_secs: i64 = req.blocks.iter().map(ActivityBlock::duration_secs).sum();
     s.push_str(&format!(
-        "Tempo total registrado: {}\n\n",
+        "{}: {}\n\n",
+        lang.pick("Tempo total registrado", "Total time recorded"),
         format_minutes(secs_to_minutes(total_secs))
     ));
 
     if !req.previous_items.is_empty() {
-        s.push_str("<itens_anteriores>\nItens dos dias anteriores nesta categoria (use em continuation_of quando a atividade continuar):\n");
+        match lang {
+            UiLanguage::PtBr => s.push_str("<itens_anteriores>\nItens dos dias anteriores nesta categoria (use em continuation_of quando a atividade continuar):\n"),
+            UiLanguage::En => s.push_str("<previous_items>\nItems from previous days in this category (use them in continuation_of when the activity continues):\n"),
+        }
         for item in req.previous_items.iter().take(MAX_PREVIOUS_ITEMS) {
-            s.push_str(&render_previous_item(item));
+            s.push_str(&render_previous_item(item, lang));
             s.push('\n');
         }
-        s.push_str("</itens_anteriores>\n\n");
+        s.push_str(lang.pick("</itens_anteriores>\n\n", "</previous_items>\n\n"));
     }
 
-    s.push_str("<blocos>\n");
+    s.push_str(lang.pick("<blocos>\n", "<blocks>\n"));
     if req.blocks.is_empty() {
-        s.push_str("(nenhum bloco registrado)\n");
+        s.push_str(lang.pick("(nenhum bloco registrado)\n", "(no blocks recorded)\n"));
     }
     for b in &req.blocks {
         s.push_str(&PromptBlock::from_block(b, req.utc_offset_secs).render_report_line());
         s.push('\n');
     }
-    s.push_str("</blocos>\n\nRedija o relatório do dia em JSON.");
+    s.push_str(lang.pick(
+        "</blocos>\n\nRedija o relatório do dia em JSON.",
+        "</blocks>\n\nWrite the day's report as JSON.",
+    ));
     s
 }
 
@@ -608,51 +757,79 @@ pub fn report_user_message(req: &ReportRequest) -> String {
 // Advisor
 // ---------------------------------------------------------------------------------------------
 
-/// System prompt of the advisor (stable, cached on Sonnet).
+/// System prompt of the advisor (stable, cached on Sonnet), written in the language of the
+/// answer.
 pub fn advisor_system_prompt(req: &AdviceRequest) -> String {
-    let language = language_or_default(&req.language);
     let mut s = String::with_capacity(2048);
-    s.push_str("Você é o UBI, o assistente de produtividade do ubiqX. A partir de números agregados sobre o uso do computador na última semana, você escreve um título curto e recomendações práticas.\n\n");
-    s.push_str("## Regras\n");
-    s.push_str(&format!(
-        "- Escreva em {language}, com tom gentil, direto e específico.\n"
-    ));
-    s.push_str("- `headline`: uma frase curta que resume a semana.\n");
-    s.push_str("- `recommendations`: no máximo 5, cada uma com uma única ação concreta em uma frase, baseada nos números fornecidos (trocas de contexto, tempo de foco, distrações, categorias, aplicativos, alertas). Nada genérico.\n");
-    s.push_str("- Não invente dados, não mencione pessoas e não faça juízo moral. Se os números forem bons, reconheça e sugira como manter.\n");
-    s.push_str("- Responda apenas com o objeto JSON.\n");
-    s.push_str(&profile_section(
-        req.user_profile.as_deref(),
-        "Sobre o usuário",
-    ));
+    match ui_language(&req.language) {
+        UiLanguage::PtBr => {
+            s.push_str("Você é o UBI, o assistente de produtividade do ubiqX. A partir de números agregados sobre o uso do computador na última semana, você escreve um título curto e recomendações práticas.\n\n");
+            s.push_str("## Regras\n");
+            s.push_str("- Escreva em português do Brasil, com tom gentil, direto e específico.\n");
+            s.push_str("- `headline`: uma frase curta que resume a semana (por exemplo, \"Semana de foco excelente\").\n");
+            s.push_str("- `recommendations`: no máximo 5, cada uma com uma única ação concreta em uma frase, baseada nos números fornecidos (trocas de contexto, tempo de foco, distrações, categorias, aplicativos, alertas). Nada genérico.\n");
+            s.push_str("- Não invente dados, não mencione pessoas e não faça juízo moral. Se os números forem bons, reconheça e sugira como manter.\n");
+            s.push_str("- Responda apenas com o objeto JSON.\n");
+            s.push_str(&profile_section(
+                req.user_profile.as_deref(),
+                "Sobre o usuário",
+            ));
+        }
+        UiLanguage::En => {
+            s.push_str("You are UBI, the productivity assistant in ubiqX. From aggregated numbers about the past week's computer usage, you write a short headline and practical recommendations.\n\n");
+            s.push_str("## Rules\n");
+            s.push_str("- Write in English, in a kind, direct and specific tone.\n");
+            s.push_str("- `headline`: one short sentence that sums up the week (for example, \"A week of excellent focus\").\n");
+            s.push_str("- `recommendations`: at most 5, each a single concrete action in one sentence, grounded in the numbers provided (context switches, focus time, distractions, categories, applications, alerts). Nothing generic.\n");
+            s.push_str("- Do not invent data, do not mention people and do not moralise. When the numbers are good, say so and suggest how to keep it up.\n");
+            s.push_str("- Answer with the JSON object only.\n");
+            s.push_str(&profile_section(
+                req.user_profile.as_deref(),
+                "About the user",
+            ));
+        }
+    }
     s
 }
 
 /// The aggregated numbers (never block titles).
 pub fn advisor_user_message(req: &AdviceRequest) -> String {
+    let lang = ui_language(&req.language);
     let st = &req.stats;
     let mut s = String::with_capacity(1024);
-    s.push_str("Período: última semana (números agregados)\n");
+    s.push_str(lang.pick(
+        "Período: última semana (números agregados)\n",
+        "Period: past week (aggregated numbers)\n",
+    ));
     s.push_str(&format!(
-        "Score de foco: {}/100 (humor: {})\n",
+        "{}: {}/100 ({}: {})\n",
+        lang.pick("Score de foco", "Focus score"),
         st.focus_score,
+        lang.pick("humor", "mood"),
         mood_label(st.mood)
     ));
     s.push_str(&format!(
-        "Tempo produtivo: {} | distrações: {} | sem categoria: {} | ocioso: {} | total: {}\n",
+        "{}: {} | {}: {} | {}: {} | {}: {} | {}: {}\n",
+        lang.pick("Tempo produtivo", "Productive time"),
         format_minutes(secs_to_minutes(st.productive_secs)),
+        lang.pick("distrações", "distractions"),
         format_minutes(secs_to_minutes(st.distraction_secs)),
+        lang.pick("sem categoria", "uncategorized"),
         format_minutes(secs_to_minutes(st.uncategorized_secs)),
+        lang.pick("ocioso", "idle"),
         format_minutes(secs_to_minutes(st.idle_secs)),
+        lang.pick("total", "total"),
         format_minutes(secs_to_minutes(st.total_secs))
     ));
     s.push_str(&format!(
-        "Trocas de contexto por hora: {:.1} | maior sequência de foco: {}\n",
+        "{}: {:.1} | {}: {}\n",
+        lang.pick("Trocas de contexto por hora", "Context switches per hour"),
         st.switches_per_hour,
+        lang.pick("maior sequência de foco", "longest focus streak"),
         format_minutes(secs_to_minutes(st.longest_focus_secs))
     ));
     if !req.category_totals.is_empty() {
-        s.push_str("Tempo por categoria:\n");
+        s.push_str(lang.pick("Tempo por categoria:\n", "Time per category:\n"));
         for (name, secs) in req.category_totals.iter().take(20) {
             s.push_str(&format!(
                 "- {}: {}\n",
@@ -662,7 +839,7 @@ pub fn advisor_user_message(req: &AdviceRequest) -> String {
         }
     }
     if !req.top_apps.is_empty() {
-        s.push_str("Aplicativos mais usados:\n");
+        s.push_str(lang.pick("Aplicativos mais usados:\n", "Most used applications:\n"));
         for app in req.top_apps.iter().take(10) {
             s.push_str(&format!(
                 "- {}: {}\n",
@@ -673,9 +850,16 @@ pub fn advisor_user_message(req: &AdviceRequest) -> String {
     }
     if !req.recent_nudges.is_empty() {
         let kinds: Vec<&str> = req.recent_nudges.iter().map(NudgeKind::as_str).collect();
-        s.push_str(&format!("Alertas recentes: {}\n", kinds.join(", ")));
+        s.push_str(&format!(
+            "{}: {}\n",
+            lang.pick("Alertas recentes", "Recent alerts"),
+            kinds.join(", ")
+        ));
     }
-    s.push_str("\nEscreva o título e as recomendações em JSON.");
+    s.push_str(lang.pick(
+        "\nEscreva o título e as recomendações em JSON.",
+        "\nWrite the headline and the recommendations as JSON.",
+    ));
     s
 }
 
@@ -845,7 +1029,8 @@ mod tests {
         );
         assert!(system.contains("id=sys-distraction"));
         assert!(system.contains("id=sys-break"));
-        assert!(system.contains("pt-BR"));
+        assert!(system.contains("one short sentence in Brazilian Portuguese"));
+        assert!(system.contains("\"Editou a planilha de orçamento da incubadora\""));
         assert!(system.contains("coordena a incubadora"));
         assert!(
             system.len() < 6000,
@@ -869,6 +1054,30 @@ mod tests {
         assert!(user.contains("<blocks>\n- id=b1 | app=Google Chrome | title=Edital 12/2026 - SEI | domain=sei.ifro.edu.br | path=/sei/x | min=25 | time="));
         assert!(user.ends_with("</blocks>\n\nClassify every block in <blocks>."));
         assert!(!user.contains("y=1"));
+    }
+
+    #[test]
+    fn classification_prompt_in_english() {
+        let mut c = ctx(vec![category("cat-ifro", "IFRO")]);
+        c.language = "en-US".into();
+        let system = classification_system_prompt(&c);
+        assert!(system.contains("- id=cat-ifro | name=IFRO | productive=yes | description=Tudo sobre IFRO | keywords=ifro, edital"), "{system}");
+        assert!(
+            system.contains("| name=Distraction | productive=no |"),
+            "{system}"
+        );
+        assert!(
+            system.contains("| name=Break | productive=no |"),
+            "{system}"
+        );
+        assert!(system.contains("one short sentence in English"), "{system}");
+        assert!(system.contains("\"Edited the incubator's budget spreadsheet\""));
+        assert!(!system.contains("produtiva="), "{system}");
+        let vision = vision_system_prompt(&c);
+        assert!(vision.contains("one sentence in English"), "{vision}");
+        assert!(vision.contains("name=Break"), "{vision}");
+        c.language = String::new();
+        assert!(vision_system_prompt(&c).contains("one sentence in Brazilian Portuguese"));
     }
 
     #[test]
@@ -916,7 +1125,9 @@ mod tests {
             model: "claude-sonnet-5".into(),
         };
         let instructions = report_instructions(&req.language);
-        assert!(instructions.contains("Escreva em pt-BR"));
+        assert!(instructions.contains("- Escreva em português do Brasil,"));
+        assert!(instructions.contains("\"Elaborou o parecer…\""));
+        assert!(instructions.contains("[\"Sem atividade registrada\"]"));
         let context = report_context(&req);
         assert!(context.contains("## Perfil do usuário\nCoordenador"));
         assert!(context.contains("Nome: IFRO"));
@@ -932,6 +1143,42 @@ mod tests {
         assert!(user.contains("- 09:10–09:35 | 25 min | app=Google Chrome | title=Parecer edital 12/2026 - [email] | domain=sei.ifro.edu.br | path=/sei/controlador.php | descrição=Revisou o parecer do edital"), "{user}");
         assert!(!user.contains("ana@"));
         assert!(!user.contains("acao=1"));
+
+        // The same request in English: instructions, context and message change language, the
+        // schema vocabulary (`kind` ids, field names) and the redacted payload do not.
+        let mut en = req.clone();
+        en.language = "en".into();
+        let instructions = report_instructions(&en.language);
+        assert!(
+            instructions.contains("- Write in English,"),
+            "{instructions}"
+        );
+        assert!(instructions.contains("\"Drafted the opinion…\""));
+        assert!(instructions.contains("[\"No activity recorded\"]"));
+        assert!(instructions
+            .contains("`kind`: desenvolvimento (code, systems, infrastructure), reuniao"));
+        assert!(!instructions.contains("Escreva"));
+        let context = report_context(&en);
+        assert!(
+            context.contains("## About the user\nCoordenador"),
+            "{context}"
+        );
+        assert!(context.contains("## Category\nName: IFRO"), "{context}");
+        assert!(context.contains("## The institution's report template\nUse seções por projeto."));
+        let user = report_user_message(&en);
+        assert!(
+            user.starts_with(
+                "Date: Thursday, 2026-09-17 (UTC-04:00)\nTotal time recorded: 25 min\n"
+            ),
+            "{user}"
+        );
+        assert!(user.contains("<previous_items>\n"), "{user}");
+        assert!(user.contains("- [documentacao] Iniciou o parecer do edital 12/2026 (40 min)"));
+        assert!(user.contains("<blocks>\n- 09:10–09:35 | 25 min | app=Google Chrome | title=Parecer edital 12/2026 - [email] | domain=sei.ifro.edu.br | path=/sei/controlador.php | descrição=Revisou o parecer do edital"), "{user}");
+        assert!(
+            user.ends_with("</blocks>\n\nWrite the day's report as JSON."),
+            "{user}"
+        );
     }
 
     #[test]
@@ -960,6 +1207,7 @@ mod tests {
             model: "claude-sonnet-5".into(),
         };
         let system = advisor_system_prompt(&req);
+        assert!(system.contains("- Escreva em português do Brasil,"));
         assert!(system.contains("no máximo 5"));
         let user = advisor_user_message(&req);
         assert!(user.contains("Score de foco: 72/100 (humor: focused)"));
@@ -969,6 +1217,25 @@ mod tests {
         assert!(user.contains("- IFRO: 10 h"));
         assert!(user.contains("- Google Chrome: 8 h"));
         assert!(user.contains("Alertas recentes: distracted"));
+
+        let mut en = req.clone();
+        en.language = "en-GB".into();
+        let system = advisor_system_prompt(&en);
+        assert!(system.contains("- Write in English,"), "{system}");
+        assert!(system.contains("at most 5"));
+        assert!(!system.contains("Escreva"));
+        let user = advisor_user_message(&en);
+        assert!(
+            user.starts_with("Period: past week (aggregated numbers)\n"),
+            "{user}"
+        );
+        assert!(user.contains("Focus score: 72/100 (mood: focused)"));
+        assert!(user.contains("Productive time: 18 h 20 min | distractions: 2 h | uncategorized: 1 h | idle: 0 min | total: 21 h 20 min"), "{user}");
+        assert!(user.contains("Context switches per hour: 14.3 | longest focus streak: 1 h 35 min"));
+        assert!(user.contains("Time per category:\n- IFRO: 10 h"));
+        assert!(user.contains("Most used applications:\n- Google Chrome: 8 h"));
+        assert!(user.contains("Recent alerts: distracted"));
+        assert!(user.ends_with("\nWrite the headline and the recommendations as JSON."));
     }
 
     #[test]
@@ -995,6 +1262,9 @@ mod tests {
     fn helpers() {
         assert_eq!(language_or_default(""), "pt-BR");
         assert_eq!(language_or_default(" en "), "en");
+        assert_eq!(ui_language(""), UiLanguage::PtBr);
+        assert_eq!(ui_language("en-US"), UiLanguage::En);
+        assert_eq!(ui_language("pt_BR"), UiLanguage::PtBr);
         assert_eq!(format_offset(-4 * 3600), "UTC-04:00");
         assert_eq!(format_offset(5 * 3600 + 1800), "UTC+05:30");
         assert_eq!(path_of("https://a.b/c/d/"), Some("/c/d".into()));

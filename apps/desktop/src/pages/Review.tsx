@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { ChevronDown, Wand2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Ubi } from '../components/ubi/Ubi';
 import { AppAvatar, SourceBadge, SuggestionChips } from '../components/ui/BlockBits';
@@ -10,6 +10,7 @@ import { CategoryChip, CategoryPicker } from '../components/ui/CategoryChip';
 import { DayNav } from '../components/ui/DayNav';
 import { Kbd, Skeleton } from '../components/ui/misc';
 import { PageHeader } from '../components/ui/PageHeader';
+import { useT } from '../i18n';
 import { assignableCategories, isUncategorized } from '../lib/categories';
 import { fmtDateLong, fmtDuration, fmtMinutes, fmtPercent, fmtTime } from '../lib/format';
 import { ipc } from '../lib/ipc';
@@ -17,6 +18,8 @@ import { useAppStore } from '../lib/store';
 import { useToast } from '../lib/toast';
 import type { BlockGroup, Id, RuleSuggestion } from '../lib/types';
 import { useAsync } from '../lib/useAsync';
+
+type Translate = ReturnType<typeof useT>;
 
 const isTypingTarget = (t: EventTarget | null): boolean => {
   const el = t as HTMLElement | null;
@@ -27,10 +30,11 @@ const isTypingTarget = (t: EventTarget | null): boolean => {
 
 /** Page-local: a 3 px confidence line. Volt when the classifier is sure enough, ember when it needs a human. */
 function ConfidenceLine({ value, className }: { value: number; className?: string }) {
+  const t = useT();
   const pct = Math.max(0, Math.min(1, value));
   const low = pct < 0.6;
   return (
-    <div className={clsx('flex items-center gap-2', className)} title={`Confiança: ${fmtPercent(pct)}`}>
+    <div className={clsx('flex items-center gap-2', className)} title={t('review.confidence', { value: fmtPercent(pct) })}>
       <div className="h-[3px] w-14 overflow-hidden rounded-pill bg-panel-3">
         <div className="h-full rounded-pill transition-[width] duration-300 ease-out" style={{ width: `${pct * 100}%`, background: low ? 'var(--ember)' : 'var(--volt)' }} />
       </div>
@@ -40,17 +44,25 @@ function ConfidenceLine({ value, className }: { value: number; className?: strin
 }
 
 /** One sentence from the numbers: how much the queue asks of the user today. */
-function subtitle(date: string, groups: BlockGroup[] | null, uncategorizedSecs: number): string {
+function subtitle(t: Translate, date: string, groups: BlockGroup[] | null, uncategorizedSecs: number): string {
   const day = fmtDateLong(date);
   if (!groups) return day;
-  if (!groups.length) return `${day}: a fila está vazia.`;
-  const n = groups.length;
-  const first = n === 1 ? '1 grupo espera sua decisão' : `${n} grupos esperam sua decisão`;
-  const second = uncategorizedSecs > 0 ? `${fmtMinutes(uncategorizedSecs)} ainda sem categoria` : 'nada sem categoria';
-  return `${day}: ${first}, ${second}.`;
+  if (!groups.length) return t('review.subtitle.empty', { day });
+  const first = t('review.subtitle.groups', { count: groups.length });
+  const second = uncategorizedSecs > 0 ? t('review.subtitle.uncategorized', { duration: fmtMinutes(uncategorizedSecs) }) : t('review.subtitle.nothing_uncategorized');
+  return t('review.subtitle.sentence', { day, first, second });
+}
+
+/** Renders a translated sentence whose '{k<digit>}' placeholders stand for keyboard keys (e.g. '{k1}' → <Kbd>1</Kbd>). */
+function withKbd(text: string): ReactNode {
+  return text.split(/(\{k\d\})/).map((part, i) => {
+    const key = /^\{k(\d)\}$/.exec(part);
+    return key ? <Kbd key={i}>{key[1]}</Kbd> : <Fragment key={i}>{part}</Fragment>;
+  });
 }
 
 export function Review() {
+  const t = useT();
   const date = useAppStore((s) => s.date);
   const setDate = useAppStore((s) => s.setDate);
   const categories = useAppStore((s) => s.categories);
@@ -84,18 +96,20 @@ export function Review() {
         setData((groups ?? []).map((g) => (g.key === group.key ? { ...g, category_id: categoryId, min_confidence: 1, needs_review: false, source: 'user' } : g)));
         setSuggestions((s) => ({ ...s, [group.key]: outcome.suggestions }));
         toast.success(
-          `${outcome.block_ids.length} bloco(s) classificado(s)`,
-          outcome.backfilled ? `${outcome.backfilled} bloco(s) anteriores foram preenchidos retroativamente.` : undefined,
+          t('review.toast.classified', { count: outcome.block_ids.length }),
+          outcome.backfilled ? t('review.toast.backfilled', { count: outcome.backfilled }) : undefined,
         );
-        if (outcome.disabled_rules.length) toast.info('Regra desativada', `A regra “${outcome.disabled_rules[0]?.pattern}” foi contradita e desativada.`);
+        if (outcome.disabled_rules.length) {
+          toast.info(t('review.toast.rule_disabled_title'), t('review.toast.rule_disabled_body', { pattern: outcome.disabled_rules[0]?.pattern ?? '' }));
+        }
         bumpData();
       } catch (e) {
-        toast.error('Não foi possível classificar', e instanceof Error ? e.message : String(e));
+        toast.error(t('review.toast.assign_failed'), e instanceof Error ? e.message : String(e));
       } finally {
         setBusyKey(null);
       }
     },
-    [busyKey, date, groups, setData, toast, bumpData],
+    [busyKey, date, groups, setData, toast, bumpData, t],
   );
 
   // keyboard: ↑/↓ (or j/k) move, 1–9 assign the nth category.
@@ -135,14 +149,12 @@ export function Review() {
     setClassifying(true);
     try {
       const r = await ipc.classifyNow();
-      toast.success(
-        'Classificação concluída',
-        `${r.local} pelas regras, ${r.remote} pela IA, ${r.vision} por visão e ${r.needs_review} para revisar.${r.skipped_remote ? ' A IA foi ignorada (modo somente local).' : ''}`,
-      );
+      const body = t('review.toast.classify_done_body', { local: r.local, remote: r.remote, vision: r.vision, needs_review: r.needs_review });
+      toast.success(t('review.toast.classify_done_title'), r.skipped_remote ? `${body} ${t('review.toast.classify_skipped_remote')}` : body);
       await reload();
       bumpData();
     } catch (e) {
-      toast.error('Falha ao classificar', e instanceof Error ? e.message : String(e));
+      toast.error(t('review.toast.classify_failed'), e instanceof Error ? e.message : String(e));
     } finally {
       setClassifying(false);
     }
@@ -152,9 +164,9 @@ export function Review() {
     try {
       await ipc.acceptRuleSuggestion(s);
       setAccepted((a) => new Set(a).add(`${s.matcher}:${s.pattern}`));
-      toast.success('Regra criada');
+      toast.success(t('review.toast.rule_created'));
     } catch (e) {
-      toast.error('Não foi possível criar a regra', e instanceof Error ? e.message : String(e));
+      toast.error(t('review.toast.rule_failed'), e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -163,13 +175,13 @@ export function Review() {
   return (
     <div data-testid="page-review">
       <PageHeader
-        title="Revisão"
-        subtitle={subtitle(date, groups, uncategorizedSecs)}
+        title={t('review.title')}
+        subtitle={subtitle(t, date, groups, uncategorizedSecs)}
         actions={
           <>
             <DayNav date={date} onChange={setDate} />
             <Button variant="primary" icon={<Wand2 className="size-[18px]" strokeWidth={1.75} aria-hidden />} loading={classifying} onClick={() => void classifyNow()}>
-              Classificar agora
+              {t('review.classify_now')}
             </Button>
           </>
         }
@@ -186,19 +198,19 @@ export function Review() {
         </div>
       ) : !groups?.length ? (
         <Card className="flex flex-col items-center gap-4 py-12 text-center">
-          <Ubi mood="excited" size={132} variant="flat" speaking="Fila vazia. Bom trabalho!" />
+          <Ubi mood="excited" size={132} variant="flat" speaking={t('review.empty.speech')} />
           <div>
-            <p className="display text-lg text-ink">Nada para revisar</p>
-            <p className="mx-auto mt-1 max-w-sm text-sm leading-5 text-ink-2">Todos os blocos do dia estão classificados com boa confiança. Quando algo ficar em dúvida, aparece aqui.</p>
+            <p className="display text-lg text-ink">{t('review.empty.title')}</p>
+            <p className="mx-auto mt-1 max-w-sm text-sm leading-5 text-ink-2">{t('review.empty.body')}</p>
           </div>
           <Link to="/timeline" className="inline-flex h-9 items-center rounded-control border border-line-2 bg-panel px-3.5 text-sm font-medium text-ink transition-colors duration-150 hover:bg-panel-2">
-            Ver a Timeline
+            {t('review.empty.cta')}
           </Link>
         </Card>
       ) : (
         <div className="grid grid-cols-12 items-start gap-5">
           <Card padded={false} className="col-span-12 overflow-hidden min-[1100px]:col-span-8">
-            <div ref={listRef} role="list" aria-label="Grupos para revisão">
+            <div ref={listRef} role="list" aria-label={t('review.list_label')}>
               {groups.map((g, i) => {
                 const active = i === selected;
                 const busy = busyKey === g.key;
@@ -228,12 +240,12 @@ export function Review() {
                       </div>
                       <span className="num w-14 shrink-0 text-right">
                         <span className="block text-xs leading-4 font-medium text-ink-2">{fmtDuration(g.total_secs, { compact: true })}</span>
-                        <span className="block text-[11px] leading-4 text-ink-3" title="Blocos no grupo">
-                          {g.block_ids.length} {g.block_ids.length === 1 ? 'bloco' : 'blocos'}
+                        <span className="block text-[11px] leading-4 text-ink-3" title={t('review.blocks_in_group')}>
+                          {t('common.blocks', { count: g.block_ids.length })}
                         </span>
                       </span>
                       <span className="flex w-36 shrink-0 items-center justify-end gap-2">
-                        {g.needs_review && <span className="size-1.5 shrink-0 rounded-full bg-ember shadow-[0_0_8px_rgb(255_122_31/.6)]" role="img" aria-label="Precisa de revisão" title="Precisa de revisão" />}
+                        {g.needs_review && <span className="size-1.5 shrink-0 rounded-full bg-ember shadow-[0_0_8px_rgb(255_122_31/.6)]" role="img" aria-label={t('review.needs_review')} title={t('review.needs_review')} />}
                         <CategoryChip categories={categories} categoryId={g.category_id} />
                       </span>
                       <ConfidenceLine value={g.min_confidence} className="hidden shrink-0 min-[1280px]:flex" />
@@ -244,16 +256,14 @@ export function Review() {
                       <div className="flex flex-col gap-2 px-4 pb-3 pl-[60px]">
                         <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs leading-4 text-ink-3">
                           <span>
-                            Começou às <span className="num text-ink-2">{fmtTime(g.first_started_at)}</span>
+                            {t('review.started_at')} <span className="num text-ink-2">{fmtTime(g.first_started_at)}</span>
                           </span>
                           <span>
-                            Confiança mínima <span className="num text-ink-2">{fmtPercent(g.min_confidence)}</span>
+                            {t('review.min_confidence')} <span className="num text-ink-2">{fmtPercent(g.min_confidence)}</span>
                           </span>
                           {g.title && g.description && <span className="truncate">{g.title}</span>}
                         </p>
-                        <p className="text-xs text-ink-3">
-                          Pressione <Kbd>1</Kbd> a <Kbd>9</Kbd> ou escolha a categoria ao lado; a decisão vale para {g.block_ids.length === 1 ? 'este bloco' : `os ${g.block_ids.length} blocos`} e ensina o classificador.
-                        </p>
+                        <p className="text-xs text-ink-3">{withKbd(t('review.hint', { count: g.block_ids.length }))}</p>
                         {suggestions[g.key] && (
                           <SuggestionChips suggestions={suggestions[g.key] ?? []} categories={categories} accepted={accepted} onAccept={(s) => void acceptSuggestion(s)} />
                         )}
@@ -265,28 +275,27 @@ export function Review() {
             </div>
           </Card>
 
-          <Card className="col-span-12 min-[1100px]:sticky min-[1100px]:top-2 min-[1100px]:col-span-4" aria-label="Atribuir categoria">
+          <Card className="col-span-12 min-[1100px]:sticky min-[1100px]:top-2 min-[1100px]:col-span-4" aria-label={t('review.assign_label')}>
             <CardHeader
-              title="Atribuir ao grupo selecionado"
+              title={t('review.assign_title')}
               subtitle={
-                current ? (
-                  <>
-                    {current.app_name}
-                    {current.domain ? ` em ${current.domain}` : ''}, {fmtDuration(current.total_secs, { compact: true })}
-                  </>
-                ) : (
-                  'Selecione um grupo na lista'
-                )
+                current
+                  ? t(current.domain ? 'review.selected_with_domain' : 'review.selected', {
+                      app: current.app_name,
+                      domain: current.domain ?? '',
+                      duration: fmtDuration(current.total_secs, { compact: true }),
+                    })
+                  : t('review.select_a_group')
               }
             />
             <CategoryPicker categories={categories} value={current?.category_id ?? null} numbered disabled={!current || !!busyKey} onPick={(id) => current && void assign(current, id)} className="-mx-1.5" />
             <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line pt-3 text-xs text-ink-3">
               <span className="flex items-center gap-1.5">
                 <Kbd>↑</Kbd>
-                <Kbd>↓</Kbd> mover
+                <Kbd>↓</Kbd> {t('review.keys.move')}
               </span>
               <span className="flex items-center gap-1.5">
-                <Kbd>1</Kbd>–<Kbd>9</Kbd> atribuir
+                <Kbd>1</Kbd>–<Kbd>9</Kbd> {t('review.keys.assign')}
               </span>
             </div>
           </Card>

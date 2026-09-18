@@ -11,13 +11,14 @@
 //!   [`learning`] (turning corrections into rules and few-shot examples), [`insights`]
 //!   (focus score and nudges), [`scheduler`] (when daily reports are due) and
 //!   [`normalize`] (title/domain normalisation and similarity) and [`redact`] (what may leave
-//!   the machine).
+//!   the machine). [`lang`] names the UI language every generated text follows.
 //!
 //! This crate must never depend on an operating-system API, a database driver or an HTTP client.
 
 pub mod clock;
 pub mod error;
 pub mod insights;
+pub mod lang;
 pub mod learning;
 pub mod model;
 pub mod normalize;
@@ -30,4 +31,5 @@ pub mod segmenter;
 
 pub use clock::{Clock, SystemClock};
 pub use error::{CoreError, CoreResult};
+pub use lang::UiLanguage;
 pub use model::*;

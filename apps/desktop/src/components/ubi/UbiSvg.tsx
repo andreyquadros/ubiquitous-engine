@@ -2,6 +2,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { useId } from 'react';
 import type { Mood } from '../../lib/types';
 import { MOOD_GLOW } from './moods';
+import { useT } from '../../i18n';
 
 const VOLT = '#4d8dff';
 const EYE = '#7fb4ff';
@@ -68,6 +69,7 @@ function Joint({ cx, cy, r, shell, glow }: { cx: number; cy: number; r: number; 
 /** Inline SVG UBI — the fallback when neither the PNG nor the 3D model is installed. 200×240 viewBox. */
 export function UbiSvg({ mood, size = 160, className }: { mood: Mood; size?: number; className?: string }) {
   const id = useId().replace(/:/g, '');
+  const t = useT();
   const glow = `glow-${id}`;
   const soft = `soft-${id}`;
   const shell = `shell-${id}`;
@@ -84,7 +86,7 @@ export function UbiSvg({ mood, size = 160, className }: { mood: Mood; size?: num
       data-testid="ubi-svg"
       data-mood={mood}
       role="img"
-      aria-label={`UBI, o mascote (${mood})`}
+      aria-label={t('ubi.mascot', { mood: t(`common.mood.${mood}`) })}
       viewBox="0 0 200 240"
       width={size}
       height={size * 1.2}

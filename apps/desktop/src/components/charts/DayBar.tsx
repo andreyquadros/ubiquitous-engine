@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { categoryById, UNCATEGORIZED_COLOR } from '../../lib/categories';
 import { dayFraction, fmtDuration, fmtTime, isToday } from '../../lib/format';
 import type { ActivityBlock, Category, IsoDate } from '../../lib/types';
+import { useT } from '../../i18n';
 
 interface Props {
   blocks: ActivityBlock[];
@@ -22,6 +23,7 @@ const EASE = [0.16, 1, 0.3, 1] as const;
 export function DayBar({ blocks, categories, onSelect, height = 34, date, animate = false }: Props) {
   const [hover, setHover] = useState<{ block: ActivityBlock; x: number } | null>(null);
   const reduce = useReducedMotion();
+  const t = useT();
   const live = animate && !reduce;
   const today = !!date && isToday(date);
   const [now, setNow] = useState(() => dayFraction(new Date().toISOString()));
@@ -34,7 +36,7 @@ export function DayBar({ blocks, categories, onSelect, height = 34, date, animat
 
   return (
     <div className="relative">
-      <div className="relative w-full overflow-hidden rounded-control border border-line bg-panel-2" style={{ height }} role="list" aria-label="Linha do tempo do dia">
+      <div className="relative w-full overflow-hidden rounded-control border border-line bg-panel-2" style={{ height }} role="list" aria-label={t('charts.day_track')}>
         {/* hour grid */}
         {TICKS.slice(1, -1).map((h) => (
           <span key={h} className="absolute top-0 bottom-0 w-px bg-line" style={{ left: `${(h / 24) * 100}%` }} aria-hidden />
@@ -81,7 +83,7 @@ export function DayBar({ blocks, categories, onSelect, height = 34, date, animat
       </div>
       <div className="num mt-1.5 flex justify-between text-[10px] text-ink-3" aria-hidden>
         {TICKS.map((h) => (
-          <span key={h}>{String(h).padStart(2, '0')}h</span>
+          <span key={h}>{t('charts.hour_tick', { hour: String(h).padStart(2, '0') })}</span>
         ))}
       </div>
       {hover && (

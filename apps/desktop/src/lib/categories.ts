@@ -30,6 +30,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
+import { t } from '../i18n';
 import { SYSTEM_CATEGORIES, type Category, type Id } from './types';
 
 /** Curated lucide icons a category may use (kebab-case names as stored in the DB). */
@@ -69,6 +70,9 @@ const ICON_MAP = new Map(ICON_CHOICES.map((c) => [c.name, c.Icon]));
 
 export const iconFor = (name: string | undefined | null): LucideIcon => ICON_MAP.get(name ?? '') ?? CircleDashed;
 
+/** Human name of a curated icon in the current language ('graduation-cap' → 'Formatura' / 'Graduation cap'); unknown names fall back to 'circle-dashed'. */
+export const iconLabel = (name: string | undefined | null): string => t(`icons.${ICON_MAP.has(name ?? '') ? name : 'circle-dashed'}`);
+
 export const COLOR_CHOICES = [
   '#2563EB', '#0EA5E9', '#06B6D4', '#10B981', '#84CC16', '#EAB308',
   '#F97316', '#EF4444', '#EC4899', '#A855F7', '#6366F1', '#64748B',
@@ -79,8 +83,34 @@ export const UNCATEGORIZED_COLOR = '#94A3B8';
 export const categoryById = (cats: Category[], id: Id | null | undefined): Category | undefined =>
   id ? cats.find((c) => c.id === id) : undefined;
 
-export const categoryName = (cats: Category[], id: Id | null | undefined): string =>
-  categoryById(cats, id)?.name ?? 'Sem categoria';
+/** Message key (under common.system.*) of a system category, by id; user categories have none. */
+const SYSTEM_KEY: Record<string, string> = {
+  [SYSTEM_CATEGORIES.uncategorized]: 'uncategorized',
+  [SYSTEM_CATEGORIES.distraction]: 'distraction',
+  [SYSTEM_CATEGORIES.break]: 'break',
+  [SYSTEM_CATEGORIES.private]: 'private',
+};
+
+/**
+ * Display name of a category in the current language. System categories are seeded in Portuguese by the DB
+ * migration, so they are resolved by id through t('common.system.<key>'); user categories show their own name.
+ * Call at render time (inside a component that uses useT()/useLocale()), not in module constants.
+ */
+export const categoryLabel = (cat: Pick<Category, 'id' | 'name' | 'is_system'> | null | undefined): string => {
+  if (!cat) return t('common.uncategorized');
+  const key = cat.is_system ? SYSTEM_KEY[cat.id] : undefined;
+  return key ? t(`common.system.${key}`) : cat.name;
+};
+
+/** Description of a category in the current language (system categories by id, see categoryLabel). */
+export const categoryDescription = (cat: Pick<Category, 'id' | 'description' | 'is_system'> | null | undefined): string => {
+  if (!cat) return '';
+  const key = cat.is_system ? SYSTEM_KEY[cat.id] : undefined;
+  return key ? t(`common.system.${key}.description`) : cat.description;
+};
+
+/** Name of a category, or the localized "Sem categoria" / "Uncategorized" label when the id is unknown. Call at render time, not in module constants. */
+export const categoryName = (cats: Category[], id: Id | null | undefined): string => categoryLabel(categoryById(cats, id));
 
 export const categoryColor = (cats: Category[], id: Id | null | undefined): string =>
   categoryById(cats, id)?.color ?? UNCATEGORIZED_COLOR;

@@ -15,14 +15,14 @@ use ubiqx_core::ports::{
     Advice, AdviceRequest, Advisor, AiUsage, AiUsageTotals, Classification, ClassificationContext,
     EncodedImage, RemoteClassifier, ReportRequest, ReportWriter, UsageRepo, VisionClassifier,
 };
-use ubiqx_core::report::format_minutes;
+use ubiqx_core::report::{format_minutes, no_activity_text};
 use ubiqx_core::{
     ActivityBlock, ActivityKind, ClassificationSource, CoreError, CoreResult, DailyReport,
-    ReportItem, TimeRange,
+    ReportItem, TimeRange, UiLanguage,
 };
 
 use crate::client::{LlmClient, LlmRequest, LlmResponse, StopReason};
-use crate::prompts::{format_time_range, PromptBlock};
+use crate::prompts::{format_time_range, ui_language, PromptBlock};
 use crate::report::{build_report, round_minutes_to_5};
 
 /// Model name reported by every fake.
@@ -338,8 +338,10 @@ impl FakeReportWriter {
         Self
     }
 
-    /// The deterministic items for `req` (public so the CLI can preview them).
+    /// The deterministic items for `req` (public so the CLI can preview them), worded in the
+    /// request's language.
     pub fn items_for(req: &ReportRequest) -> Vec<ReportItem> {
+        let lang = ui_language(&req.language);
         let mut blocks: Vec<&ActivityBlock> = req.blocks.iter().collect();
         blocks.sort_by_key(|b| b.started_at);
         let mut groups: BTreeMap<(String, String), Group> = BTreeMap::new();
@@ -376,7 +378,12 @@ impl FakeReportWriter {
                     evidence.push(d.clone());
                 }
                 ReportItem {
-                    activity: format!("Utilizou {} em atividades de {}", g.app, g.topic),
+                    activity: match lang {
+                        UiLanguage::PtBr => {
+                            format!("Utilizou {} em atividades de {}", g.app, g.topic)
+                        }
+                        UiLanguage::En => format!("Used {} for work on {}", g.app, g.topic),
+                    },
                     kind: g.kind,
                     minutes: round_minutes_to_5(
                         u32::try_from((g.secs + 30) / 60).unwrap_or(u32::MAX),
@@ -402,7 +409,11 @@ impl ReportWriter for FakeReportWriter {
             .iter()
             .max_by_key(|i| i.minutes)
             .map(|i| vec![format!("{} ({})", i.activity, format_minutes(i.minutes))])
-            .unwrap_or_else(|| vec!["Sem atividade registrada".to_string()]);
+            .unwrap_or_else(|| {
+                vec![no_activity_text(ui_language(&req.language))
+                    .trim_end_matches('.')
+                    .to_string()]
+            });
         Ok(build_report(req, items, highlights, FAKE_MODEL, 0, 0))
     }
 }
@@ -424,41 +435,67 @@ impl FakeAdvisor {
 #[async_trait]
 impl Advisor for FakeAdvisor {
     async fn advise(&self, req: &AdviceRequest) -> CoreResult<Advice> {
+        let lang = ui_language(&req.language);
         let st = &req.stats;
-        let headline = if st.focus_score >= 75 {
-            "Semana de foco excelente"
-        } else if st.focus_score >= 50 {
-            "Semana de foco razoável"
-        } else {
-            "Semana dispersa"
+        let headline = match (lang, st.focus_score) {
+            (UiLanguage::PtBr, 75..) => "Semana de foco excelente",
+            (UiLanguage::PtBr, 50..) => "Semana de foco razoável",
+            (UiLanguage::PtBr, _) => "Semana dispersa",
+            (UiLanguage::En, 75..) => "A week of excellent focus",
+            (UiLanguage::En, 50..) => "A week of decent focus",
+            (UiLanguage::En, _) => "A scattered week",
         }
         .to_string();
         let mut recommendations = Vec::new();
         if st.switches_per_hour > 12.0 {
-            recommendations.push(format!(
-                "Reduza as trocas de contexto ({:.0} por hora): reserve blocos de 45 minutos em um único aplicativo.",
-                st.switches_per_hour
-            ));
+            recommendations.push(match lang {
+                UiLanguage::PtBr => format!(
+                    "Reduza as trocas de contexto ({:.0} por hora): reserve blocos de 45 minutos em um único aplicativo.",
+                    st.switches_per_hour
+                ),
+                UiLanguage::En => format!(
+                    "Cut down on context switching ({:.0} per hour): block out 45 minutes in a single app.",
+                    st.switches_per_hour
+                ),
+            });
         }
         if st.distraction_secs > 0 && st.distraction_secs * 4 > st.productive_secs.max(1) {
-            recommendations.push(format!(
-                "Limite o tempo em distrações ({} na semana).",
-                format_minutes(u32::try_from(st.distraction_secs.max(0) / 60).unwrap_or(u32::MAX))
-            ));
+            let spent =
+                format_minutes(u32::try_from(st.distraction_secs.max(0) / 60).unwrap_or(u32::MAX));
+            recommendations.push(match lang {
+                UiLanguage::PtBr => format!("Limite o tempo em distrações ({spent} na semana)."),
+                UiLanguage::En => {
+                    format!("Cap the time spent on distractions ({spent} this week).")
+                }
+            });
         }
         if st.longest_focus_secs > 90 * 60 {
-            recommendations
-                .push("Faça pausas curtas a cada 90 minutos de foco contínuo.".to_string());
+            recommendations.push(
+                lang.pick(
+                    "Faça pausas curtas a cada 90 minutos de foco contínuo.",
+                    "Take a short break after every 90 minutes of continuous focus.",
+                )
+                .to_string(),
+            );
         }
         if st.uncategorized_secs > 0 {
             recommendations.push(
-                "Classifique os blocos pendentes para relatórios mais completos.".to_string(),
+                lang.pick(
+                    "Classifique os blocos pendentes para relatórios mais completos.",
+                    "Categorize the pending blocks for more complete reports.",
+                )
+                .to_string(),
             );
         }
         if let Some((name, _)) = req.category_totals.iter().max_by_key(|(_, s)| *s) {
-            recommendations.push(format!(
-                "Mantenha o ritmo em {name}, sua categoria com mais horas."
-            ));
+            recommendations.push(match lang {
+                UiLanguage::PtBr => {
+                    format!("Mantenha o ritmo em {name}, sua categoria com mais horas.")
+                }
+                UiLanguage::En => {
+                    format!("Keep up the pace in {name}, the category with the most hours.")
+                }
+            });
         }
         recommendations.truncate(crate::advisor::MAX_RECOMMENDATIONS);
         Ok(Advice {
@@ -583,6 +620,32 @@ mod tests {
         assert!(report
             .summary_md
             .contains("# Relatório — IFRO — 17/09/2026"));
+        assert!(sei
+            .activity
+            .starts_with("Utilizou Google Chrome em atividades de"));
+
+        let mut en = req.clone();
+        en.language = "en".into();
+        let report = FakeReportWriter::new().write_daily(&en).await.unwrap();
+        let sei = report
+            .items
+            .iter()
+            .find(|i| i.activity.contains("sei.ifro.edu.br"))
+            .unwrap();
+        assert_eq!(
+            sei.activity,
+            "Used Google Chrome for work on sei.ifro.edu.br"
+        );
+        assert!(
+            report.summary_md.contains("# Report — IFRO — 2026-09-17"),
+            "{}",
+            report.summary_md
+        );
+        assert!(report.summary_md.contains("## Highlights"));
+        en.blocks.clear();
+        let empty = FakeReportWriter::new().write_daily(&en).await.unwrap();
+        assert_eq!(empty.highlights, vec!["No activity recorded".to_string()]);
+        assert!(empty.summary_md.ends_with("No activity recorded.\n"));
     }
 
     #[tokio::test]
@@ -609,6 +672,19 @@ mod tests {
         let advice = FakeAdvisor::new().advise(&req).await.unwrap();
         assert_eq!(advice.headline, "Semana dispersa");
         assert_eq!(advice.recommendations.len(), 5);
+        assert!(advice.recommendations[0].starts_with("Reduza as trocas de contexto (20 por hora)"));
+        let mut en = req.clone();
+        en.language = "en".into();
+        let advice = FakeAdvisor::new().advise(&en).await.unwrap();
+        assert_eq!(advice.headline, "A scattered week");
+        assert_eq!(advice.recommendations.len(), 5);
+        assert!(
+            advice.recommendations[0].starts_with("Cut down on context switching (20 per hour)")
+        );
+        assert_eq!(
+            advice.recommendations[4],
+            "Keep up the pace in IFRO, the category with the most hours."
+        );
 
         let repo = MemoryUsageRepo::new();
         let now = Utc::now();

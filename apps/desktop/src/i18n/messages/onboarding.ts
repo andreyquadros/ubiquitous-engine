@@ -1,0 +1,258 @@
+import type { NamespaceMessages } from '../types';
+
+// 'onboarding' namespace: the first-run wizard (pages/Onboarding.tsx). Keys are used as t('onboarding.<key>').
+// The suggested category "IFRO" keeps its name in the page (an acronym, identical in both languages); only its description lives here.
+const messages = {
+  'pt-BR': {
+    // rail
+    initial_setup: 'Configuração inicial',
+    progress: 'Progresso',
+    steps: 'Etapas',
+    step_done: 'concluída',
+    rail_footer: 'Tudo fica no seu Mac. Sem contas, sem telemetria.',
+    step_of: 'Passo {step} de {total}',
+    skip_for_now: 'Pular por enquanto',
+
+    'step.intro': 'Como funciona',
+    'step.ai': 'Escolha sua IA',
+    'step.perms': 'Permissões',
+    'step.cats': 'Categorias',
+    'step.times': 'Horários',
+    'step.vision': 'Análise visual',
+    'step.finish': 'Concluir',
+
+    'rail.intro': 'Oi! Antes de tudo, o combinado sobre privacidade.',
+    'rail.ai': 'Escolha quem lê os blocos ambíguos. Dá para trocar depois.',
+    'rail.perms': 'O macOS vai pedir permissões. Eu espero aqui.',
+    'rail.cats': 'Descreva bem cada categoria: é o que eu leio para classificar.',
+    'rail.times': 'Quando gerar os relatórios e quando ficar quieto.',
+    'rail.vision': 'Até onde eu posso olhar quando um bloco for ambíguo.',
+    'rail.finish': 'Tudo pronto. Eu cuido do registro a partir de agora.',
+
+    // toasts
+    provider_switch_failed: 'Não foi possível trocar o provedor',
+    cats_missing_description_title: 'Descreva cada categoria',
+    cats_missing_description_body: 'A descrição é o que a IA usa para decidir onde cada atividade entra.',
+    cats_save_failed: 'Não foi possível salvar as categorias',
+    finish_success_title: 'Tudo pronto!',
+    finish_success_body: 'O UBI começou a observar. Volte em algumas horas para ver o dia tomando forma.',
+    finish_failed: 'Não foi possível concluir',
+
+    // step 1: intro
+    'intro.title': 'Oi, eu sou o UBI.',
+    'intro.lead': 'Vou registrar o que você faz no computador, organizar por categoria e escrever seus relatórios. Antes, o combinado sobre privacidade:',
+    'intro.logged_title': 'O que é registrado',
+    'intro.logged_text': 'A cada poucos segundos: nome do app, título da janela e, em navegadores, o domínio da aba ativa. Isso vira blocos de atividade (ex.: “45 min no SEI”).',
+    'intro.screenshots_title': 'Screenshots',
+    'intro.screenshots_text': 'Esparsos, só da janela ativa, reduzidos a 1024 px e apagados em 48 h. Servem para a IA entender blocos ambíguos (WhatsApp, Finder…). Você controla a política no passo 6.',
+    'intro.ai_title': 'O que vai para a IA escolhida (Anthropic, OpenAI ou xAI)',
+    'intro.ai_text': 'Apenas app, título e domínio dos blocos a classificar e, quando permitido, um screenshot reduzido. Nunca a URL completa, o conteúdo da página ou o que você digita.',
+    'intro.local_title': 'Nada mais sai do seu Mac',
+    'intro.local_text': 'Banco SQLite local, chave no Keychain, sem contas, sem telemetria. Apps bloqueados (bancos, 1Password) nunca são registrados e o Modo privado pausa tudo com um clique.',
+
+    // step 2: AI
+    'ai.title': 'Escolha sua IA',
+    'ai.lead': 'Quem vai ler os blocos ambíguos e escrever os seus relatórios. Cada provedor usa a própria chave de API, guardada no Keychain do macOS; dá para trocar depois em Configurações. Sem chave, o ubiqX funciona só com regras e memória.',
+    'ai.provider_group': 'Provedor de IA',
+    'ai.recommended': 'Recomendados: {classify} para classificar e {report} para relatórios.',
+    'ai.cost_basis': 'estimativa com 8 h por dia',
+    'ai.key_configured': 'Chave configurada {hint}',
+    'ai.create_key_at': 'Crie a chave em {host} (link “Criar chave” acima).',
+    'ai.key_storage': 'Ela fica no Keychain do macOS e pode ser trocada em Configurações.',
+
+    // step 3: permissions
+    'perms.title': 'Permissões do macOS',
+    'perms.lead': 'O sistema vai abrir Ajustes, Privacidade e Segurança. Marque o ubiqX na lista e volte aqui.',
+    'perms.restart_strong': 'A Gravação de tela só vale depois de reiniciar o ubiqX.',
+    'perms.restart_text': 'Se os títulos das janelas aparecerem vazios na Timeline, use “Reiniciar o ubiqX” em Configurações. Para a Automação, abra o navegador que você usa antes de clicar em Solicitar: o macOS pergunta uma vez por navegador aberto, e o status vira “Concedida” quando você permite.',
+    'perms.not_macos': 'Fora do macOS não há permissões a conceder: este é o modo de desenvolvimento com dados simulados.',
+
+    // step 4: categories
+    'cats.title': 'Suas categorias de trabalho',
+    'cats.lead': 'Sugeri três a partir do seu perfil; edite à vontade. A descrição é obrigatória: é ela que a IA lê para decidir onde cada atividade entra. Quanto mais específica (sistemas, projetos, pessoas), melhor.',
+    'cats.name_placeholder': 'Nome da categoria',
+    'cats.remove': 'Remover {name}',
+    'cats.unnamed': 'categoria',
+    'cats.color': 'Cor',
+    'cats.icon': 'Ícone',
+    'cats.description': 'Descrição',
+    'cats.description_placeholder': 'O que conta como trabalho desta categoria? (obrigatório)',
+    'cats.add': 'Adicionar categoria',
+
+    'suggested.ifro.description': 'Docência no IFRO: aulas, orientação de TCC, reuniões de colegiado, SEI/SUAP, editais e e-mails institucionais.',
+    'suggested.incubator.name': 'Incubadora',
+    'suggested.incubator.description': 'Incubadora de startups: mentorias, desenvolvimento da API de inscrições, Demo Day e roadmap.',
+    'suggested.smart_cities.name': 'Cidades Inteligentes',
+    'suggested.smart_cities.description': 'Projeto de pesquisa com a prefeitura: sensores IoT, ingestão de dados, dashboards e dados abertos.',
+
+    // step 5: schedule
+    'times.title': 'Horários',
+    'times.lead': 'Quando gerar os relatórios diários e quando o UBI deve ficar em silêncio.',
+    'times.report_time': 'Horário dos relatórios',
+    'times.report_time_hint': 'Cada categoria pode ter o seu; este é o padrão. O relatório usa tudo que foi registrado até esse horário e pode ser regenerado depois.',
+    'times.quiet_hours': 'Horário silencioso',
+    'times.quiet_hours_hint': 'Sem avisos do UBI e sem notificações neste período.',
+    'times.from': 'Das',
+    'times.to': 'Até',
+
+    // step 6: visual analysis
+    'vision.title': 'Análise visual',
+    'vision.lead': 'Screenshots ajudam a IA a descrever o que você fez em apps genéricos (“respondeu mensagens sobre o edital X”). Escolha até onde ela pode ir.',
+    'vision.policy_group': 'Política de análise visual',
+    'vision.all_title': 'Todos os apps, exceto bloqueados',
+    'vision.all_text': 'Quando um bloco é ambíguo, um screenshot reduzido da janela ativa vai para a IA, exceto em apps bloqueados ou negados (bancos, senhas). Máximo de 6 imagens por hora.',
+    'vision.only_apps_title': 'Apenas em apps que eu escolher',
+    'vision.only_apps_text': 'Você lista os apps (ex.: Google Chrome, Preview). Nos demais, só texto.',
+    'vision.never_title': 'Nunca enviar imagens',
+    'vision.never_text': 'Só app, título e domínio vão para a IA. Blocos ambíguos ficam para a sua revisão manual.',
+    'vision.recommended': 'recomendado',
+    'vision.apps_label': 'Apps com análise visual',
+    'vision.apps_hint': 'Separe por vírgula.',
+
+    // step 7: finish
+    'finish.title': 'Quase lá',
+    'finish.lead': 'O UBI vai morar na barra de menus. Deixe-o iniciar com o sistema para não perder nenhum dia.',
+    'finish.ai_label': 'IA: {provider}',
+    'finish.models': '{classify} para classificar, {report} para relatórios.',
+    'finish.key_configured': 'chave configurada {hint}',
+    'finish.no_key': 'sem chave: só regras e memória até configurar em Configurações',
+    'finish.launch_at_login': 'Iniciar com o sistema',
+    'finish.launch_at_login_hint': 'Abre o ubiqX na barra de menus ao fazer login. Pode mudar em Configurações.',
+    'finish.tracking': 'Rastreamento ativo',
+    'finish.tracking_hint': 'Começar a registrar assim que concluir.',
+    'finish.what_next': 'O que você vai encontrar',
+    'finish.today_title': 'Hoje',
+    'finish.today_text': 'Score de foco, tempo por categoria e o UBI com dicas.',
+    'finish.review_title': 'Revisão',
+    'finish.review_text': 'Corrija classificações em um clique; o UBI aprende com cada correção.',
+    'finish.reports_title': 'Relatórios',
+    'finish.reports_text': 'Diários por categoria, mensais em Markdown para o SEI ou o edital.',
+  },
+  en: {
+    // rail
+    initial_setup: 'Initial setup',
+    progress: 'Progress',
+    steps: 'Steps',
+    step_done: 'completed',
+    rail_footer: 'Everything stays on your Mac. No accounts, no telemetry.',
+    step_of: 'Step {step} of {total}',
+    skip_for_now: 'Skip for now',
+
+    'step.intro': 'How it works',
+    'step.ai': 'Pick your AI',
+    'step.perms': 'Permissions',
+    'step.cats': 'Categories',
+    'step.times': 'Schedule',
+    'step.vision': 'Visual analysis',
+    'step.finish': 'Finish',
+
+    'rail.intro': 'Hi! First things first: our privacy deal.',
+    'rail.ai': 'Pick who reads the ambiguous blocks. You can change it later.',
+    'rail.perms': "macOS will ask for permissions. I'll wait right here.",
+    'rail.cats': "Describe each category well: that's what I read to classify.",
+    'rail.times': 'When to generate reports and when to stay quiet.',
+    'rail.vision': 'How far I can look when a block is ambiguous.',
+    'rail.finish': "All set. I'll take care of the tracking from here.",
+
+    // toasts
+    provider_switch_failed: "Couldn't switch provider",
+    cats_missing_description_title: 'Describe each category',
+    cats_missing_description_body: 'The description is what the AI uses to decide where each activity belongs.',
+    cats_save_failed: "Couldn't save the categories",
+    finish_success_title: 'All set!',
+    finish_success_body: 'UBI is now watching. Come back in a few hours to see your day take shape.',
+    finish_failed: "Couldn't finish setup",
+
+    // step 1: intro
+    'intro.title': "Hi, I'm UBI.",
+    'intro.lead': "I'll keep track of what you do on your computer, sort it by category and write your reports. First, our privacy deal:",
+    'intro.logged_title': 'What gets logged',
+    'intro.logged_text': 'Every few seconds: the app name, the window title and, in browsers, the domain of the active tab. That becomes activity blocks (e.g. “45 min in SEI”).',
+    'intro.screenshots_title': 'Screenshots',
+    'intro.screenshots_text': 'Sparse, active window only, downscaled to 1024 px and deleted after 48 h. They help the AI make sense of ambiguous blocks (WhatsApp, Finder…). You set the policy in step 6.',
+    'intro.ai_title': 'What goes to the AI you choose (Anthropic, OpenAI or xAI)',
+    'intro.ai_text': 'Only the app, title and domain of the blocks to classify and, when allowed, a downscaled screenshot. Never the full URL, the page content or what you type.',
+    'intro.local_title': 'Nothing else leaves your Mac',
+    'intro.local_text': 'Local SQLite database, key in the Keychain, no accounts, no telemetry. Blocked apps (banking, 1Password) are never logged, and Private mode pauses everything with one click.',
+
+    // step 2: AI
+    'ai.title': 'Pick your AI',
+    'ai.lead': 'Who reads the ambiguous blocks and writes your reports. Each provider uses its own API key, stored in the macOS Keychain; you can switch later in Settings. Without a key, ubiqX runs on rules and memory only.',
+    'ai.provider_group': 'AI provider',
+    'ai.recommended': 'Recommended: {classify} for classification and {report} for reports.',
+    'ai.cost_basis': 'estimate at 8 h a day',
+    'ai.key_configured': 'Key configured {hint}',
+    'ai.create_key_at': 'Create your key at {host} (the “Create a key” link above).',
+    'ai.key_storage': 'It stays in the macOS Keychain and can be changed in Settings.',
+
+    // step 3: permissions
+    'perms.title': 'macOS permissions',
+    'perms.lead': 'macOS will open System Settings under Privacy & Security. Turn on ubiqX in the list and come back here.',
+    'perms.restart_strong': 'Screen Recording only takes effect after restarting ubiqX.',
+    'perms.restart_text': 'If window titles show up empty in the Timeline, use “Restart ubiqX” in Settings. For Automation, open the browser you use before clicking Request: macOS asks once per open browser, and the status turns “Granted” once you allow it.',
+    'perms.not_macos': 'Outside macOS there are no permissions to grant: this is development mode with simulated data.',
+
+    // step 4: categories
+    'cats.title': 'Your work categories',
+    'cats.lead': 'I suggested three based on your profile; edit them freely. The description is required: it is what the AI reads to decide where each activity belongs. The more specific (systems, projects, people), the better.',
+    'cats.name_placeholder': 'Category name',
+    'cats.remove': 'Remove {name}',
+    'cats.unnamed': 'category',
+    'cats.color': 'Color',
+    'cats.icon': 'Icon',
+    'cats.description': 'Description',
+    'cats.description_placeholder': 'What counts as work for this category? (required)',
+    'cats.add': 'Add category',
+
+    'suggested.ifro.description': 'Teaching at IFRO: classes, thesis supervision, faculty board meetings, SEI/SUAP, calls for proposals and institutional email.',
+    'suggested.incubator.name': 'Incubator',
+    'suggested.incubator.description': 'Startup incubator: mentoring, building the applications API, Demo Day and the roadmap.',
+    'suggested.smart_cities.name': 'Smart Cities',
+    'suggested.smart_cities.description': 'Research project with the city government: IoT sensors, data ingestion, dashboards and open data.',
+
+    // step 5: schedule
+    'times.title': 'Schedule',
+    'times.lead': 'When to generate the daily reports and when UBI should stay silent.',
+    'times.report_time': 'Report time',
+    'times.report_time_hint': 'Each category can have its own; this is the default. The report covers everything logged up to that time and can be regenerated later.',
+    'times.quiet_hours': 'Quiet hours',
+    'times.quiet_hours_hint': 'No nudges from UBI and no notifications during this period.',
+    'times.from': 'From',
+    'times.to': 'To',
+
+    // step 6: visual analysis
+    'vision.title': 'Visual analysis',
+    'vision.lead': 'Screenshots help the AI describe what you did in generic apps (“replied to messages about call for proposals X”). Choose how far it can go.',
+    'vision.policy_group': 'Visual analysis policy',
+    'vision.all_title': 'All apps except blocked ones',
+    'vision.all_text': 'When a block is ambiguous, a downscaled screenshot of the active window goes to the AI, except in blocked or denied apps (banking, passwords). At most 6 images per hour.',
+    'vision.only_apps_title': 'Only in apps I choose',
+    'vision.only_apps_text': 'You list the apps (e.g. Google Chrome, Preview). Everywhere else, text only.',
+    'vision.never_title': 'Never send images',
+    'vision.never_text': 'Only the app, title and domain go to the AI. Ambiguous blocks are left for your manual review.',
+    'vision.recommended': 'recommended',
+    'vision.apps_label': 'Apps with visual analysis',
+    'vision.apps_hint': 'Separate with commas.',
+
+    // step 7: finish
+    'finish.title': 'Almost there',
+    'finish.lead': 'UBI will live in the menu bar. Let it start with the system so you never miss a day.',
+    'finish.ai_label': 'AI: {provider}',
+    'finish.models': '{classify} for classification, {report} for reports.',
+    'finish.key_configured': 'key configured {hint}',
+    'finish.no_key': 'no key: rules and memory only until you set one up in Settings',
+    'finish.launch_at_login': 'Launch at login',
+    'finish.launch_at_login_hint': 'Opens ubiqX in the menu bar when you log in. You can change this in Settings.',
+    'finish.tracking': 'Tracking on',
+    'finish.tracking_hint': 'Start logging as soon as you finish.',
+    'finish.what_next': 'What you will find',
+    'finish.today_title': 'Today',
+    'finish.today_text': 'Focus score, time per category and UBI with tips.',
+    'finish.review_title': 'Review',
+    'finish.review_text': 'Fix classifications in one click; UBI learns from every correction.',
+    'finish.reports_title': 'Reports',
+    'finish.reports_text': 'Daily per category, monthly in Markdown for SEI or a call for proposals.',
+  },
+} satisfies NamespaceMessages;
+
+export default messages;

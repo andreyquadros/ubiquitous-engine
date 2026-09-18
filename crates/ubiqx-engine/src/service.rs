@@ -281,7 +281,10 @@ pub fn monthly_report_md(
         .into_iter()
         .filter(|r| r.category_id == category_id)
         .collect();
-    Ok(report::render_monthly_md(&reports, &category, year, month))
+    let lang = state.settings.read().ui_language();
+    Ok(report::render_monthly_md(
+        &reports, &category, year, month, lang,
+    ))
 }
 
 /// Blocks with the exact text that was sent to the AI (transparency view).

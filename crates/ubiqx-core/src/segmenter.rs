@@ -5,6 +5,7 @@
 
 use chrono::{DateTime, Duration, Utc};
 
+use crate::lang::UiLanguage;
 use crate::model::*;
 use crate::normalize::{domain_of, normalize_title};
 
@@ -21,6 +22,8 @@ pub struct SegmenterConfig {
     pub max_gap_secs: u32,
     pub blocked_apps: Vec<String>,
     pub blocked_domains: Vec<String>,
+    /// UI language: names the redacted private-mode app ("Privado" / "Private").
+    pub language: UiLanguage,
 }
 
 impl From<&Settings> for SegmenterConfig {
@@ -32,6 +35,7 @@ impl From<&Settings> for SegmenterConfig {
             max_gap_secs: (s.sample_interval_secs * 6).max(30),
             blocked_apps: s.blocked_apps.clone(),
             blocked_domains: s.blocked_domains.clone(),
+            language: UiLanguage::from_tag(&s.language),
         }
     }
 }
@@ -129,7 +133,7 @@ impl Segmenter {
             redacted = ActivitySample {
                 at: sample.at,
                 app_name: if self.cfg.private_mode {
-                    "Privado".into()
+                    self.cfg.language.pick("Privado", "Private").into()
                 } else {
                     sample.app_name.clone()
                 },
@@ -384,6 +388,24 @@ mod tests {
     }
 
     #[test]
+    fn private_mode_app_name_follows_the_language() {
+        let cfg = SegmenterConfig {
+            private_mode: true,
+            language: UiLanguage::En,
+            ..Default::default()
+        };
+        let mut seg = Segmenter::new(cfg);
+        let o = seg.feed(
+            &sample(0, "Xcode", "main.swift", None),
+            Duration::seconds(5),
+        );
+        let b = o.opened.unwrap();
+        assert_eq!(b.app_id, "privado");
+        assert_eq!(b.app_name, "Private");
+        assert_eq!(b.title, PRIVATE_TITLE);
+    }
+
+    #[test]
     fn private_mode_records_time_only() {
         let cfg = SegmenterConfig {
             private_mode: true,
@@ -396,6 +418,7 @@ mod tests {
         );
         let b = o.opened.unwrap();
         assert_eq!(b.app_id, "privado");
+        assert_eq!(b.app_name, "Privado");
         assert_eq!(b.category_id.as_deref(), Some(system_categories::PRIVATE));
         let o = seg.feed(&sample(5, "Slack", "general", None), Duration::seconds(5));
         assert!(o.closed.is_none(), "all private samples share one block");

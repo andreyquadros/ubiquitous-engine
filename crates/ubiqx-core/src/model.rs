@@ -412,6 +412,28 @@ impl ActivityKind {
             ActivityKind::Outro => "Outro",
         }
     }
+
+    pub fn label_en(&self) -> &'static str {
+        match self {
+            ActivityKind::Desenvolvimento => "Development",
+            ActivityKind::Reuniao => "Meetings",
+            ActivityKind::Comunicacao => "Communication",
+            ActivityKind::Documentacao => "Documentation",
+            ActivityKind::Ensino => "Teaching",
+            ActivityKind::Pesquisa => "Research",
+            ActivityKind::Extensao => "Outreach",
+            ActivityKind::Gestao => "Administration",
+            ActivityKind::Outro => "Other",
+        }
+    }
+
+    /// Heading of this kind in reports, in the UI language.
+    pub fn label(&self, lang: crate::lang::UiLanguage) -> &'static str {
+        match lang {
+            crate::lang::UiLanguage::PtBr => self.label_pt(),
+            crate::lang::UiLanguage::En => self.label_en(),
+        }
+    }
 }
 
 /// One line of a report: what was done, for how long, with which evidence. Items are the
@@ -845,7 +867,8 @@ pub struct Settings {
     pub min_confidence: f32,
     /// Default local time for daily reports when a category has none.
     pub report_default_time: NaiveTime,
-    /// Language for AI-generated text (BCP-47).
+    /// UI language (BCP-47): `pt-BR` or `en`, see [`Settings::ui_language`]. Every text the
+    /// engine generates (nudges, notifications, reports, prompts) follows it.
     pub language: String,
     /// Who the user is, in their own words. Given to the report writer for context.
     pub user_profile: Option<String>,
@@ -903,6 +926,24 @@ impl Settings {
     /// Makes `models` consistent with `ai_provider` (call after any settings write from the UI).
     pub fn reconcile_models(&mut self) {
         self.models = self.models.clone().reconciled_with(self.ai_provider);
+    }
+
+    /// The UI language, parsed leniently from `language` (unknown tags mean pt-BR).
+    pub fn ui_language(&self) -> crate::lang::UiLanguage {
+        crate::lang::UiLanguage::from_tag(&self.language)
+    }
+
+    /// Rewrites `language` as the canonical tag of the language it names (`pt-BR` or `en`), so
+    /// every consumer compares against one spelling.
+    pub fn normalize_language(&mut self) {
+        self.language = self.ui_language().tag().to_string();
+    }
+
+    /// Everything a settings write from the UI needs before it is stored: provider-consistent
+    /// model ids and a canonical language tag.
+    pub fn sanitize(&mut self) {
+        self.reconcile_models();
+        self.normalize_language();
     }
 
     /// Whether private mode is active at `now` (a timed private mode expires on its own).

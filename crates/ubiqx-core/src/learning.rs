@@ -12,6 +12,7 @@
 
 use std::collections::HashMap;
 
+use crate::lang::UiLanguage;
 use crate::model::*;
 use crate::normalize::{activity_similarity, is_generic_title};
 use crate::ports::{Classification, ClassificationContext, ClassificationExample, LocalClassifier};
@@ -106,6 +107,7 @@ pub fn suggest_rules(
     corrections: &[Correction],
     existing: &[Rule],
     min_support: u32,
+    lang: UiLanguage,
 ) -> Vec<RuleSuggestion> {
     #[derive(Hash, PartialEq, Eq, Clone)]
     struct Key {
@@ -155,13 +157,21 @@ pub fn suggest_rules(
             if covered {
                 return None;
             }
-            let rationale = match key.matcher {
-                RuleMatcher::Domain => format!(
+            let rationale = match (key.matcher, lang) {
+                (RuleMatcher::Domain, UiLanguage::PtBr) => format!(
                     "Você reclassificou {n} vezes atividades em {} para esta categoria.",
                     key.pattern
                 ),
-                _ => format!(
+                (RuleMatcher::Domain, UiLanguage::En) => format!(
+                    "You moved activity on {} to this category {n} times.",
+                    key.pattern
+                ),
+                (_, UiLanguage::PtBr) => format!(
                     "Você reclassificou {n} vezes atividades do app {} para esta categoria.",
+                    key.pattern
+                ),
+                (_, UiLanguage::En) => format!(
+                    "You moved activity in {} to this category {n} times.",
                     key.pattern
                 ),
             };
@@ -261,11 +271,20 @@ mod tests {
             correction("chrome", "sei proc 2", Some("sei.ifro.edu.br"), "ifro"),
             correction("chrome", "yt", Some("youtube.com"), "distraction"),
         ];
-        let s = suggest_rules(&cs, &[], 2);
+        let s = suggest_rules(&cs, &[], 2, UiLanguage::PtBr);
         assert_eq!(s.len(), 1);
         assert_eq!(s[0].matcher, RuleMatcher::Domain);
         assert_eq!(s[0].pattern, "sei.ifro.edu.br");
         assert_eq!(s[0].category_id, "ifro");
+        assert_eq!(
+            s[0].rationale,
+            "Você reclassificou 2 vezes atividades em sei.ifro.edu.br para esta categoria."
+        );
+        let en = suggest_rules(&cs, &[], 2, UiLanguage::En);
+        assert_eq!(
+            en[0].rationale,
+            "You moved activity on sei.ifro.edu.br to this category 2 times."
+        );
     }
 
     #[test]
@@ -274,7 +293,7 @@ mod tests {
             correction("slack", "general", None, "ifro"),
             correction("slack", "general", None, "incubadora"),
         ];
-        assert!(suggest_rules(&cs, &[], 1).is_empty());
+        assert!(suggest_rules(&cs, &[], 1, UiLanguage::PtBr).is_empty());
     }
 
     #[test]
@@ -296,7 +315,7 @@ mod tests {
             miss_count: 0,
             last_contradicted_at: None,
         }];
-        assert!(suggest_rules(&cs, &existing, 2).is_empty());
+        assert!(suggest_rules(&cs, &existing, 2, UiLanguage::PtBr).is_empty());
     }
 
     #[test]
@@ -342,14 +361,14 @@ mod tests {
             correction("chrome", "inbox", Some("mail.google.com"), "ifro"),
             correction("chrome", "inbox", Some("mail.google.com"), "ifro"),
         ];
-        let s = suggest_rules(&cs, &[], 2);
+        let s = suggest_rules(&cs, &[], 2, UiLanguage::PtBr);
         assert_eq!(s.len(), 1);
         assert!(!s[0].auto_apply_safe);
         let cs = vec![
             correction("chrome", "sei", Some("sei.ifro.edu.br"), "ifro"),
             correction("chrome", "sei", Some("sei.ifro.edu.br"), "ifro"),
         ];
-        assert!(suggest_rules(&cs, &[], 2)[0].auto_apply_safe);
+        assert!(suggest_rules(&cs, &[], 2, UiLanguage::PtBr)[0].auto_apply_safe);
     }
 
     #[test]

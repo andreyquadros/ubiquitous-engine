@@ -2,6 +2,7 @@ import clsx from 'clsx';
 import { Clock, FileText, LayoutDashboard, ListChecks, Moon, Settings, Sparkles, Sun, Tags, type LucideIcon } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useAppStore } from '../../lib/store';
+import { useT } from '../../i18n';
 import { IconButton } from '../ui/Button';
 import { TrackerPill } from './TrackerPill';
 
@@ -37,21 +38,22 @@ export function BrandMark({ className }: { className?: string }) {
 export function Sidebar({ needsReview }: { needsReview: number }) {
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
+  const t = useT();
 
   const items: Item[] = [
-    { to: '/', label: 'Hoje', Icon: LayoutDashboard },
-    { to: '/timeline', label: 'Timeline', Icon: Clock },
-    { to: '/review', label: 'Revisão', Icon: ListChecks, badge: needsReview },
-    { to: '/reports', label: 'Relatórios', Icon: FileText },
-    { to: '/categories', label: 'Categorias', Icon: Tags },
-    { to: '/insights', label: 'Insights', Icon: Sparkles },
-    { to: '/settings', label: 'Configurações', Icon: Settings },
+    { to: '/', label: t('nav.today'), Icon: LayoutDashboard },
+    { to: '/timeline', label: t('nav.timeline'), Icon: Clock },
+    { to: '/review', label: t('nav.review'), Icon: ListChecks, badge: needsReview },
+    { to: '/reports', label: t('nav.reports'), Icon: FileText },
+    { to: '/categories', label: t('nav.categories'), Icon: Tags },
+    { to: '/insights', label: t('nav.insights'), Icon: Sparkles },
+    { to: '/settings', label: t('nav.settings'), Icon: Settings },
   ];
 
   return (
     <aside
       className="flex h-full w-[72px] shrink-0 flex-col border-r border-line bg-panel/70 backdrop-blur-xl min-[1180px]:w-[232px]"
-      aria-label="Navegação principal"
+      aria-label={t('nav.main_navigation')}
     >
       {/* macOS overlay title bar: draggable strip; traffic lights live in the top-left 80px */}
       <div data-tauri-drag-region className="h-[38px] shrink-0" />
@@ -84,7 +86,7 @@ export function Sidebar({ needsReview }: { needsReview: number }) {
                 {badge ? (
                   <span
                     className="num absolute top-1.5 right-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-pill bg-ember px-1.5 text-[11px] font-semibold text-on-ember min-[1180px]:static min-[1180px]:ml-auto"
-                    aria-label={`${badge} blocos para revisar`}
+                    aria-label={t('nav.to_review', { count: badge })}
                   >
                     {badge}
                   </span>
@@ -96,7 +98,7 @@ export function Sidebar({ needsReview }: { needsReview: number }) {
       </nav>
 
       <div className="flex flex-col gap-2 border-t border-line p-3">
-        <IconButton label={theme === 'dark' ? 'Tema claro' : 'Tema escuro'} onClick={toggleTheme} className="self-start">
+        <IconButton label={theme === 'dark' ? t('nav.theme_light') : t('nav.theme_dark')} onClick={toggleTheme} className="self-start">
           {theme === 'dark' ? <Sun className="size-4" strokeWidth={1.75} /> : <Moon className="size-4" strokeWidth={1.75} />}
         </IconButton>
         <TrackerPill />

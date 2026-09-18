@@ -1,6 +1,7 @@
 import clsx from 'clsx';
 import { Loader2 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useT } from '../../i18n';
 
 export function Progress({ value, max = 1, color, className, height = 'h-1.5' }: { value: number; max?: number; color?: string; className?: string; height?: string }) {
   const pct = Math.max(0, Math.min(1, max ? value / max : 0));
@@ -12,7 +13,8 @@ export function Progress({ value, max = 1, color, className, height = 'h-1.5' }:
 }
 
 export function Spinner({ className }: { className?: string }) {
-  return <Loader2 className={clsx('size-5 animate-spin text-ink-3', className)} strokeWidth={1.75} aria-label="Carregando" />;
+  const t = useT();
+  return <Loader2 className={clsx('size-5 animate-spin text-ink-3', className)} strokeWidth={1.75} aria-label={t('common.loading')} />;
 }
 
 /** Empty screens invite the next action: a title in the user's words, one line of why, one button. */

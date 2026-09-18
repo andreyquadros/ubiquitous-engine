@@ -1,34 +1,40 @@
 import clsx from 'clsx';
-import { AlertTriangle, Bell, BrainCircuit, Camera, Check, Download, ExternalLink, EyeOff, Info, KeyRound, ListRestart, Loader2, RefreshCw, Shield, ShieldCheck, Trash2, type LucideIcon } from 'lucide-react';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Bell, BrainCircuit, Camera, Check, Download, ExternalLink, EyeOff, Info, KeyRound, ListRestart, Loader2, RefreshCw, Shield, ShieldCheck, SlidersHorizontal, Trash2, type LucideIcon } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Badge, StatusPill } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Dialog } from '../components/ui/Dialog';
 import { Field, Input, Textarea } from '../components/ui/Field';
+import { LanguageSelect } from '../components/ui/LanguageSelect';
 import { EmptyState } from '../components/ui/misc';
 import { PageHeader } from '../components/ui/PageHeader';
 import { TagInput } from '../components/ui/TagInput';
 import { Toggle } from '../components/ui/Toggle';
-import { fmtDateTime, fmtTime, hhmmToInput, inputToHhmm } from '../lib/format';
+import { useLocale, useT, type Locale } from '../i18n';
+import { fmtDateNumeric, fmtDateTime, fmtTime, hhmmToInput, inputToHhmm } from '../lib/format';
 import { ipc } from '../lib/ipc';
 import { useAppStore } from '../lib/store';
 import { useToast } from '../lib/toast';
-import { PROVIDER_PITCH, keyStatus, providerInfo, reconcileModels, sameModels } from '../lib/providers';
+import { keyStatus, providerInfo, providerPitch, reconcileModels, sameModels } from '../lib/providers';
 import type { AiModels, AiProvider, PermissionKind, PermissionState, PrivateModeDuration, Settings, SettingsView, VisionPolicy } from '../lib/types';
 import { useAsync } from '../lib/useAsync';
 
 export const REPO_URL = 'https://github.com/andreyquadros/ubiquitous-engine';
 
-const SECTIONS: { id: string; label: string; Icon: LucideIcon }[] = [
-  { id: 'ia', label: 'IA', Icon: BrainCircuit },
-  { id: 'rastreamento', label: 'Rastreamento', Icon: RefreshCw },
-  { id: 'privacidade', label: 'Privacidade', Icon: Shield },
-  { id: 'relatorios', label: 'Relatórios', Icon: Info },
-  { id: 'ubi', label: 'UBI e notificações', Icon: Bell },
-  { id: 'permissoes', label: 'Permissões do macOS', Icon: ShieldCheck },
-  { id: 'sobre', label: 'Sobre', Icon: Info },
+/** Section ids are stable (anchors, tests); labels come from t('settings.section.<key>'). */
+const SECTIONS: { id: string; key: string; Icon: LucideIcon }[] = [
+  { id: 'geral', key: 'general', Icon: SlidersHorizontal },
+  { id: 'ia', key: 'ai', Icon: BrainCircuit },
+  { id: 'rastreamento', key: 'tracking', Icon: RefreshCw },
+  { id: 'privacidade', key: 'privacy', Icon: Shield },
+  { id: 'relatorios', key: 'reports', Icon: Info },
+  { id: 'ubi', key: 'ubi', Icon: Bell },
+  { id: 'permissoes', key: 'permissions', Icon: ShieldCheck },
+  { id: 'sobre', key: 'about', Icon: Info },
 ];
+
+const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 /** Local draft of the settings with debounced persistence. */
 function useSettingsDraft() {
@@ -39,6 +45,7 @@ function useSettingsDraft() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<Partial<Settings>>({});
   const toast = useToast();
+  const t = useT();
 
   useEffect(() => {
     if (settingsView && !draft) setDraft(settingsView.settings);
@@ -59,11 +66,11 @@ function useSettingsDraft() {
           setTimeout(() => setStatus((s) => (s === 'saved' ? 'idle' : s)), 1500);
         } catch (e) {
           setStatus('error');
-          toast.error('Não foi possível salvar', e instanceof Error ? e.message : String(e));
+          toast.error(t('settings.toast.save_failed'), errorMessage(e));
         }
       }, 500);
     },
-    [saveSettings, toast],
+    [saveSettings, toast, t],
   );
 
   return { draft, patch, status, settingsView };
@@ -95,8 +102,9 @@ function useScrollSpy(ids: string[], setActive: (id: string) => void) {
 }
 
 export function SettingsPage() {
+  const t = useT();
   const { draft, patch, status, settingsView } = useSettingsDraft();
-  const [active, setActive] = useState('ia');
+  const [active, setActive] = useState('geral');
   const sections = useMemo(() => SECTIONS.filter((s) => s.id !== 'permissoes' || settingsView?.platform === 'macos'), [settingsView?.platform]);
   const ids = useMemo(() => sections.map((s) => s.id), [sections]);
   useScrollSpy(ids, setActive);
@@ -111,32 +119,32 @@ export function SettingsPage() {
   return (
     <div data-testid="page-settings">
       <PageHeader
-        title="Configurações"
-        subtitle="Cada mudança é salva sozinha."
+        title={t('settings.title')}
+        subtitle={t('settings.subtitle')}
         actions={
           <span className="flex h-9 items-center gap-1.5 text-xs text-ink-3" aria-live="polite">
             {status === 'saving' && (
               <>
-                <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} aria-hidden /> Salvando…
+                <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} aria-hidden /> {t('settings.saving')}
               </>
             )}
             {status === 'saved' && (
               <>
-                <Check className="size-3.5 text-signal" strokeWidth={2} aria-hidden /> Salvo
+                <Check className="size-3.5 text-signal" strokeWidth={2} aria-hidden /> {t('common.saved')}
               </>
             )}
             {status === 'error' && (
               <>
-                <AlertTriangle className="size-3.5 text-rose" strokeWidth={1.75} aria-hidden /> Não foi salvo
+                <AlertTriangle className="size-3.5 text-rose" strokeWidth={1.75} aria-hidden /> {t('settings.not_saved')}
               </>
             )}
           </span>
         }
       />
       <div className="grid grid-cols-12 gap-6">
-        <nav className="col-span-12 min-[1100px]:sticky min-[1100px]:top-0 min-[1100px]:col-span-3 min-[1100px]:self-start" aria-label="Seções">
+        <nav className="col-span-12 min-[1100px]:sticky min-[1100px]:top-0 min-[1100px]:col-span-3 min-[1100px]:self-start" aria-label={t('settings.sections_nav')}>
           <ul className="flex flex-row flex-wrap gap-0.5 min-[1100px]:flex-col">
-            {sections.map(({ id, label, Icon }) => {
+            {sections.map(({ id, key, Icon }) => {
               const on = active === id;
               return (
                 <li key={id} className="relative">
@@ -151,7 +159,7 @@ export function SettingsPage() {
                     )}
                   >
                     <Icon className={clsx('size-[18px] shrink-0', on ? 'text-volt' : 'text-ink-3')} strokeWidth={1.75} aria-hidden />
-                    {label}
+                    {t(`settings.section.${key}`)}
                   </button>
                 </li>
               );
@@ -159,6 +167,7 @@ export function SettingsPage() {
           </ul>
         </nav>
         <div className="col-span-12 flex flex-col gap-5 min-[1100px]:col-span-9">
+          <GeneralSection />
           <AiSection draft={draft} patch={patch} view={settingsView} />
           <TrackingSection draft={draft} patch={patch} />
           <PrivacySection draft={draft} patch={patch} view={settingsView} />
@@ -194,6 +203,23 @@ function Divider() {
   return <hr className="border-line" />;
 }
 
+/** Renders the `<b>…</b>` spans of a message as <strong>, so a sentence with emphasis stays one translatable string. */
+function Emphasis({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/<b>(.*?)<\/b>/).map((part, i) =>
+        i % 2 === 1 ? (
+          <strong key={i} className="text-ink">
+            {part}
+          </strong>
+        ) : (
+          <Fragment key={i}>{part}</Fragment>
+        ),
+      )}
+    </>
+  );
+}
+
 function NumberField({ label, hint, value, onChange, min, max, step, suffix }: { label: string; hint?: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; suffix?: string }) {
   return (
     <Field label={label} hint={hint}>
@@ -207,7 +233,27 @@ function NumberField({ label, hint, value, onChange, min, max, step, suffix }: {
   );
 }
 
+/** Language of the whole UI: switches immediately and is persisted as Settings.language. */
+function GeneralSection() {
+  const t = useT();
+  const locale = useLocale();
+  const setLanguage = useAppStore((s) => s.setLanguage);
+  const toast = useToast();
+  const change = (l: Locale) => {
+    if (l === locale) return;
+    setLanguage(l).catch((e: unknown) => toast.error(t('settings.toast.language_failed'), errorMessage(e)));
+  };
+  return (
+    <Section id="geral" title={t('settings.section.general')} description={t('settings.general.description')}>
+      <Field label={t('common.language')} hint={t('settings.language_hint')} inline>
+        {() => <LanguageSelect value={locale} onChange={change} />}
+      </Field>
+    </Section>
+  );
+}
+
 export function ApiKeyForm({ view, provider, onSaved, compact }: { view: SettingsView; provider: AiProvider; onSaved?: () => void; compact?: boolean }) {
+  const t = useT();
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ valid: boolean; message: string } | null>(null);
@@ -233,17 +279,17 @@ export function ApiKeyForm({ view, provider, onSaved, compact }: { view: Setting
         setKey('');
         await loadSettings();
         onSaved?.();
-        toast.success(value ? `Chave da ${label} salva no Keychain` : `Chave da ${label} removida`);
+        toast.success(value ? t('settings.toast.key_saved', { provider: label }) : t('settings.toast.key_removed', { provider: label }));
       }
     } catch (e) {
-      setResult({ valid: false, message: e instanceof Error ? e.message : String(e) });
+      setResult({ valid: false, message: errorMessage(e) });
     } finally {
       setBusy(false);
     }
   };
 
   const openConsole = () => {
-    if (info) ipc.openExternal(info.console_url).catch((e: unknown) => toast.error('Não foi possível abrir', e instanceof Error ? e.message : String(e)));
+    if (info) ipc.openExternal(info.console_url).catch((e: unknown) => toast.error(t('settings.toast.open_failed'), errorMessage(e)));
   };
 
   return (
@@ -251,21 +297,21 @@ export function ApiKeyForm({ view, provider, onSaved, compact }: { view: Setting
       {status.configured && (
         <div className="flex flex-wrap items-center gap-2 rounded-control border border-signal/25 bg-signal/8 px-3 py-2 text-sm">
           <KeyRound className="size-4 text-signal" strokeWidth={1.75} aria-hidden />
-          <span>Chave configurada</span>
+          <span>{t('settings.key.configured')}</span>
           <span className="num font-mono text-ink-2">{status.hint ?? '…'}</span>
           <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void submit(null)} loading={busy}>
-            Remover
+            {t('common.remove')}
           </Button>
         </div>
       )}
       <Field
-        label={status.configured ? `Trocar a chave de API da ${label}` : `Chave de API da ${label}`}
+        label={status.configured ? t('settings.key.replace_label', { provider: label }) : t('settings.key.label', { provider: label })}
         hint={
           <span className="inline-flex flex-wrap items-center gap-x-1">
-            {!compact && <span>Fica só no Keychain do macOS; nunca vai para um arquivo.</span>}
+            {!compact && <span>{t('settings.key.keychain_hint')}</span>}
             {info && (
               <button type="button" onClick={openConsole} className="inline-flex items-center gap-1 text-volt underline underline-offset-2 transition-colors duration-120 hover:brightness-110">
-                Criar chave <ExternalLink className="size-3" strokeWidth={1.75} aria-hidden />
+                {t('settings.key.create')} <ExternalLink className="size-3" strokeWidth={1.75} aria-hidden />
               </button>
             )}
           </span>
@@ -275,7 +321,7 @@ export function ApiKeyForm({ view, provider, onSaved, compact }: { view: Setting
           <div className="flex gap-2">
             <Input id={id} type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={`${info?.key_prefix ?? ''}…`} className="font-mono" />
             <Button variant="primary" className="shrink-0" onClick={() => void submit(key.trim())} disabled={!key.trim()} loading={busy}>
-              Validar e salvar
+              {t('settings.key.validate_save')}
             </Button>
           </div>
         )}
@@ -292,8 +338,9 @@ export function ApiKeyForm({ view, provider, onSaved, compact }: { view: Setting
 
 /** Segmented control over the providers the backend knows; shows a key icon on the ones with a stored key. */
 export function ProviderPicker({ view, value, onChange, size = 'md' }: { view: SettingsView; value: AiProvider; onChange: (p: AiProvider) => void; size?: 'md' | 'lg' }) {
+  const t = useT();
   return (
-    <div role="radiogroup" aria-label="Provedor de IA" className="inline-flex flex-wrap items-center gap-0.5 self-start rounded-control border border-line bg-panel-2 p-1">
+    <div role="radiogroup" aria-label={t('settings.provider.label')} className="inline-flex flex-wrap items-center gap-0.5 self-start rounded-control border border-line bg-panel-2 p-1">
       {view.providers.map((p) => {
         const configured = keyStatus(view, p.id).configured;
         const active = value === p.id;
@@ -311,7 +358,7 @@ export function ProviderPicker({ view, value, onChange, size = 'md' }: { view: S
             )}
           >
             {p.label}
-            {configured && <KeyRound className="size-3.5 text-signal" strokeWidth={1.75} aria-label="chave configurada" />}
+            {configured && <KeyRound className="size-3.5 text-signal" strokeWidth={1.75} aria-label={t('settings.provider.key_configured')} />}
           </button>
         );
       })}
@@ -331,14 +378,12 @@ export function providerSwitchPatch(view: SettingsView, draft: Settings, provide
   return { ai_provider: provider, models: customised ? reconcileModels(draft.models, next) : { ...next.default_models } };
 }
 
-const MODEL_SLOTS: { key: keyof AiModels; label: string; hint: string }[] = [
-  { key: 'classify', label: 'Modelo de classificação', hint: 'Chamado a cada lote de blocos; escolha o mais barato.' },
-  { key: 'vision', label: 'Modelo de visão', hint: 'Precisa aceitar imagens.' },
-  { key: 'report', label: 'Modelo de relatórios', hint: 'Escreve os relatórios e as recomendações.' },
-];
+/** The three model fields; label and hint come from t('settings.models.<slot>.label|hint'). */
+const MODEL_SLOTS: (keyof AiModels)[] = ['classify', 'vision', 'report'];
 
 /** The three model fields as free text with a datalist of the account's models. */
 function ModelFields({ draft, patch, view }: SectionProps & { view: SettingsView }) {
+  const t = useT();
   const provider = draft.ai_provider;
   const info = providerInfo(view, provider);
   const hasKey = keyStatus(view, provider).configured;
@@ -355,7 +400,7 @@ function ModelFields({ draft, patch, view }: SectionProps & { view: SettingsView
       setModels({ provider, ids });
     } catch (e) {
       setModels(null);
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -368,26 +413,26 @@ function ModelFields({ draft, patch, view }: SectionProps & { view: SettingsView
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0">
-          <span className="text-[13px] font-medium">Modelos da {info?.label ?? provider}</span>
-          <p className="text-xs text-ink-3">Digite um id ou escolha entre os modelos da conta.</p>
+          <span className="text-[13px] font-medium">{t('settings.models.title', { provider: info?.label ?? provider })}</span>
+          <p className="text-xs text-ink-3">{t('settings.models.hint')}</p>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
-          <Button size="sm" icon={<RefreshCw className="size-3.5" strokeWidth={1.75} />} onClick={() => void listModels()} loading={loading} disabled={!hasKey} title={hasKey ? undefined : 'Salve a chave deste provedor para listar os modelos'}>
-            Listar modelos da conta
+          <Button size="sm" icon={<RefreshCw className="size-3.5" strokeWidth={1.75} />} onClick={() => void listModels()} loading={loading} disabled={!hasKey} title={hasKey ? undefined : t('settings.models.list_disabled')}>
+            {t('settings.models.list')}
           </Button>
           <Button size="sm" variant="ghost" icon={<ListRestart className="size-3.5" strokeWidth={1.75} />} disabled={!info || isDefault} onClick={() => info && patch({ models: { ...info.default_models } })}>
-            Padrões do provedor
+            {t('settings.models.defaults')}
           </Button>
         </div>
       </div>
       {error && (
         <p className="flex items-center gap-1.5 text-xs text-rose" role="status">
-          <AlertTriangle className="size-3.5" strokeWidth={1.75} aria-hidden /> Não foi possível listar os modelos: {error}
+          <AlertTriangle className="size-3.5" strokeWidth={1.75} aria-hidden /> {t('settings.models.list_failed', { error })}
         </p>
       )}
       {models?.provider === provider && !error && (
         <p className="num text-xs text-ink-3" role="status">
-          {models.ids.length} modelos disponíveis na conta. Digite ou escolha nos campos abaixo.
+          {t('settings.models.available', { count: models.ids.length })}
         </p>
       )}
       <datalist id={listId}>
@@ -397,8 +442,8 @@ function ModelFields({ draft, patch, view }: SectionProps & { view: SettingsView
       </datalist>
       <div className="grid grid-cols-1 gap-4 min-[900px]:grid-cols-3">
         {MODEL_SLOTS.map((slot) => (
-          <Field key={slot.key} label={slot.label} hint={slot.hint}>
-            {(id) => <Input id={id} list={listId} value={draft.models[slot.key]} spellCheck={false} autoComplete="off" placeholder={info?.default_models[slot.key]} onChange={(e) => patch({ models: { ...draft.models, [slot.key]: e.target.value } })} className="font-mono text-xs" />}
+          <Field key={slot} label={t(`settings.models.${slot}.label`)} hint={t(`settings.models.${slot}.hint`)}>
+            {(id) => <Input id={id} list={listId} value={draft.models[slot]} spellCheck={false} autoComplete="off" placeholder={info?.default_models[slot]} onChange={(e) => patch({ models: { ...draft.models, [slot]: e.target.value } })} className="font-mono text-xs" />}
           </Field>
         ))}
       </div>
@@ -407,24 +452,21 @@ function ModelFields({ draft, patch, view }: SectionProps & { view: SettingsView
 }
 
 function AiSection({ draft, patch, view }: SectionProps & { view: SettingsView }) {
+  const t = useT();
   const health = view.ai_health;
   const pill =
     health.state === 'ok'
-      ? { color: 'var(--signal)', text: 'IA ativa' }
+      ? { color: 'var(--signal)', text: t('settings.ai.status.ok') }
       : health.state === 'not_configured'
-        ? { color: 'var(--ink-4)', text: 'Sem chave' }
+        ? { color: 'var(--ink-4)', text: t('settings.ai.status.not_configured') }
         : health.state === 'paused'
-          ? { color: 'var(--amber)', text: `Pausada: ${health.reason}` }
-          : { color: 'var(--rose)', text: `Instável: ${health.reason}, até ${fmtTime(health.until)}` };
+          ? { color: 'var(--amber)', text: t('settings.ai.status.paused', { reason: health.reason }) }
+          : { color: 'var(--rose)', text: t('settings.ai.status.degraded', { reason: health.reason, time: fmtTime(health.until) }) };
+  const pitch = providerPitch(draft.ai_provider, t);
 
   return (
-    <Section
-      id="ia"
-      title="IA"
-      description="Classificação, análise visual e relatórios usam a API do provedor escolhido com a sua chave. Troque de provedor quando quiser; cada um guarda a própria chave."
-      action={<StatusPill color={pill.color}>{pill.text}</StatusPill>}
-    >
-      <Field label="Provedor de IA" hint={`A chave verde marca os provedores que já têm chave salva. Com ${PROVIDER_PITCH[draft.ai_provider].short}, ${PROVIDER_PITCH[draft.ai_provider].cost} estimados com 8 h por dia.`}>
+    <Section id="ia" title={t('settings.section.ai')} description={t('settings.ai.description')} action={<StatusPill color={pill.color}>{pill.text}</StatusPill>}>
+      <Field label={t('settings.provider.label')} hint={t('settings.provider.hint', { provider: pitch.short, cost: pitch.cost })}>
         {() => <ProviderPicker view={view} value={draft.ai_provider} onChange={(p) => patch(providerSwitchPatch(view, draft, p))} />}
       </Field>
       <ApiKeyForm view={view} provider={draft.ai_provider} />
@@ -432,10 +474,10 @@ function AiSection({ draft, patch, view }: SectionProps & { view: SettingsView }
       <ModelFields draft={draft} patch={patch} view={view} />
       <Divider />
       <div className="grid grid-cols-1 gap-4 min-[720px]:grid-cols-2">
-        <NumberField label="Orçamento mensal" hint="Ao atingir, a IA pausa até o próximo mês; a classificação local continua." value={draft.ai_monthly_budget_usd} min={0} step={0.5} onChange={(v) => patch({ ai_monthly_budget_usd: v })} suffix="US$ por mês" />
-        <NumberField label="Máximo de imagens por hora" hint="Limita quantos screenshots vão para o modelo de visão." value={draft.max_vision_per_hour} min={0} max={60} onChange={(v) => patch({ max_vision_per_hour: v })} suffix="imagens por hora" />
+        <NumberField label={t('settings.budget.label')} hint={t('settings.budget.hint')} value={draft.ai_monthly_budget_usd} min={0} step={0.5} onChange={(v) => patch({ ai_monthly_budget_usd: v })} suffix={t('settings.budget.suffix')} />
+        <NumberField label={t('settings.vision_per_hour.label')} hint={t('settings.vision_per_hour.hint')} value={draft.max_vision_per_hour} min={0} max={60} onChange={(v) => patch({ max_vision_per_hour: v })} suffix={t('settings.vision_per_hour.suffix')} />
       </div>
-      <Field label="Somente local" hint="Nada é enviado à API: só regras e memória classificam. Relatórios e recomendações ficam indisponíveis." inline>
+      <Field label={t('settings.local_only.label')} hint={t('settings.local_only.hint')} inline>
         {(id) => <Toggle id={id} checked={draft.local_only} onChange={(v) => patch({ local_only: v })} />}
       </Field>
     </Section>
@@ -443,6 +485,7 @@ function AiSection({ draft, patch, view }: SectionProps & { view: SettingsView }
 }
 
 function TrackingSection({ draft, patch }: SectionProps) {
+  const t = useT();
   const setTrackerState = useAppStore((s) => s.setTrackerState);
   const toast = useToast();
   const toggleTracking = async (v: boolean) => {
@@ -451,34 +494,33 @@ function TrackingSection({ draft, patch }: SectionProps) {
       await ipc.setTracking(v);
       setTrackerState(v ? 'running' : 'paused');
     } catch (e) {
-      toast.error('Não foi possível alterar o rastreamento', e instanceof Error ? e.message : String(e));
+      toast.error(t('settings.toast.tracking_failed'), errorMessage(e));
     }
   };
   return (
-    <Section id="rastreamento" title="Rastreamento" description="Como o ubiqX observa o app ativo.">
-      <Field label="Rastreamento ativo" hint="Desligue para pausar por completo; o ícone na barra de menus mostra o estado." inline>
+    <Section id="rastreamento" title={t('settings.section.tracking')} description={t('settings.tracking.description')}>
+      <Field label={t('settings.tracking.enabled.label')} hint={t('settings.tracking.enabled.hint')} inline>
         {(id) => <Toggle id={id} checked={draft.tracking_enabled} onChange={(v) => void toggleTracking(v)} />}
       </Field>
       <div className="grid grid-cols-1 gap-4 min-[900px]:grid-cols-3">
-        <NumberField label="Intervalo de amostragem" value={draft.sample_interval_secs} min={1} max={60} onChange={(v) => patch({ sample_interval_secs: v })} suffix="s" />
-        <NumberField label="Limiar de ociosidade" hint="Sem teclado nem mouse por esse tempo conta como ocioso." value={draft.idle_threshold_secs} min={30} step={30} onChange={(v) => patch({ idle_threshold_secs: v })} suffix="s" />
-        <NumberField label="Bloco mínimo" hint="Blocos menores são mesclados ao vizinho." value={draft.min_block_secs} min={5} onChange={(v) => patch({ min_block_secs: v })} suffix="s" />
+        <NumberField label={t('settings.tracking.sample_interval')} value={draft.sample_interval_secs} min={1} max={60} onChange={(v) => patch({ sample_interval_secs: v })} suffix="s" />
+        <NumberField label={t('settings.tracking.idle_threshold.label')} hint={t('settings.tracking.idle_threshold.hint')} value={draft.idle_threshold_secs} min={30} step={30} onChange={(v) => patch({ idle_threshold_secs: v })} suffix="s" />
+        <NumberField label={t('settings.tracking.min_block.label')} hint={t('settings.tracking.min_block.hint')} value={draft.min_block_secs} min={5} onChange={(v) => patch({ min_block_secs: v })} suffix="s" />
       </div>
-      <Field label="Iniciar com o sistema" hint="Abre o ubiqX na barra de menus ao fazer login." inline>
+      <Field label={t('settings.tracking.launch.label')} hint={t('settings.tracking.launch.hint')} inline>
         {(id) => <Toggle id={id} checked={draft.launch_at_login} onChange={(v) => patch({ launch_at_login: v })} />}
       </Field>
     </Section>
   );
 }
 
-const PRIVATE_OPTIONS: { value: PrivateModeDuration; label: string }[] = [
-  { value: 'minutes30', label: '30 min' },
-  { value: 'hour1', label: '1 hora' },
-  { value: 'until_tomorrow', label: 'Até amanhã' },
-  { value: 'indefinite', label: 'Até eu desligar' },
-];
+/** Durations offered for private mode; labels come from t('settings.private.<value>'). */
+const PRIVATE_OPTIONS: Exclude<PrivateModeDuration, 'off'>[] = ['minutes30', 'hour1', 'until_tomorrow', 'indefinite'];
+
+const VISION_MODES = ['never', 'only_apps', 'all_except_blocked'] as const;
 
 function PrivacySection({ draft, patch, view }: SectionProps & { view: SettingsView }) {
+  const t = useT();
   const [aiSentOpen, setAiSentOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const setTrackerState = useAppStore((s) => s.setTrackerState);
@@ -496,26 +538,28 @@ function PrivacySection({ draft, patch, view }: SectionProps & { view: SettingsV
       await ipc.setPrivateMode(d);
       setTrackerState(d === 'off' ? (draft.tracking_enabled ? 'running' : 'paused') : 'private');
       await loadSettings();
-      toast.success(d === 'off' ? 'Modo privado desligado' : 'Modo privado ligado', d === 'off' ? 'O registro voltou.' : 'Nada é registrado enquanto ele estiver ligado.');
+      if (d === 'off') toast.success(t('settings.toast.private_off'), t('settings.toast.private_off_body'));
+      else toast.success(t('settings.toast.private_on'), t('settings.toast.private_on_body'));
     } catch (e) {
-      toast.error('Não foi possível mudar o modo privado', e instanceof Error ? e.message : String(e));
+      toast.error(t('settings.toast.private_failed'), errorMessage(e));
     } finally {
       setBusy(false);
     }
   };
 
+  const privateHint = isPrivate ? (draft.private_until ? t('settings.private.on_until', { time: fmtTime(draft.private_until) }) : t('settings.private.on_indefinite')) : t('settings.private.off_hint');
+
   return (
-    <Section id="privacidade" title="Privacidade" description="Tudo fica no seu Mac. Só sai o mínimo necessário para a IA classificar e escrever relatórios.">
+    <Section id="privacidade" title={t('settings.section.privacy')} description={t('settings.privacy.description')}>
       <div className="panel-raised p-4 text-sm leading-6 text-ink-2">
         <p className="mb-1 flex items-center gap-2 font-medium text-ink">
-          <Shield className="size-4 text-volt" strokeWidth={1.75} aria-hidden /> O que sai da sua máquina
+          <Shield className="size-4 text-volt" strokeWidth={1.75} aria-hidden /> {t('settings.privacy.leaves.title')}
         </p>
         <p>
-          Para a IA escolhida (Anthropic, OpenAI ou xAI) vão apenas: <strong className="text-ink">nome do app, título da janela, domínio</strong> (nunca a URL completa nem o conteúdo da página) e, quando a política visual permite, um{' '}
-          <strong className="text-ink">screenshot reduzido da janela ativa</strong> em blocos ambíguos. Apps e domínios bloqueados nunca são registrados. Nada mais: sem telemetria, sem sincronização.
+          <Emphasis text={t('settings.privacy.leaves.body')} />
         </p>
         <button type="button" onClick={() => setAiSentOpen(true)} className="mt-2 inline-flex items-center gap-1 text-volt underline underline-offset-2 transition-colors duration-120 hover:brightness-110">
-          Ver o que foi enviado à IA hoje <ExternalLink className="size-3" strokeWidth={1.75} aria-hidden />
+          {t('settings.privacy.see_sent')} <ExternalLink className="size-3" strokeWidth={1.75} aria-hidden />
         </button>
       </div>
 
@@ -524,20 +568,18 @@ function PrivacySection({ draft, patch, view }: SectionProps & { view: SettingsV
           <EyeOff className="size-4" strokeWidth={1.75} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">Modo privado</p>
-          <p className="text-xs text-ink-3">
-            {isPrivate ? (draft.private_until ? `Ligado até ${fmtTime(draft.private_until)}. Nada é registrado.` : 'Ligado até você desligar. Nada é registrado.') : 'Pausa o registro por um tempo, sem mexer no rastreamento.'}
-          </p>
+          <p className="text-sm font-medium">{t('settings.private.title')}</p>
+          <p className="text-xs text-ink-3">{privateHint}</p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {isPrivate ? (
             <Button size="sm" onClick={() => void setPrivate('off')} loading={busy}>
-              Desligar
+              {t('settings.private.turn_off')}
             </Button>
           ) : (
-            PRIVATE_OPTIONS.map((o) => (
-              <Button key={o.value} size="sm" onClick={() => void setPrivate(o.value)} disabled={busy}>
-                {o.label}
+            PRIVATE_OPTIONS.map((value) => (
+              <Button key={value} size="sm" onClick={() => void setPrivate(value)} disabled={busy}>
+                {t(`settings.private.${value}`)}
               </Button>
             ))
           )}
@@ -547,43 +589,37 @@ function PrivacySection({ draft, patch, view }: SectionProps & { view: SettingsV
       <Divider />
 
       <div className="flex flex-col gap-2">
-        <span className="text-[13px] font-medium">Análise visual: screenshots para a IA</span>
-        <div role="radiogroup" aria-label="Política de análise visual" className="flex flex-col gap-2">
-          {(
-            [
-              { value: 'never', label: 'Nunca', hint: 'Só texto vai para a IA. Blocos ambíguos ficam para a sua revisão.' },
-              { value: 'only_apps', label: 'Apenas nestes apps', hint: 'Screenshots só quando o app ativo estiver na lista.' },
-              { value: 'all_except_blocked', label: 'Todos, exceto bloqueados', hint: 'Padrão. Screenshots reduzidos de qualquer app que não esteja bloqueado ou negado.' },
-            ] as const
-          ).map((opt) => (
-            <RadioRow key={opt.value} name="vision_policy" checked={mode === opt.value} title={opt.label} text={opt.hint} onChange={() => setPolicy(opt.value === 'only_apps' ? { mode: 'only_apps', apps: onlyApps } : { mode: opt.value })} />
+        <span className="text-[13px] font-medium">{t('settings.vision.title')}</span>
+        <div role="radiogroup" aria-label={t('settings.vision.policy_label')} className="flex flex-col gap-2">
+          {VISION_MODES.map((value) => (
+            <RadioRow key={value} name="vision_policy" checked={mode === value} title={t(`settings.vision.${value}.label`)} text={t(`settings.vision.${value}.hint`)} onChange={() => setPolicy(value === 'only_apps' ? { mode: 'only_apps', apps: onlyApps } : { mode: value })} />
           ))}
         </div>
         {mode === 'only_apps' && (
-          <Field label="Apps com análise visual">{(id) => <TagInput id={id} value={onlyApps} onChange={(apps) => setPolicy({ mode: 'only_apps', apps })} placeholder="Google Chrome, Preview…" />}</Field>
+          <Field label={t('settings.vision.apps_label')}>{(id) => <TagInput id={id} value={onlyApps} onChange={(apps) => setPolicy({ mode: 'only_apps', apps })} placeholder={t('settings.vision.apps_placeholder')} />}</Field>
         )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 min-[720px]:grid-cols-2">
-        <Field label="Apps sem análise visual" hint="Nunca enviam screenshot, mesmo com a política acima.">
-          {(id) => <TagInput id={id} value={draft.vision_denied_apps} onChange={(v) => patch({ vision_denied_apps: v })} placeholder="1Password…" />}
+        <Field label={t('settings.denied.label')} hint={t('settings.denied.hint')}>
+          {(id) => <TagInput id={id} value={draft.vision_denied_apps} onChange={(v) => patch({ vision_denied_apps: v })} placeholder={t('settings.denied.placeholder')} />}
         </Field>
-        <Field label="Apps bloqueados" hint="Não são registrados de forma alguma: nem título, nem tempo.">
-          {(id) => <TagInput id={id} value={draft.blocked_apps} onChange={(v) => patch({ blocked_apps: v })} placeholder="1Password, Banco…" />}
+        <Field label={t('settings.blocked_apps.label')} hint={t('settings.blocked_apps.hint')}>
+          {(id) => <TagInput id={id} value={draft.blocked_apps} onChange={(v) => patch({ blocked_apps: v })} placeholder={t('settings.blocked_apps.placeholder')} />}
         </Field>
-        <Field label="Domínios bloqueados" hint="Sites que nunca entram no registro." className="min-[720px]:col-span-2">
-          {(id) => <TagInput id={id} value={draft.blocked_domains} onChange={(v) => patch({ blocked_domains: v })} placeholder="bb.com.br, nubank.com.br…" />}
+        <Field label={t('settings.blocked_domains.label')} hint={t('settings.blocked_domains.hint')} className="min-[720px]:col-span-2">
+          {(id) => <TagInput id={id} value={draft.blocked_domains} onChange={(v) => patch({ blocked_domains: v })} placeholder={t('settings.blocked_domains.placeholder')} />}
         </Field>
       </div>
 
       <Divider />
 
       <div className="grid grid-cols-1 gap-4 min-[900px]:grid-cols-3">
-        <NumberField label="Intervalo de screenshots" value={draft.screenshot_interval_secs} min={30} step={30} onChange={(v) => patch({ screenshot_interval_secs: v })} suffix="s" />
-        <NumberField label="Retenção" hint="Imagens são apagadas depois disso." value={draft.screenshot_retention_hours} min={1} onChange={(v) => patch({ screenshot_retention_hours: v })} suffix="h" />
-        <NumberField label="Tamanho máximo" value={draft.screenshot_max_edge} min={256} step={64} onChange={(v) => patch({ screenshot_max_edge: v })} suffix="px" />
+        <NumberField label={t('settings.screenshots.interval')} value={draft.screenshot_interval_secs} min={30} step={30} onChange={(v) => patch({ screenshot_interval_secs: v })} suffix="s" />
+        <NumberField label={t('settings.screenshots.retention.label')} hint={t('settings.screenshots.retention.hint')} value={draft.screenshot_retention_hours} min={1} onChange={(v) => patch({ screenshot_retention_hours: v })} suffix="h" />
+        <NumberField label={t('settings.screenshots.max_edge')} value={draft.screenshot_max_edge} min={256} step={64} onChange={(v) => patch({ screenshot_max_edge: v })} suffix="px" />
       </div>
-      <Field label="Manter screenshots para revisão" hint="Permite ver a imagem ao revisar um bloco. Desligado, a imagem é apagada logo após o uso." inline>
+      <Field label={t('settings.screenshots.keep.label')} hint={t('settings.screenshots.keep.hint')} inline>
         {(id) => <Toggle id={id} checked={draft.keep_screenshots_for_review} onChange={(v) => patch({ keep_screenshots_for_review: v })} />}
       </Field>
 
@@ -606,14 +642,15 @@ function RadioRow({ name, checked, title, text, onChange }: { name: string; chec
 }
 
 function AiSentDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useT();
   const date = useAppStore((s) => s.date);
   const { data, loading } = useAsync(() => (open ? ipc.getAiSent(date) : Promise.resolve(null)), [open, date]);
   return (
-    <Dialog open={open} onClose={onClose} title="Dados enviados à IA" description={`Exatamente o que saiu da sua máquina em ${date}.`} width="lg">
+    <Dialog open={open} onClose={onClose} title={t('settings.sent.title')} description={t('settings.sent.description', { date: fmtDateNumeric(date) })} width="lg">
       {loading && !data ? (
-        <p className="text-sm text-ink-3">Carregando…</p>
+        <p className="text-sm text-ink-3">{t('settings.sent.loading')}</p>
       ) : !data?.length ? (
-        <EmptyState title="Nada foi enviado neste dia" />
+        <EmptyState title={t('settings.sent.empty')} />
       ) : (
         <ul className="flex flex-col gap-2">
           {data.map((b) => (
@@ -623,11 +660,11 @@ function AiSentDialog({ open, onClose }: { open: boolean; onClose: () => void })
                 <span className="font-medium">{b.app_name}</span>
                 {b.domain && <span className="text-ink-2">{b.domain}</span>}
                 <span className="ml-auto flex items-center gap-2 text-ink-3">
-                  {b.screenshot_id && <Badge tone="violet">com imagem</Badge>}
+                  {b.screenshot_id && <Badge tone="violet">{t('settings.sent.with_image')}</Badge>}
                   {b.ai_sent_at && <span className="num">{fmtDateTime(b.ai_sent_at)}</span>}
                 </span>
               </div>
-              <pre className="scroll-thin overflow-x-auto rounded-[8px] bg-panel-2 p-2 font-mono text-[11px] leading-4 text-ink-2">{b.ai_payload ?? '(payload não retido)'}</pre>
+              <pre className="scroll-thin overflow-x-auto rounded-[8px] bg-panel-2 p-2 font-mono text-[11px] leading-4 text-ink-2">{b.ai_payload ?? t('settings.sent.no_payload')}</pre>
             </li>
           ))}
         </ul>
@@ -637,27 +674,31 @@ function AiSentDialog({ open, onClose }: { open: boolean; onClose: () => void })
 }
 
 function ReportsSection({ draft, patch }: SectionProps) {
+  const t = useT();
   return (
-    <Section id="relatorios" title="Relatórios" description="Contexto que a IA usa para escrever relatórios na sua voz.">
-      <Field label="Horário padrão" hint="Usado pelas categorias sem horário próprio.">
+    <Section id="relatorios" title={t('settings.section.reports')} description={t('settings.reports.description')}>
+      <Field label={t('settings.reports.default_time.label')} hint={t('settings.reports.default_time.hint')}>
         {(id) => <Input id={id} type="time" value={hhmmToInput(draft.report_default_time)} onChange={(e) => e.target.value && patch({ report_default_time: inputToHhmm(e.target.value) })} className="num w-36" />}
       </Field>
-      <Field label="Quem é você" hint="Cargo, instituições, projetos, como gosta que os relatórios sejam escritos.">
-        {(id) => (
-          <Textarea
-            id={id}
-            value={draft.user_profile ?? ''}
-            onChange={(e) => patch({ user_profile: e.target.value || null })}
-            placeholder="Ex.: Professor de informática no IFRO, coordenador da incubadora do campus e pesquisador em cidades inteligentes. Relatórios em tom objetivo, na primeira pessoa."
-            className="min-h-28"
-          />
-        )}
+      <Field label={t('settings.reports.profile.label')} hint={t('settings.reports.profile.hint')}>
+        {(id) => <Textarea id={id} value={draft.user_profile ?? ''} onChange={(e) => patch({ user_profile: e.target.value || null })} placeholder={t('settings.reports.profile.placeholder')} className="min-h-28" />}
       </Field>
     </Section>
   );
 }
 
+/** Nudge kinds the user can switch individually; copy from t('settings.ubi.kind.<kind>.label|hint'). */
+const NUDGE_TOGGLES = ['unproductive', 'distracted', 'break_suggested', 'praise', 'idle'] as const;
+
+/** Snooze presets: minutes → label key. */
+const SNOOZE_PRESETS: { minutes: number; key: string }[] = [
+  { minutes: 30, key: 'minutes30' },
+  { minutes: 60, key: 'hour1' },
+  { minutes: 4 * 60, key: 'hours4' },
+];
+
 function UbiSection({ draft, patch }: SectionProps) {
+  const t = useT();
   const n = draft.nudges;
   const setN = (p: Partial<typeof n>) => patch({ nudges: { ...n, ...p } });
   const toast = useToast();
@@ -665,9 +706,10 @@ function UbiSection({ draft, patch }: SectionProps) {
     try {
       await ipc.snoozeNudges(minutes);
       setN({ snoozed_until: new Date(Date.now() + minutes * 60_000).toISOString() });
-      toast.success('UBI em silêncio', `Sem avisos por ${minutes >= 60 ? `${Math.round(minutes / 60)} h` : `${minutes} min`}.`);
+      const duration = minutes >= 60 ? t('settings.duration.hours', { count: Math.round(minutes / 60) }) : t('settings.duration.minutes', { count: minutes });
+      toast.success(t('settings.toast.snoozed'), t('settings.toast.snoozed_body', { duration }));
     } catch (e) {
-      toast.error('Não foi possível silenciar', e instanceof Error ? e.message : String(e));
+      toast.error(t('settings.toast.snooze_failed'), errorMessage(e));
     }
   };
   const snoozed = n.snoozed_until && new Date(n.snoozed_until).getTime() > Date.now();
@@ -675,79 +717,65 @@ function UbiSection({ draft, patch }: SectionProps) {
   return (
     <Section
       id="ubi"
-      title="UBI e notificações"
-      description="Quando e como o mascote pode te interromper."
-      action={snoozed && n.snoozed_until ? <Badge tone="amber">em silêncio até {fmtTime(n.snoozed_until)}</Badge> : undefined}
+      title={t('settings.section.ubi')}
+      description={t('settings.ubi.description')}
+      action={snoozed && n.snoozed_until ? <Badge tone="amber">{t('settings.ubi.snoozed_until', { time: fmtTime(n.snoozed_until) })}</Badge> : undefined}
     >
-      <Field label="Avisos do UBI" hint="Desligue para o UBI só observar." inline>
+      <Field label={t('settings.ubi.nudges.label')} hint={t('settings.ubi.nudges.hint')} inline>
         {(id) => <Toggle id={id} checked={n.enabled} onChange={(v) => setN({ enabled: v })} />}
       </Field>
       <div className={clsx('grid grid-cols-1 gap-x-8 gap-y-3 rounded-control border border-line p-4 min-[720px]:grid-cols-2', !n.enabled && 'opacity-60')}>
-        {(
-          [
-            ['unproductive', 'Improdutividade', 'Muito tempo em categorias não produtivas.'],
-            ['distracted', 'Distração', 'Sites e apps de distração durante o expediente.'],
-            ['break_suggested', 'Sugestão de pausa', 'Mais de 90 min sem pausa.'],
-            ['praise', 'Elogios', 'Blocos longos de foco merecem um parabéns.'],
-            ['idle', 'Ociosidade', 'Ocioso por muito tempo em horário de trabalho.'],
-          ] as const
-        ).map(([key, label, hint]) => (
-          <Field key={key} label={label} hint={hint} inline>
+        {NUDGE_TOGGLES.map((key) => (
+          <Field key={key} label={t(`settings.ubi.kind.${key}.label`)} hint={t(`settings.ubi.kind.${key}.hint`)} inline>
             {(id) => <Toggle id={id} size="sm" checked={n[key]} disabled={!n.enabled} onChange={(v) => setN({ [key]: v })} />}
           </Field>
         ))}
       </div>
       <div className="grid grid-cols-1 gap-4 min-[720px]:grid-cols-2">
-        <NumberField label="Máximo por dia" value={n.max_per_day} min={0} max={50} onChange={(v) => setN({ max_per_day: v })} suffix="avisos" />
-        <NumberField label="Intervalo mínimo" value={n.cooldown_mins} min={1} onChange={(v) => setN({ cooldown_mins: v })} suffix="min" />
+        <NumberField label={t('settings.ubi.max_per_day')} value={n.max_per_day} min={0} max={50} onChange={(v) => setN({ max_per_day: v })} suffix={t('settings.ubi.max_per_day_suffix')} />
+        <NumberField label={t('settings.ubi.cooldown')} value={n.cooldown_mins} min={1} onChange={(v) => setN({ cooldown_mins: v })} suffix="min" />
       </div>
       <Divider />
       <div className="grid grid-cols-1 items-end gap-4 min-[720px]:grid-cols-3">
-        <Field label="Horário silencioso" hint="Sem avisos nem notificações." inline>
+        <Field label={t('settings.ubi.quiet.label')} hint={t('settings.ubi.quiet.hint')} inline>
           {(id) => <Toggle id={id} checked={draft.quiet_hours.enabled} onChange={(v) => patch({ quiet_hours: { ...draft.quiet_hours, enabled: v } })} />}
         </Field>
-        <Field label="Das">
+        <Field label={t('settings.ubi.quiet.from')}>
           {(id) => <Input id={id} type="time" className="num" value={hhmmToInput(draft.quiet_hours.start)} disabled={!draft.quiet_hours.enabled} onChange={(e) => e.target.value && patch({ quiet_hours: { ...draft.quiet_hours, start: inputToHhmm(e.target.value) } })} />}
         </Field>
-        <Field label="Até">
+        <Field label={t('settings.ubi.quiet.to')}>
           {(id) => <Input id={id} type="time" className="num" value={hhmmToInput(draft.quiet_hours.end)} disabled={!draft.quiet_hours.enabled} onChange={(e) => e.target.value && patch({ quiet_hours: { ...draft.quiet_hours, end: inputToHhmm(e.target.value) } })} />}
         </Field>
       </div>
-      <Field label="Apps silenciosos" hint="Nenhum aviso enquanto estes apps estiverem em primeiro plano (reuniões, apresentações).">
-        {(id) => <TagInput id={id} value={n.silent_apps} onChange={(v) => setN({ silent_apps: v })} placeholder="Microsoft Teams, Keynote…" />}
+      <Field label={t('settings.ubi.silent_apps.label')} hint={t('settings.ubi.silent_apps.hint')}>
+        {(id) => <TagInput id={id} value={n.silent_apps} onChange={(v) => setN({ silent_apps: v })} placeholder={t('settings.ubi.silent_apps.placeholder')} />}
       </Field>
       <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
-        <span className="mr-1 text-sm text-ink-2">Silenciar agora por</span>
-        <Button size="sm" onClick={() => void snooze(30)}>
-          30 min
-        </Button>
-        <Button size="sm" onClick={() => void snooze(60)}>
-          1 hora
-        </Button>
-        <Button size="sm" onClick={() => void snooze(4 * 60)}>
-          4 horas
-        </Button>
+        <span className="mr-1 text-sm text-ink-2">{t('settings.ubi.snooze_now')}</span>
+        {SNOOZE_PRESETS.map((p) => (
+          <Button key={p.minutes} size="sm" onClick={() => void snooze(p.minutes)}>
+            {t(`settings.ubi.snooze.${p.key}`)}
+          </Button>
+        ))}
       </div>
     </Section>
   );
 }
 
-const PERM_LABEL: Record<PermissionState, { text: string; color: string }> = {
-  granted: { text: 'Concedida', color: 'var(--signal)' },
-  denied: { text: 'Negada', color: 'var(--rose)' },
-  unknown: { text: 'Não solicitada', color: 'var(--ink-4)' },
-  not_applicable: { text: 'Não se aplica', color: 'var(--ink-4)' },
+const PERM_COLOR: Record<PermissionState, string> = {
+  granted: 'var(--signal)',
+  denied: 'var(--rose)',
+  unknown: 'var(--ink-4)',
+  not_applicable: 'var(--ink-4)',
 };
 
+const PERMISSION_KINDS: PermissionKind[] = ['screen_recording', 'automation', 'accessibility'];
+
 export function PermissionRows({ view, onChanged }: { view: SettingsView; onChanged?: () => void }) {
+  const t = useT();
   const [busy, setBusy] = useState<PermissionKind | null>(null);
   const loadSettings = useAppStore((s) => s.loadSettings);
   const toast = useToast();
-  const rows: { kind: PermissionKind; label: string; hint: string }[] = [
-    { kind: 'screen_recording', label: 'Gravação de tela', hint: 'Necessária para ler títulos de janela e tirar screenshots. Sem ela, os blocos ficam sem título.' },
-    { kind: 'automation', label: 'Automação nos navegadores', hint: 'Lê a URL da aba ativa via AppleScript. Abra o navegador que você usa (Safari, Chrome, Arc, Brave, Edge, Vivaldi ou Opera) antes de clicar em Solicitar: o macOS pergunta uma vez por navegador aberto.' },
-    { kind: 'accessibility', label: 'Acessibilidade', hint: 'Opcional. Melhora a detecção de ociosidade e do app ativo em alguns apps.' },
-  ];
   const request = async (kind: PermissionKind) => {
     setBusy(kind);
     try {
@@ -755,26 +783,25 @@ export function PermissionRows({ view, onChanged }: { view: SettingsView; onChan
       await loadSettings();
       onChanged?.();
     } catch (e) {
-      toast.error('Não foi possível solicitar', e instanceof Error ? e.message : String(e));
+      toast.error(t('settings.toast.permission_failed'), errorMessage(e));
     } finally {
       setBusy(null);
     }
   };
   return (
     <ul className="divide-y divide-line rounded-card border border-line">
-      {rows.map((r) => {
-        const state = view.permissions[r.kind];
-        const p = PERM_LABEL[state];
+      {PERMISSION_KINDS.map((kind) => {
+        const state = view.permissions[kind];
         return (
-          <li key={r.kind} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+          <li key={kind} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
             <div className="min-w-0 flex-1 basis-60">
-              <p className="text-sm font-medium">{r.label}</p>
-              <p className="text-xs leading-5 text-ink-3">{r.hint}</p>
+              <p className="text-sm font-medium">{t(`settings.permissions.${kind}.label`)}</p>
+              <p className="text-xs leading-5 text-ink-3">{t(`settings.permissions.${kind}.hint`)}</p>
             </div>
-            <StatusPill color={p.color}>{p.text}</StatusPill>
+            <StatusPill color={PERM_COLOR[state]}>{t(`settings.permissions.state.${state}`)}</StatusPill>
             {state !== 'granted' && state !== 'not_applicable' && (
-              <Button size="sm" variant="primary" onClick={() => void request(r.kind)} loading={busy === r.kind}>
-                Solicitar
+              <Button size="sm" variant="primary" onClick={() => void request(kind)} loading={busy === kind}>
+                {t('settings.permissions.request')}
               </Button>
             )}
           </li>
@@ -785,19 +812,20 @@ export function PermissionRows({ view, onChanged }: { view: SettingsView; onChan
 }
 
 function PermissionsSection({ view }: { view: SettingsView }) {
+  const t = useT();
   const date = useAppStore((s) => s.date);
   const dash = useAppStore((s) => s.dashboards[date]);
-  const titlesEmpty = useMemo(() => !!dash && dash.timeline.length > 0 && dash.timeline.filter((b) => b.app_id !== 'idle' && b.app_id !== 'private').every((b) => !b.title), [dash]);
+  const titlesEmpty = useMemo(() => !!dash && dash.timeline.length > 0 && dash.timeline.filter((b) => b.app_id !== 'idle' && b.app_id !== 'private' && b.app_id !== 'privado').every((b) => !b.title), [dash]);
   const needsRestart = view.permissions.screen_recording === 'granted' && titlesEmpty;
   return (
-    <Section id="permissoes" title="Permissões do macOS" description="O macOS exige permissões explícitas para ler janelas e capturar a tela.">
+    <Section id="permissoes" title={t('settings.section.permissions')} description={t('settings.permissions.description')}>
       <PermissionRows view={view} />
       {needsRestart && (
         <div className="flex flex-wrap items-center gap-3 rounded-control border border-amber/40 bg-amber/10 p-3 text-sm">
           <Camera className="size-4 shrink-0 text-amber" strokeWidth={1.75} aria-hidden />
-          <span className="flex-1 basis-60 leading-5">A permissão foi concedida, mas os títulos ainda chegam vazios. O macOS só aplica a Gravação de tela depois de reiniciar o app.</span>
+          <span className="flex-1 basis-60 leading-5">{t('settings.permissions.restart_hint')}</span>
           <Button size="sm" variant="primary" onClick={() => void ipc.restartApp()}>
-            Reiniciar o ubiqX
+            {t('settings.permissions.restart')}
           </Button>
         </div>
       )}
@@ -806,6 +834,7 @@ function PermissionsSection({ view }: { view: SettingsView }) {
 }
 
 function AboutSection({ view }: { view: SettingsView }) {
+  const t = useT();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState<'export' | 'delete' | null>(null);
   const bumpData = useAppStore((s) => s.bumpData);
@@ -815,9 +844,9 @@ function AboutSection({ view }: { view: SettingsView }) {
     setBusy('export');
     try {
       const path = await ipc.exportData();
-      toast.success('Dados exportados', path);
+      toast.success(t('settings.toast.exported'), path);
     } catch (e) {
-      toast.error('Não foi possível exportar', e instanceof Error ? e.message : String(e));
+      toast.error(t('settings.toast.export_failed'), errorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -829,68 +858,68 @@ function AboutSection({ view }: { view: SettingsView }) {
       await ipc.deleteAllData();
       setConfirmDelete(false);
       bumpData();
-      toast.success('Todos os dados foram apagados');
+      toast.success(t('settings.toast.deleted'));
     } catch (e) {
-      toast.error('Não foi possível apagar', e instanceof Error ? e.message : String(e));
+      toast.error(t('settings.toast.delete_failed'), errorMessage(e));
     } finally {
       setBusy(null);
     }
   };
 
-  const engine = view.tracker_state === 'running' ? 'Rastreando' : view.tracker_state === 'paused' ? 'Pausado' : view.tracker_state === 'private' ? 'Modo privado' : view.tracker_state === 'idle' ? 'Ocioso' : 'Bloqueado';
-  const ai = view.ai_health.state === 'ok' ? 'Ativa' : view.ai_health.state === 'not_configured' ? 'Sem chave' : view.ai_health.state === 'paused' ? 'Pausada' : 'Instável';
+  const engine = t(`settings.about.engine_state.${view.tracker_state}`);
+  const ai = t(`settings.about.ai_state.${view.ai_health.state}`);
 
   return (
-    <Section id="sobre" title="Sobre" description="Feito com Rust, Tauri 2 e React. O UBI agradece as correções: cada uma o deixa mais esperto.">
+    <Section id="sobre" title={t('settings.section.about')} description={t('settings.about.description')}>
       <dl className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-2.5 text-sm">
-        <dt className="text-ink-3">Versão</dt>
+        <dt className="text-ink-3">{t('settings.about.version')}</dt>
         <dd className="num font-medium">ubiqX {view.version}</dd>
-        <dt className="text-ink-3">Pasta de dados</dt>
+        <dt className="text-ink-3">{t('settings.about.data_dir')}</dt>
         <dd className="truncate font-mono text-xs leading-5" title={view.data_dir}>
           {view.data_dir}
         </dd>
-        <dt className="text-ink-3">Plataforma</dt>
-        <dd>{view.platform === 'macos' ? 'macOS' : 'Outra (modo de desenvolvimento)'}</dd>
-        <dt className="text-ink-3">Motor</dt>
+        <dt className="text-ink-3">{t('settings.about.platform')}</dt>
+        <dd>{view.platform === 'macos' ? 'macOS' : t('settings.about.platform_dev')}</dd>
+        <dt className="text-ink-3">{t('settings.about.engine')}</dt>
         <dd>{engine}</dd>
-        <dt className="text-ink-3">IA</dt>
+        <dt className="text-ink-3">{t('settings.about.ai')}</dt>
         <dd>{ai}</dd>
       </dl>
       <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
         <Button icon={<Download className="size-4" strokeWidth={1.75} />} onClick={() => void exportData()} loading={busy === 'export'}>
-          Exportar meus dados
+          {t('settings.about.export')}
         </Button>
         <Button
           icon={<ExternalLink className="size-4" strokeWidth={1.75} />}
           onClick={() => {
-            ipc.openExternal(REPO_URL).catch((e: unknown) => toast.error('Não foi possível abrir', e instanceof Error ? e.message : String(e)));
+            ipc.openExternal(REPO_URL).catch((e: unknown) => toast.error(t('settings.toast.open_failed'), errorMessage(e)));
           }}
         >
-          Repositório no GitHub
+          {t('settings.about.repo')}
         </Button>
         <Button variant="danger" className="ml-auto" icon={<Trash2 className="size-4" strokeWidth={1.75} />} onClick={() => setConfirmDelete(true)}>
-          Apagar todos os dados
+          {t('settings.about.delete_all')}
         </Button>
       </div>
 
       <Dialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
-        title="Apagar todos os dados?"
-        description="Blocos, screenshots, relatórios, correções e regras aprendidas serão removidos de vez. As configurações e a chave de API ficam."
+        title={t('settings.about.delete_title')}
+        description={t('settings.about.delete_description')}
         width="sm"
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
-              Cancelar
+              {t('common.cancel')}
             </Button>
             <Button variant="danger" onClick={() => void deleteAll()} loading={busy === 'delete'}>
-              Apagar tudo
+              {t('settings.about.delete_confirm')}
             </Button>
           </>
         }
       >
-        <p className="text-sm leading-6 text-ink-2">Não dá para desfazer. Exporte seus dados antes, se quiser guardar um histórico.</p>
+        <p className="text-sm leading-6 text-ink-2">{t('settings.about.delete_warning')}</p>
       </Dialog>
     </Section>
   );

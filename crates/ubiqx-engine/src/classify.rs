@@ -106,13 +106,11 @@ pub fn budget_allows(state: &EngineState) -> CoreResult<bool> {
     }
     let totals = state.deps.repos.usage.totals(month_range(state.now()))?;
     let ratio = totals.cost_usd / settings.ai_monthly_budget_usd;
+    let lang = settings.ui_language();
     if ratio >= 1.0 {
         state.budget_paused.store(true, Ordering::SeqCst);
         state.set_ai_health(AiHealth::Paused {
-            reason: format!(
-                "Orçamento mensal de IA atingido (US$ {:.2} de US$ {:.2}).",
-                totals.cost_usd, settings.ai_monthly_budget_usd
-            ),
+            reason: budget_reached_text(totals.cost_usd, settings.ai_monthly_budget_usd, lang),
         });
         return Ok(false);
     }
@@ -121,18 +119,71 @@ pub fn budget_allows(state: &EngineState) -> CoreResult<bool> {
         let key = format!("budget_warned_{}", state.now().format("%Y-%m"));
         if state.deps.repos.kv.get(&key)?.is_none() {
             state.deps.repos.kv.set(&key, "1")?;
-            crate::nudges::emit_attention(
-                state,
-                "Orçamento de IA quase no limite",
-                &format!(
-                    "Você já usou {:.0}% do orçamento mensal de IA (US$ {:.2}).",
-                    ratio * 100.0,
-                    totals.cost_usd
-                ),
-            );
+            let (title, body) = budget_warning_text(ratio, totals.cost_usd, lang);
+            crate::nudges::emit_attention(state, &title, &body);
         }
     }
     Ok(true)
+}
+
+/// `AiHealth::Paused` reason once the monthly budget is spent.
+pub fn budget_reached_text(spent_usd: f64, budget_usd: f64, lang: UiLanguage) -> String {
+    match lang {
+        UiLanguage::PtBr => {
+            format!("Orçamento mensal de IA atingido (US$ {spent_usd:.2} de US$ {budget_usd:.2}).")
+        }
+        UiLanguage::En => {
+            format!("Monthly AI budget reached (${spent_usd:.2} of ${budget_usd:.2}).")
+        }
+    }
+}
+
+/// Attention nudge at 80% of the monthly budget.
+pub fn budget_warning_text(ratio: f64, spent_usd: f64, lang: UiLanguage) -> (String, String) {
+    let pct = ratio * 100.0;
+    match lang {
+        UiLanguage::PtBr => (
+            "Orçamento de IA quase no limite".into(),
+            format!("Você já usou {pct:.0}% do orçamento mensal de IA (US$ {spent_usd:.2})."),
+        ),
+        UiLanguage::En => (
+            "AI budget almost used up".into(),
+            format!("You've used {pct:.0}% of this month's AI budget (${spent_usd:.2})."),
+        ),
+    }
+}
+
+/// Health reasons and attention nudges of the remote-failure path, in the UI language.
+struct FailureText {
+    rate_limited: &'static str,
+    key_rejected_reason: &'static str,
+    ai_paused: &'static str,
+    key_rejected_body: &'static str,
+    account_rejected_body: &'static str,
+    unavailable_prefix: &'static str,
+}
+
+impl FailureText {
+    fn for_language(lang: UiLanguage) -> Self {
+        match lang {
+            UiLanguage::PtBr => Self {
+                rate_limited: "limite de requisições da API",
+                key_rejected_reason: "Chave de API inválida ou sem permissão.",
+                ai_paused: "IA pausada",
+                key_rejected_body: "A chave de API foi recusada. Verifique em Configurações → IA.",
+                account_rejected_body: "O provedor recusou a conta ou o modelo. Verifique créditos e modelo em Configurações → IA.",
+                unavailable_prefix: "IA indisponível",
+            },
+            UiLanguage::En => Self {
+                rate_limited: "API rate limit",
+                key_rejected_reason: "API key is invalid or lacks permission.",
+                ai_paused: "AI paused",
+                key_rejected_body: "The API key was rejected. Check it under Settings → AI.",
+                account_rejected_body: "The provider rejected the account or the model. Check credits and model under Settings → AI.",
+                unavailable_prefix: "AI unavailable",
+            },
+        }
+    }
 }
 
 /// Maps a remote failure onto health state and per-block backoff.
@@ -143,10 +194,11 @@ pub fn budget_allows(state: &EngineState) -> CoreResult<bool> {
 /// pushes blocks into the review queue.
 fn handle_remote_failure(state: &EngineState, blocks: &[ActivityBlock], err: &CoreError) {
     let now = state.now();
+    let text = FailureText::for_language(state.settings.read().ui_language());
     match err {
         CoreError::AiNotConfigured => state.set_ai_health(AiHealth::NotConfigured),
         CoreError::RateLimited { retry_after_secs } => state.set_ai_health(AiHealth::Degraded {
-            reason: "limite de requisições da API".into(),
+            reason: text.rate_limited.into(),
             until: now + Duration::seconds((*retry_after_secs).max(30) as i64),
         }),
         CoreError::Ai(msg)
@@ -155,27 +207,19 @@ fn handle_remote_failure(state: &EngineState, blocks: &[ActivityBlock], err: &Co
                 || msg.contains("403") =>
         {
             state.set_ai_health(AiHealth::Paused {
-                reason: "Chave de API inválida ou sem permissão.".into(),
+                reason: text.key_rejected_reason.into(),
             });
-            crate::nudges::emit_attention(
-                state,
-                "IA pausada",
-                "A chave de API foi recusada. Verifique em Configurações → IA.",
-            );
+            crate::nudges::emit_attention(state, text.ai_paused, text.key_rejected_body);
         }
         CoreError::AiRejected(msg) => {
             // Billing/model rejection: not transient and not the blocks' fault. Stays paused
             // until the user saves a key again (`EngineHandle::set_api_key` resets health).
             let already_paused = matches!(state.ai_health(), AiHealth::Paused { .. });
             state.set_ai_health(AiHealth::Paused {
-                reason: format!("IA indisponível: {msg}"),
+                reason: format!("{}: {msg}", text.unavailable_prefix),
             });
             if !already_paused {
-                crate::nudges::emit_attention(
-                    state,
-                    "IA pausada",
-                    "O provedor recusou a conta ou o modelo. Verifique créditos e modelo em Configurações → IA.",
-                );
+                crate::nudges::emit_attention(state, text.ai_paused, text.account_rejected_body);
             }
         }
         CoreError::AiRefused => {
@@ -448,5 +492,26 @@ mod tests {
         assert!(backoff_for(1) < backoff_for(2));
         assert!(backoff_for(4) < backoff_for(5));
         assert_eq!(backoff_for(9), Duration::hours(4));
+    }
+
+    #[test]
+    fn budget_texts_follow_the_language() {
+        assert_eq!(
+            budget_reached_text(5.0, 5.0, UiLanguage::PtBr),
+            "Orçamento mensal de IA atingido (US$ 5.00 de US$ 5.00)."
+        );
+        assert_eq!(
+            budget_reached_text(5.0, 5.0, UiLanguage::En),
+            "Monthly AI budget reached ($5.00 of $5.00)."
+        );
+        let (title, body) = budget_warning_text(0.85, 4.25, UiLanguage::PtBr);
+        assert_eq!(title, "Orçamento de IA quase no limite");
+        assert_eq!(
+            body,
+            "Você já usou 85% do orçamento mensal de IA (US$ 4.25)."
+        );
+        let (title, body) = budget_warning_text(0.85, 4.25, UiLanguage::En);
+        assert_eq!(title, "AI budget almost used up");
+        assert_eq!(body, "You've used 85% of this month's AI budget ($4.25).");
     }
 }

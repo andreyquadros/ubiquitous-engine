@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@react-three/fiber', () => ({ Canvas: () => null, useFrame: () => undefined }));
 vi.mock('@react-three/drei', () => ({ useGLTF: Object.assign(() => ({ scene: {} }), { preload: () => undefined }), Float: () => null, Center: () => null }));
 
+import { getLocale, setLocale } from '../i18n';
 import { __mock } from '../lib/mock';
 import { useAppStore } from '../lib/store';
 import { Onboarding } from './Onboarding';
@@ -25,6 +26,7 @@ describe('Onboarding (mock backend)', () => {
     );
     await screen.findByRole('heading', { name: 'Oi, eu sou o UBI.' });
     expect(screen.getByText('O que vai para a IA escolhida (Anthropic, OpenAI ou xAI)')).toBeInTheDocument();
+    expect(screen.getByText('Passo 1 de 7')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Continuar/ }));
     await screen.findByRole('heading', { name: 'Escolha sua IA' });
 
@@ -55,6 +57,52 @@ describe('Onboarding (mock backend)', () => {
     await screen.findByRole('heading', { name: 'Quase lá' });
     expect(screen.getByTestId('finish-ai-summary')).toHaveTextContent('IA: Anthropic Claude');
     expect(screen.getByTestId('finish-ai-summary')).toHaveTextContent('chave configurada …f3a9');
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('switches to English from the first step, persists it and keeps the flow in English', async () => {
+    render(
+      <MemoryRouter>
+        <Onboarding />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('heading', { name: 'Oi, eu sou o UBI.' });
+    expect(screen.getByRole('radiogroup', { name: 'Idioma' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'English' }));
+    await screen.findByRole('heading', { name: "Hi, I'm UBI." });
+    expect(screen.getByText('Step 1 of 7')).toBeInTheDocument();
+    expect(screen.getByText('Everything stays on your Mac. No accounts, no telemetry.')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'English' })).toHaveAttribute('aria-checked', 'true');
+    await waitFor(() => expect(useAppStore.getState().settingsView?.settings.language).toBe('en'));
+    expect(getLocale()).toBe('en');
+
+    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+    await screen.findByRole('heading', { name: 'Pick your AI' });
+    expect(screen.getAllByText('estimate at 8 h a day').length).toBe(3);
+  });
+
+  it('seeds the starter categories in the active language and picks icons with the shared IconPicker', async () => {
+    // a first run has no user categories yet: the wizard proposes three starters in the active language
+    const state = __mock.state();
+    state.categories = state.categories.filter((c) => c.is_system);
+    setLocale('en');
+    window.history.replaceState({}, '', '/?onboarding=1&step=4');
+    render(
+      <MemoryRouter>
+        <Onboarding />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('heading', { name: 'Your work categories' });
+    await waitFor(() => expect(screen.getAllByRole('textbox', { name: 'Category name' }).map((i) => (i as HTMLInputElement).value)).toEqual(['IFRO', 'Incubator', 'Smart Cities']));
+
+    const pickers = screen.getAllByRole('radiogroup', { name: 'Icon' });
+    expect(pickers).toHaveLength(3);
+    const first = pickers[0]!;
+    expect(first.querySelector('[role="radio"][aria-label="Graduation cap"]')).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(first.querySelector('[role="radio"][aria-label="Coffee"]')!);
+    expect(first.querySelector('[role="radio"][aria-label="Coffee"]')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('button', { name: 'Remove IFRO' })).toBeInTheDocument();
     window.history.replaceState({}, '', '/');
   });
 });

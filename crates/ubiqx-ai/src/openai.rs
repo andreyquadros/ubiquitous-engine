@@ -57,11 +57,12 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tracing::{debug, info, trace, warn};
 use ubiqx_core::ports::{AiUsage, AiUsageKind, UsageRepo};
-use ubiqx_core::{AiProvider, CoreError, CoreResult};
+use ubiqx_core::{AiProvider, CoreError, CoreResult, UiLanguage};
 
 use crate::client::{
-    validate_request, ApiKeySource, LlmClient, LlmContent, LlmRequest, LlmResponse, LlmRole,
-    StopReason, DEFAULT_BACKOFF_BASE, DEFAULT_BACKOFF_CAP, DEFAULT_MAX_ATTEMPTS, DEFAULT_TIMEOUT,
+    validate_request, ApiKeySource, LanguageSource, LlmClient, LlmContent, LlmRequest, LlmResponse,
+    LlmRole, StopReason, DEFAULT_BACKOFF_BASE, DEFAULT_BACKOFF_CAP, DEFAULT_MAX_ATTEMPTS,
+    DEFAULT_TIMEOUT,
 };
 use crate::pricing;
 use crate::retry::{self, Outcome, RetryPolicy, RetryableError};
@@ -442,8 +443,8 @@ fn retry_hint_secs(message: &str) -> Option<u64> {
 
 /// Provider-side rejections that are neither transient nor the request's fault: a billing
 /// problem or a model the account cannot use. The user has to act, so the message is written
-/// for them (pt-BR), keeping the vendor's own text.
-fn rejection(provider: AiProvider, code: u16, body: &str) -> Option<CoreError> {
+/// for them in the UI language, keeping the vendor's own text.
+fn rejection(provider: AiProvider, code: u16, body: &str, lang: UiLanguage) -> Option<CoreError> {
     let err = parse_error(body).unwrap_or_default();
     let detail = if err.message.is_empty() {
         format!("HTTP {code}")
@@ -455,23 +456,37 @@ fn rejection(provider: AiProvider, code: u16, body: &str) -> Option<CoreError> {
         || err.code == "insufficient_quota"
         || err.code == "billing_hard_limit_reached";
     if billing {
-        return Some(CoreError::AiRejected(format!(
-            "cobrança: sua conta {} não tem créditos ou cota disponível ({detail}). Verifique o faturamento em {}.",
-            provider.label(),
-            provider.console_url()
-        )));
+        return Some(CoreError::AiRejected(match lang {
+            UiLanguage::PtBr => format!(
+                "cobrança: sua conta {} não tem créditos ou cota disponível ({detail}). Verifique o faturamento em {}.",
+                provider.label(),
+                provider.console_url()
+            ),
+            UiLanguage::En => format!(
+                "billing: your {} account has no credits or quota available ({detail}). Check billing at {}.",
+                provider.label(),
+                provider.console_url()
+            ),
+        }));
     }
     if code == 404 || err.code == "model_not_found" {
-        return Some(CoreError::AiRejected(format!(
-            "modelo não encontrado ou indisponível para a sua conta {} ({detail}). Verifique o modelo em Configurações → IA.",
-            provider.label()
-        )));
+        return Some(CoreError::AiRejected(match lang {
+            UiLanguage::PtBr => format!(
+                "modelo não encontrado ou indisponível para a sua conta {} ({detail}). Verifique o modelo em Configurações → IA.",
+                provider.label()
+            ),
+            UiLanguage::En => format!(
+                "model not found or unavailable to your {} account ({detail}). Check the model under Settings → AI.",
+                provider.label()
+            ),
+        }));
     }
     None
 }
 
 fn classify_response(
     provider: AiProvider,
+    lang: UiLanguage,
     status: reqwest::StatusCode,
     retry_after: Option<u64>,
     body: String,
@@ -483,8 +498,8 @@ fn classify_response(
             "invalid api key (HTTP {code}): {}",
             error_message(&body)
         ))),
-        400..=499 if rejection(provider, code, &body).is_some() => {
-            Outcome::Fatal(rejection(provider, code, &body).expect("checked above"))
+        400..=499 if rejection(provider, code, &body, lang).is_some() => {
+            Outcome::Fatal(rejection(provider, code, &body, lang).expect("checked above"))
         }
         429 => {
             let hint = retry_after
@@ -550,6 +565,7 @@ pub struct OpenAiCompatClient {
     config: OpenAiCompatConfig,
     keys: Arc<dyn ApiKeySource>,
     usage: Arc<dyn UsageRepo>,
+    language: Arc<dyn LanguageSource>,
 }
 
 impl fmt::Debug for OpenAiCompatClient {
@@ -585,7 +601,14 @@ impl OpenAiCompatClient {
             config,
             keys,
             usage,
+            language: Arc::new(UiLanguage::PtBr),
         })
+    }
+
+    /// Where the language of user-facing rejection messages comes from (pt-BR by default).
+    pub fn with_language_source(mut self, language: Arc<dyn LanguageSource>) -> Self {
+        self.language = language;
+        self
     }
 
     pub fn config(&self) -> &OpenAiCompatConfig {
@@ -622,12 +645,15 @@ impl OpenAiCompatClient {
         F: Fn() -> reqwest::RequestBuilder,
     {
         let provider = self.config.provider;
+        let lang = self.language.language();
         retry::send_with_retry(
             self.retry_policy(),
             self.vendor(),
             what,
             build,
-            move |status, retry_after, body| classify_response(provider, status, retry_after, body),
+            move |status, retry_after, body| {
+                classify_response(provider, lang, status, retry_after, body)
+            },
         )
         .await
     }
@@ -1106,11 +1132,17 @@ mod tests {
     fn status_classification() {
         let p = AiProvider::OpenAi;
         assert!(matches!(
-            classify_response(p, StatusCode::OK, None, "{}".into()),
+            classify_response(p, UiLanguage::PtBr, StatusCode::OK, None, "{}".into()),
             Outcome::Ok(_)
         ));
         let unauthorized = r#"{"error":{"message":"Incorrect API key provided","type":"invalid_request_error","code":"invalid_api_key"}}"#;
-        match classify_response(p, StatusCode::UNAUTHORIZED, None, unauthorized.into()) {
+        match classify_response(
+            p,
+            UiLanguage::PtBr,
+            StatusCode::UNAUTHORIZED,
+            None,
+            unauthorized.into(),
+        ) {
             Outcome::Fatal(CoreError::Ai(msg)) => {
                 assert!(msg.contains("invalid api key (HTTP 401)"), "{msg}");
                 assert!(msg.contains("Incorrect API key provided"), "{msg}");
@@ -1118,22 +1150,46 @@ mod tests {
             other => panic!("unexpected {other:?}"),
         }
         assert!(matches!(
-            classify_response(p, StatusCode::FORBIDDEN, None, "".into()),
+            classify_response(p, UiLanguage::PtBr, StatusCode::FORBIDDEN, None, "".into()),
             Outcome::Fatal(CoreError::Ai(_))
         ));
         assert!(matches!(
-            classify_response(p, StatusCode::BAD_REQUEST, None, "bad".into()),
+            classify_response(
+                p,
+                UiLanguage::PtBr,
+                StatusCode::BAD_REQUEST,
+                None,
+                "bad".into()
+            ),
             Outcome::Fatal(CoreError::Invalid(_))
         ));
         assert!(matches!(
-            classify_response(p, StatusCode::PAYLOAD_TOO_LARGE, None, "".into()),
+            classify_response(
+                p,
+                UiLanguage::PtBr,
+                StatusCode::PAYLOAD_TOO_LARGE,
+                None,
+                "".into()
+            ),
             Outcome::Fatal(CoreError::Invalid(_))
         ));
         assert!(matches!(
-            classify_response(p, StatusCode::UNPROCESSABLE_ENTITY, None, "".into()),
+            classify_response(
+                p,
+                UiLanguage::PtBr,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                None,
+                "".into()
+            ),
             Outcome::Fatal(CoreError::Invalid(_))
         ));
-        match classify_response(p, StatusCode::TOO_MANY_REQUESTS, Some(7), "".into()) {
+        match classify_response(
+            p,
+            UiLanguage::PtBr,
+            StatusCode::TOO_MANY_REQUESTS,
+            Some(7),
+            "".into(),
+        ) {
             Outcome::Retry {
                 error: RetryableError::RateLimited { retry_after_secs },
                 wait,
@@ -1145,7 +1201,13 @@ mod tests {
         }
         // Without the header the message hint is used.
         let hinted = r#"{"error":{"message":"Rate limit reached. Please try again in 3s.","type":"requests","code":"rate_limit_exceeded"}}"#;
-        match classify_response(p, StatusCode::TOO_MANY_REQUESTS, None, hinted.into()) {
+        match classify_response(
+            p,
+            UiLanguage::PtBr,
+            StatusCode::TOO_MANY_REQUESTS,
+            None,
+            hinted.into(),
+        ) {
             Outcome::Retry { wait, .. } => assert_eq!(wait, Some(Duration::from_secs(3))),
             other => panic!("unexpected {other:?}"),
         }
@@ -1153,7 +1215,7 @@ mod tests {
             let status = StatusCode::from_u16(code).unwrap();
             assert!(
                 matches!(
-                    classify_response(p, status, None, "".into()),
+                    classify_response(p, UiLanguage::PtBr, status, None, "".into()),
                     Outcome::Retry {
                         error: RetryableError::Transient(_),
                         wait: None
@@ -1163,7 +1225,13 @@ mod tests {
             );
         }
         assert!(matches!(
-            classify_response(p, StatusCode::IM_A_TEAPOT, None, "".into()),
+            classify_response(
+                p,
+                UiLanguage::PtBr,
+                StatusCode::IM_A_TEAPOT,
+                None,
+                "".into()
+            ),
             Outcome::Fatal(CoreError::Ai(_))
         ));
     }
@@ -1172,7 +1240,13 @@ mod tests {
     fn billing_and_model_rejections() {
         let p = AiProvider::OpenAi;
         let quota = r#"{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","param":null,"code":"insufficient_quota"}}"#;
-        match classify_response(p, StatusCode::TOO_MANY_REQUESTS, None, quota.into()) {
+        match classify_response(
+            p,
+            UiLanguage::PtBr,
+            StatusCode::TOO_MANY_REQUESTS,
+            None,
+            quota.into(),
+        ) {
             Outcome::Fatal(CoreError::AiRejected(msg)) => {
                 assert!(msg.starts_with("cobrança:"), "{msg}");
                 assert!(msg.contains("exceeded your current quota"), "{msg}");
@@ -1182,34 +1256,73 @@ mod tests {
         }
         let hard_limit = r#"{"error":{"message":"Billing hard limit has been reached","type":"invalid_request_error","code":"billing_hard_limit_reached"}}"#;
         assert!(matches!(
-            classify_response(p, StatusCode::TOO_MANY_REQUESTS, None, hard_limit.into()),
+            classify_response(p, UiLanguage::PtBr, StatusCode::TOO_MANY_REQUESTS, None, hard_limit.into()),
             Outcome::Fatal(CoreError::AiRejected(m)) if m.starts_with("cobrança:")
         ));
         assert!(matches!(
-            classify_response(AiProvider::Xai, StatusCode::PAYMENT_REQUIRED, None, "".into()),
+            classify_response(AiProvider::Xai, UiLanguage::PtBr, StatusCode::PAYMENT_REQUIRED, None, "".into()),
             Outcome::Fatal(CoreError::AiRejected(m)) if m.contains("xAI Grok") && m.contains("HTTP 402")
         ));
         let model = r#"{"error":{"message":"The model `gpt-9` does not exist or you do not have access to it.","type":"invalid_request_error","param":null,"code":"model_not_found"}}"#;
-        match classify_response(p, StatusCode::NOT_FOUND, None, model.into()) {
+        match classify_response(
+            p,
+            UiLanguage::PtBr,
+            StatusCode::NOT_FOUND,
+            None,
+            model.into(),
+        ) {
             Outcome::Fatal(CoreError::AiRejected(msg)) => {
                 assert!(msg.starts_with("modelo não encontrado"), "{msg}");
                 assert!(msg.contains("gpt-9"), "{msg}");
             }
             other => panic!("unexpected {other:?}"),
         }
+        // The same rejections, worded in English.
+        match classify_response(
+            p,
+            UiLanguage::En,
+            StatusCode::TOO_MANY_REQUESTS,
+            None,
+            quota.into(),
+        ) {
+            Outcome::Fatal(CoreError::AiRejected(msg)) => {
+                assert!(msg.starts_with("billing: your OpenAI account"), "{msg}");
+                assert!(
+                    msg.contains("Check billing at https://platform.openai.com"),
+                    "{msg}"
+                );
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        match classify_response(p, UiLanguage::En, StatusCode::NOT_FOUND, None, model.into()) {
+            Outcome::Fatal(CoreError::AiRejected(msg)) => {
+                assert!(
+                    msg.starts_with("model not found or unavailable to your OpenAI account"),
+                    "{msg}"
+                );
+                assert!(msg.contains("gpt-9"), "{msg}");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
         // The code alone is enough, whatever the status.
         assert!(matches!(
-            classify_response(p, StatusCode::BAD_REQUEST, None, model.into()),
+            classify_response(
+                p,
+                UiLanguage::PtBr,
+                StatusCode::BAD_REQUEST,
+                None,
+                model.into()
+            ),
             Outcome::Fatal(CoreError::AiRejected(_))
         ));
         assert!(matches!(
-            classify_response(p, StatusCode::NOT_FOUND, None, "".into()),
+            classify_response(p, UiLanguage::PtBr, StatusCode::NOT_FOUND, None, "".into()),
             Outcome::Fatal(CoreError::AiRejected(_))
         ));
         // Other 400 bodies stay request errors.
         let other400 = r#"{"error":{"message":"Unsupported parameter: 'max_tokens'","type":"invalid_request_error","param":"max_tokens","code":"unsupported_parameter"}}"#;
         assert!(matches!(
-            classify_response(p, StatusCode::BAD_REQUEST, None, other400.into()),
+            classify_response(p, UiLanguage::PtBr, StatusCode::BAD_REQUEST, None, other400.into()),
             Outcome::Fatal(CoreError::Invalid(m)) if m.contains("max_tokens")
         ));
     }

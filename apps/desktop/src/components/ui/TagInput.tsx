@@ -1,6 +1,7 @@
 import { X } from 'lucide-react';
 import { useState, type KeyboardEvent } from 'react';
 import clsx from 'clsx';
+import { useT } from '../../i18n';
 
 interface Props {
   value: string[];
@@ -11,8 +12,10 @@ interface Props {
   className?: string;
 }
 
-export function TagInput({ value, onChange, placeholder = 'Adicionar…', id, disabled, className }: Props) {
+export function TagInput({ value, onChange, placeholder, id, disabled, className }: Props) {
   const [draft, setDraft] = useState('');
+  const t = useT();
+  const hint = placeholder ?? t('ui.tag_placeholder');
 
   const commit = () => {
     const parts = draft
@@ -45,7 +48,7 @@ export function TagInput({ value, onChange, placeholder = 'Adicionar…', id, di
           {tag}
           <button
             type="button"
-            aria-label={`Remover ${tag}`}
+            aria-label={t('ui.remove_tag', { tag })}
             className="rounded p-0.5 text-ink-3 hover:bg-panel-3 hover:text-ink"
             disabled={disabled}
             onClick={() => onChange(value.filter((t) => t !== tag))}
@@ -61,7 +64,7 @@ export function TagInput({ value, onChange, placeholder = 'Adicionar…', id, di
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={onKey}
         onBlur={commit}
-        placeholder={value.length ? '' : placeholder}
+        placeholder={value.length ? '' : hint}
         className="h-6 min-w-24 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-4"
       />
     </div>

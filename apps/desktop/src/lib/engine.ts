@@ -1,4 +1,6 @@
 import { useEffect } from 'react';
+import { hasKey, t } from '../i18n';
+import { fmtDateLong } from './format';
 import { onEngineEvent } from './ipc';
 import { useAppStore } from './store';
 import { useToastStore } from './toast';
@@ -24,8 +26,9 @@ export function useEngineEvents(): void {
       }
       applyEvent(e);
       if (e.type === 'nudge') push({ kind: 'info', title: e.nudge.title, message: e.nudge.message });
-      if (e.type === 'report_ready') push({ kind: 'success', title: 'Relatório pronto', message: `Relatório de ${e.report.date} gerado.` });
-      if (e.type === 'permission_required') push({ kind: 'error', title: 'Permissão necessária', message: `O ubiqX precisa da permissão: ${e.permission}.` });
+      // t() at event time, so the toast follows the language selected when the event arrives.
+      if (e.type === 'report_ready') push({ kind: 'success', title: t('ui.report_ready_title'), message: t('ui.report_ready_body', { date: fmtDateLong(e.report.date) }) });
+      if (e.type === 'permission_required') push({ kind: 'error', title: t('ui.permission_required_title'), message: t('ui.permission_required_body', { permission: hasKey(`settings.permissions.${e.permission}.label`) ? t(`settings.permissions.${e.permission}.label`) : e.permission }) });
     }).then((u) => {
       if (disposed) u();
       else unsub = u;

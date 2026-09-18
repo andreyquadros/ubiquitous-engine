@@ -1,8 +1,15 @@
 import '@testing-library/jest-dom/vitest';
-import { afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
+import { setLocale } from '../i18n';
 
-afterEach(() => cleanup());
+// Tests assert Portuguese copy: pin the locale (jsdom reports navigator.language = en-US) before and after every test.
+setLocale('pt-BR');
+beforeEach(() => setLocale('pt-BR'));
+afterEach(() => {
+  cleanup();
+  setLocale('pt-BR');
+});
 
 // jsdom lacks a few browser APIs used by charts, theme and the mascot probe.
 class RO {

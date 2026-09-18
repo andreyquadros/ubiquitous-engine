@@ -1,7 +1,8 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
-import { categoryById, UNCATEGORIZED_COLOR } from '../../lib/categories';
+import { categoryById, categoryLabel, UNCATEGORIZED_COLOR } from '../../lib/categories';
 import { fmtDuration, fmtHours } from '../../lib/format';
 import type { Category, CategoryTotal } from '../../lib/types';
+import { useT } from '../../i18n';
 
 interface Datum {
   id: string;
@@ -12,15 +13,16 @@ interface Datum {
 
 /** Donut of hours per category with the total in Sora at the centre and a compact legend. */
 export function CategoryDonut({ totals, categories, height = 200 }: { totals: CategoryTotal[]; categories: Category[]; height?: number }) {
+  const t = useT();
   const data: Datum[] = totals
-    .filter((t) => t.secs > 0)
-    .map((t) => {
-      const cat = categoryById(categories, t.category_id);
-      return { id: t.category_id ?? 'none', name: cat?.name ?? 'Sem categoria', secs: t.secs, color: cat?.color ?? UNCATEGORIZED_COLOR };
+    .filter((tot) => tot.secs > 0)
+    .map((tot) => {
+      const cat = categoryById(categories, tot.category_id);
+      return { id: tot.category_id ?? 'none', name: categoryLabel(cat), secs: tot.secs, color: cat?.color ?? UNCATEGORIZED_COLOR };
     });
   const total = data.reduce((s, d) => s + d.secs, 0);
 
-  if (!data.length) return <p className="py-10 text-center text-sm text-ink-3">Nada registrado neste dia ainda.</p>;
+  if (!data.length) return <p className="py-10 text-center text-sm text-ink-3">{t('charts.nothing_recorded')}</p>;
 
   return (
     <div className="flex items-center gap-4">
@@ -51,10 +53,10 @@ export function CategoryDonut({ totals, categories, height = 200 }: { totals: Ca
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
           <span className="display num text-lg">{fmtHours(total)}</span>
-          <span className="text-[10px] text-ink-3">registradas</span>
+          <span className="text-[10px] text-ink-3">{t('charts.recorded')}</span>
         </div>
       </div>
-      <ul className="flex min-w-0 flex-1 flex-col gap-1.5" aria-label="Legenda">
+      <ul className="flex min-w-0 flex-1 flex-col gap-1.5" aria-label={t('charts.legend')}>
         {data.map((d) => (
           <li key={d.id} className="flex items-center gap-2 text-[11px]">
             <span className="size-2.5 shrink-0 rounded-full" style={{ background: d.color }} />

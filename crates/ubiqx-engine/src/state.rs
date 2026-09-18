@@ -38,6 +38,10 @@ impl EngineState {
         settings: Settings,
         open_block: Option<ActivityBlock>,
     ) -> Arc<Self> {
+        // Stored settings may predate a validation rule (or carry a language tag spelled
+        // differently): they go through the same sanitising as a settings write.
+        let mut settings = settings;
+        settings.sanitize();
         let mut cfg = SegmenterConfig::from(&settings);
         cfg.private_mode = settings.is_private(deps.clock.now());
         let health = key_health(&deps, &settings);
@@ -69,8 +73,9 @@ impl EngineState {
     /// Turning tracking off (or flipping private mode) closes the open block right away, so the
     /// dashboard never keeps extending a block while nothing is being sampled.
     pub fn apply_settings(&self, mut settings: Settings) -> CoreResult<()> {
-        // Model ids of another vendor never survive a provider switch.
-        settings.reconcile_models();
+        // Model ids of another vendor never survive a provider switch, and the language tag
+        // is stored in its canonical spelling (`pt-BR` / `en`).
+        settings.sanitize();
         self.deps.repos.settings.save(&settings)?;
         let now = self.now();
         let mut cfg = SegmenterConfig::from(&settings);

@@ -3,6 +3,7 @@ import { useEffect, useState, type PointerEvent } from 'react';
 import clsx from 'clsx';
 import type { Mood } from '../../lib/types';
 import { MOOD_GLOW } from './moods';
+import { useT } from '../../i18n';
 
 /** The user's own UBI art, installed by scripts/install-ubi-model.sh. */
 export const PNG_URL = '/ubi/ubi.png';
@@ -228,6 +229,7 @@ function MoodOverlay({ mood, reduce }: { mood: Mood; reduce: boolean }) {
  */
 export function UbiImage({ mood, size = 160, crop = 'full', parallax = true, glowFloor = true, className, src }: UbiImageProps) {
   const [cut, setCut] = useState<Cutout | null>(null);
+  const t = useT();
   const reduce = !!useReducedMotion();
   const glow = MOOD_GLOW[mood];
   const rx = useSpring(useMotionValue(0), { stiffness: 120, damping: 14 });
@@ -269,7 +271,7 @@ export function UbiImage({ mood, size = 160, crop = 'full', parallax = true, glo
         data-testid="ubi-png"
         data-mood={mood}
         role="img"
-        aria-label={`UBI, o mascote (${mood})`}
+        aria-label={t('ubi.mascot', { mood: t(`common.mood.${mood}`) })}
       >
         <img src={cut.url} alt="" draggable={false} className="absolute max-w-none select-none" style={{ width: W, height: H, left: size / 2 - W / 2, top: size / 2 - H * 0.27 }} />
       </span>
@@ -285,7 +287,7 @@ export function UbiImage({ mood, size = 160, crop = 'full', parallax = true, glo
       data-testid="ubi-png"
       data-mood={mood}
       role="img"
-      aria-label={`UBI, o mascote (${mood})`}
+      aria-label={t('ubi.mascot', { mood: t(`common.mood.${mood}`) })}
       onPointerMove={onMove}
       onPointerLeave={onLeave}
     >

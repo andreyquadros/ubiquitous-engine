@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { focusColor } from '../../lib/format';
+import { useT } from '../../i18n';
 
 interface Datum {
   hour: number;
@@ -42,8 +43,9 @@ function RisingBar({ x = 0, y = 0, width = 0, height = 0, fill, index = 0, live 
 
 export function HourlyFocus({ hourly, height = 160, animate = false }: { hourly: (number | null)[]; height?: number; animate?: boolean }) {
   const reduce = useReducedMotion();
+  const t = useT();
   const live = animate && !reduce;
-  const data: Datum[] = hourly.map((score, hour) => ({ hour, label: `${String(hour).padStart(2, '0')}h`, score }));
+  const data: Datum[] = hourly.map((score, hour) => ({ hour, label: t('charts.hour_tick', { hour: String(hour).padStart(2, '0') }), score }));
   const first = data.findIndex((d) => d.score !== null);
   const last = data.length - 1 - [...data].reverse().findIndex((d) => d.score !== null);
   const visible = first === -1 ? data.slice(6, 22) : data.slice(Math.max(0, first - 1), Math.min(24, last + 2));
@@ -62,7 +64,7 @@ export function HourlyFocus({ hourly, height = 160, animate = false }: { hourly:
             return (
               <div className="glass px-3 py-2 text-xs">
                 <span className="font-medium">{p.label}</span>
-                <span className="num ml-2 text-ink-2">{p.score === null ? 'sem dados' : `foco ${p.score}`}</span>
+                <span className="num ml-2 text-ink-2">{p.score === null ? t('charts.no_data') : t('charts.focus_value', { score: p.score })}</span>
               </div>
             );
           }}

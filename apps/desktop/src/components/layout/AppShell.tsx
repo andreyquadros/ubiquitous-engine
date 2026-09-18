@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useEngineEvents } from '../../lib/engine';
+import { useT } from '../../i18n';
 import { useAppStore } from '../../lib/store';
 import { Toaster } from '../../lib/toast';
 import { Spinner } from '../ui/misc';
@@ -12,6 +13,7 @@ export function Gate() {
   const settingsError = useAppStore((s) => s.settingsError);
   const loadSettings = useAppStore((s) => s.loadSettings);
   const location = useLocation();
+  const t = useT();
 
   useEffect(() => {
     if (!settingsView) void loadSettings();
@@ -21,9 +23,9 @@ export function Gate() {
     return (
       <div className="flex h-screen items-center justify-center p-8 text-center">
         <div className="panel max-w-md p-6">
-          <h1 className="display text-lg">Não foi possível conectar ao motor do ubiqX</h1>
+          <h1 className="display text-lg">{t('nav.engine_error_title')}</h1>
           <p className="mt-2 text-sm text-ink-2">{settingsError}</p>
-          <p className="mt-3 text-xs text-ink-3">Feche e abra o app de novo. Se continuar, veja os logs em Configurações.</p>
+          <p className="mt-3 text-xs text-ink-3">{t('nav.engine_error_hint')}</p>
         </div>
       </div>
     );

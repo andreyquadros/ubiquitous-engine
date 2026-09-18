@@ -2,6 +2,7 @@
 // (browser `vite dev`, Vitest, Playwright screenshots). It mutates its own state for the
 // write commands and emits fake engine events so the UI behaves like the real app.
 
+import { getLocale } from '../i18n';
 import {
   SYSTEM_CATEGORIES,
   type ActivityBlock,
@@ -416,10 +417,36 @@ const seedReports = (date: IsoDate): DailyReport[] => [
   },
 ];
 
+/** The real engine writes nudges, advice and reports in Settings.language; the mock follows the UI locale instead. */
+const en = (): boolean => getLocale() === 'en';
+/** Picks the Portuguese or English variant of a mock text for the current locale. */
+const pick = (pt: string, english: string): string => (en() ? english : pt);
+
 const seedNudges = (date: IsoDate): Nudge[] => [
-  { id: uid('ndg'), at: atLocal(date, 10, 2), kind: 'distracted', title: 'YouTube de novo?', message: 'Você passou 10 min no YouTube. Quer voltar ao plano de ensino de Programação Web II?', seen: true },
-  { id: uid('ndg'), at: atLocal(date, 11, 30), kind: 'praise', title: 'Foco de 70 minutos!', message: 'Belo bloco de código na API da Incubadora. Continue assim — mas lembre de beber água.', seen: true },
-  { id: uid('ndg'), at: atLocal(date, 16, 25), kind: 'break_suggested', title: 'Hora de uma pausa', message: 'Você está há 1h50 sem pausa. Que tal esticar as pernas por 5 minutos antes de lançar as notas?', seen: false },
+  {
+    id: uid('ndg'),
+    at: atLocal(date, 10, 2),
+    kind: 'distracted',
+    title: pick('YouTube de novo?', 'YouTube again?'),
+    message: pick('Você passou 10 min no YouTube. Quer voltar ao plano de ensino de Programação Web II?', 'You spent 10 min on YouTube. Want to get back to the Web Programming II lesson plan?'),
+    seen: true,
+  },
+  {
+    id: uid('ndg'),
+    at: atLocal(date, 11, 30),
+    kind: 'praise',
+    title: pick('Foco de 70 minutos!', '70 minutes of focus!'),
+    message: pick('Belo bloco de código na API da Incubadora. Continue assim — mas lembre de beber água.', 'Nice stretch of coding on the Incubator API. Keep it up, and remember to drink some water.'),
+    seen: true,
+  },
+  {
+    id: uid('ndg'),
+    at: atLocal(date, 16, 25),
+    kind: 'break_suggested',
+    title: pick('Hora de uma pausa', 'Time for a break'),
+    message: pick('Você está há 1h50 sem pausa. Que tal esticar as pernas por 5 minutos antes de lançar as notas?', "You've been going for 1h50 without a break. How about stretching your legs for 5 minutes before entering the grades?"),
+    seen: false,
+  },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -889,12 +916,16 @@ function buildReport(date: IsoDate, categoryId: Id, previous?: DailyReport): Dai
     .sort((a, b) => b.minutes - a.minutes);
   const total = blocks.reduce((s, b) => s + secsBetween(b.started_at, b.ended_at), 0);
   const top = items.slice(0, 3).map((i) => i.activity);
-  const hours = (total / 3600).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
-  const summary_md =
-    `## Resumo do dia — ${cat?.name ?? categoryId}\n\n` +
-    (items.length
-      ? `Foram **${hours} h** em ${items.length} atividade(s). ${top.length ? `As principais: ${top.map((t) => `_${t}_`).join('; ')}.` : ''}\n\n**Destaques**\n\n${top.map((t) => `- ${t}`).join('\n')}\n`
-      : `Nenhuma atividade registrada nesta categoria em ${date}.\n`);
+  const hours = (total / 3600).toLocaleString(en() ? 'en-US' : 'pt-BR', { maximumFractionDigits: 1 });
+  const summary_md = en()
+    ? `## Day summary — ${cat?.name ?? categoryId}\n\n` +
+      (items.length
+        ? `**${hours} h** across ${items.length} ${items.length === 1 ? 'activity' : 'activities'}. ${top.length ? `Main ones: ${top.map((t) => `_${t}_`).join('; ')}.` : ''}\n\n**Highlights**\n\n${top.map((t) => `- ${t}`).join('\n')}\n`
+        : `No activity recorded in this category on ${date}.\n`)
+    : `## Resumo do dia — ${cat?.name ?? categoryId}\n\n` +
+      (items.length
+        ? `Foram **${hours} h** em ${items.length} atividade(s). ${top.length ? `As principais: ${top.map((t) => `_${t}_`).join('; ')}.` : ''}\n\n**Destaques**\n\n${top.map((t) => `- ${t}`).join('\n')}\n`
+        : `Nenhuma atividade registrada nesta categoria em ${date}.\n`);
   return {
     id: previous?.id ?? uid('rep'),
     date,
@@ -1016,11 +1047,11 @@ function fakeTick(): void {
       id: uid('ndg'),
       at: new Date().toISOString(),
       kind: tick % 4 === 0 ? 'praise' : 'attention',
-      title: tick % 4 === 0 ? 'Bom ritmo!' : 'Bloco novo aguardando revisão',
+      title: tick % 4 === 0 ? pick('Bom ritmo!', 'Good pace!') : pick('Bloco novo aguardando revisão', 'New block waiting for review'),
       message:
         tick % 4 === 0
-          ? 'Você está mantendo um bom ritmo nesta última hora. Que tal fechar essa tarefa antes de trocar de contexto?'
-          : 'Classifiquei um bloco com baixa confiança. Dê uma olhada na Revisão quando puder.',
+          ? pick('Você está mantendo um bom ritmo nesta última hora. Que tal fechar essa tarefa antes de trocar de contexto?', "You've kept a good pace this past hour. How about wrapping up this task before switching context?")
+          : pick('Classifiquei um bloco com baixa confiança. Dê uma olhada na Revisão quando puder.', 'I classified a block with low confidence. Take a look at Review when you get a chance.'),
       seen: false,
     };
     S.nudges.unshift(nudge);
@@ -1114,7 +1145,7 @@ const commands: Record<string, Cmd> = {
       ended_at: endedAt,
       app_name: 'Manual',
       app_id: 'manual',
-      title: note ?? 'Atividade manual',
+      title: note ?? pick('Atividade manual', 'Manual activity'),
       title_key: titleKey(note ?? 'atividade manual'),
       url: null,
       domain: null,
@@ -1251,6 +1282,18 @@ const commands: Record<string, Cmd> = {
     S.advices += 1;
     S.usage.calls += 1;
     S.usage.cost_usd = Math.round((S.usage.cost_usd + 0.03) * 100) / 100;
+    if (en()) {
+      return {
+        headline: 'A productive week, but your afternoons were fragmented.',
+        recommendations: [
+          'Your mornings (8 to 11) hold your longest focus blocks: keep them for development (api-incubadora and the sensor ingestion) and push email and SEI to after 4 pm.',
+          'Gmail showed up 6 times during the day in short blocks. Batching it into 2 fixed sessions would cut about 10 context switches a day.',
+          'Tuesdays and Thursdays are packed with Teams meetings. Block 90 min before them to prepare mentoring sessions; AgroTech asked for pitch material twice.',
+          'YouTube blocks were classified as Smart Cities in 1 of 3 cases: create a “TEDx → Smart Cities” rule to skip the manual review.',
+        ],
+        model: S.settings.models.report,
+      };
+    }
     return {
       headline: 'Sua semana foi produtiva, mas fragmentada nas tardes.',
       recommendations: [
@@ -1283,16 +1326,22 @@ const commands: Record<string, Cmd> = {
     if (key === null || key === '') {
       S.keyHints[provider] = null;
       refreshAiHealth();
-      return { valid: true, message: `Chave da ${info.label} removida do Keychain.` };
+      return { valid: true, message: pick(`Chave da ${info.label} removida do Keychain.`, `${info.label} key removed from the Keychain.`) };
     }
     if (keyLooksValid(provider, key)) {
       S.keyHints[provider] = key.slice(-4);
       refreshAiHealth();
       const model = provider === S.settings.ai_provider ? S.settings.models.classify : info.default_models.classify;
-      return { valid: true, message: `Chave válida — ${info.label} (${model}) respondeu em 412 ms.` };
+      return { valid: true, message: pick(`Chave válida — ${info.label} (${model}) respondeu em 412 ms.`, `Valid key: ${info.label} (${model}) answered in 412 ms.`) };
     }
     const hint = provider === 'openai' ? 'sk-… ou sk-proj-…' : `${info.key_prefix}…`;
-    return { valid: false, message: `Chave inválida: a API da ${info.label} respondeu 401 (authentication_error). Chaves da ${info.label} começam com ${hint}.` };
+    return {
+      valid: false,
+      message: pick(
+        `Chave inválida: a API da ${info.label} respondeu 401 (authentication_error). Chaves da ${info.label} começam com ${hint}.`,
+        `Invalid key: the ${info.label} API answered 401 (authentication_error). ${info.label} keys start with ${hint}.`,
+      ),
+    };
   },
   list_models: async (a): Promise<string[]> => {
     await sleep(LATENCY_MS ? 500 : 0);

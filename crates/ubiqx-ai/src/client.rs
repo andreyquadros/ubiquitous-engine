@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::{debug, info, trace, warn};
 use ubiqx_core::ports::{AiUsage, AiUsageKind, UsageRepo};
-use ubiqx_core::{CoreError, CoreResult};
+use ubiqx_core::{CoreError, CoreResult, UiLanguage};
 
 use crate::pricing;
 pub use crate::retry::backoff_delay;
@@ -54,6 +54,19 @@ pub trait ApiKeySource: Send + Sync {
     /// `None` when no key is configured (the client then returns [`CoreError::AiNotConfigured`]
     /// without touching the network).
     fn api_key(&self) -> Option<String>;
+}
+
+/// Where the UI language comes from, for the few messages a client writes for the user
+/// (account and model rejections). Read when such a message is built, so a language change
+/// in settings applies at once. A [`UiLanguage`] value is a fixed source.
+pub trait LanguageSource: Send + Sync {
+    fn language(&self) -> UiLanguage;
+}
+
+impl LanguageSource for UiLanguage {
+    fn language(&self) -> UiLanguage {
+        *self
+    }
 }
 
 /// A fixed key (CLI, tests). Blank strings count as "not configured".
@@ -415,8 +428,8 @@ fn error_message(body: &str) -> String {
 
 /// Provider-side rejections that are neither transient nor the request's fault: a billing
 /// problem (no credits) or a model the account cannot use. The user has to act, so the
-/// message is written for them (pt-BR), keeping the provider's own text.
-fn rejection(code: u16, body: &str) -> Option<CoreError> {
+/// message is written for them in the UI language, keeping the provider's own text.
+fn rejection(code: u16, body: &str, lang: UiLanguage) -> Option<CoreError> {
     let (kind, msg) = parse_error(body)?;
     let lower = msg.to_ascii_lowercase();
     let billing = (code == 400
@@ -424,14 +437,24 @@ fn rejection(code: u16, body: &str) -> Option<CoreError> {
         && (lower.contains("credit balance") || lower.contains("plans & billing")))
         || (code == 402 && kind == "billing_error");
     if billing {
-        return Some(CoreError::AiRejected(format!(
-            "cobrança: sua conta Anthropic não tem créditos disponíveis ({msg}). Adicione créditos em console.anthropic.com → Plans & Billing."
-        )));
+        return Some(CoreError::AiRejected(match lang {
+            UiLanguage::PtBr => format!(
+                "cobrança: sua conta Anthropic não tem créditos disponíveis ({msg}). Adicione créditos em console.anthropic.com → Plans & Billing."
+            ),
+            UiLanguage::En => format!(
+                "billing: your Anthropic account has no credits available ({msg}). Add credits at console.anthropic.com → Plans & Billing."
+            ),
+        }));
     }
     if code == 404 && kind == "not_found_error" && lower.starts_with("model:") {
-        return Some(CoreError::AiRejected(format!(
-            "modelo não encontrado ou indisponível para a sua conta ({msg}). Verifique o modelo em Configurações → IA."
-        )));
+        return Some(CoreError::AiRejected(match lang {
+            UiLanguage::PtBr => format!(
+                "modelo não encontrado ou indisponível para a sua conta ({msg}). Verifique o modelo em Configurações → IA."
+            ),
+            UiLanguage::En => format!(
+                "model not found or unavailable to your account ({msg}). Check the model under Settings → AI."
+            ),
+        }));
     }
     None
 }
@@ -478,6 +501,7 @@ fn model_ids(models_body: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------------------------
 
 fn classify_response(
+    lang: UiLanguage,
     status: reqwest::StatusCode,
     retry_after: Option<u64>,
     body: String,
@@ -489,8 +513,8 @@ fn classify_response(
             "invalid api key (HTTP {code}): {}",
             error_message(&body)
         ))),
-        400 | 402 | 404 if rejection(code, &body).is_some() => {
-            Outcome::Fatal(rejection(code, &body).expect("checked above"))
+        400 | 402 | 404 if rejection(code, &body, lang).is_some() => {
+            Outcome::Fatal(rejection(code, &body, lang).expect("checked above"))
         }
         400 | 404 | 413 | 422 => Outcome::Fatal(CoreError::Invalid(format!(
             "HTTP {code}: {}",
@@ -523,6 +547,7 @@ pub struct AnthropicClient {
     config: AnthropicConfig,
     keys: Arc<dyn ApiKeySource>,
     usage: Arc<dyn UsageRepo>,
+    language: Arc<dyn LanguageSource>,
 }
 
 impl fmt::Debug for AnthropicClient {
@@ -550,7 +575,14 @@ impl AnthropicClient {
             config,
             keys,
             usage,
+            language: Arc::new(UiLanguage::PtBr),
         })
+    }
+
+    /// Where the language of user-facing rejection messages comes from (pt-BR by default).
+    pub fn with_language_source(mut self, language: Arc<dyn LanguageSource>) -> Self {
+        self.language = language;
+        self
     }
 
     pub fn config(&self) -> &AnthropicConfig {
@@ -767,12 +799,13 @@ impl AnthropicClient {
     where
         F: Fn() -> reqwest::RequestBuilder,
     {
+        let lang = self.language.language();
         retry::send_with_retry(
             self.retry_policy(),
             "anthropic",
             what,
             build,
-            classify_response,
+            move |status, retry_after, body| classify_response(lang, status, retry_after, body),
         )
         .await
     }
@@ -865,10 +898,10 @@ mod tests {
     fn status_classification() {
         use reqwest::StatusCode;
         assert!(matches!(
-            classify_response(StatusCode::OK, None, "{}".into()),
+            classify_response(UiLanguage::PtBr, StatusCode::OK, None, "{}".into()),
             Outcome::Ok(_)
         ));
-        match classify_response(
+        match classify_response(UiLanguage::PtBr,
             StatusCode::UNAUTHORIZED,
             None,
             r#"{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"#.into(),
@@ -880,14 +913,29 @@ mod tests {
             other => panic!("unexpected {other:?}"),
         }
         assert!(matches!(
-            classify_response(StatusCode::BAD_REQUEST, None, "bad".into()),
+            classify_response(
+                UiLanguage::PtBr,
+                StatusCode::BAD_REQUEST,
+                None,
+                "bad".into()
+            ),
             Outcome::Fatal(CoreError::Invalid(_))
         ));
         assert!(matches!(
-            classify_response(StatusCode::PAYLOAD_TOO_LARGE, None, "".into()),
+            classify_response(
+                UiLanguage::PtBr,
+                StatusCode::PAYLOAD_TOO_LARGE,
+                None,
+                "".into()
+            ),
             Outcome::Fatal(CoreError::Invalid(_))
         ));
-        match classify_response(StatusCode::TOO_MANY_REQUESTS, Some(7), "".into()) {
+        match classify_response(
+            UiLanguage::PtBr,
+            StatusCode::TOO_MANY_REQUESTS,
+            Some(7),
+            "".into(),
+        ) {
             Outcome::Retry {
                 error: RetryableError::RateLimited { retry_after_secs },
                 wait,
@@ -901,7 +949,7 @@ mod tests {
             let status = StatusCode::from_u16(code).unwrap();
             assert!(
                 matches!(
-                    classify_response(status, None, "".into()),
+                    classify_response(UiLanguage::PtBr, status, None, "".into()),
                     Outcome::Retry {
                         error: RetryableError::Transient(_),
                         wait: None
@@ -911,7 +959,12 @@ mod tests {
             );
         }
         assert!(matches!(
-            classify_response(StatusCode::PAYMENT_REQUIRED, None, "".into()),
+            classify_response(
+                UiLanguage::PtBr,
+                StatusCode::PAYMENT_REQUIRED,
+                None,
+                "".into()
+            ),
             Outcome::Fatal(CoreError::Ai(_))
         ));
     }
@@ -920,7 +973,12 @@ mod tests {
     fn billing_and_model_rejections_are_not_invalid_requests() {
         use reqwest::StatusCode;
         let credit = r#"{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}"#;
-        match classify_response(StatusCode::BAD_REQUEST, None, credit.into()) {
+        match classify_response(
+            UiLanguage::PtBr,
+            StatusCode::BAD_REQUEST,
+            None,
+            credit.into(),
+        ) {
             Outcome::Fatal(CoreError::AiRejected(msg)) => {
                 assert!(msg.starts_with("cobrança:"), "{msg}");
                 assert!(msg.contains("credit balance is too low"), "{msg}");
@@ -930,27 +988,55 @@ mod tests {
         let billing =
             r#"{"type":"error","error":{"type":"billing_error","message":"Billing problem."}}"#;
         assert!(matches!(
-            classify_response(StatusCode::PAYMENT_REQUIRED, None, billing.into()),
+            classify_response(UiLanguage::PtBr, StatusCode::PAYMENT_REQUIRED, None, billing.into()),
             Outcome::Fatal(CoreError::AiRejected(m)) if m.starts_with("cobrança:")
         ));
         let model = r#"{"type":"error","error":{"type":"not_found_error","message":"model: claude-haiku-9"}}"#;
-        match classify_response(StatusCode::NOT_FOUND, None, model.into()) {
+        match classify_response(UiLanguage::PtBr, StatusCode::NOT_FOUND, None, model.into()) {
             Outcome::Fatal(CoreError::AiRejected(msg)) => {
                 assert!(msg.starts_with("modelo não encontrado"), "{msg}");
                 assert!(msg.contains("claude-haiku-9"), "{msg}");
             }
             other => panic!("unexpected {other:?}"),
         }
+        // The same rejections, worded in English.
+        match classify_response(UiLanguage::En, StatusCode::BAD_REQUEST, None, credit.into()) {
+            Outcome::Fatal(CoreError::AiRejected(msg)) => {
+                assert!(msg.starts_with("billing: your Anthropic account"), "{msg}");
+                assert!(msg.contains("credit balance is too low"), "{msg}");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        match classify_response(UiLanguage::En, StatusCode::NOT_FOUND, None, model.into()) {
+            Outcome::Fatal(CoreError::AiRejected(msg)) => {
+                assert!(msg.starts_with("model not found"), "{msg}");
+                assert!(
+                    msg.ends_with("Check the model under Settings → AI."),
+                    "{msg}"
+                );
+            }
+            other => panic!("unexpected {other:?}"),
+        }
         // Other 400/404 bodies stay request errors.
         let other400 = r#"{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: too large"}}"#;
         assert!(matches!(
-            classify_response(StatusCode::BAD_REQUEST, None, other400.into()),
+            classify_response(
+                UiLanguage::PtBr,
+                StatusCode::BAD_REQUEST,
+                None,
+                other400.into()
+            ),
             Outcome::Fatal(CoreError::Invalid(_))
         ));
         let other404 =
             r#"{"type":"error","error":{"type":"not_found_error","message":"Not Found"}}"#;
         assert!(matches!(
-            classify_response(StatusCode::NOT_FOUND, None, other404.into()),
+            classify_response(
+                UiLanguage::PtBr,
+                StatusCode::NOT_FOUND,
+                None,
+                other404.into()
+            ),
             Outcome::Fatal(CoreError::Invalid(_))
         ));
     }

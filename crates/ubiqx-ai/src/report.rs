@@ -252,7 +252,8 @@ pub fn build_report(
         stale: false,
         edited: false,
     };
-    report.summary_md = render_summary_md(&report, &req.category);
+    report.summary_md =
+        render_summary_md(&report, &req.category, prompts::ui_language(&req.language));
     report
 }
 

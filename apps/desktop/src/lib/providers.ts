@@ -2,6 +2,7 @@
 // *fact* about a provider (label, console URL, key prefix, default models) comes from the
 // backend as `ProviderInfo`; this file only holds UI copy and pure model-id arithmetic.
 
+import { hasKey, t } from '../i18n';
 import type { AiModels, AiProvider, ApiKeyStatus, ProviderInfo, SettingsView } from './types';
 
 export const PROVIDER_IDS: AiProvider[] = ['anthropic', 'openai', 'xai'];
@@ -35,7 +36,7 @@ export const providerInfo = (view: SettingsView, id: AiProvider): ProviderInfo |
 
 export const keyStatus = (view: SettingsView, id: AiProvider): ApiKeyStatus => view.api_keys.find((k) => k.provider === id) ?? { provider: id, configured: false, hint: null };
 
-/** Marketing-free one-liners shown on the provider cards (pt-BR). Costs are rough estimates for ~8 h/day. */
+/** Marketing-free one-liners shown on the provider cards. Copy lives in i18n ('settings.provider.<id>.*'); costs are rough estimates for ~8 h/day. */
 export interface ProviderPitch {
   /** Short product name used in cards and summaries ("Claude", "OpenAI", "Grok"). */
   short: string;
@@ -45,21 +46,35 @@ export interface ProviderPitch {
   note?: string;
 }
 
+type Translate = (key: string) => string;
+
+/**
+ * The pitch of one provider in the current language. Inside a component pass the `t` from `useT()` so the
+ * component re-renders when the language changes: `providerPitch(id, t)`.
+ */
+export function providerPitch(id: AiProvider, tr: Translate = t): ProviderPitch {
+  const key = (field: string) => `settings.provider.${id}.${field}`;
+  const pitch: ProviderPitch = { short: tr(key('short')), pitch: tr(key('pitch')), cost: tr(key('cost')) };
+  if (hasKey(key('note'))) pitch.note = tr(key('note'));
+  return pitch;
+}
+
+const PITCH_FIELDS = ['short', 'pitch', 'cost', 'note'] as const;
+
+/** A pitch whose fields are read from i18n on every access, so `PROVIDER_PITCH[id].short` follows the locale. */
+const livePitch = (id: AiProvider): ProviderPitch => {
+  const o = {} as ProviderPitch;
+  for (const field of PITCH_FIELDS) Object.defineProperty(o, field, { get: () => providerPitch(id)[field], enumerable: true });
+  return o;
+};
+
+/**
+ * Live (locale-following) pitches keyed by provider. Reading a field returns the text for the locale at that
+ * moment; a component that only reads this map will not re-render on a language switch unless it also calls
+ * `useT()`/`useLocale()`. Prefer `providerPitch(id, t)` in components.
+ */
 export const PROVIDER_PITCH: Record<AiProvider, ProviderPitch> = {
-  anthropic: {
-    short: 'Claude',
-    pitch: 'Melhor leitura de contexto em português e relatórios com a sua voz.',
-    cost: 'US$ 3–6/mês',
-  },
-  openai: {
-    short: 'OpenAI',
-    pitch: 'Modelos GPT-5 rápidos e baratos, com visão e saída estruturada.',
-    cost: 'US$ 1–3/mês',
-    note: 'Entrar com ChatGPT (OAuth) hoje só identifica o usuário; para usar os modelos em apps de terceiros a OpenAI exige chave de API.',
-  },
-  xai: {
-    short: 'Grok',
-    pitch: 'Grok 4.1 Fast: o mais barato dos três, com visão e contexto longo.',
-    cost: 'US$ 0,50–2/mês',
-  },
+  anthropic: livePitch('anthropic'),
+  openai: livePitch('openai'),
+  xai: livePitch('xai'),
 };

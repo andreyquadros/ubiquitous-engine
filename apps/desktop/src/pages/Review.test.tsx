@@ -32,6 +32,7 @@ vi.mock('../lib/ipc', () => ({
 }));
 
 import { Review } from './Review';
+import { setLocale } from '../i18n';
 import { ipc } from '../lib/ipc';
 import { useAppStore } from '../lib/store';
 
@@ -87,5 +88,24 @@ describe('Review page', () => {
     fireEvent.keyDown(input, { key: '1' });
     expect(reclassifyGroup).not.toHaveBeenCalled();
     input.remove();
+  });
+
+  it('speaks English when the locale is en and keeps the number shortcuts', async () => {
+    setLocale('en');
+    render(
+      <MemoryRouter>
+        <Review />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getAllByTestId('review-row')).toHaveLength(2));
+    expect(screen.getByRole('heading', { level: 1, name: 'Review' })).toBeInTheDocument();
+    expect(screen.getByText(/2 groups await your decision, 9 min still uncategorized/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Classify now' })).toBeInTheDocument();
+    // the 1–9 hint is one translated sentence with the keys rendered as <kbd>
+    expect(screen.getByText((_, el) => el?.tagName === 'P' && el.textContent === 'Press 1 to 9 or pick a category on the right; your choice applies to all 2 blocks and teaches the classifier.')).toBeInTheDocument();
+    expect(screen.getByText('2 blocks')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: '1' });
+    await waitFor(() => expect(reclassifyGroup).toHaveBeenCalledWith('2026-09-17', 'net.whatsapp.WhatsApp|whatsapp', 'cat-ifro'));
   });
 });

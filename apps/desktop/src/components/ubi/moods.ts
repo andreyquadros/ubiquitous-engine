@@ -1,4 +1,6 @@
 import type { Mood } from '../../lib/types';
+import { t } from '../../i18n';
+import { MOODS } from '../../lib/format';
 
 /** Glow colour per mood: volt by default, UBI's sash ember when excited, rose when worried. */
 export const MOOD_GLOW: Record<Mood, string> = {
@@ -9,10 +11,15 @@ export const MOOD_GLOW: Record<Mood, string> = {
   worried: '#ff5c7a',
 };
 
-export const MOOD_TIP: Record<Mood, string> = {
-  sleeping: 'Tudo quieto por aqui. Quando começar, eu registro.',
-  calm: 'Dia tranquilo. Que tal um bloco de foco de 45 minutos?',
-  focused: 'Você está no ritmo. Eu cuido do registro — segue o jogo.',
-  excited: 'Que dia! Foco alto e poucas distrações. Orgulho de você.',
-  worried: 'Muitas trocas de contexto hoje. Vamos fechar uma coisa de cada vez?',
-};
+/** UBI's line for a mood, in the current language (`t('ubi.tip.<mood>')`). */
+export const moodTip = (mood: Mood): string => t(`ubi.tip.${mood}`);
+
+/**
+ * Live map kept for existing callers (`MOOD_TIP[mood]` follows the current locale on every read).
+ * Inside components prefer `const t = useT(); t(`ubi.tip.${mood}`)` so they re-render on a language change.
+ */
+export const MOOD_TIP: Record<Mood, string> = (() => {
+  const o = {} as Record<Mood, string>;
+  for (const m of MOODS) Object.defineProperty(o, m, { get: () => moodTip(m), enumerable: true });
+  return o;
+})();

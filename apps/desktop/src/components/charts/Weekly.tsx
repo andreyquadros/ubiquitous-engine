@@ -1,7 +1,8 @@
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { categoryById, UNCATEGORIZED_COLOR } from '../../lib/categories';
+import { categoryById, categoryLabel, UNCATEGORIZED_COLOR } from '../../lib/categories';
 import { fmtDateShort, fmtDuration, fmtWeekday } from '../../lib/format';
 import type { Category, DashboardData, IsoDate } from '../../lib/types';
+import { useT } from '../../i18n';
 
 export interface WeekDay {
   date: IsoDate;
@@ -12,15 +13,16 @@ type Row = Record<string, number | string> & { date: IsoDate; label: string };
 
 /** Stacked hours per category per day. */
 export function WeeklyStacked({ days, categories, height = 220 }: { days: WeekDay[]; categories: Category[]; height?: number }) {
+  const t = useT();
   const keys = new Map<string, { name: string; color: string }>();
   const rows: Row[] = days.map((d) => {
     const row: Row = { date: d.date, label: fmtWeekday(d.date) };
-    for (const t of d.data?.totals ?? []) {
-      if (t.category_id === 'sys-break' || t.category_id === 'sys-private') continue;
-      const id = t.category_id ?? 'none';
-      const cat = categoryById(categories, t.category_id);
-      keys.set(id, { name: cat?.name ?? 'Sem categoria', color: cat?.color ?? UNCATEGORIZED_COLOR });
-      row[id] = Math.round((t.secs / 3600) * 10) / 10;
+    for (const tot of d.data?.totals ?? []) {
+      if (tot.category_id === 'sys-break' || tot.category_id === 'sys-private') continue;
+      const id = tot.category_id ?? 'none';
+      const cat = categoryById(categories, tot.category_id);
+      keys.set(id, { name: categoryLabel(cat), color: cat?.color ?? UNCATEGORIZED_COLOR });
+      row[id] = Math.round((tot.secs / 3600) * 10) / 10;
     }
     return row;
   });
@@ -34,7 +36,7 @@ export function WeeklyStacked({ days, categories, height = 220 }: { days: WeekDa
         <BarChart data={rows} margin={{ top: 4, right: 4, bottom: 0, left: 4 }} barCategoryGap={14}>
           <CartesianGrid vertical={false} />
           <XAxis dataKey="label" axisLine={false} tickLine={false} tickMargin={8} />
-          <YAxis axisLine={false} tickLine={false} unit="h" width={40} tickMargin={6} />
+          <YAxis axisLine={false} tickLine={false} unit={t('charts.hours_unit')} width={40} tickMargin={6} />
           <Tooltip
             cursor={{ fill: 'color-mix(in oklab, var(--ink) 5%, transparent)', radius: 6 }}
             content={({ active, payload, label }) => {
@@ -61,7 +63,7 @@ export function WeeklyStacked({ days, categories, height = 220 }: { days: WeekDa
           ))}
         </BarChart>
       </ResponsiveContainer>
-      <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1" aria-label="Legenda">
+      <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1" aria-label={t('charts.legend')}>
         {series.map((id) => (
           <li key={id} className="flex items-center gap-1.5 text-xs text-ink-2">
             <span className="size-2.5 rounded-full" style={{ background: keys.get(id)?.color }} />
@@ -75,6 +77,7 @@ export function WeeklyStacked({ days, categories, height = 220 }: { days: WeekDa
 
 /** Focus score across the days, volt line with panel-filled dots. */
 export function FocusTrend({ days, height = 180 }: { days: WeekDay[]; height?: number }) {
+  const t = useT();
   const rows = days.map((d) => ({ date: d.date, label: fmtWeekday(d.date), score: d.data && d.data.stats.total_secs > 0 ? d.data.stats.focus_score : null }));
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -90,7 +93,7 @@ export function FocusTrend({ days, height = 180 }: { days: WeekDay[]; height?: n
             return (
               <div className="glass px-3 py-2 text-xs">
                 <span className="font-medium">{fmtDateShort(p.date)}</span>
-                <span className="num ml-2 text-ink-2">score {p.score ?? '—'}</span>
+                <span className="num ml-2 text-ink-2">{t('charts.score_value', { score: p.score ?? '—' })}</span>
               </div>
             );
           }}

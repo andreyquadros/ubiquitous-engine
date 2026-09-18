@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { ipc } from './ipc';
 import { applyTheme, initialTheme, type Theme } from './theme';
 import { todayIso } from './format';
+import { hasUrlLocaleOverride, normaliseLocale, setLocale, type Locale } from '../i18n';
 import type {
   AiHealth,
   Category,
@@ -30,6 +31,8 @@ interface AppState {
   loadSettings: () => Promise<SettingsView | null>;
   saveSettings: (patch: Partial<Settings>) => Promise<SettingsView | null>;
   applySettingsView: (v: SettingsView) => void;
+  /** Switches the UI language now and persists it as Settings.language. */
+  setLanguage: (locale: Locale) => Promise<SettingsView | null>;
 
   // categories
   categories: Category[];
@@ -93,7 +96,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().applySettingsView(v);
     return v;
   },
-  applySettingsView: (v) => set({ settingsView: v, trackerState: v.tracker_state, aiHealth: v.ai_health, settingsError: null }),
+  applySettingsView: (v) => {
+    set({ settingsView: v, trackerState: v.tracker_state, aiHealth: v.ai_health, settingsError: null });
+    // Settings.language is the persisted source of truth, unless `?lang=` overrides it (dev / screenshots).
+    if (!hasUrlLocaleOverride()) setLocale(normaliseLocale(v.settings.language));
+  },
+  setLanguage: async (locale) => {
+    setLocale(locale);
+    return get().saveSettings({ language: locale });
+  },
 
   categories: [],
   loadCategories: async (includeArchived = false) => {

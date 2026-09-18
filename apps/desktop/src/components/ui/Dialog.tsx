@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
 import clsx from 'clsx';
 import { IconButton } from './Button';
+import { useT } from '../../i18n';
 
 interface Props {
   open: boolean;
@@ -18,21 +19,23 @@ interface Props {
 export function Dialog({ open, onClose, title, description, children, footer, width = 'md' }: Props) {
   const panel = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
+  const t = useT();
+  const closeLabel = t('common.close');
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
-    const t = setTimeout(() => {
-      const el = panel.current?.querySelector<HTMLElement>('input, select, textarea, button:not([aria-label="Fechar"])');
+    const timer = setTimeout(() => {
+      const el = panel.current?.querySelector<HTMLElement>(`input, select, textarea, button:not([aria-label="${closeLabel}"])`);
       el?.focus();
     }, 30);
     return () => {
       window.removeEventListener('keydown', onKey);
-      clearTimeout(t);
+      clearTimeout(timer);
     };
-  }, [open, onClose]);
+  }, [open, onClose, closeLabel]);
 
   return (
     <AnimatePresence>
@@ -63,7 +66,7 @@ export function Dialog({ open, onClose, title, description, children, footer, wi
                 <h2 className="display text-base">{title}</h2>
                 {description && <p className="mt-0.5 text-xs text-ink-2">{description}</p>}
               </div>
-              <IconButton label="Fechar" onClick={onClose} size="sm">
+              <IconButton label={closeLabel} onClick={onClose} size="sm">
                 <X className="size-4" strokeWidth={1.75} />
               </IconButton>
             </div>

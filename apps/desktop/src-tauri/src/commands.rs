@@ -76,6 +76,53 @@ fn engine(state: &State<'_, AppState>) -> EngineHandle {
     state.app.engine.clone()
 }
 
+/// The UI language of the running engine, for the few messages a command writes itself.
+fn language(e: &EngineHandle) -> UiLanguage {
+    e.settings().ui_language()
+}
+
+/// The user-facing messages a command writes itself, in the UI language.
+struct Text {
+    name_required: &'static str,
+    system_category: &'static str,
+    category_missing: &'static str,
+    key_removed: fn(&str) -> String,
+    key_saved: fn(&str) -> String,
+    key_rejected: fn(&str) -> String,
+    key_unverified: fn(&str) -> String,
+    no_key: fn(&str) -> String,
+    http_only: &'static str,
+}
+
+impl Text {
+    fn for_language(lang: UiLanguage) -> Self {
+        match lang {
+            UiLanguage::PtBr => Self {
+                name_required: "nome obrigatório",
+                system_category: "categorias do sistema não podem ser removidas",
+                category_missing: "categoria",
+                key_removed: |p| format!("Chave da {p} removida."),
+                key_saved: |p| format!("Chave da {p} válida e guardada no Keychain."),
+                key_rejected: |m| format!("Chave recusada: {m}"),
+                key_unverified: |e| format!("Não foi possível validar: {e}"),
+                no_key: |p| format!("Nenhuma chave salva para {p}. Salve a chave primeiro."),
+                http_only: "url: apenas links http(s)",
+            },
+            UiLanguage::En => Self {
+                name_required: "name is required",
+                system_category: "system categories cannot be removed",
+                category_missing: "category",
+                key_removed: |p| format!("{p} key removed."),
+                key_saved: |p| format!("{p} key is valid and saved to the Keychain."),
+                key_rejected: |m| format!("Key rejected: {m}"),
+                key_unverified: |e| format!("Could not validate the key: {e}"),
+                no_key: |p| format!("No key saved for {p}. Save the key first."),
+                http_only: "url: only http(s) links are allowed",
+            },
+        }
+    }
+}
+
 // ------------------------------------------------------------------------------------------
 // Dashboard & timeline
 // ------------------------------------------------------------------------------------------
@@ -245,7 +292,8 @@ pub async fn save_category(state: State<'_, AppState>, category: Category) -> Ip
     blocking(engine(&state), move |e| {
         let mut c = category;
         if c.name.trim().is_empty() {
-            return Err(CoreError::Invalid("nome obrigatório".into()));
+            let t = Text::for_language(language(&e));
+            return Err(CoreError::Invalid(t.name_required.into()));
         }
         let repos = &e.state().deps.repos;
         if c.id.trim().is_empty() {
@@ -282,9 +330,8 @@ pub async fn delete_category(state: State<'_, AppState>, id: String) -> IpcResul
             return Ok(());
         };
         if c.is_system {
-            return Err(CoreError::Invalid(
-                "categorias do sistema não podem ser removidas".into(),
-            ));
+            let t = Text::for_language(language(&e));
+            return Err(CoreError::Invalid(t.system_category.into()));
         }
         repos.categories.delete(&id)
     })
@@ -308,7 +355,8 @@ pub async fn save_rule(state: State<'_, AppState>, rule: Rule) -> IpcResult<Rule
             .get(&r.category_id)?
             .is_none()
         {
-            return Err(CoreError::NotFound("categoria".into()));
+            let t = Text::for_language(language(&e));
+            return Err(CoreError::NotFound(t.category_missing.into()));
         }
         if r.id.trim().is_empty() {
             r.id = new_id();
@@ -375,14 +423,15 @@ pub async fn update_report(
 ) -> IpcResult<DailyReport> {
     blocking(engine(&state), move |e| {
         let repos = &e.state().deps.repos;
+        let lang = language(&e);
         let category = repos
             .categories
             .get(&report.category_id)?
-            .ok_or_else(|| CoreError::NotFound("categoria".into()))?;
+            .ok_or_else(|| CoreError::NotFound(Text::for_language(lang).category_missing.into()))?;
         let mut r = report;
         r.edited = true;
         r.stale = false;
-        r.summary_md = ubiqx_core::report::render_summary_md(&r, &category);
+        r.summary_md = ubiqx_core::report::render_summary_md(&r, &category, lang);
         repos.reports.upsert(&r)?;
         Ok(r)
     })
@@ -553,6 +602,8 @@ pub async fn update_settings(
     .await
     .map_err(|e| IpcError::from(e.to_string()))?
     .map_err(IpcError::from)?;
+    // The tray and application menus follow the (possibly new) language right away.
+    crate::relabel_menus(&app, view.settings.ui_language());
     let autostart = app.autolaunch();
     let r = if launch {
         autostart.enable()
@@ -579,13 +630,14 @@ pub async fn set_api_key(
     key: Option<String>,
 ) -> IpcResult<ApiKeyResult> {
     let e = engine(&state);
+    let t = Text::for_language(language(&e));
     let key = key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty());
     match key {
         None => {
             blocking(e, move |e| e.set_api_key(provider, None)).await?;
             Ok(ApiKeyResult {
                 valid: true,
-                message: format!("Chave da {} removida.", provider.label()),
+                message: (t.key_removed)(provider.label()),
             })
         }
         Some(k) => match state.app.validate_api_key(provider, &k).await {
@@ -593,25 +645,23 @@ pub async fn set_api_key(
                 blocking(e, move |e| e.set_api_key(provider, Some(&k))).await?;
                 Ok(ApiKeyResult {
                     valid: true,
-                    message: format!(
-                        "Chave da {} válida e guardada no Keychain.",
-                        provider.label()
-                    ),
+                    message: (t.key_saved)(provider.label()),
                 })
             }
             Err(CoreError::Ai(msg)) => Ok(ApiKeyResult {
                 valid: false,
-                message: format!("Chave recusada: {msg}"),
+                message: (t.key_rejected)(&msg),
             }),
             // Billing / model rejections: the key is real but the account cannot be used
-            // (no credits, disabled key, unknown model). The message is already in pt-BR.
+            // (no credits, disabled key, unknown model). The client already wrote the
+            // message in the UI language.
             Err(CoreError::AiRejected(msg)) => Ok(ApiKeyResult {
                 valid: false,
                 message: msg,
             }),
             Err(err) => Ok(ApiKeyResult {
                 valid: false,
-                message: format!("Não foi possível validar: {err}"),
+                message: (t.key_unverified)(&err.to_string()),
             }),
         },
     }
@@ -623,14 +673,12 @@ pub async fn list_models(
     state: State<'_, AppState>,
     provider: AiProvider,
 ) -> IpcResult<Vec<String>> {
+    let t = Text::for_language(language(&engine(&state)));
     state.app.list_models(provider).await.map_err(|e| match e {
         // Shown verbatim in the UI next to the "Listar modelos da conta" button.
         CoreError::AiNotConfigured => IpcError {
             code: "ai_not_configured".into(),
-            message: format!(
-                "Nenhuma chave salva para {}. Salve a chave primeiro.",
-                provider.label()
-            ),
+            message: (t.no_key)(provider.label()),
         },
         other => IpcError::from(other),
     })
@@ -682,12 +730,13 @@ pub async fn export_data(state: State<'_, AppState>) -> IpcResult<String> {
 }
 
 #[tauri::command]
-pub async fn open_external(url: String) -> IpcResult<()> {
+pub async fn open_external(state: State<'_, AppState>, url: String) -> IpcResult<()> {
     // Only web links: `open_url` from Rust bypasses the opener plugin's scope, and a
     // `file://` URL would run local files/apps from anything injected into the webview.
     let parsed = url::Url::parse(url.trim()).map_err(|_| CoreError::Invalid("url".into()))?;
     if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
-        return Err(CoreError::Invalid("url: apenas links http(s)".into()).into());
+        let t = Text::for_language(language(&engine(&state)));
+        return Err(CoreError::Invalid(t.http_only.into()).into());
     }
     tauri_plugin_opener::open_url(parsed.as_str(), None::<&str>)
         .map_err(|e| IpcError::from(e.to_string()))

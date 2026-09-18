@@ -13,7 +13,8 @@ import { Field, Input, Select } from '../components/ui/Field';
 import { EmptyState, Skeleton } from '../components/ui/misc';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Popover } from '../components/ui/Popover';
-import { assignableCategories, categoryColor, isUncategorized } from '../lib/categories';
+import { useT } from '../i18n';
+import { assignableCategories, categoryColor, categoryLabel, isUncategorized } from '../lib/categories';
 import { fmtDateLong, fmtDuration, fmtTime, localTimeToIso } from '../lib/format';
 import { ipc } from '../lib/ipc';
 import { useAppStore } from '../lib/store';
@@ -21,20 +22,27 @@ import { useToast } from '../lib/toast';
 import type { ActivityBlock, Id, RuleSuggestion } from '../lib/types';
 import { useAsync } from '../lib/useAsync';
 
+type Translate = ReturnType<typeof useT>;
+
 const secs = (b: ActivityBlock) => Math.max(0, (new Date(b.ended_at).getTime() - new Date(b.started_at).getTime()) / 1000);
 const hourOf = (iso: string) => new Date(iso).getHours();
+/** Private-mode blocks: the engine stores app_id 'privado' (the mock uses 'private'). */
+const isPrivateBlock = (b: ActivityBlock) => b.app_id === 'private' || b.app_id === 'privado';
+/** App name for labels: the localized 'Modo privado' / 'Ocioso' instead of the stored placeholder names. */
+const appLabel = (b: ActivityBlock, t: Translate): string => (isPrivateBlock(b) ? t('timeline.private_mode') : b.app_id === 'idle' ? t('timeline.idle') : b.app_name);
 
 /** One sentence from the numbers: how much of the day is on the track and how much still waits. */
-function summary(blocks: ActivityBlock[]): string {
-  if (!blocks.length) return 'Nenhum bloco registrado neste dia.';
+function summary(t: Translate, blocks: ActivityBlock[]): string {
+  if (!blocks.length) return t('timeline.summary_empty');
   const total = blocks.reduce((s, b) => s + secs(b), 0);
   const open = blocks.filter((b) => isUncategorized(b.category_id) || b.needs_review).length;
-  const first = `${fmtDuration(total, { compact: true })} em ${blocks.length} ${blocks.length === 1 ? 'bloco' : 'blocos'}`;
-  if (open === 0) return `${first}; tudo classificado.`;
-  return `${first}; ${open} ${open === 1 ? 'ainda espera' : 'ainda esperam'} uma categoria.`;
+  const first = t('timeline.summary_total', { duration: fmtDuration(total, { compact: true }), count: blocks.length });
+  if (open === 0) return t('timeline.summary_all_classified', { total: first });
+  return t('timeline.summary_pending', { total: first, count: open });
 }
 
 export function Timeline() {
+  const t = useT();
   const date = useAppStore((s) => s.date);
   const setDate = useAppStore((s) => s.setDate);
   const categories = useAppStore((s) => s.categories);
@@ -56,14 +64,14 @@ export function Timeline() {
   const [splitting, setSplitting] = useState<ActivityBlock | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
 
-  // ?block=id (from Hoje): select the block, bring it into view, then drop the param.
+  // ?block=id (from the Today page): select the block, bring it into view, then drop the param.
   useEffect(() => {
     if (!highlight || !blocks) return;
     setSelected(highlight);
     const el = document.getElementById(`block-${highlight}`);
     el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    const t = setTimeout(() => setParams({}, { replace: true }), 2500);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setParams({}, { replace: true }), 2500);
+    return () => clearTimeout(timer);
   }, [highlight, blocks, setParams]);
 
   const visible = useMemo(() => {
@@ -80,7 +88,7 @@ export function Timeline() {
   // macOS applies Screen Recording only after a relaunch: granted permission + empty titles = restart.
   const needsRestart = useMemo(() => {
     if (!blocks?.length || settingsView?.permissions.screen_recording !== 'granted') return false;
-    const real = blocks.filter((b) => b.app_id !== 'idle' && b.app_id !== 'private' && !b.is_manual);
+    const real = blocks.filter((b) => b.app_id !== 'idle' && !isPrivateBlock(b) && !b.is_manual);
     return real.length > 0 && real.every((b) => !b.title);
   }, [blocks, settingsView]);
 
@@ -93,37 +101,43 @@ export function Timeline() {
           setData(blocks.map((b) => (outcome.block_ids.includes(b.id) ? { ...b, category_id: categoryId, confidence: 1, source: 'user', needs_review: false } : b)));
         }
         setSuggestions((s) => ({ ...s, [block.id]: outcome.suggestions }));
-        toast.success('Categoria atualizada', outcome.backfilled ? `${outcome.backfilled} bloco(s) semelhante(s) também foram ajustados.` : undefined);
-        if (outcome.disabled_rules.length) toast.info('Regra desativada', `A regra “${outcome.disabled_rules[0]?.pattern}” foi contradita e desativada.`);
+        toast.success(t('timeline.toast_reclassified'), outcome.backfilled ? t('timeline.toast_backfilled', { count: outcome.backfilled }) : undefined);
+        if (outcome.disabled_rules.length) {
+          toast.info(t('timeline.toast_rule_disabled'), t('timeline.toast_rule_disabled_body', { pattern: outcome.disabled_rules[0]?.pattern ?? '' }));
+        }
         bumpData();
       } catch (e) {
-        toast.error('Não foi possível reclassificar', e instanceof Error ? e.message : String(e));
+        toast.error(t('timeline.toast_reclassify_failed'), e instanceof Error ? e.message : String(e));
       }
     },
-    [blocks, setData, toast, bumpData],
+    [blocks, setData, toast, bumpData, t],
   );
 
   const acceptSuggestion = async (s: RuleSuggestion) => {
     try {
       await ipc.acceptRuleSuggestion(s);
       setAccepted((a) => new Set(a).add(`${s.matcher}:${s.pattern}`));
-      toast.success('Regra criada', `${s.pattern} → sempre a mesma categoria.`);
+      toast.success(t('timeline.toast_rule_created'), t('timeline.toast_rule_created_body', { pattern: s.pattern }));
     } catch (e) {
-      toast.error('Não foi possível criar a regra', e instanceof Error ? e.message : String(e));
+      toast.error(t('timeline.toast_rule_failed'), e instanceof Error ? e.message : String(e));
     }
   };
+
+  const addManualButton = (
+    <Button variant="primary" icon={<Plus className="size-[18px]" strokeWidth={1.75} aria-hidden />} onClick={() => setManualOpen(true)}>
+      {t('timeline.add_manual')}
+    </Button>
+  );
 
   return (
     <div data-testid="page-timeline">
       <PageHeader
-        title="Timeline"
-        subtitle={blocks ? `${fmtDateLong(date)}: ${summary(blocks)}` : fmtDateLong(date)}
+        title={t('timeline.title')}
+        subtitle={blocks ? t('timeline.subtitle', { date: fmtDateLong(date), summary: summary(t, blocks) }) : fmtDateLong(date)}
         actions={
           <>
             <DayNav date={date} onChange={setDate} />
-            <Button variant="primary" icon={<Plus className="size-[18px]" strokeWidth={1.75} aria-hidden />} onClick={() => setManualOpen(true)}>
-              Adicionar atividade manual
-            </Button>
+            {addManualButton}
           </>
         }
       />
@@ -131,26 +145,24 @@ export function Timeline() {
       {needsRestart && (
         <div role="alert" className="mb-5 flex flex-wrap items-center gap-3 rounded-card border border-ember/30 bg-ember-soft px-4 py-3 text-sm">
           <Camera className="size-[18px] shrink-0 text-ember" strokeWidth={1.75} aria-hidden />
-          <p className="min-w-0 flex-1 text-ink">
-            Os títulos das janelas estão chegando vazios. O macOS só aplica a Gravação de Tela depois que o app reinicia.
-          </p>
+          <p className="min-w-0 flex-1 text-ink">{t('timeline.restart_notice')}</p>
           <Button variant="accent" size="sm" onClick={() => void ipc.restartApp()}>
-            Reiniciar o ubiqX
+            {t('timeline.restart_button')}
           </Button>
         </div>
       )}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <label className="sr-only" htmlFor="filter-cat">
-          Filtrar por categoria
+          {t('timeline.filter_label')}
         </label>
         <div className="w-56">
           <Select id="filter-cat" value={filterCat} onChange={(e) => setFilterCat(e.target.value)}>
-            <option value="all">Todas as categorias</option>
-            <option value="none">Sem categoria</option>
+            <option value="all">{t('timeline.filter_all')}</option>
+            <option value="none">{t('common.uncategorized')}</option>
             {assignableCategories(categories).map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name}
+                {categoryLabel(c)}
               </option>
             ))}
           </Select>
@@ -165,11 +177,9 @@ export function Timeline() {
           )}
         >
           <span className={clsx('size-1.5 rounded-full', onlyUnclassified ? 'bg-volt' : 'bg-ink-4')} aria-hidden />
-          Somente não classificados
+          {t('timeline.only_unclassified')}
         </button>
-        <span className="num ml-auto text-xs text-ink-3">
-          {visible.length} de {blocks?.length ?? 0} blocos
-        </span>
+        <span className="num ml-auto text-xs text-ink-3">{t('timeline.shown_count', { shown: visible.length, count: blocks?.length ?? 0 })}</span>
       </div>
 
       {loading && !blocks ? (
@@ -181,8 +191,8 @@ export function Timeline() {
       ) : !visible.length ? (
         <Card>
           <EmptyState
-            title={filtered ? 'Nenhum bloco combina com os filtros' : 'Nenhum bloco neste dia'}
-            description={filtered ? 'Limpe os filtros para ver o dia inteiro.' : 'Quando o rastreador registrar algo, os blocos aparecem aqui. Você também pode adicionar uma atividade manual.'}
+            title={filtered ? t('timeline.empty_filtered_title') : t('timeline.empty_title')}
+            description={filtered ? t('timeline.empty_filtered_desc') : t('timeline.empty_desc')}
             action={
               filtered ? (
                 <Button
@@ -191,21 +201,19 @@ export function Timeline() {
                     setOnlyUnclassified(false);
                   }}
                 >
-                  Limpar filtros
+                  {t('timeline.clear_filters')}
                 </Button>
               ) : (
-                <Button variant="primary" icon={<Plus className="size-[18px]" strokeWidth={1.75} aria-hidden />} onClick={() => setManualOpen(true)}>
-                  Adicionar atividade manual
-                </Button>
+                addManualButton
               )
             }
           />
         </Card>
       ) : (
         <Card padded={false} className="overflow-hidden">
-          <ol className="py-2" aria-label="Blocos do dia">
+          <ol className="py-2" aria-label={t('timeline.list_label')}>
             {visible.map((b, i) => {
-              const isPrivate = b.app_id === 'private';
+              const isPrivate = isPrivateBlock(b);
               const isIdle = b.app_id === 'idle';
               const muted = isPrivate || isIdle;
               const prev = visible[i - 1];
@@ -213,6 +221,8 @@ export function Timeline() {
               const color = muted ? 'var(--ink-4)' : categoryColor(categories, b.category_id);
               const isSelected = selected === b.id;
               const dur = secs(b);
+              const start = fmtTime(b.started_at);
+              const end = b.is_open ? t('common.now') : fmtTime(b.ended_at);
               return (
                 <li key={b.id}>
                   {newHour && (
@@ -226,14 +236,14 @@ export function Timeline() {
                     data-selected={isSelected || undefined}
                     onClick={() => setSelected(b.id)}
                     className={clsx('group grid grid-cols-[76px_3px_1fr] gap-x-3 px-5 py-2 transition-colors duration-150', isSelected ? 'bg-volt-soft' : 'hover:bg-panel-2/60')}
-                    aria-label={`${fmtTime(b.started_at)} a ${b.is_open ? 'agora' : fmtTime(b.ended_at)}, ${b.app_name}`}
+                    aria-label={t('timeline.block_label', { start, end, app: appLabel(b, t) })}
                   >
                     {/* time gutter */}
-                    <div className="num pt-0.5 text-right" title={`${fmtTime(b.started_at)} até ${b.is_open ? 'agora' : fmtTime(b.ended_at)}`}>
-                      <p className={clsx('text-[13px] leading-5 font-medium', muted ? 'text-ink-3' : 'text-ink')}>{fmtTime(b.started_at)}</p>
+                    <div className="num pt-0.5 text-right" title={t('timeline.block_range', { start, end })}>
+                      <p className={clsx('text-[13px] leading-5 font-medium', muted ? 'text-ink-3' : 'text-ink')}>{start}</p>
                       <p className="flex items-center justify-end gap-1.5 text-[11px] leading-4 text-ink-3">
                         {b.is_open && <span className="size-1.5 animate-pulse rounded-full bg-signal motion-reduce:animate-none" aria-hidden />}
-                        {b.is_open ? 'em andamento' : fmtDuration(dur)}
+                        {b.is_open ? t('timeline.in_progress') : fmtDuration(dur)}
                       </p>
                     </div>
 
@@ -249,8 +259,10 @@ export function Timeline() {
                       <AppAvatar name={b.app_name} className="mt-0.5" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline gap-x-2 gap-y-0.5">
-                          <p className="min-w-0 truncate text-sm leading-5 font-medium text-ink">{isPrivate ? 'Modo privado' : isIdle ? 'Ocioso' : b.title || b.app_name}</p>
-                          {b.is_manual && <Badge tone="neutral">manual</Badge>}
+                          <p className="min-w-0 truncate text-sm leading-5 font-medium text-ink">
+                            {isPrivate ? t('timeline.private_mode') : isIdle ? t('timeline.idle') : b.title || b.app_name}
+                          </p>
+                          {b.is_manual && <Badge tone="neutral">{t('timeline.manual_badge')}</Badge>}
                         </div>
                         {!muted && (b.title || b.domain) && (
                           <p className="flex flex-wrap gap-x-3 text-xs leading-4 text-ink-3">
@@ -274,13 +286,13 @@ export function Timeline() {
                               />
                             }
                           >
-                            <p className="px-2 pt-1 pb-1.5 text-[11px] font-medium text-ink-3">Reclassificar este bloco</p>
+                            <p className="px-2 pt-1 pb-1.5 text-[11px] font-medium text-ink-3">{t('timeline.reclassify_heading')}</p>
                             <CategoryPicker categories={categories} value={b.category_id} onPick={(id) => void reclassify(b, id)} />
                           </Popover>
                           {!muted && <ConfidenceBar value={b.confidence} />}
                           <SourceBadge source={b.source} />
                           <AiSentBadge at={b.ai_sent_at} />
-                          {b.needs_review && <Badge tone="ember">precisa de revisão</Badge>}
+                          {b.needs_review && <Badge tone="ember">{t('timeline.needs_review')}</Badge>}
                         </div>
                         {suggestions[b.id] && (
                           <div className="mt-2">
@@ -290,7 +302,7 @@ export function Timeline() {
                       </div>
                       {!muted && !b.is_open && (
                         <IconButton
-                          label="Dividir bloco"
+                          label={t('timeline.split_action')}
                           size="sm"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -317,6 +329,7 @@ export function Timeline() {
 }
 
 function SplitDialog({ block, onClose, onDone }: { block: ActivityBlock | null; onClose: () => void; onDone: () => void }) {
+  const t = useT();
   const [time, setTime] = useState('');
   const [busy, setBusy] = useState(false);
   const toast = useToast();
@@ -333,11 +346,11 @@ function SplitDialog({ block, onClose, onDone }: { block: ActivityBlock | null; 
     setBusy(true);
     try {
       await ipc.splitBlock(block.id, localTimeToIso(date, time));
-      toast.success('Bloco dividido');
+      toast.success(t('timeline.toast_split'));
       onDone();
       onClose();
     } catch (e) {
-      toast.error('Não foi possível dividir', e instanceof Error ? e.message : String(e));
+      toast.error(t('timeline.toast_split_failed'), e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -347,21 +360,21 @@ function SplitDialog({ block, onClose, onDone }: { block: ActivityBlock | null; 
     <Dialog
       open={!!block}
       onClose={onClose}
-      title="Dividir bloco"
-      description={block ? `${block.app_name}, das ${fmtTime(block.started_at)} às ${fmtTime(block.ended_at)}` : undefined}
+      title={t('timeline.split_action')}
+      description={block ? t('timeline.split_description', { app: appLabel(block, t), start: fmtTime(block.started_at), end: fmtTime(block.ended_at) }) : undefined}
       width="sm"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Cancelar
+            {t('common.cancel')}
           </Button>
           <Button variant="primary" icon={<Scissors className="size-4" strokeWidth={1.75} aria-hidden />} onClick={() => void submit()} loading={busy}>
-            Dividir
+            {t('timeline.split_confirm')}
           </Button>
         </>
       }
     >
-      <Field label="Dividir em" hint="O bloco será separado neste horário; as duas partes mantêm a categoria.">
+      <Field label={t('timeline.split_at')} hint={t('timeline.split_hint')}>
         {(id) => <Input id={id} type="time" className="num" value={time} onChange={(e) => setTime(e.target.value)} />}
       </Field>
     </Dialog>
@@ -369,6 +382,7 @@ function SplitDialog({ block, onClose, onDone }: { block: ActivityBlock | null; 
 }
 
 function ManualDialog({ open, onClose, date, onDone }: { open: boolean; onClose: () => void; date: string; onDone: () => void }) {
+  const t = useT();
   const categories = useAppStore((s) => s.categories);
   const [start, setStart] = useState('09:00');
   const [end, setEnd] = useState('10:00');
@@ -385,18 +399,18 @@ function ManualDialog({ open, onClose, date, onDone }: { open: boolean; onClose:
   const submit = async () => {
     if (!categoryId) return;
     if (end <= start) {
-      toast.error('Horário inválido', 'O fim precisa ser depois do início.');
+      toast.error(t('timeline.toast_invalid_time'), t('timeline.toast_invalid_time_body'));
       return;
     }
     setBusy(true);
     try {
       await ipc.addManualEntry(localTimeToIso(date, start), localTimeToIso(date, end), categoryId, note || undefined);
-      toast.success('Atividade adicionada');
+      toast.success(t('timeline.toast_manual_added'));
       setNote('');
       onDone();
       onClose();
     } catch (e) {
-      toast.error('Não foi possível adicionar', e instanceof Error ? e.message : String(e));
+      toast.error(t('timeline.toast_manual_failed'), e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -406,36 +420,36 @@ function ManualDialog({ open, onClose, date, onDone }: { open: boolean; onClose:
     <Dialog
       open={open}
       onClose={onClose}
-      title="Adicionar atividade manual"
-      description="Para reuniões presenciais, leituras no papel ou qualquer coisa fora do computador."
+      title={t('timeline.add_manual')}
+      description={t('timeline.manual_description')}
       width="sm"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Cancelar
+            {t('common.cancel')}
           </Button>
           <Button variant="primary" onClick={() => void submit()} loading={busy}>
-            Adicionar
+            {t('common.add')}
           </Button>
         </>
       }
     >
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Início">{(id) => <Input id={id} type="time" className="num" value={start} onChange={(e) => setStart(e.target.value)} />}</Field>
-        <Field label="Fim">{(id) => <Input id={id} type="time" className="num" value={end} onChange={(e) => setEnd(e.target.value)} />}</Field>
-        <Field label="Categoria" className="col-span-2">
+        <Field label={t('timeline.manual_start')}>{(id) => <Input id={id} type="time" className="num" value={start} onChange={(e) => setStart(e.target.value)} />}</Field>
+        <Field label={t('timeline.manual_end')}>{(id) => <Input id={id} type="time" className="num" value={end} onChange={(e) => setEnd(e.target.value)} />}</Field>
+        <Field label={t('common.category')} className="col-span-2">
           {(id) => (
             <Select id={id} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
               {list.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name}
+                  {categoryLabel(c)}
                 </option>
               ))}
             </Select>
           )}
         </Field>
-        <Field label="Observação" className="col-span-2" hint="Vai para o relatório do dia.">
-          {(id) => <Input id={id} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ex.: Banca de TCC presencial" />}
+        <Field label={t('timeline.manual_note')} className="col-span-2" hint={t('timeline.manual_note_hint')}>
+          {(id) => <Input id={id} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('timeline.manual_note_placeholder')} />}
         </Field>
       </div>
     </Dialog>

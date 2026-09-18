@@ -770,6 +770,87 @@ async fn report_payload_is_recorded_for_locally_classified_blocks() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn generated_text_follows_the_settings_language() {
+    let h = harness().await;
+    let state = h.handle.state().clone();
+    let today = h.clock.now().with_timezone(&Local).date_naive();
+
+    // Any spelling of English is stored as the canonical tag.
+    let mut s = h.handle.settings();
+    assert_eq!(s.language, "pt-BR");
+    s.language = "en_US".into();
+    h.handle.update_settings(s).unwrap();
+    assert_eq!(h.handle.settings().language, "en");
+    assert_eq!(h.handle.settings().ui_language(), UiLanguage::En);
+
+    // Report and payload label in English.
+    BlockRepo::insert(h.store.as_ref(), &pending_block("p1", 30)).unwrap();
+    RuleRepo::upsert(
+        h.store.as_ref(),
+        &Rule {
+            id: "r-sei".into(),
+            category_id: "cat-ifro".into(),
+            matcher: RuleMatcher::Domain,
+            pattern: "sei.ifro.edu.br".into(),
+            priority: 10,
+            origin: RuleOrigin::User,
+            enabled: true,
+            created_at: h.clock.now(),
+            hit_count: 0,
+            miss_count: 0,
+            last_contradicted_at: None,
+        },
+    )
+    .unwrap();
+    h.handle.classify_now().await.unwrap();
+    let report = h.handle.generate_report(today, "cat-ifro").await.unwrap();
+    assert!(
+        report.summary_md.starts_with("# Report — IFRO — "),
+        "{}",
+        report.summary_md
+    );
+    assert!(report.summary_md.contains("## Activities"));
+    let payload = get_block(&h, "p1").ai_payload.unwrap();
+    assert!(payload.starts_with("[report]"), "{payload}");
+
+    // The "report ready" notification of the scheduler.
+    let due_at = (h.clock.now() - ChronoDuration::hours(1)).with_timezone(&Local);
+    let mut s = h.handle.settings();
+    s.report_default_time = due_at.time();
+    h.handle.update_settings(s).unwrap();
+    KvRepo::set(
+        h.store.as_ref(),
+        "last_report_check",
+        &(h.clock.now() - ChronoDuration::hours(3)).to_rfc3339(),
+    )
+    .unwrap();
+    ubiqx_engine::reports::run_due(&state).await.unwrap();
+    let ready: Vec<Nudge> = NudgeRepo::list_recent(h.store.as_ref(), 10)
+        .unwrap()
+        .into_iter()
+        .filter(|n| n.kind == NudgeKind::ReportReady)
+        .collect();
+    assert!(!ready.is_empty());
+    assert!(
+        ready.iter().all(|n| n.title.ends_with(" is ready")),
+        "{ready:?}"
+    );
+
+    // Back to Portuguese: the same paths speak Portuguese again.
+    let mut s = h.handle.settings();
+    s.language = "pt".into();
+    h.handle.update_settings(s).unwrap();
+    assert_eq!(h.handle.settings().language, "pt-BR");
+    let report = h.handle.generate_report(today, "cat-ifro").await.unwrap();
+    assert!(
+        report.summary_md.starts_with("# Relatório — IFRO — "),
+        "{}",
+        report.summary_md
+    );
+    h.handle.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tracker_keeps_user_reclassification_and_screenshot_of_the_open_block() {
     let h = harness().await;
     let mut s = h.handle.settings();

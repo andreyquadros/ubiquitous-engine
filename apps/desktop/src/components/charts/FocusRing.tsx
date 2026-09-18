@@ -1,7 +1,8 @@
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 'framer-motion';
 import { useEffect, useId } from 'react';
-import { focusColor, MOOD_LABEL } from '../../lib/format';
+import { focusColor } from '../../lib/format';
 import type { Mood } from '../../lib/types';
+import { useT } from '../../i18n';
 
 interface Props {
   score: number;
@@ -22,8 +23,11 @@ const EASE = [0.16, 1, 0.3, 1] as const;
  * The Focus Dial — the one glowing instrument. A conic arc with a blurred copy underneath as glow,
  * the score in Sora inside, the mood beneath. Draw-in ~900 ms, number counts up alongside.
  */
-export function FocusDial({ score, mood, size = 176, stroke = 12, label = 'de foco', animate: shouldAnimate = true, className }: Props) {
+export function FocusDial({ score, mood, size = 176, stroke = 12, label, animate: shouldAnimate = true, className }: Props) {
   const id = useId().replace(/:/g, '');
+  const t = useT();
+  const dialLabel = label ?? t('charts.dial_label');
+  const moodLabel = t(`common.mood.${mood}`);
   const reduce = useReducedMotion();
   const live = shouldAnimate && !reduce;
   const r = (size - stroke) / 2 - 6;
@@ -45,7 +49,7 @@ export function FocusDial({ score, mood, size = 176, stroke = 12, label = 'de fo
   }, [live, pct, progress]);
 
   return (
-    <div className={className} style={{ width: size, height: size, position: 'relative' }} role="img" aria-label={`Score de foco ${score} de 100, ${MOOD_LABEL[mood]}`}>
+    <div className={className} style={{ width: size, height: size, position: 'relative' }} role="img" aria-label={t('charts.dial_aria', { score, mood: moodLabel })}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" style={{ overflow: 'visible' }}>
         <defs>
           <filter id={`dial-glow-${id}`} x="-30%" y="-30%" width="160%" height="160%">
@@ -70,8 +74,8 @@ export function FocusDial({ score, mood, size = 176, stroke = 12, label = 'de fo
         <motion.span className="display num leading-none" style={{ fontSize: Math.round(size * 0.32), letterSpacing: '-0.03em', color }}>
           {count}
         </motion.span>
-        <span className="mt-1 text-xs font-medium text-ink-2">{label}</span>
-        <span className="mt-0.5 text-[11px] text-ink-3">{MOOD_LABEL[mood]}</span>
+        <span className="mt-1 text-xs font-medium text-ink-2">{dialLabel}</span>
+        <span className="mt-0.5 text-[11px] text-ink-3">{moodLabel}</span>
       </div>
     </div>
   );

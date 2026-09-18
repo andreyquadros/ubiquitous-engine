@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use chrono::{Datelike, NaiveDate};
 
+use crate::lang::UiLanguage;
 use crate::model::{ActivityKind, Category, DailyReport, ReportItem};
 
 /// Presentation order of activity kinds in reports.
@@ -38,6 +39,85 @@ pub fn format_date_br(date: NaiveDate) -> String {
     date.format("%d/%m/%Y").to_string()
 }
 
+/// The date the way the language writes it: `dd/mm/yyyy` in Portuguese, `yyyy-mm-dd` in
+/// English (unambiguous in every English-speaking region).
+pub fn format_date(date: NaiveDate, lang: UiLanguage) -> String {
+    match lang {
+        UiLanguage::PtBr => format_date_br(date),
+        UiLanguage::En => date.format("%Y-%m-%d").to_string(),
+    }
+}
+
+/// `dd/mm` in Portuguese, `mm-dd` in English (day lists inside a monthly report).
+fn format_short_date(date: NaiveDate, lang: UiLanguage) -> String {
+    match lang {
+        UiLanguage::PtBr => date.format("%d/%m").to_string(),
+        UiLanguage::En => date.format("%m-%d").to_string(),
+    }
+}
+
+/// `mm/yyyy` in Portuguese, `yyyy-mm` in English.
+fn format_month(year: i32, month: u32, lang: UiLanguage) -> String {
+    match lang {
+        UiLanguage::PtBr => format!("{month:02}/{year}"),
+        UiLanguage::En => format!("{year}-{month:02}"),
+    }
+}
+
+/// The fixed wording of a report, per language.
+struct Wording {
+    report: &'static str,
+    monthly_report: &'static str,
+    total_time: &'static str,
+    highlights: &'static str,
+    activities: &'static str,
+    no_activity: &'static str,
+    continuation_of: &'static str,
+    evidence: &'static str,
+    active_days: &'static str,
+    day: &'static str,
+    days: &'static str,
+}
+
+impl Wording {
+    fn for_language(lang: UiLanguage) -> Self {
+        match lang {
+            UiLanguage::PtBr => Self {
+                report: "Relatório",
+                monthly_report: "Relatório mensal",
+                total_time: "Tempo total",
+                highlights: "Destaques",
+                activities: "Atividades",
+                no_activity: "Sem atividade registrada.",
+                continuation_of: "continuação de",
+                evidence: "Evidências",
+                active_days: "Dias com atividade",
+                day: "dia",
+                days: "dias",
+            },
+            UiLanguage::En => Self {
+                report: "Report",
+                monthly_report: "Monthly report",
+                total_time: "Total time",
+                highlights: "Highlights",
+                activities: "Activities",
+                no_activity: "No activity recorded.",
+                continuation_of: "continued from",
+                evidence: "Evidence",
+                active_days: "Active days",
+                day: "day",
+                days: "days",
+            },
+        }
+    }
+}
+
+/// The "no activity" line of a report, in the UI language (the report writer and the
+/// notifications reuse the same words).
+pub fn no_activity_text(lang: UiLanguage) -> &'static str {
+    Wording::for_language(lang).no_activity
+}
+
 fn secs_to_minutes(secs: i64) -> u32 {
     u32::try_from(secs.max(0) / 60).unwrap_or(u32::MAX)
 }
@@ -58,16 +138,20 @@ fn clean(text: &str) -> String {
 ///   Evidências: SEI, parecer.docx
 /// ```
 ///
-/// A report without items renders "Sem atividade registrada.".
-pub fn render_summary_md(report: &DailyReport, category: &Category) -> String {
+/// A report without items renders "Sem atividade registrada." ("No activity recorded." in
+/// English). Headings, labels and dates follow `lang`; the item texts are the writer's.
+pub fn render_summary_md(report: &DailyReport, category: &Category, lang: UiLanguage) -> String {
+    let w = Wording::for_language(lang);
     let mut out = String::new();
     out.push_str(&format!(
-        "# Relatório — {} — {}\n\n",
+        "# {} — {} — {}\n\n",
+        w.report,
         clean(&category.name),
-        format_date_br(report.date)
+        format_date(report.date, lang)
     ));
     out.push_str(&format!(
-        "**Tempo total:** {}\n\n",
+        "**{}:** {}\n\n",
+        w.total_time,
         format_minutes(secs_to_minutes(report.total_secs))
     ));
 
@@ -78,26 +162,31 @@ pub fn render_summary_md(report: &DailyReport, category: &Category) -> String {
         .filter(|h| !h.is_empty())
         .collect();
     if !highlights.is_empty() {
-        out.push_str("## Destaques\n\n");
+        out.push_str(&format!("## {}\n\n", w.highlights));
         for h in &highlights {
             out.push_str(&format!("- {h}\n"));
         }
         out.push('\n');
     }
 
-    out.push_str("## Atividades\n\n");
+    out.push_str(&format!("## {}\n\n", w.activities));
     if report.items.is_empty() {
-        out.push_str("Sem atividade registrada.\n");
+        out.push_str(w.no_activity);
+        out.push('\n');
     } else {
         for item in &report.items {
-            out.push_str(&render_item(item));
+            out.push_str(&render_item(item, lang, &w));
         }
     }
     out
 }
 
-fn render_item(item: &ReportItem) -> String {
-    let mut line = format!("- **{}** — {}", item.kind.label_pt(), clean(&item.activity));
+fn render_item(item: &ReportItem, lang: UiLanguage, w: &Wording) -> String {
+    let mut line = format!(
+        "- **{}** — {}",
+        item.kind.label(lang),
+        clean(&item.activity)
+    );
     let mut meta = vec![format_minutes(item.minutes)];
     let range = clean(&item.time_range);
     if !range.is_empty() {
@@ -110,7 +199,7 @@ fn render_item(item: &ReportItem) -> String {
         .map(clean)
         .filter(|p| !p.is_empty())
     {
-        line.push_str(&format!(" — continuação de \"{prev}\""));
+        line.push_str(&format!(" — {} \"{prev}\"", w.continuation_of));
     }
     let evidence: Vec<String> = item
         .evidence
@@ -119,7 +208,7 @@ fn render_item(item: &ReportItem) -> String {
         .filter(|e| !e.is_empty())
         .collect();
     if !evidence.is_empty() {
-        line.push_str(&format!("\n  Evidências: {}", evidence.join(", ")));
+        line.push_str(&format!("\n  {}: {}", w.evidence, evidence.join(", ")));
     }
     line.push('\n');
     line
@@ -142,13 +231,15 @@ fn activity_key(text: &str) -> String {
 /// declares `continuation_of` an earlier one (chains are followed), producing lines such as
 /// `- Elaborou o edital 12/2026 — 3 dias, 4 h 15 min (02/09, 03/09, 05/09)` grouped by kind.
 /// Reports of other categories or months are ignored; when the same day has several reports the
-/// most recently generated one wins.
+/// most recently generated one wins. Headings, labels and dates follow `lang`.
 pub fn render_monthly_md(
     reports: &[DailyReport],
     category: &Category,
     year: i32,
     month: u32,
+    lang: UiLanguage,
 ) -> String {
+    let w = Wording::for_language(lang);
     let mut by_date: BTreeMap<NaiveDate, &DailyReport> = BTreeMap::new();
     for r in reports.iter().filter(|r| {
         r.category_id == category.id && r.date.year() == year && r.date.month() == month
@@ -201,10 +292,10 @@ pub fn render_monthly_md(
 
     let mut out = String::new();
     out.push_str(&format!(
-        "# Relatório mensal — {} — {:02}/{}\n\n",
+        "# {} — {} — {}\n\n",
+        w.monthly_report,
         clean(&category.name),
-        month,
-        year
+        format_month(year, month, lang)
     ));
     // Reports exist for every scheduled day, including days without any block in the
     // category: only the ones carrying activity count as active days.
@@ -213,13 +304,16 @@ pub fn render_monthly_md(
         .filter(|r| !r.items.is_empty() || r.total_secs > 0)
         .count();
     out.push_str(&format!(
-        "**Dias com atividade:** {} · **Tempo total:** {}\n\n",
+        "**{}:** {} · **{}:** {}\n\n",
+        w.active_days,
         active_days,
+        w.total_time,
         format_minutes(secs_to_minutes(total_secs))
     ));
 
     if groups.is_empty() {
-        out.push_str("Sem atividade registrada.\n");
+        out.push_str(w.no_activity);
+        out.push('\n');
         return out;
     }
 
@@ -233,14 +327,14 @@ pub fn render_monthly_md(
                 .cmp(&a.minutes)
                 .then_with(|| a.activity.cmp(&b.activity))
         });
-        out.push_str(&format!("## {}\n\n", kind.label_pt()));
+        out.push_str(&format!("## {}\n\n", kind.label(lang)));
         for g in of_kind {
             let days = g.dates.len();
-            let day_word = if days == 1 { "dia" } else { "dias" };
+            let day_word = if days == 1 { w.day } else { w.days };
             let dates: Vec<String> = g
                 .dates
                 .iter()
-                .map(|d| d.format("%d/%m").to_string())
+                .map(|d| format_short_date(*d, lang))
                 .collect();
             out.push_str(&format!(
                 "- {} — {} {}, {} ({})\n",
@@ -331,7 +425,7 @@ mod tests {
                 Some("Iniciou o parecer"),
             )],
         );
-        let md = render_summary_md(&r, &cat);
+        let md = render_summary_md(&r, &cat, UiLanguage::PtBr);
         assert!(md.starts_with("# Relatório — IFRO — 17/09/2026\n"), "{md}");
         assert!(md.contains("**Tempo total:** 3 h 25 min"), "{md}");
         assert!(md.contains("## Destaques\n\n- Fechou o edital\n"), "{md}");
@@ -342,18 +436,58 @@ mod tests {
     }
 
     #[test]
+    fn daily_summary_in_english() {
+        let cat = category("c1", "IFRO");
+        let mut r = report(
+            (2026, 9, 17),
+            "c1",
+            vec![item(
+                "Drafted the opinion on call 12/2026",
+                ActivityKind::Documentacao,
+                80,
+                Some("Started the opinion"),
+            )],
+        );
+        r.highlights = vec!["Closed the call".into()];
+        let md = render_summary_md(&r, &cat, UiLanguage::En);
+        assert!(md.starts_with("# Report — IFRO — 2026-09-17\n"), "{md}");
+        assert!(md.contains("**Total time:** 3 h 25 min"), "{md}");
+        assert!(md.contains("## Highlights\n\n- Closed the call\n"), "{md}");
+        assert!(
+            md.contains("## Activities\n\n- **Documentation** — Drafted the opinion on call 12/2026 (1 h 20 min, 09:10–10:30) — continued from \"Started the opinion\"\n  Evidence: SEI\n"),
+            "{md}"
+        );
+        assert!(!md.contains("Relatório"), "{md}");
+    }
+
+    #[test]
     fn daily_summary_without_items() {
         let cat = category("c1", "IFRO");
         let mut r = report((2026, 9, 17), "c1", vec![]);
         r.highlights.clear();
         r.total_secs = 0;
-        let md = render_summary_md(&r, &cat);
+        let md = render_summary_md(&r, &cat, UiLanguage::PtBr);
         assert!(md.contains("**Tempo total:** 0 min"));
         assert!(!md.contains("## Destaques"));
         assert!(
             md.ends_with("## Atividades\n\nSem atividade registrada.\n"),
             "{md}"
         );
+        let md = render_summary_md(&r, &cat, UiLanguage::En);
+        assert!(md.contains("**Total time:** 0 min"));
+        assert!(
+            md.ends_with("## Activities\n\nNo activity recorded.\n"),
+            "{md}"
+        );
+        assert_eq!(no_activity_text(UiLanguage::En), "No activity recorded.");
+    }
+
+    #[test]
+    fn dates_follow_the_language() {
+        let d = NaiveDate::from_ymd_opt(2026, 9, 7).unwrap();
+        assert_eq!(format_date(d, UiLanguage::PtBr), "07/09/2026");
+        assert_eq!(format_date(d, UiLanguage::En), "2026-09-07");
+        assert_eq!(format_date_br(d), "07/09/2026");
     }
 
     #[test]
@@ -421,7 +555,7 @@ mod tests {
                 vec![item("Aula", ActivityKind::Ensino, 10, None)],
             ),
         ];
-        let md = render_monthly_md(&reports, &cat, 2026, 9);
+        let md = render_monthly_md(&reports, &cat, 2026, 9, UiLanguage::PtBr);
         assert!(
             md.starts_with("# Relatório mensal — IFRO — 09/2026\n"),
             "{md}"
@@ -443,13 +577,36 @@ mod tests {
         assert!(!md.contains("Aula"));
         // Kind sections follow KIND_ORDER: Reunião before Gestão.
         assert!(md.find("## Reunião").unwrap() < md.find("## Gestão").unwrap());
+
+        let en = render_monthly_md(&reports, &cat, 2026, 9, UiLanguage::En);
+        assert!(
+            en.starts_with("# Monthly report — IFRO — 2026-09\n"),
+            "{en}"
+        );
+        assert!(en.contains("**Active days:** 4 · **Total time:**"), "{en}");
+        assert!(
+            en.contains(
+                "- Elaborou o edital 12/2026 — 4 days, 4 h 30 min (09-02, 09-03, 09-05, 09-07)\n"
+            ),
+            "{en}"
+        );
+        assert!(
+            en.contains(
+                "## Meetings\n\n- Participou de reunião de planejamento — 1 day, 30 min (09-02)\n"
+            ),
+            "{en}"
+        );
+        assert!(en.find("## Meetings").unwrap() < en.find("## Administration").unwrap());
     }
 
     #[test]
     fn monthly_without_reports() {
         let cat = category("c1", "IFRO");
-        let md = render_monthly_md(&[], &cat, 2026, 9);
+        let md = render_monthly_md(&[], &cat, 2026, 9, UiLanguage::PtBr);
         assert!(md.contains("**Dias com atividade:** 0"));
         assert!(md.ends_with("Sem atividade registrada.\n"));
+        let en = render_monthly_md(&[], &cat, 2026, 9, UiLanguage::En);
+        assert!(en.contains("**Active days:** 0"));
+        assert!(en.ends_with("No activity recorded.\n"));
     }
 }

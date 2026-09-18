@@ -10,11 +10,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use ubiqx_ai::client::{AnthropicClient, AnthropicConfig, ApiKeySource, LlmClient, StaticApiKey};
+use ubiqx_ai::client::{
+    AnthropicClient, AnthropicConfig, ApiKeySource, LanguageSource, LlmClient, StaticApiKey,
+};
 use ubiqx_ai::openai::{OpenAiCompatClient, OpenAiCompatConfig};
 use ubiqx_ai::router::{ProviderSource, RoutingLlmClient};
 use ubiqx_core::ports::{EventSink, SecretStore, SettingsRepo};
-use ubiqx_core::{AiModels, AiProvider, CoreError, CoreResult, SystemClock};
+use ubiqx_core::{AiModels, AiProvider, CoreError, CoreResult, SystemClock, UiLanguage};
 use ubiqx_engine::{AiPorts, Engine, EngineDeps, EngineHandle, PlatformPorts, Repos};
 use ubiqx_platform::PlatformServices;
 use ubiqx_storage::{Db, SqliteStore};
@@ -129,8 +131,19 @@ impl ProviderSource for StoredProvider {
     }
 }
 
+/// [`LanguageSource`] backed by the settings row of the store, so a rejection message is
+/// worded in the language selected at the moment it is produced. Read only on that (rare)
+/// path; a failed read falls back to the default language.
+struct StoredLanguage(Arc<dyn SettingsRepo>);
+
+impl LanguageSource for StoredLanguage {
+    fn language(&self) -> UiLanguage {
+        self.0.load().map(|s| s.ui_language()).unwrap_or_default()
+    }
+}
+
 /// The vendor clients behind [`AiBackend::Remote`], all reading their key from the secret
-/// store on every call.
+/// store on every call and the UI language from the settings row when they word a rejection.
 #[derive(Clone)]
 pub struct RemoteClients {
     pub anthropic: Arc<AnthropicClient>,
@@ -143,22 +156,32 @@ impl RemoteClients {
         let key = |p: AiProvider| -> Arc<dyn ApiKeySource> {
             Arc::new(SecretStoreKey(secrets.clone(), p))
         };
+        let language: Arc<dyn LanguageSource> = Arc::new(StoredLanguage(store.clone()));
         Ok(Self {
-            anthropic: Arc::new(AnthropicClient::new(
-                AnthropicConfig::default(),
-                key(AiProvider::Anthropic),
-                store.clone(),
-            )?),
-            openai: Arc::new(OpenAiCompatClient::new(
-                OpenAiCompatConfig::for_provider(AiProvider::OpenAi),
-                key(AiProvider::OpenAi),
-                store.clone(),
-            )?),
-            xai: Arc::new(OpenAiCompatClient::new(
-                OpenAiCompatConfig::for_provider(AiProvider::Xai),
-                key(AiProvider::Xai),
-                store,
-            )?),
+            anthropic: Arc::new(
+                AnthropicClient::new(
+                    AnthropicConfig::default(),
+                    key(AiProvider::Anthropic),
+                    store.clone(),
+                )?
+                .with_language_source(language.clone()),
+            ),
+            openai: Arc::new(
+                OpenAiCompatClient::new(
+                    OpenAiCompatConfig::for_provider(AiProvider::OpenAi),
+                    key(AiProvider::OpenAi),
+                    store.clone(),
+                )?
+                .with_language_source(language.clone()),
+            ),
+            xai: Arc::new(
+                OpenAiCompatClient::new(
+                    OpenAiCompatConfig::for_provider(AiProvider::Xai),
+                    key(AiProvider::Xai),
+                    store,
+                )?
+                .with_language_source(language),
+            ),
         })
     }
 
@@ -259,9 +282,11 @@ impl App {
     /// that will actually be billed.
     pub async fn validate_api_key(&self, provider: AiProvider, key: &str) -> CoreResult<()> {
         let source: Arc<dyn ApiKeySource> = Arc::new(StaticApiKey(key.trim().to_string()));
+        let language: Arc<dyn LanguageSource> = Arc::new(self.engine.settings().ui_language());
         match provider {
             AiProvider::Anthropic => {
                 AnthropicClient::new(AnthropicConfig::default(), source, self.store.clone())?
+                    .with_language_source(language)
                     .validate_key()
                     .await
             }
@@ -277,6 +302,7 @@ impl App {
                     source,
                     self.store.clone(),
                 )?
+                .with_language_source(language)
                 .validate_key(&probe)
                 .await
             }

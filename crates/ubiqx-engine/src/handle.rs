@@ -256,7 +256,12 @@ impl EngineHandle {
                             .find(|c| c.id == id)
                             .map(|c| c.name.clone())
                     })
-                    .unwrap_or_else(|| "Sem categoria".into());
+                    .unwrap_or_else(|| {
+                        settings
+                            .ui_language()
+                            .pick("Sem categoria", "Uncategorized")
+                            .to_string()
+                    });
                 (name, t.secs)
             })
             .collect();

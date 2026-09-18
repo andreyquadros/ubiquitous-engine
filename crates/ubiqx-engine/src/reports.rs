@@ -27,11 +27,13 @@ pub fn blocks_for(
 }
 
 /// Deterministic report used when no AI writer is available (local mode, no key, budget).
+/// Item texts and the rendered Markdown follow `lang`.
 pub fn template_report(
     date: NaiveDate,
     category: &Category,
     blocks: &[ActivityBlock],
     now: chrono::DateTime<chrono::Utc>,
+    lang: UiLanguage,
 ) -> DailyReport {
     use std::collections::BTreeMap;
     let mut groups: BTreeMap<String, (i64, Vec<String>, String)> = BTreeMap::new();
@@ -59,7 +61,10 @@ pub fn template_report(
         .into_iter()
         .map(|(key, (secs, apps, desc))| ReportItem {
             activity: if desc.is_empty() {
-                format!("Trabalhou em {key}")
+                match lang {
+                    UiLanguage::PtBr => format!("Trabalhou em {key}"),
+                    UiLanguage::En => format!("Worked in {key}"),
+                }
             } else {
                 desc
             },
@@ -87,8 +92,13 @@ pub fn template_report(
         stale: false,
         edited: false,
     };
-    report.summary_md = report::render_summary_md(&report, category);
+    report.summary_md = report::render_summary_md(&report, category, lang);
     report
+}
+
+/// Label that marks a report line inside a block's `ai_payload` (transparency view).
+pub fn report_payload_label(lang: UiLanguage) -> &'static str {
+    lang.pick("[relatório]", "[report]")
 }
 
 /// Generates (or regenerates) the report for one day and category. `force` regenerates even
@@ -115,6 +125,7 @@ pub async fn generate(
     }
     let blocks = blocks_for(state, date, category_id)?;
     let settings = state.settings();
+    let lang = settings.ui_language();
     let now = state.now();
 
     let previous_items: Vec<ReportItem> = repos
@@ -141,11 +152,12 @@ pub async fn generate(
             // Transparency: every block whose text is about to leave the machine gets the
             // exact report line stamped as its payload, so the "Dados enviados à IA" view
             // also lists blocks that were classified locally and never met the classifier.
+            let label = report_payload_label(lang);
             for b in &req.blocks {
                 let line = writer.describe_payload(b, req.utc_offset_secs);
                 let payload = match b.ai_payload.as_deref() {
-                    Some(prev) if !prev.is_empty() => format!("{prev}\n[relatório] {line}"),
-                    _ => format!("[relatório] {line}"),
+                    Some(prev) if !prev.is_empty() => format!("{prev}\n{label} {line}"),
+                    _ => format!("{label} {line}"),
                 };
                 if let Err(e) = repos.blocks.set_ai_payload(&b.id, &payload, now) {
                     tracing::debug!(error = %e, block = %b.id, "could not record report payload");
@@ -155,7 +167,7 @@ pub async fn generate(
                 Ok(mut r) => {
                     state.set_ai_health(AiHealth::Ok);
                     if r.summary_md.trim().is_empty() {
-                        r.summary_md = report::render_summary_md(&r, &category);
+                        r.summary_md = report::render_summary_md(&r, &category, lang);
                     }
                     report = Some(r);
                 }
@@ -168,7 +180,7 @@ pub async fn generate(
             }
         }
     }
-    let mut report = report.unwrap_or_else(|| template_report(date, &category, &blocks, now));
+    let mut report = report.unwrap_or_else(|| template_report(date, &category, &blocks, now, lang));
     if let Some(existing) = repos.reports.get(date, category_id)? {
         report.id = existing.id;
     }
@@ -191,6 +203,7 @@ pub async fn run_due(state: &Arc<EngineState>) -> CoreResult<usize> {
         .unwrap_or(now - Duration::minutes(1));
     let categories = repos.categories.list(false)?;
     let settings = state.settings();
+    let lang = settings.ui_language();
     let due = due_reports(&categories, &settings, last, now);
     let mut generated = 0;
     for d in due {
@@ -215,16 +228,7 @@ pub async fn run_due(state: &Arc<EngineState>) -> CoreResult<usize> {
                     .map(|c| c.name.clone())
                     .unwrap_or_default();
                 let late = now - d.scheduled_at > Duration::minutes(10);
-                let title = if late {
-                    format!("Relatório atrasado de {name} pronto")
-                } else {
-                    format!("Relatório de {name} pronto")
-                };
-                let body = if r.items.is_empty() {
-                    "Sem atividade registrada hoje nesta categoria.".to_string()
-                } else {
-                    format!("{} itens · revise em 2 min no ubiqX.", r.items.len())
-                };
+                let (title, body) = report_ready_text(&name, late, r.items.len(), lang);
                 crate::nudges::emit(state, NudgeKind::ReportReady, &title, &body, true);
             }
             Err(e) => {
@@ -234,6 +238,29 @@ pub async fn run_due(state: &Arc<EngineState>) -> CoreResult<usize> {
     }
     repos.kv.set(KV_LAST_REPORT_CHECK, &now.to_rfc3339())?;
     Ok(generated)
+}
+
+/// Title and body of the "report ready" notification, in the UI language.
+pub fn report_ready_text(
+    category_name: &str,
+    late: bool,
+    items: usize,
+    lang: UiLanguage,
+) -> (String, String) {
+    let title = match (lang, late) {
+        (UiLanguage::PtBr, true) => format!("Relatório atrasado de {category_name} pronto"),
+        (UiLanguage::PtBr, false) => format!("Relatório de {category_name} pronto"),
+        (UiLanguage::En, true) => format!("Overdue report for {category_name} is ready"),
+        (UiLanguage::En, false) => format!("Report for {category_name} is ready"),
+    };
+    let body = match (lang, items) {
+        (UiLanguage::PtBr, 0) => "Sem atividade registrada hoje nesta categoria.".to_string(),
+        (UiLanguage::PtBr, n) => format!("{n} itens · revise em 2 min no ubiqX."),
+        (UiLanguage::En, 0) => "No activity recorded in this category today.".to_string(),
+        (UiLanguage::En, 1) => "1 item, about 2 min to review in ubiqX.".to_string(),
+        (UiLanguage::En, n) => format!("{n} items, about 2 min to review in ubiqX."),
+    };
+    (title, body)
 }
 
 /// Marks the reports of a block's day as stale (after corrections/splits/manual entries).

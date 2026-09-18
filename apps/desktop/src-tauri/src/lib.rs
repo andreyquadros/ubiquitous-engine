@@ -11,12 +11,115 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_notification::NotificationExt;
 use ubiqx_app::{App, AppConfig};
 use ubiqx_core::ports::{EventSink, Notifier};
-use ubiqx_core::{CoreResult, EngineEvent};
+use ubiqx_core::{CoreResult, EngineEvent, UiLanguage};
 use ubiqx_engine::PrivateModeDuration;
 
 /// Shared state handed to every command.
 pub struct AppState {
     pub app: App,
+}
+
+/// Labels of the tray and application menus, per UI language.
+struct MenuText {
+    open: &'static str,
+    pause: &'static str,
+    resume: &'static str,
+    private_mode: &'static str,
+    private_30: &'static str,
+    private_60: &'static str,
+    private_tomorrow: &'static str,
+    private_indefinite: &'static str,
+    private_off: &'static str,
+    snooze: &'static str,
+    report_today: &'static str,
+    quit: &'static str,
+    hide_window: &'static str,
+}
+
+impl MenuText {
+    fn for_language(lang: UiLanguage) -> Self {
+        match lang {
+            UiLanguage::PtBr => Self {
+                open: "Abrir ubiqX",
+                pause: "Pausar rastreamento",
+                resume: "Retomar rastreamento",
+                private_mode: "Modo privado",
+                private_30: "30 minutos",
+                private_60: "1 hora",
+                private_tomorrow: "Até amanhã",
+                private_indefinite: "Até eu desligar",
+                private_off: "Desligar modo privado",
+                snooze: "Silenciar o UBI por 2 h",
+                report_today: "Gerar relatórios de hoje",
+                quit: "Sair do ubiqX",
+                hide_window: "Fechar janela",
+            },
+            UiLanguage::En => Self {
+                open: "Open ubiqX",
+                pause: "Pause tracking",
+                resume: "Resume tracking",
+                private_mode: "Private mode",
+                private_30: "30 minutes",
+                private_60: "1 hour",
+                private_tomorrow: "Until tomorrow",
+                private_indefinite: "Until I turn it off",
+                private_off: "Turn off private mode",
+                snooze: "Mute UBI for 2 h",
+                report_today: "Generate today's reports",
+                quit: "Quit ubiqX",
+                hide_window: "Close Window",
+            },
+        }
+    }
+}
+
+/// The menu items whose labels follow the UI language, kept so a settings change can relabel
+/// them in place (the item ids never change, so the event handlers are untouched).
+pub struct Menus {
+    open: MenuItem<tauri::Wry>,
+    pause: MenuItem<tauri::Wry>,
+    resume: MenuItem<tauri::Wry>,
+    private_mode: Submenu<tauri::Wry>,
+    private_30: MenuItem<tauri::Wry>,
+    private_60: MenuItem<tauri::Wry>,
+    private_tomorrow: MenuItem<tauri::Wry>,
+    private_indefinite: MenuItem<tauri::Wry>,
+    private_off: MenuItem<tauri::Wry>,
+    snooze: MenuItem<tauri::Wry>,
+    report_today: MenuItem<tauri::Wry>,
+    quit: MenuItem<tauri::Wry>,
+    hide_window: MenuItem<tauri::Wry>,
+}
+
+impl Menus {
+    /// Rewrites every label in `lang`.
+    pub fn relabel(&self, lang: UiLanguage) -> tauri::Result<()> {
+        let t = MenuText::for_language(lang);
+        self.open.set_text(t.open)?;
+        self.pause.set_text(t.pause)?;
+        self.resume.set_text(t.resume)?;
+        self.private_mode.set_text(t.private_mode)?;
+        self.private_30.set_text(t.private_30)?;
+        self.private_60.set_text(t.private_60)?;
+        self.private_tomorrow.set_text(t.private_tomorrow)?;
+        self.private_indefinite.set_text(t.private_indefinite)?;
+        self.private_off.set_text(t.private_off)?;
+        self.snooze.set_text(t.snooze)?;
+        self.report_today.set_text(t.report_today)?;
+        self.quit.set_text(t.quit)?;
+        self.hide_window.set_text(t.hide_window)?;
+        Ok(())
+    }
+}
+
+/// Relabels the tray and application menus after a settings write (called by the
+/// `update_settings` command; a no-op before the menus exist).
+pub fn relabel_menus(app: &AppHandle, lang: UiLanguage) {
+    if let Some(menus) = app.try_state::<Menus>() {
+        if let Err(e) = menus.relabel(lang) {
+            tracing::warn!(error = %e, "could not relabel the menus");
+        }
+    }
 }
 
 /// Forwards engine events to the webview.
@@ -53,30 +156,37 @@ pub fn show_main_window(app: &AppHandle) {
     }
 }
 
-fn build_tray(app: &tauri::App) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Abrir ubiqX", true, None::<&str>)?;
-    let pause = MenuItem::with_id(app, "pause", "Pausar rastreamento", true, None::<&str>)?;
-    let resume = MenuItem::with_id(app, "resume", "Retomar rastreamento", true, None::<&str>)?;
-    let p30 = MenuItem::with_id(app, "private_30", "30 minutos", true, None::<&str>)?;
-    let p60 = MenuItem::with_id(app, "private_60", "1 hora", true, None::<&str>)?;
-    let ptom = MenuItem::with_id(app, "private_tomorrow", "Até amanhã", true, None::<&str>)?;
+/// Builds the tray (labels in `lang`) and returns its relabelable items, without the
+/// application-menu item that [`build_app_menu`] adds.
+fn build_tray(
+    app: &tauri::App,
+    lang: UiLanguage,
+    hide_window: MenuItem<tauri::Wry>,
+) -> tauri::Result<Menus> {
+    let t = MenuText::for_language(lang);
+    let open = MenuItem::with_id(app, "open", t.open, true, None::<&str>)?;
+    let pause = MenuItem::with_id(app, "pause", t.pause, true, None::<&str>)?;
+    let resume = MenuItem::with_id(app, "resume", t.resume, true, None::<&str>)?;
+    let p30 = MenuItem::with_id(app, "private_30", t.private_30, true, None::<&str>)?;
+    let p60 = MenuItem::with_id(app, "private_60", t.private_60, true, None::<&str>)?;
+    let ptom = MenuItem::with_id(
+        app,
+        "private_tomorrow",
+        t.private_tomorrow,
+        true,
+        None::<&str>,
+    )?;
     let pind = MenuItem::with_id(
         app,
         "private_indefinite",
-        "Até eu desligar",
+        t.private_indefinite,
         true,
         None::<&str>,
     )?;
-    let poff = MenuItem::with_id(
-        app,
-        "private_off",
-        "Desligar modo privado",
-        true,
-        None::<&str>,
-    )?;
+    let poff = MenuItem::with_id(app, "private_off", t.private_off, true, None::<&str>)?;
     let private = Submenu::with_items(
         app,
-        "Modo privado",
+        t.private_mode,
         true,
         &[
             &p30,
@@ -87,15 +197,9 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
             &poff,
         ],
     )?;
-    let snooze = MenuItem::with_id(app, "snooze", "Silenciar o UBI por 2 h", true, None::<&str>)?;
-    let report = MenuItem::with_id(
-        app,
-        "report_today",
-        "Gerar relatórios de hoje",
-        true,
-        None::<&str>,
-    )?;
-    let quit = MenuItem::with_id(app, "quit", "Sair do ubiqX", true, None::<&str>)?;
+    let snooze = MenuItem::with_id(app, "snooze", t.snooze, true, None::<&str>)?;
+    let report = MenuItem::with_id(app, "report_today", t.report_today, true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", t.quit, true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
@@ -165,7 +269,21 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
             }
         })
         .build(app)?;
-    Ok(())
+    Ok(Menus {
+        open,
+        pause,
+        resume,
+        private_mode: private,
+        private_30: p30,
+        private_60: p60,
+        private_tomorrow: ptom,
+        private_indefinite: pind,
+        private_off: poff,
+        snooze,
+        report_today: report,
+        quit,
+        hide_window,
+    })
 }
 
 fn log_err(r: CoreResult<()>) {
@@ -189,7 +307,6 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .build(),
         )
-        .menu(build_app_menu)
         .on_menu_event(|app, event| {
             if event.id().as_ref() == HIDE_WINDOW_ID {
                 if let Some(w) = app.get_webview_window("main") {
@@ -258,9 +375,16 @@ pub fn run() {
                 autostart.disable()
             };
 
-            let onboarding_done = ubiqx.engine.settings().onboarding_done;
+            let settings = ubiqx.engine.settings();
+            let onboarding_done = settings.onboarding_done;
+            let lang = settings.ui_language();
             app.manage(AppState { app: ubiqx });
-            build_tray(app)?;
+            // Menus are built once the engine is up, so their labels follow the stored
+            // language; `update_settings` relabels them in place afterwards.
+            let (app_menu, hide_window) = build_app_menu(&handle, lang)?;
+            app.set_menu(app_menu)?;
+            let menus = build_tray(app, lang, hide_window)?;
+            app.manage(menus);
 
             if !minimized || !onboarding_done {
                 show_main_window(&handle);
@@ -305,13 +429,17 @@ const HIDE_WINDOW_ID: &str = "hide_window";
 /// `ExitRequested` we could veto; Cmd+Q instead hides the dashboard, exactly like closing
 /// it, and the tray "Sair" item stays the only exit path. Edit and Window are kept so
 /// Cmd+C/V/X/A and Cmd+W still work in the webview of an Accessory app (Cmd+W goes through
-/// `performClose:` → `CloseRequested`, which is turned into hide above).
-fn build_app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+/// `performClose:` → `CloseRequested`, which is turned into hide above). Returns the menu and
+/// the hide item, whose label follows the UI language.
+fn build_app_menu(
+    app: &AppHandle,
+    lang: UiLanguage,
+) -> tauri::Result<(Menu<tauri::Wry>, MenuItem<tauri::Wry>)> {
     let name = app.package_info().name.clone();
     let hide_window = MenuItem::with_id(
         app,
         HIDE_WINDOW_ID,
-        "Fechar janela",
+        MenuText::for_language(lang).hide_window,
         true,
         Some("CmdOrCtrl+Q"),
     )?;
@@ -353,5 +481,6 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &PredefinedMenuItem::close_window(app, None)?,
         ],
     )?;
-    Menu::with_items(app, &[&app_menu, &edit, &window])
+    let menu = Menu::with_items(app, &[&app_menu, &edit, &window])?;
+    Ok((menu, hide_window))
 }

@@ -2,9 +2,18 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { getLocale, setLocale } from '../i18n';
 import { __mock } from '../lib/mock';
+import { providerPitch } from '../lib/providers';
 import { useAppStore } from '../lib/store';
 import { SettingsPage } from './Settings';
+
+const renderPage = () =>
+  render(
+    <MemoryRouter>
+      <SettingsPage />
+    </MemoryRouter>,
+  );
 
 describe('Settings · IA section (mock backend)', () => {
   beforeEach(async () => {
@@ -14,11 +23,7 @@ describe('Settings · IA section (mock backend)', () => {
   });
 
   it('picks the provider, lists the account models and restores the defaults', async () => {
-    render(
-      <MemoryRouter>
-        <SettingsPage />
-      </MemoryRouter>,
-    );
+    renderPage();
     const group = await screen.findByRole('radiogroup', { name: 'Provedor de IA' });
     expect(within(group).getByRole('radio', { name: /Anthropic Claude/ })).toHaveAttribute('aria-checked', 'true');
     // only anthropic has a key in the mock → one key icon
@@ -52,5 +57,44 @@ describe('Settings · IA section (mock backend)', () => {
     await screen.findByText('…9f2c');
     expect(screen.getByRole('button', { name: /Listar modelos da conta/ })).toBeEnabled();
     expect(screen.getByText(/Para a IA escolhida \(Anthropic, OpenAI ou xAI\) vão apenas/)).toBeInTheDocument();
+  });
+});
+
+describe('Settings · language', () => {
+  beforeEach(async () => {
+    __mock.reset();
+    useAppStore.setState({ settingsView: null });
+    await useAppStore.getState().loadSettings();
+  });
+
+  it('renders the page in English when the locale is en', async () => {
+    setLocale('en');
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: 'AI provider' })).toBeInTheDocument();
+    expect(screen.getByText('Key configured')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /List account models/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'macOS permissions' })).toBeInTheDocument();
+    // the provider pitch follows the locale too
+    expect(providerPitch('xai').cost).toBe('$0.50–2/mo');
+    expect(providerPitch('openai').note).toMatch(/API key/);
+  });
+
+  it('switches the whole UI and persists Settings.language from the general section', async () => {
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'Configurações' })).toBeInTheDocument();
+    const group = screen.getByRole('radiogroup', { name: 'Idioma' });
+    expect(within(group).getByRole('radio', { name: 'Português (Brasil)' })).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.click(within(group).getByRole('radio', { name: 'English' }));
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    expect(getLocale()).toBe('en');
+    expect(screen.getByRole('radiogroup', { name: 'Language' })).toBeInTheDocument();
+    await waitFor(() => expect(useAppStore.getState().settingsView?.settings.language).toBe('en'));
+
+    // and back
+    fireEvent.click(screen.getByRole('radio', { name: 'Português (Brasil)' }));
+    expect(await screen.findByRole('heading', { name: 'Configurações' })).toBeInTheDocument();
+    await waitFor(() => expect(useAppStore.getState().settingsView?.settings.language).toBe('pt-BR'));
   });
 });

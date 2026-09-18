@@ -2,7 +2,7 @@ import { Pause, Play } from 'lucide-react';
 import { useState } from 'react';
 import { ipc } from '../../lib/ipc';
 import { useAppStore } from '../../lib/store';
-import { TRACKER_LABEL } from '../../lib/format';
+import { useT } from '../../i18n';
 import { useToast } from '../../lib/toast';
 import type { TrackerState } from '../../lib/types';
 import { Ubi } from '../ubi/Ubi';
@@ -24,6 +24,8 @@ export function TrackerPill() {
   const mood = useAppStore((s) => s.dashboards[date]?.stats.mood ?? 'calm');
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const t = useT();
+  const stateLabel = t(`common.tracker.${state}`);
 
   const running = state === 'running' || state === 'idle';
   const color = COLORS[state];
@@ -39,7 +41,7 @@ export function TrackerPill() {
         setTrackerState(running ? 'paused' : 'running');
       }
     } catch (e) {
-      toast.error('Não foi possível alterar o rastreamento', e instanceof Error ? e.message : String(e));
+      toast.error(t('nav.tracking_change_failed'), e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -53,10 +55,10 @@ export function TrackerPill() {
       <div className="hidden min-w-0 flex-1 min-[1180px]:block">
         <p className="flex items-center gap-1.5 text-xs font-medium">
           <span className="size-2 rounded-full" style={{ background: color, boxShadow: `0 0 0 3px color-mix(in oklab, ${color} 18%, transparent)` }} />
-          {TRACKER_LABEL[state]}
+          {stateLabel}
         </p>
       </div>
-      <IconButton label={running ? 'Pausar rastreamento' : 'Retomar rastreamento'} size="sm" onClick={toggle} disabled={busy} title={TRACKER_LABEL[state]}>
+      <IconButton label={running ? t('nav.pause_tracking') : t('nav.resume_tracking')} size="sm" onClick={toggle} disabled={busy} title={stateLabel}>
         {running ? <Pause className="size-3.5" strokeWidth={1.75} /> : <Play className="size-3.5" strokeWidth={1.75} />}
       </IconButton>
     </div>

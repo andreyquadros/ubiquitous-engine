@@ -121,7 +121,8 @@ pub fn reclassify(
     // 5. Suggest / auto-create rules.
     let corrections = repos.corrections.list_recent(200)?;
     let existing = repos.rules.list()?;
-    let suggestions = suggest_rules(&corrections, &existing, SUGGESTION_MIN_SUPPORT);
+    let lang = state.settings.read().ui_language();
+    let suggestions = suggest_rules(&corrections, &existing, SUGGESTION_MIN_SUPPORT, lang);
     for s in suggestions {
         if s.auto_apply_safe {
             let rule = Rule {
@@ -166,7 +167,10 @@ pub fn reclassify(
             matcher: own_key.0,
             pattern: own_key.1.clone(),
             support: 1,
-            rationale: format!("Sempre classificar {} nesta categoria?", own_key.1),
+            rationale: match lang {
+                UiLanguage::PtBr => format!("Sempre classificar {} nesta categoria?", own_key.1),
+                UiLanguage::En => format!("Always file {} under this category?", own_key.1),
+            },
             auto_apply_safe: false,
         });
     }

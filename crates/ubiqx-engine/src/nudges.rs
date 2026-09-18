@@ -111,6 +111,7 @@ pub fn run_once(state: &Arc<EngineState>) -> CoreResult<Vec<Nudge>> {
         categories: &categories,
         last_emitted: &last_emitted,
         quiet,
+        language: settings.ui_language(),
     });
     let mut out = Vec::new();
     for n in nudges {
