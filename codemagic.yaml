@@ -43,18 +43,25 @@ workflows:
       - name: Rust estável (rustup)
         script: |
           set -e
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
-          echo "PATH=$HOME/.cargo/bin:$PATH" >> "$CM_ENV"
-          "$HOME/.cargo/bin/cargo" --version
-      - name: Dependências do frontend (pnpm 10)
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable --no-modify-path
+          source "$HOME/.cargo/env"
+          cargo --version
+      - name: pnpm 10 e dependências do frontend
         script: |
           set -e
+          # Instala o pnpm num prefixo do usuário: não depende de permissão no diretório global do npm.
+          export NPM_CONFIG_PREFIX="$HOME/.npm-global"
+          export PATH="$HOME/.npm-global/bin:$PATH"
+          node --version && npm --version
           npm install -g pnpm@10
+          pnpm --version
           cd apps/desktop
           pnpm install --frozen-lockfile
       - name: Compilar ubiqX.app
         script: |
           set -e
+          source "$HOME/.cargo/env"
+          export PATH="$HOME/.npm-global/bin:$PATH"
           cd apps/desktop
           export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
           pnpm tauri build --bundles app
@@ -62,6 +69,8 @@ workflows:
         ignore_failure: true
         script: |
           set -e
+          source "$HOME/.cargo/env"
+          export PATH="$HOME/.npm-global/bin:$PATH"
           cd apps/desktop
           export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
           pnpm tauri build --bundles dmg
