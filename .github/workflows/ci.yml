@@ -24,8 +24,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-          targets: aarch64-apple-darwin
+          targets: aarch64-apple-darwin, x86_64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
+      - name: System libraries (libdbus for the Linux keyring backend)
+        # keyring's sync-secret-service links libdbus-1 through dbus-secret-service; the plain
+        # ubuntu image does not promise the -dev package.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libdbus-1-dev pkg-config
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
@@ -34,6 +40,11 @@ jobs:
         run: cargo test --workspace --exclude ubiqx-desktop
       - name: Type-check macOS platform code
         run: cargo check -p ubiqx-platform --target aarch64-apple-darwin
+      - name: Type-check Windows platform code
+        # No linker needed for a check; the Windows adapters compile only under this target. The desktop
+        # crate is not checked here: its dependencies (ring, libsqlite3-sys) compile C for MSVC and need
+        # cl.exe plus the Windows SDK, so windows-app builds it for real on a Windows runner.
+        run: cargo check -p ubiqx-platform --target x86_64-pc-windows-msvc
 
   frontend:
     name: Frontend (Vite + TypeScript)
@@ -59,13 +70,12 @@ jobs:
         run: node --test scripts/publish-release.test.mjs
         working-directory: ${{ github.workspace }}
 
+  # The three app jobs only build and upload their installers under the stable names the update feed
+  # points at (ubiqX-<os>-<arch>.<ext>). publish-continuous, below, publishes the three of them in one go.
   macos-app:
     name: macOS app build
     runs-on: macos-latest
     needs: [rust-linux, frontend]
-    permissions:
-      # The publish step moves the "continuous" tag and rewrites its release assets.
-      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -101,21 +111,180 @@ jobs:
         env:
           # Ad-hoc seal: without an identity Tauri never runs codesign and a downloaded bundle reads as "damaged".
           APPLE_SIGNING_IDENTITY: "-"
-      - name: Zip the .app with ditto
+      - name: Zip the .app with ditto and give the DMG its stable name
         # upload-artifact drops file modes and symlinks; ditto keeps them, so the downloaded app launches.
-        # The stable name (ubiqX-macos-<arch>.app.zip) is the one the update feed points at.
-        run: ditto -c -k --sequesterRsrc --keepParent target/release/bundle/macos/ubiqX.app "target/release/bundle/macos/ubiqX-macos-${UBIQX_ARCH}.app.zip"
+        # The stable names (ubiqX-macos-<arch>.dmg / .app.zip) are the ones the update feed points at.
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent target/release/bundle/macos/ubiqX.app "target/release/bundle/macos/ubiqX-macos-${UBIQX_ARCH}.app.zip"
+          dmg="$(ls target/release/bundle/dmg/*.dmg | head -n 1)"
+          mv "$dmg" "target/release/bundle/dmg/ubiqX-macos-${UBIQX_ARCH}.dmg"
+          ls -la target/release/bundle/dmg target/release/bundle/macos/*.app.zip
       - uses: actions/upload-artifact@v4
         with:
           name: ubiqX-macos-app
           path: |
             target/release/bundle/macos/ubiqX-macos-*.app.zip
-            target/release/bundle/dmg/*.dmg
+            target/release/bundle/dmg/ubiqX-macos-*.dmg
           if-no-files-found: error
-      - name: Publish continuous release
-        # Every pushed commit becomes the rolling "continuous" release (DMG, app zip and latest.json),
-        # which installed apps poll to announce the update. Pull requests only build.
-        if: github.event_name == 'push'
+
+  windows-app:
+    name: Windows app build
+    runs-on: windows-latest
+    needs: [rust-linux, frontend]
+    defaults:
+      run:
+        # Git for Windows ships bash on the runner; the same scripts then work on the three OSes.
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: apps/desktop
+      - name: Build identity (epoch, number, sha, branch)
+        run: |
+          eval "$(bash scripts/build-info.sh)"
+          for name in UBIQX_BUILD_EPOCH UBIQX_BUILD_NUMBER UBIQX_BUILD_SHA UBIQX_BUILD_BRANCH; do
+            echo "$name=${!name}" >> "$GITHUB_ENV"
+          done
+          echo "UBIQX_ARCH=x86_64" >> "$GITHUB_ENV"
+          echo "build $UBIQX_BUILD_NUMBER ($UBIQX_BUILD_SHA, $UBIQX_BUILD_BRANCH, epoch $UBIQX_BUILD_EPOCH), arch x86_64"
+      - name: Rust tests (portable crates and the Windows adapters)
+        run: cargo test --workspace --exclude ubiqx-desktop
+      - name: Clippy on the desktop shell (Windows)
+        # rust-linux cannot type-check ubiqx-desktop for MSVC (ring and libsqlite3-sys compile C there).
+        run: cargo clippy -p ubiqx-desktop -- -D warnings
+      - name: Build MSI and NSIS installers
+        run: pnpm tauri build --bundles msi,nsis
+        working-directory: apps/desktop
+      - name: Stable installer names
+        # ubiqX-windows-<arch>.msi and ubiqX-windows-<arch>-setup.exe are what latest.json points at.
+        # WiX emits one MSI per language (…_pt-BR.msi and …_en-US.msi); the published one is pt-BR, the
+        # NSIS installer asks the language on first run.
+        run: |
+          ls -la target/release/bundle/msi target/release/bundle/nsis
+          msi="$(ls target/release/bundle/msi/*pt-BR*.msi | head -n 1)"
+          exe="$(ls target/release/bundle/nsis/*-setup.exe | head -n 1)"
+          test -f "$msi" && test -f "$exe"
+          mv "$msi" "target/release/bundle/msi/ubiqX-windows-${UBIQX_ARCH}.msi"
+          mv "$exe" "target/release/bundle/nsis/ubiqX-windows-${UBIQX_ARCH}-setup.exe"
+          ls -la target/release/bundle/msi target/release/bundle/nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ubiqX-windows-app
+          path: |
+            target/release/bundle/msi/ubiqX-windows-*.msi
+            target/release/bundle/nsis/ubiqX-windows-*-setup.exe
+          if-no-files-found: error
+
+  linux-app:
+    name: Linux app build
+    # 22.04 keeps the AppImage runnable on older glibc; webkit2gtk 4.1 is what Tauri 2 links against.
+    runs-on: ubuntu-22.04
+    needs: [rust-linux, frontend]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: System libraries (webkit2gtk, tray, AppImage tooling, XTest)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev \
+            libgtk-3-dev libdbus-1-dev libssl-dev libfuse2 build-essential curl wget file
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: apps/desktop
+      - name: Build identity (epoch, number, sha, branch)
+        run: |
+          eval "$(bash scripts/build-info.sh)"
+          for name in UBIQX_BUILD_EPOCH UBIQX_BUILD_NUMBER UBIQX_BUILD_SHA UBIQX_BUILD_BRANCH; do
+            echo "$name=${!name}" >> "$GITHUB_ENV"
+          done
+          echo "UBIQX_ARCH=x86_64" >> "$GITHUB_ENV"
+          echo "build $UBIQX_BUILD_NUMBER ($UBIQX_BUILD_SHA, $UBIQX_BUILD_BRANCH, epoch $UBIQX_BUILD_EPOCH), arch x86_64"
+      - name: Build AppImage and .deb
+        run: pnpm tauri build --bundles appimage,deb
+        working-directory: apps/desktop
+      - name: Stable installer names
+        # ubiqX-linux-<arch>.AppImage and ubiqX-linux-<arch>.deb are what latest.json points at.
+        run: |
+          appimage="$(ls target/release/bundle/appimage/*.AppImage | head -n 1)"
+          deb="$(ls target/release/bundle/deb/*.deb | head -n 1)"
+          test -f "$appimage" && test -f "$deb"
+          mv "$appimage" "target/release/bundle/appimage/ubiqX-linux-${UBIQX_ARCH}.AppImage"
+          mv "$deb" "target/release/bundle/deb/ubiqX-linux-${UBIQX_ARCH}.deb"
+          ls -la target/release/bundle/appimage target/release/bundle/deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ubiqX-linux-app
+          path: |
+            target/release/bundle/appimage/ubiqX-linux-*.AppImage
+            target/release/bundle/deb/ubiqX-linux-*.deb
+          if-no-files-found: error
+
+  publish-continuous:
+    name: Publish continuous release
+    # Every pushed commit becomes the rolling "continuous" release: the six installers and one latest.json
+    # listing the three platforms, written in a single run so the feed never shows a half-published build.
+    # Pull requests only build. Codemagic (macOS only) may publish the same commit too: publish-release.mjs
+    # merges the platforms when the epochs match, so whoever finishes last does not erase the others.
+    runs-on: ubuntu-latest
+    needs: [macos-app, windows-app, linux-app]
+    if: github.event_name == 'push'
+    permissions:
+      # The script moves the "continuous" tag and rewrites the release assets.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ubiqX-*-app
+          path: dist
+          merge-multiple: true
+      - name: Build identity (epoch, number, sha, branch)
+        run: |
+          eval "$(bash scripts/build-info.sh)"
+          for name in UBIQX_BUILD_EPOCH UBIQX_BUILD_NUMBER UBIQX_BUILD_SHA UBIQX_BUILD_BRANCH; do
+            echo "$name=${!name}" >> "$GITHUB_ENV"
+          done
+          echo "build $UBIQX_BUILD_NUMBER ($UBIQX_BUILD_SHA, $UBIQX_BUILD_BRANCH, epoch $UBIQX_BUILD_EPOCH)"
+          find dist -type f | sort
+      - name: Publish the three platforms
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/publish-release.mjs --dmg 'target/release/bundle/dmg/*.dmg' --app-zip "target/release/bundle/macos/ubiqX-macos-${UBIQX_ARCH}.app.zip"
+        # upload-artifact roots each artifact at the common ancestor of its paths (target/release/bundle),
+        # so the installers land in dist/{dmg,macos,msi,nsis,appimage,deb}/: collect them recursively.
+        run: |
+          args=()
+          while IFS= read -r f; do args+=(--asset "$f"); done < <(find dist -type f -name 'ubiqX-*' | sort)
+          if [ "${#args[@]}" -eq 0 ]; then
+            echo "no ubiqX-* installer found under dist/" >&2
+            exit 1
+          fi
+          echo "publishing ${#args[@]} argument(s): ${args[*]}"
+          node scripts/publish-release.mjs --strict "${args[@]}"

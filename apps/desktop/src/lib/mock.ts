@@ -26,6 +26,7 @@ import {
   type Mood,
   type Nudge,
   type PermissionStatus,
+  type Platform,
   type ReportItem,
   type Rule,
   type RuleSuggestion,
@@ -670,6 +671,35 @@ const freshFocusState = (): FocusState => {
 };
 
 /* ------------------------------------------------------------------ */
+/* platform (macOS by default; ?platform=windows|linux for the UI)     */
+/* ------------------------------------------------------------------ */
+
+const isPlatform = (v: unknown): v is Platform => v === 'macos' || v === 'windows' || v === 'linux';
+
+/** `?platform=windows|linux` is read once at module load (like `?lang=`), so a reset keeps it; anything else is macOS. */
+const PLATFORM_FROM_QUERY: Platform = (() => {
+  try {
+    if (typeof window === 'undefined') return 'macos';
+    const q = new URLSearchParams(window.location.search).get('platform');
+    return isPlatform(q) ? q : 'macos';
+  } catch {
+    return 'macos';
+  }
+})();
+
+/** What the real engine reports per OS: the data dir, and macOS-only permissions as "not applicable" elsewhere. */
+const platformFacts = (platform: Platform): { data_dir: string; permissions: PermissionStatus } => {
+  switch (platform) {
+    case 'windows':
+      return { data_dir: 'C:\\Users\\andrey\\AppData\\Roaming\\ai.ubiqx.app', permissions: { screen_recording: 'not_applicable', automation: 'not_applicable', accessibility: 'not_applicable' } };
+    case 'linux':
+      return { data_dir: '/home/andrey/.local/share/ai.ubiqx.app', permissions: { screen_recording: 'not_applicable', automation: 'not_applicable', accessibility: 'not_applicable' } };
+    default:
+      return { data_dir: '/Users/andrey/Library/Application Support/ai.ubiqx.app', permissions: { screen_recording: 'granted', automation: 'granted', accessibility: 'unknown' } };
+  }
+};
+
+/* ------------------------------------------------------------------ */
 /* updates (rolling "continuous" GitHub release)                       */
 /* ------------------------------------------------------------------ */
 
@@ -679,19 +709,30 @@ const UPDATE_FEED_URL = `${RELEASE_BASE}/download/continuous/latest.json`;
 /** The build this mock pretends to be running (a CI build, so automatic checks are on). */
 const CURRENT_BUILD: BuildInfo = { version: '0.1.0', epoch: 1758200000, number: 26, sha: '14c6e7f', branch: 'main' };
 
-/** A plausible newer build of the same version, served after `?update=available` or `__mock.setUpdate()`. */
-const sampleRelease = (): ReleaseInfo => ({
+/** The installer of the feed entry the engine would pick on each OS (`platforms["<os>-<arch>"]` of latest.json). */
+const platformDownload = (platform: Platform): Pick<ReleaseInfo, 'download_url' | 'app_zip_url' | 'kind'> => {
+  const download = `${RELEASE_BASE}/download/continuous`;
+  switch (platform) {
+    case 'windows':
+      return { download_url: `${download}/ubiqX-windows-x86_64-setup.exe`, app_zip_url: null, kind: 'exe' };
+    case 'linux':
+      return { download_url: `${download}/ubiqX-linux-x86_64.AppImage`, app_zip_url: null, kind: 'appimage' };
+    default:
+      return { download_url: `${download}/ubiqX-macos-aarch64.dmg`, app_zip_url: `${download}/ubiqX-macos-aarch64.app.zip`, kind: 'dmg' };
+  }
+};
+
+/** A plausible newer build of the same version, served after `?update=available` or `__mock.setUpdate()`, with the installer of `platform`. */
+const sampleRelease = (platform: Platform = S.platform): ReleaseInfo => ({
   version: '0.1.0',
   build: { version: '0.1.0', epoch: 1758221040, number: 27, sha: 'a1b2c3d', branch: 'main' },
   published_at: new Date().toISOString(),
   notes: pick(
-    'Aviso de nova versão dentro do app\n\n- Faixa no topo e seção Atualizações em Configurações\n- Notificação do macOS uma vez por build',
-    'In-app new version notice\n\n- Top banner and an Updates section in Settings\n- One macOS notification per build',
+    'Aviso de nova versão dentro do app\n\n- Faixa no topo e seção Atualizações em Configurações\n- Notificação do sistema uma vez por build\n- Instaladores para macOS, Windows e Linux no mesmo feed',
+    'In-app new version notice\n\n- Top banner and an Updates section in Settings\n- One system notification per build\n- macOS, Windows and Linux installers in the same feed',
   ),
-  download_url: `${RELEASE_BASE}/download/continuous/ubiqX-macos-aarch64.dmg`,
-  app_zip_url: `${RELEASE_BASE}/download/continuous/ubiqX-macos-aarch64.app.zip`,
+  ...platformDownload(platform),
   release_url: `${RELEASE_BASE}/tag/continuous`,
-  kind: 'dmg',
 });
 
 /** `?update=available` is read once at module load (like `?lang=`), so a reset keeps the flag. */
@@ -713,8 +754,8 @@ interface UpdateState {
   announcedEpoch: number | null;
 }
 
-const freshUpdateState = (): UpdateState => ({
-  available: UPDATE_FROM_QUERY ? sampleRelease() : null,
+const freshUpdateState = (platform: Platform): UpdateState => ({
+  available: UPDATE_FROM_QUERY ? sampleRelease(platform) : null,
   dismissedEpoch: null,
   lastCheck: UPDATE_FROM_QUERY ? new Date().toISOString() : null,
   lastError: null,
@@ -742,6 +783,8 @@ interface State {
   advices: number;
   update: UpdateState;
   focus: FocusState;
+  /** OS the mock pretends to run on (`?platform=` or `__mock.setPlatform`). */
+  platform: Platform;
 }
 
 const onboardingFromQuery = (): boolean => {
@@ -765,13 +808,14 @@ function freshState(): State {
     nudges: FOCUS_FROM_QUERY.nudge ? [focusPromptNudge(), ...seedNudges(t)] : seedNudges(t),
     settings,
     keyHints: { anthropic: 'f3a9', openai: null, xai: null },
-    permissions: { screen_recording: 'granted', automation: 'granted', accessibility: 'unknown' },
+    permissions: platformFacts(PLATFORM_FROM_QUERY).permissions,
     aiHealth: { state: 'ok' },
     trackerState: 'running',
     usage: { calls: 412, input_tokens: 1_234_567, output_tokens: 98_765, cost_usd: 1.37 },
     advices: 0,
-    update: freshUpdateState(),
+    update: freshUpdateState(PLATFORM_FROM_QUERY),
     focus: freshFocusState(),
+    platform: PLATFORM_FROM_QUERY,
   };
 }
 
@@ -1178,8 +1222,8 @@ function settingsView(): SettingsView {
     permissions: { ...S.permissions },
     ai_health: S.aiHealth,
     tracker_state: S.trackerState,
-    data_dir: '/Users/andrey/Library/Application Support/ai.ubiqx.app',
-    platform: 'macos',
+    data_dir: platformFacts(S.platform).data_dir,
+    platform: S.platform,
     version: '0.1.0',
   };
 }
@@ -1841,6 +1885,12 @@ export const __mock = {
   setOnboardingDone(done: boolean): void {
     S.settings.onboarding_done = done;
   },
+  /** Pretends to run on another OS: permissions, data dir and the installer of any served update follow it. */
+  setPlatform(platform: Platform): void {
+    S.platform = platform;
+    S.permissions = platformFacts(platform).permissions;
+    if (S.update.available) S.update.available = { ...S.update.available, ...platformDownload(platform) };
+  },
   /** Serves `release` as the available update (`true` = the sample newer build) or clears it with `null`. Subscribers get one `update_available` event. */
   setUpdate(release: ReleaseInfo | true | null): void {
     S.update.available = release === true ? sampleRelease() : release ? structuredClone(release) : null;
@@ -1891,6 +1941,7 @@ declare global {
     __ubiqxMock?: {
       reset: () => void;
       setOnboardingDone: (done: boolean) => void;
+      setPlatform: (platform: Platform) => void;
       setUpdate: (release: ReleaseInfo | true | null) => void;
       setFocus: (typeof __mock)['setFocus'];
       intervene: (typeof __mock)['intervene'];
@@ -1899,5 +1950,5 @@ declare global {
 }
 
 if (typeof window !== 'undefined') {
-  window.__ubiqxMock = { reset: __mock.reset, setOnboardingDone: __mock.setOnboardingDone, setUpdate: __mock.setUpdate, setFocus: __mock.setFocus, intervene: __mock.intervene };
+  window.__ubiqxMock = { reset: __mock.reset, setOnboardingDone: __mock.setOnboardingDone, setPlatform: __mock.setPlatform, setUpdate: __mock.setUpdate, setFocus: __mock.setFocus, intervene: __mock.intervene };
 }

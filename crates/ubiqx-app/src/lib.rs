@@ -255,7 +255,9 @@ impl App {
                 let (p, s) = PlatformServices::scripted(scenario);
                 (p, Some(s))
             }
-            None => (PlatformServices::native(), None),
+            // The data directory also hosts the secrets file Windows and Linux fall back
+            // to when the OS keyring is unavailable.
+            None => (PlatformServices::native_in(Some(&data_dir)), None),
         };
         if let Some(n) = config.notifier.clone() {
             platform.notifier = n;

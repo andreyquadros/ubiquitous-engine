@@ -2,6 +2,9 @@
 # Conecte o repositório em https://codemagic.io (Add application → GitHub → este repo → codemagic.yaml),
 # inicie o workflow "ubiqX macOS app" no branch desejado e baixe o .app (zipado) ou o .dmg em Artifacts.
 # Passo a passo, quarentena e assinatura: docs/MACOS-TESTING.md § 3.1. Atualizações automáticas: § 3.2.
+# Este workflow é só macOS: os instaladores de Windows e Linux saem do GitHub Actions (.github/workflows/ci.yml),
+# que publica as três plataformas de uma vez. Quando os dois publicam o mesmo commit, o publish-release.mjs
+# mescla as plataformas do latest.json (mesmo epoch), então este passo nunca apaga o Windows e o Linux.
 workflows:
   macos-app:
     name: ubiqX macOS app
@@ -122,6 +125,8 @@ workflows:
       - name: Publicar atualização (GitHub Releases)
         # Move a tag "continuous" para este commit, troca o DMG, o .app.zip e o latest.json da release.
         # Só em push (builds de pull request apenas compilam) e só com GITHUB_TOKEN (grupo ubiqx_github).
+        # O latest.json publicado mantém as entradas windows-* e linux-* do GitHub Actions quando o build é o
+        # mesmo (epoch igual); se este build for mais novo, elas voltam assim que o Actions publicar o commit.
         script: |
           set -e
           if [ "${CM_PULL_REQUEST:-false}" = "true" ]; then

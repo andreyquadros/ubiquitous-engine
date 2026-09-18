@@ -581,11 +581,8 @@ fn settings_view(app: &AppHandle, e: &EngineHandle) -> CoreResult<SettingsView> 
         ai_health: e.ai_health(),
         tracker_state: e.tracker_state(),
         data_dir: e.state().deps.data_dir.to_string_lossy().to_string(),
-        platform: if cfg!(target_os = "macos") {
-            "macos".into()
-        } else {
-            "other".into()
-        },
+        // `macos` | `windows` | `linux` (the frontend keys its OS-specific copy on it).
+        platform: std::env::consts::OS.into(),
         version: app.package_info().version.to_string(),
     })
 }

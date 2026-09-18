@@ -10,6 +10,7 @@ const messages = {
     steps: 'Etapas',
     step_done: 'concluída',
     rail_footer: 'Tudo fica no seu Mac. Sem contas, sem telemetria.',
+    'rail_footer.other': 'Tudo fica no seu computador. Sem contas, sem telemetria.',
     step_of: 'Passo {step} de {total}',
     skip_for_now: 'Pular por enquanto',
 
@@ -49,6 +50,8 @@ const messages = {
     'intro.ai_text': 'Apenas app, título e domínio dos blocos a classificar e, quando permitido, um screenshot reduzido. Nunca a URL completa, o conteúdo da página ou o que você digita.',
     'intro.local_title': 'Nada mais sai do seu Mac',
     'intro.local_text': 'Banco SQLite local, chave no Keychain, sem contas, sem telemetria. Apps bloqueados (bancos, 1Password) nunca são registrados e o Modo privado pausa tudo com um clique.',
+    'intro.local_title.other': 'Nada mais sai do seu computador',
+    'intro.local_text.other': 'Banco SQLite local, chave no cofre de senhas do sistema, sem contas, sem telemetria. Apps bloqueados (bancos, 1Password) nunca são registrados e o Modo privado pausa tudo com um clique.',
 
     // step 2: AI
     'ai.title': 'Escolha sua IA',
@@ -59,6 +62,8 @@ const messages = {
     'ai.key_configured': 'Chave configurada {hint}',
     'ai.create_key_at': 'Crie a chave em {host} (link “Criar chave” acima).',
     'ai.key_storage': 'Ela fica no Keychain do macOS e pode ser trocada em Configurações.',
+    'ai.lead.other': 'Quem vai ler os blocos ambíguos e escrever os seus relatórios. Cada provedor usa a própria chave de API, guardada no cofre de senhas do sistema; dá para trocar depois em Configurações. Sem chave, o ubiqX funciona só com regras e memória.',
+    'ai.key_storage.other': 'Ela fica no cofre de senhas do sistema e pode ser trocada em Configurações.',
 
     // step 3: permissions
     'perms.title': 'Permissões do macOS',
@@ -118,6 +123,8 @@ const messages = {
     'finish.no_key': 'sem chave: só regras e memória até configurar em Configurações',
     'finish.launch_at_login': 'Iniciar com o sistema',
     'finish.launch_at_login_hint': 'Abre o ubiqX na barra de menus ao fazer login. Pode mudar em Configurações.',
+    'finish.lead.other': 'O UBI vai morar na bandeja do sistema. Deixe-o iniciar com o sistema para não perder nenhum dia.',
+    'finish.launch_at_login_hint.other': 'Abre o ubiqX na bandeja do sistema ao fazer login. Pode mudar em Configurações.',
     'finish.tracking': 'Rastreamento ativo',
     'finish.tracking_hint': 'Começar a registrar assim que concluir.',
     'finish.what_next': 'O que você vai encontrar',
@@ -135,6 +142,7 @@ const messages = {
     steps: 'Steps',
     step_done: 'completed',
     rail_footer: 'Everything stays on your Mac. No accounts, no telemetry.',
+    'rail_footer.other': 'Everything stays on your computer. No accounts, no telemetry.',
     step_of: 'Step {step} of {total}',
     skip_for_now: 'Skip for now',
 
@@ -174,6 +182,8 @@ const messages = {
     'intro.ai_text': 'Only the app, title and domain of the blocks to classify and, when allowed, a downscaled screenshot. Never the full URL, the page content or what you type.',
     'intro.local_title': 'Nothing else leaves your Mac',
     'intro.local_text': 'Local SQLite database, key in the Keychain, no accounts, no telemetry. Blocked apps (banking, 1Password) are never logged, and Private mode pauses everything with one click.',
+    'intro.local_title.other': 'Nothing else leaves your computer',
+    'intro.local_text.other': 'Local SQLite database, key in the system password store, no accounts, no telemetry. Blocked apps (banking, 1Password) are never logged, and Private mode pauses everything with one click.',
 
     // step 2: AI
     'ai.title': 'Pick your AI',
@@ -184,6 +194,8 @@ const messages = {
     'ai.key_configured': 'Key configured {hint}',
     'ai.create_key_at': 'Create your key at {host} (the “Create a key” link above).',
     'ai.key_storage': 'It stays in the macOS Keychain and can be changed in Settings.',
+    'ai.lead.other': 'Who reads the ambiguous blocks and writes your reports. Each provider uses its own API key, stored in the system password store; you can switch later in Settings. Without a key, ubiqX runs on rules and memory only.',
+    'ai.key_storage.other': 'It stays in the system password store and can be changed in Settings.',
 
     // step 3: permissions
     'perms.title': 'macOS permissions',
@@ -243,6 +255,8 @@ const messages = {
     'finish.no_key': 'no key: rules and memory only until you set one up in Settings',
     'finish.launch_at_login': 'Launch at login',
     'finish.launch_at_login_hint': 'Opens ubiqX in the menu bar when you log in. You can change this in Settings.',
+    'finish.lead.other': 'UBI will live in the system tray. Let it start with the system so you never miss a day.',
+    'finish.launch_at_login_hint.other': 'Opens ubiqX in the system tray when you log in. You can change this in Settings.',
     'finish.tracking': 'Tracking on',
     'finish.tracking_hint': 'Start logging as soon as you finish.',
     'finish.what_next': 'What you will find',

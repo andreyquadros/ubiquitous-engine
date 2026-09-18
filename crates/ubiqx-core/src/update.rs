@@ -1,5 +1,6 @@
 //! Application updates: the identity of the running build, the feed a CI publishes next to
-//! every DMG, and the pure decision "is that feed an update for me?".
+//! every installer (DMG, MSI/EXE, AppImage/deb), and the pure decision "is that feed an
+//! update for me?".
 //!
 //! Nothing here does I/O. Fetching the feed is the [`UpdateFeedSource`] port; the engine's
 //! checker (`ubiqx_engine::update`) runs the comparison, remembers what was already announced
@@ -110,20 +111,40 @@ pub struct FeedBuild {
     pub branch: String,
 }
 
-/// One downloadable artifact of the feed, keyed by target (`darwin-aarch64`, …).
+/// Installer kinds a feed entry may carry (`PlatformAsset::kind`, `ReleaseInfo::kind`):
+/// `dmg` (macOS), `exe` (Windows NSIS setup) and `msi` (Windows installer), `appimage` and
+/// `deb` (Linux). The shells pick the install hint and the button label from it.
+pub const ASSET_KINDS: &[&str] = &["dmg", "exe", "msi", "appimage", "deb"];
+
+/// A second installer of the same platform entry (the MSI next to the setup EXE, the deb
+/// next to the AppImage).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssetAlternate {
+    pub url: String,
+    pub kind: String,
+    #[serde(default)]
+    pub size: Option<u64>,
+}
+
+/// One downloadable artifact of the feed, keyed by target (`darwin-aarch64`,
+/// `windows-x86_64`, `linux-x86_64`, …).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlatformAsset {
-    /// The DMG (or whatever `kind` says) to download.
+    /// The installer (`kind` says which) to download.
     pub url: String,
-    /// `dmg` today.
+    /// One of [`ASSET_KINDS`]. Feeds written before other platforms existed omit it and
+    /// mean `dmg`.
     #[serde(default = "default_kind")]
     pub kind: String,
     /// Size in bytes, when the publisher knows it.
     #[serde(default)]
     pub size: Option<u64>,
-    /// A zipped `.app` next to the DMG, when published.
+    /// A zipped `.app` next to the DMG, when published (macOS only).
     #[serde(default)]
     pub app_zip_url: Option<String>,
+    /// Other installers of the same platform (Windows: the MSI; Linux: the deb).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternates: Vec<AssetAlternate>,
 }
 
 fn default_kind() -> String {
@@ -184,6 +205,7 @@ impl UpdateFeed {
             app_zip_url: asset.app_zip_url.clone(),
             release_url: self.release_url.clone(),
             kind: asset.kind.clone(),
+            alternates: asset.alternates.clone(),
         })
     }
 }
@@ -202,8 +224,12 @@ pub struct ReleaseInfo {
     pub download_url: String,
     pub app_zip_url: Option<String>,
     pub release_url: Option<String>,
-    /// `dmg`.
+    /// One of [`ASSET_KINDS`]: what `download_url` is (`dmg`, `exe`, `msi`, `appimage`,
+    /// `deb`).
     pub kind: String,
+    /// Other installers of this platform, when published.
+    #[serde(default)]
+    pub alternates: Vec<AssetAlternate>,
 }
 
 /// The state of the update checker, as read by the UI and the tray.
@@ -284,7 +310,7 @@ pub fn is_newer(feed_version: &str, feed_epoch: i64, current: &BuildInfo) -> boo
 }
 
 /// The feed key of this machine: `<os>-<arch>` with `darwin` for macOS
-/// (`darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`, …).
+/// (`darwin-aarch64`, `darwin-x86_64`, `windows-x86_64`, `linux-x86_64`, …).
 pub fn current_target() -> String {
     target_for(std::env::consts::OS, std::env::consts::ARCH)
 }
@@ -298,10 +324,15 @@ pub fn target_for(os: &str, arch: &str) -> String {
     format!("{os}-{arch}")
 }
 
-/// Picks the artifact for `target`: the exact key, then `darwin-universal`, then any
-/// `darwin-*` key (a universal DMG installs on either architecture). Only macOS targets fall
-/// back; on other operating systems only an exact key matches, so a feed with macOS assets
-/// alone yields `None` there.
+/// The operating-system prefix of a feed key (`darwin` of `darwin-aarch64`).
+pub fn os_prefix(target: &str) -> &str {
+    target.split('-').next().unwrap_or(target)
+}
+
+/// Picks the artifact for `target`: the exact key, then `<os>-universal`, then any key of
+/// the same operating system (a universal DMG installs on either Mac; an x86_64 Windows
+/// setup runs on an ARM PC through emulation). Never another operating system, so a feed
+/// with macOS assets alone yields `None` on Windows and Linux.
 pub fn pick_platform<'a>(
     platforms: &'a BTreeMap<String, PlatformAsset>,
     target: &str,
@@ -309,15 +340,17 @@ pub fn pick_platform<'a>(
     if let Some((k, v)) = platforms.get_key_value(target) {
         return Some((k.as_str(), v));
     }
-    if !target.starts_with("darwin-") {
+    let os = os_prefix(target);
+    if os.is_empty() {
         return None;
     }
-    if let Some((k, v)) = platforms.get_key_value("darwin-universal") {
+    if let Some((k, v)) = platforms.get_key_value(&format!("{os}-universal")) {
         return Some((k.as_str(), v));
     }
+    let prefix = format!("{os}-");
     platforms
         .iter()
-        .find(|(k, _)| k.starts_with("darwin-"))
+        .find(|(k, _)| k.starts_with(&prefix))
         .map(|(k, v)| (k.as_str(), v))
 }
 
@@ -366,7 +399,7 @@ mod tests {
     use super::*;
     use chrono::FixedOffset;
 
-    const FEED: &str = r#"{ "schema": 1, "product": "ubiqX", "version": "0.1.0", "build": { "epoch": 1758221040, "number": 27, "sha": "14c6e7f", "branch": "main" }, "published_at": "2026-09-18T19:10:00Z", "notes": "feat: something\n\nbody", "release_url": "https://github.com/andreyquadros/ubiquitous-engine/releases/tag/continuous", "platforms": { "darwin-aarch64": { "url": "https://github.com/andreyquadros/ubiquitous-engine/releases/download/continuous/ubiqX-macos-aarch64.dmg", "kind": "dmg", "size": 12345678, "app_zip_url": "https://github.com/andreyquadros/ubiquitous-engine/releases/download/continuous/ubiqX-macos-aarch64.app.zip" } } }"#;
+    const FEED: &str = r#"{ "schema": 1, "product": "ubiqX", "version": "0.1.0", "build": { "epoch": 1758221040, "number": 27, "sha": "14c6e7f", "branch": "main" }, "published_at": "2026-09-18T19:10:00Z", "notes": "feat: something\n\nbody", "release_url": "https://github.com/andreyquadros/ubiquitous-engine/releases/tag/continuous", "platforms": { "darwin-aarch64": { "url": "https://github.com/andreyquadros/ubiquitous-engine/releases/download/continuous/ubiqX-macos-aarch64.dmg", "kind": "dmg", "size": 12345678, "app_zip_url": "https://github.com/andreyquadros/ubiquitous-engine/releases/download/continuous/ubiqX-macos-aarch64.app.zip" }, "windows-x86_64": { "url": "https://github.com/andreyquadros/ubiquitous-engine/releases/download/continuous/ubiqX-windows-x86_64-setup.exe", "kind": "exe", "size": 2345678, "alternates": [ { "url": "https://github.com/andreyquadros/ubiquitous-engine/releases/download/continuous/ubiqX-windows-x86_64.msi", "kind": "msi", "size": 3456789 } ] }, "linux-x86_64": { "url": "https://github.com/andreyquadros/ubiquitous-engine/releases/download/continuous/ubiqX-linux-x86_64.AppImage", "kind": "appimage", "alternates": [ { "url": "https://github.com/andreyquadros/ubiquitous-engine/releases/download/continuous/ubiqX-linux-x86_64.deb", "kind": "deb" } ] } } }"#;
 
     fn current(version: &str, epoch: i64) -> BuildInfo {
         BuildInfo {
@@ -440,7 +473,12 @@ mod tests {
         assert_eq!(target_for("macos", "aarch64"), "darwin-aarch64");
         assert_eq!(target_for("macos", "x86_64"), "darwin-x86_64");
         assert_eq!(target_for("linux", "x86_64"), "linux-x86_64");
+        assert_eq!(target_for("windows", "x86_64"), "windows-x86_64");
+        assert_eq!(target_for("windows", "aarch64"), "windows-aarch64");
         assert!(current_target().contains('-'));
+        assert_eq!(os_prefix("darwin-aarch64"), "darwin");
+        assert_eq!(os_prefix("windows-x86_64"), "windows");
+        assert_eq!(os_prefix("linux"), "linux");
     }
 
     #[test]
@@ -450,6 +488,7 @@ mod tests {
             kind: "dmg".into(),
             size: None,
             app_zip_url: None,
+            alternates: Vec::new(),
         };
         let mut platforms = BTreeMap::new();
         platforms.insert("darwin-x86_64".to_string(), asset("x86"));
@@ -470,7 +509,32 @@ mod tests {
         );
         // Other operating systems never take a macOS artifact.
         assert!(pick_platform(&platforms, "linux-x86_64").is_none());
+        assert!(pick_platform(&platforms, "windows-x86_64").is_none());
         assert!(pick_platform(&BTreeMap::new(), "darwin-aarch64").is_none());
+
+        // The same fallbacks per operating system: exact, universal, then any of the OS.
+        platforms.insert("windows-x86_64".to_string(), asset("win-x64"));
+        assert_eq!(
+            pick_platform(&platforms, "windows-aarch64").map(|(k, _)| k),
+            Some("windows-x86_64")
+        );
+        platforms.insert("windows-universal".to_string(), asset("win-any"));
+        assert_eq!(
+            pick_platform(&platforms, "windows-aarch64").map(|(k, _)| k),
+            Some("windows-universal")
+        );
+        assert_eq!(
+            pick_platform(&platforms, "windows-x86_64").map(|(_, a)| a.url.as_str()),
+            Some("win-x64")
+        );
+        platforms.insert("linux-x86_64".to_string(), asset("linux"));
+        assert_eq!(
+            pick_platform(&platforms, "linux-aarch64").map(|(k, _)| k),
+            Some("linux-x86_64")
+        );
+        // Never across operating systems, whatever the fallbacks.
+        assert!(pick_platform(&platforms, "freebsd-x86_64").is_none());
+        assert!(pick_platform(&platforms, "").is_none());
     }
 
     #[test]
@@ -500,7 +564,25 @@ mod tests {
         assert!(release.download_url.ends_with("ubiqX-macos-aarch64.dmg"));
         assert_eq!(release.kind, "dmg");
         assert_eq!(release.release_url, feed.release_url);
-        assert!(feed.release_for("linux-x86_64").is_none());
+        assert!(release.alternates.is_empty());
+
+        // Windows and Linux entries carry their kind and the alternate installer.
+        let win = feed.release_for("windows-x86_64").unwrap();
+        assert_eq!(win.kind, "exe");
+        assert!(win.download_url.ends_with("ubiqX-windows-x86_64-setup.exe"));
+        assert_eq!(win.app_zip_url, None);
+        assert_eq!(win.alternates.len(), 1);
+        assert_eq!(win.alternates[0].kind, "msi");
+        assert_eq!(win.alternates[0].size, Some(3_456_789));
+        assert!(win.alternates[0].url.ends_with(".msi"));
+        let linux = feed.release_for("linux-x86_64").unwrap();
+        assert_eq!(linux.kind, "appimage");
+        assert!(linux.download_url.ends_with(".AppImage"));
+        assert_eq!(linux.alternates[0].kind, "deb");
+        assert!(feed.release_for("freebsd-x86_64").is_none());
+        for kind in [&release.kind, &win.kind, &linux.kind] {
+            assert!(ASSET_KINDS.contains(&kind.as_str()));
+        }
 
         assert!(feed.is_update_for(&current("0.1.0", 1_758_200_000)));
         assert!(!feed.is_update_for(&current("0.1.0", 1_758_221_040)));
@@ -532,6 +614,7 @@ mod tests {
         assert_eq!(v["available"]["build"]["epoch"], 1_758_221_040);
         assert_eq!(v["available"]["published_at"], "2026-09-18T19:10:00Z");
         assert_eq!(v["available"]["kind"], "dmg");
+        assert!(v["available"]["alternates"].as_array().unwrap().is_empty());
         assert!(v["available"]["download_url"].is_string());
         assert!(v["available"]["app_zip_url"].is_string());
         assert!(v["available"]["release_url"].is_string());

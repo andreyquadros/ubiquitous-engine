@@ -1,7 +1,8 @@
 import { BellRing } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useT } from '../../i18n';
-import type { FocusSettings } from '../../lib/types';
+import { useAppStore } from '../../lib/store';
+import type { FocusSettings, Platform } from '../../lib/types';
 import { Button } from '../ui/Button';
 import { Card, CardHeader } from '../ui/Card';
 import { Field, Input } from '../ui/Field';
@@ -42,9 +43,23 @@ function ShortcutField({ label, value, onCommit, placeholder }: { label: string;
   );
 }
 
-/** Settings.focus: guard on/off, what a session holds, hiding windows, the default length, the cooldown and the two macOS Shortcut names. */
+/**
+ * Copy for the two `macos_focus_shortcut_*` settings per OS: on macOS they name Shortcuts (`shortcuts run`), on Windows and
+ * Linux they hold a command line (cmd /C, sh -c). Keys live in the 'focus' namespace (`focus.options.<key>`).
+ */
+export const shortcutCopy = (platform: Platform): { on: string; off: string; placeholder: string; hint: string } =>
+  platform === 'macos'
+    ? { on: 'options.shortcut_on', off: 'options.shortcut_off', placeholder: 'options.shortcut_placeholder', hint: 'options.shortcut_hint' }
+    : { on: 'options.command_on', off: 'options.command_off', placeholder: 'options.command_placeholder', hint: 'options.command_hint' };
+
+/**
+ * Settings.focus: guard on/off, what a session holds, hiding windows, the default length, the cooldown and the two session
+ * hooks (macOS Shortcut names; a command line on Windows and Linux). The platform comes from the settings view in the store.
+ */
 export function FocusOptions({ focus, onPatch, onTest }: Props) {
   const t = useT();
+  const platform = useAppStore((s) => s.settingsView?.platform ?? 'macos');
+  const copy = shortcutCopy(platform);
   const [testing, setTesting] = useState(false);
   const [minutes, setMinutes] = useState(String(focus.session_minutes));
   const [cooldown, setCooldown] = useState(String(focus.intervention_cooldown_secs));
@@ -81,7 +96,7 @@ export function FocusOptions({ focus, onPatch, onTest }: Props) {
         <Field label={t('focus.options.in_session.label')} hint={t('focus.options.in_session.hint')} inline>
           {(id) => <Toggle id={id} checked={focus.block_distraction_in_session} onChange={(v) => onPatch({ block_distraction_in_session: v })} />}
         </Field>
-        <Field label={t('focus.options.hide_others.label')} hint={t('focus.options.hide_others.hint')} inline>
+        <Field label={t('focus.options.hide_others.label')} hint={t(platform === 'macos' ? 'focus.options.hide_others.hint' : 'focus.options.hide_others.hint.other')} inline>
           {(id) => <Toggle id={id} checked={focus.hide_others_on_start} onChange={(v) => onPatch({ hide_others_on_start: v })} />}
         </Field>
         <hr className="border-line" />
@@ -106,9 +121,9 @@ export function FocusOptions({ focus, onPatch, onTest }: Props) {
         </div>
         <hr className="border-line" />
         <div className="flex flex-col gap-4">
-          <ShortcutField label={t('focus.options.shortcut_on')} value={focus.macos_focus_shortcut_on} onCommit={(v) => onPatch({ macos_focus_shortcut_on: v })} placeholder={t('focus.options.shortcut_placeholder')} />
-          <ShortcutField label={t('focus.options.shortcut_off')} value={focus.macos_focus_shortcut_off} onCommit={(v) => onPatch({ macos_focus_shortcut_off: v })} placeholder={t('focus.options.shortcut_placeholder')} />
-          <p className="text-xs leading-5 text-ink-3">{t('focus.options.shortcut_hint')}</p>
+          <ShortcutField label={t(`focus.${copy.on}`)} value={focus.macos_focus_shortcut_on} onCommit={(v) => onPatch({ macos_focus_shortcut_on: v })} placeholder={t(`focus.${copy.placeholder}`)} />
+          <ShortcutField label={t(`focus.${copy.off}`)} value={focus.macos_focus_shortcut_off} onCommit={(v) => onPatch({ macos_focus_shortcut_off: v })} placeholder={t(`focus.${copy.placeholder}`)} />
+          <p className="text-xs leading-5 text-ink-3">{t(`focus.${copy.hint}`)}</p>
         </div>
         <div className="border-t border-line pt-4">
           <Button size="sm" icon={<BellRing className="size-3.5" strokeWidth={1.75} aria-hidden />} onClick={() => void test()} loading={testing}>

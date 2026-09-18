@@ -1,14 +1,25 @@
 #!/usr/bin/env node
 // Publishes the rolling "continuous" GitHub release the desktop app polls for updates.
 //
-// Each CI build of a commit calls this script with the DMG it just produced. The script moves
-// the release tag to the built commit, rewrites the release name and body from the commit
-// message, replaces the assets under stable names and uploads latest.json, the feed the app
-// reads (apps/desktop/src-tauri reads UBIQX_UPDATE_FEED_URL, whose default points here):
+// Each CI build of a commit calls this script with the installers it just produced (one or several
+// --asset, platform and kind inferred from the file name). The script moves the release tag to the
+// built commit, rewrites the release name and body from the commit message, replaces the assets
+// under stable names and uploads latest.json, the feed the app reads (apps/desktop/src-tauri reads
+// UBIQX_UPDATE_FEED_URL, whose default points here):
 //
 //   https://github.com/<owner>/<repo>/releases/download/continuous/latest.json
 //   https://github.com/<owner>/<repo>/releases/download/continuous/ubiqX-macos-<arch>.dmg
 //   https://github.com/<owner>/<repo>/releases/download/continuous/ubiqX-macos-<arch>.app.zip
+//   https://github.com/<owner>/<repo>/releases/download/continuous/ubiqX-windows-<arch>-setup.exe
+//   https://github.com/<owner>/<repo>/releases/download/continuous/ubiqX-windows-<arch>.msi
+//   https://github.com/<owner>/<repo>/releases/download/continuous/ubiqX-linux-<arch>.AppImage
+//   https://github.com/<owner>/<repo>/releases/download/continuous/ubiqX-linux-<arch>.deb
+//
+// latest.json keeps one entry per platform key (darwin-<arch>, windows-<arch>, linux-<arch>). Several
+// publishers may run for the same commit (GitHub Actions with the three OSes at once, Codemagic with
+// macOS only): when the release already carries a latest.json of the SAME build epoch, its platforms are
+// merged with ours (ours win per key); when ours is newer it replaces the feed; when it is older nothing
+// is touched.
 //
 // Node 22, ESM, no dependencies. Importable: `main(argv, env)` returns the exit code and only
 // runs when the file is executed directly, so scripts/publish-release.test.mjs can drive it
@@ -24,6 +35,7 @@ const REPO_ROOT = path.resolve(SCRIPT_DIR, '..');
 
 const DEFAULTS = Object.freeze({
   tag: 'continuous',
+  /** Used only when neither --asset nor --dmg is given (the historical macOS-only call). */
   dmg: 'target/release/bundle/dmg/*.dmg',
   out: 'target/release/bundle',
   api: 'https://api.github.com',
@@ -38,16 +50,22 @@ const DEFAULTS = Object.freeze({
 
 export const USAGE = `Uso: node scripts/publish-release.mjs [opções]
 
-Publica (ou atualiza) a release contínua do ubiqX no GitHub com o DMG recém-compilado e o
+Publica (ou atualiza) a release contínua do ubiqX no GitHub com os instaladores recém-compilados e o
 latest.json que o app lê para avisar que há uma atualização.
 
 Opções:
   --repo <owner/repo>   repositório (padrão: GITHUB_REPOSITORY, CM_REPO_SLUG ou o remote origin)
   --tag <tag>           tag da release rolante (padrão: ${DEFAULTS.tag})
-  --dmg <caminho|glob>  DMG a publicar (padrão: ${DEFAULTS.dmg})
-  --app-zip <caminho>   zip do .app feito com ditto (opcional)
+  --asset <caminho|glob>
+                        instalador a publicar; repita para vários. Plataforma e tipo vêm do nome do
+                        arquivo: ubiqX-macos-<arch>.dmg, ubiqX-macos-<arch>.app.zip,
+                        ubiqX-windows-<arch>.msi, ubiqX-windows-<arch>-setup.exe,
+                        ubiqX-linux-<arch>.AppImage, ubiqX-linux-<arch>.deb (outros nomes com a mesma
+                        extensão também servem: o tipo vem da extensão e a arquitetura de --arch)
+  --dmg <caminho|glob>  atalho para --asset de um .dmg (padrão, sem --asset: ${DEFAULTS.dmg})
+  --app-zip <caminho>   atalho para --asset de um .app.zip feito com ditto
   --out <dir>           onde escrever latest.json (padrão: ${DEFAULTS.out})
-  --arch <arch>         aarch64 ou x86_64 (padrão: a arquitetura desta máquina)
+  --arch <arch>         aarch64 ou x86_64 para nomes sem arquitetura (padrão: a desta máquina)
   --version <x.y.z>     versão do produto (padrão: [workspace.package] em Cargo.toml)
   --api <url>           base da API do GitHub (padrão: ${DEFAULTS.api})
   --uploads <url>       base de upload de assets (padrão: ${DEFAULTS.uploads})
@@ -66,8 +84,12 @@ Ambiente:
 // Arguments and environment
 
 export function parseArgs(argv) {
-  const opts = { ...DEFAULTS, appZip: null, repo: null, arch: null, version: null, strict: false, help: false, root: REPO_ROOT };
-  const takesValue = { '--repo': 'repo', '--tag': 'tag', '--dmg': 'dmg', '--app-zip': 'appZip', '--out': 'out', '--arch': 'arch', '--version': 'version', '--api': 'api', '--uploads': 'uploads', '--root': 'root' };
+  const opts = { ...DEFAULTS, dmg: null, appZip: null, assets: [], repo: null, arch: null, version: null, strict: false, help: false, root: REPO_ROOT };
+  const takesValue = { '--repo': 'repo', '--tag': 'tag', '--dmg': 'dmg', '--app-zip': 'appZip', '--asset': 'assets', '--out': 'out', '--arch': 'arch', '--version': 'version', '--api': 'api', '--uploads': 'uploads', '--root': 'root' };
+  const set = (key, value) => {
+    if (key === 'assets') opts.assets.push(value);
+    else opts[key] = value;
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '-h' || arg === '--help') {
@@ -77,12 +99,12 @@ export function parseArgs(argv) {
     } else if (arg in takesValue) {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith('--')) throw new Error(`Falta o valor de ${arg}`);
-      opts[takesValue[arg]] = value;
+      set(takesValue[arg], value);
       i += 1;
     } else if (arg.startsWith('--') && arg.includes('=')) {
       const [key, ...rest] = arg.split('=');
       if (!(key in takesValue)) throw new Error(`Opção desconhecida: ${key}`);
-      opts[takesValue[key]] = rest.join('=');
+      set(takesValue[key], rest.join('='));
     } else {
       throw new Error(`Opção desconhecida: ${arg}`);
     }
@@ -200,11 +222,77 @@ export function resolveGlob(pattern, root) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Feed
+// Assets and feed
 
-export function makeFeed({ owner, repo, tag, version, build, arch, dmgSize, hasAppZip, publishedAt, notes, product = DEFAULTS.product }) {
+/**
+ * Every installer kind the feed knows. `platform` is the prefix of the feed key (`<platform>-<arch>`, the
+ * value crates/ubiqx-core/src/update.rs::current_target() produces), `os` the word in the stable asset name,
+ * `rank` decides which kind becomes the platform's primary `url` when two are published (lower wins; the
+ * other goes to `alternates`). `app_zip` is not an installer: it rides along as `app_zip_url` of the DMG.
+ */
+export const ASSET_KINDS = Object.freeze([
+  { kind: 'app_zip', os: 'macos', platform: 'darwin', test: /\.app\.zip$/i, rank: 9, stableName: (arch) => `ubiqX-macos-${arch}.app.zip` },
+  { kind: 'dmg', os: 'macos', platform: 'darwin', test: /\.dmg$/i, rank: 0, stableName: (arch) => `ubiqX-macos-${arch}.dmg` },
+  { kind: 'exe', os: 'windows', platform: 'windows', test: /\.exe$/i, rank: 0, stableName: (arch) => `ubiqX-windows-${arch}-setup.exe` },
+  { kind: 'msi', os: 'windows', platform: 'windows', test: /\.msi$/i, rank: 1, stableName: (arch) => `ubiqX-windows-${arch}.msi` },
+  { kind: 'appimage', os: 'linux', platform: 'linux', test: /\.appimage$/i, rank: 0, stableName: (arch) => `ubiqX-linux-${arch}.AppImage` },
+  { kind: 'deb', os: 'linux', platform: 'linux', test: /\.deb$/i, rank: 1, stableName: (arch) => `ubiqX-linux-${arch}.deb` },
+]);
+
+const STABLE_NAME = /^ubiqX-(macos|windows|linux)-(aarch64|x86_64)(?:-setup)?\.(?:dmg|app\.zip|msi|exe|AppImage|deb)$/i;
+const ARCH_TOKEN = /(?:^|[-_.])(aarch64|arm64|x86_64|x64|amd64)(?=[-_.]|$)/i;
+
+/**
+ * What a file name says about an asset: kind (by extension), os/platform and arch. The arch comes from the
+ * stable name (`ubiqX-<os>-<arch>…`), else from a token Tauri puts in its output names (`ubiqX_0.1.0_aarch64.dmg`,
+ * `ubiqX_0.1.0_x64_en-US.msi`, `ubiqX_0.1.0_amd64.AppImage`), else from `fallbackArch`. Returns null for an
+ * extension the feed does not know.
+ */
+export function inferAsset(filePath, fallbackArch) {
+  const base = path.basename(filePath);
+  const rule = ASSET_KINDS.find((r) => r.test.test(base));
+  if (!rule) return null;
+  const stable = base.match(STABLE_NAME);
+  let arch = null;
+  if (stable) {
+    if (stable[1].toLowerCase() !== rule.os) return null; // "ubiqX-linux-x86_64.msi" is a mistake, not an asset
+    arch = normalizeArch(stable[2].toLowerCase());
+  } else {
+    const token = base.match(ARCH_TOKEN);
+    arch = token ? normalizeArch(token[1].toLowerCase()) : normalizeArch(fallbackArch);
+  }
+  if (!arch) return null;
+  return { path: filePath, kind: rule.kind, os: rule.os, platformKey: `${rule.platform}-${arch}`, arch, name: rule.stableName(arch), rank: rule.rank };
+}
+
+/** Feed `platforms` for a list of inferred assets (with `size`): one entry per platform key, sorted by key. */
+export function buildPlatforms(assets, download) {
+  const byKey = new Map();
+  for (const a of assets) {
+    if (!byKey.has(a.platformKey)) byKey.set(a.platformKey, []);
+    byKey.get(a.platformKey).push(a);
+  }
+  const platforms = {};
+  for (const key of [...byKey.keys()].sort()) {
+    const list = byKey.get(key);
+    const installers = list.filter((a) => a.kind !== 'app_zip').sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+    const appZip = list.find((a) => a.kind === 'app_zip');
+    if (installers.length === 0) throw new Error(`${key}: ${appZip?.name ?? '?'} sem o instalador correspondente (o .app.zip acompanha o .dmg)`);
+    const [primary, ...rest] = installers;
+    const entry = {
+      url: `${download}/${primary.name}`,
+      kind: primary.kind,
+      size: primary.size,
+      app_zip_url: appZip ? `${download}/${appZip.name}` : null,
+    };
+    if (rest.length) entry.alternates = rest.map((a) => ({ url: `${download}/${a.name}`, kind: a.kind, size: a.size }));
+    platforms[key] = entry;
+  }
+  return platforms;
+}
+
+export function makeFeed({ owner, repo, tag, version, build, assets, publishedAt, notes, product = DEFAULTS.product }) {
   const download = `https://github.com/${owner}/${repo}/releases/download/${tag}`;
-  const platformKey = `darwin-${arch}`;
   return {
     schema: DEFAULTS.feedSchema,
     product,
@@ -213,15 +301,28 @@ export function makeFeed({ owner, repo, tag, version, build, arch, dmgSize, hasA
     published_at: publishedAt,
     notes,
     release_url: `https://github.com/${owner}/${repo}/releases/tag/${tag}`,
-    platforms: {
-      [platformKey]: {
-        url: `${download}/${dmgAssetName(arch)}`,
-        kind: 'dmg',
-        size: dmgSize,
-        app_zip_url: hasAppZip ? `${download}/${appZipAssetName(arch)}` : null,
-      },
-    },
+    platforms: buildPlatforms(assets, download),
   };
+}
+
+/**
+ * How `ours` relates to the feed already published: 'newer' replaces it, 'same' merges the platforms
+ * (ours win per key, the other publisher's entries stay), 'older' leaves the release alone. A missing or
+ * unreadable feed counts as older than anything.
+ */
+export function compareFeeds(existing, ours) {
+  const theirs = Number(existing?.build?.epoch);
+  if (!Number.isFinite(theirs)) return 'newer';
+  if (theirs > ours.build.epoch) return 'older';
+  return theirs === ours.build.epoch ? 'same' : 'newer';
+}
+
+export function mergeFeeds(existing, ours) {
+  const platforms = { ...(existing?.platforms ?? {}) };
+  for (const [key, entry] of Object.entries(ours.platforms)) platforms[key] = entry;
+  const sorted = {};
+  for (const key of Object.keys(platforms).sort()) sorted[key] = platforms[key];
+  return { ...ours, platforms: sorted };
 }
 
 export const dmgAssetName = (arch) => `ubiqX-macos-${arch}.dmg`;
@@ -341,35 +442,30 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
     return 2;
   }
 
-  const dmgPath = resolveGlob(opts.dmg, root);
-  if (!dmgPath || !safeStat(dmgPath)) {
-    error(`DMG não encontrado: ${opts.dmg} (compile com "pnpm tauri build --bundles app,dmg" antes de publicar)`);
-    return 1;
-  }
-  const appZipPath = opts.appZip ? resolveGlob(opts.appZip, root) : null;
-  if (opts.appZip && (!appZipPath || !safeStat(appZipPath))) {
-    error(`Zip do app não encontrado: ${opts.appZip}`);
+  const arch = normalizeArch(opts.arch || env.UBIQX_BUILD_ARCH || process.arch);
+  let assets;
+  try {
+    assets = collectAssets(opts, root, arch);
+  } catch (err) {
+    error(err.message);
     return 1;
   }
 
   const build = buildInfo(env, root);
   const sha = fullSha(env, root, build.sha);
-  const arch = normalizeArch(opts.arch || env.UBIQX_BUILD_ARCH || process.arch);
   const version = productVersion(opts, root);
   const notes = commitNotes(root);
   const publishedAt = now().toISOString().replace(/\.\d{3}Z$/, 'Z');
-  const feed = makeFeed({ owner, repo, tag: opts.tag, version, build, arch, dmgSize: statSync(dmgPath).size, hasAppZip: Boolean(appZipPath), publishedAt, notes });
-
-  const outDir = path.isAbsolute(opts.out) ? opts.out : path.join(root, opts.out);
-  mkdirSync(outDir, { recursive: true });
-  const feedPath = path.join(outDir, FEED_ASSET_NAME);
-  const feedJson = `${JSON.stringify(feed, null, 2)}\n`;
-  writeFileSync(feedPath, feedJson);
+  let feed;
+  try {
+    feed = makeFeed({ owner, repo, tag: opts.tag, version, build, assets, publishedAt, notes });
+  } catch (err) {
+    error(err.message);
+    return 1;
+  }
 
   log(`ubiqX ${version} build ${build.number} (${build.sha}${build.branch ? `, ${build.branch}` : ''}, epoch ${build.epoch}) -> ${owner}/${repo} tag "${opts.tag}"`);
-  log(`  DMG: ${path.relative(root, dmgPath) || dmgPath} (${feed.platforms[`darwin-${arch}`].size} bytes)`);
-  if (appZipPath) log(`  app zip: ${path.relative(root, appZipPath) || appZipPath}`);
-  log(`  feed: ${path.relative(root, feedPath) || feedPath}`);
+  for (const a of assets) log(`  ${a.platformKey} ${a.kind}: ${path.relative(root, a.path) || a.path} -> ${a.name} (${a.size} bytes)`);
 
   const gh = createClient({ token, api: opts.api, uploads: opts.uploads, log, retryDelayMs: retryDelayMs ?? Number(env.UBIQX_PUBLISH_RETRY_MS ?? DEFAULTS.retryDelayMs) });
 
@@ -378,12 +474,18 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
 
   if (release) {
     const existingFeed = release.assets?.find((a) => a.name === FEED_ASSET_NAME);
-    if (existingFeed) {
-      const existingEpoch = await readFeedEpoch(gh, owner, repo, existingFeed.id, log);
-      if (existingEpoch !== null && existingEpoch > build.epoch) {
-        log(`Nada a fazer: a release "${opts.tag}" já traz um build mais novo (epoch ${existingEpoch} > ${build.epoch}). Este build fica só como artefato.`);
-        return 0;
-      }
+    const existing = existingFeed ? await readFeed(gh, owner, repo, existingFeed.id, log) : null;
+    const relation = compareFeeds(existing, feed);
+    if (relation === 'older') {
+      log(`Nada a fazer: a release "${opts.tag}" já traz um build mais novo (epoch ${existing.build.epoch} > ${build.epoch}). Este build fica só como artefato.`);
+      return 0;
+    }
+    if (relation === 'same') {
+      const kept = Object.keys(existing.platforms ?? {}).filter((k) => !(k in feed.platforms));
+      feed = mergeFeeds(existing, feed);
+      log(`  latest.json atual é do mesmo build (epoch ${build.epoch}): plataformas mescladas${kept.length ? ` (mantidas: ${kept.join(', ')})` : ''}`);
+    } else if (existing) {
+      log(`  latest.json atual é mais antigo (epoch ${existing.build.epoch}): substituído`);
     }
     log(`  release existente #${release.id}: atualizando nome, notas e tag`);
     release = await gh.updateRelease(owner, repo, release.id, releaseData);
@@ -391,6 +493,13 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
     log('  release não existe ainda: criando');
     release = await gh.createRelease(owner, repo, { tag_name: opts.tag, ...releaseData, draft: false, prerelease: false });
   }
+
+  const outDir = path.isAbsolute(opts.out) ? opts.out : path.join(root, opts.out);
+  mkdirSync(outDir, { recursive: true });
+  const feedPath = path.join(outDir, FEED_ASSET_NAME);
+  const feedJson = `${JSON.stringify(feed, null, 2)}\n`;
+  writeFileSync(feedPath, feedJson);
+  log(`  feed: ${path.relative(root, feedPath) || feedPath} (${Object.keys(feed.platforms).join(', ')})`);
 
   const moved = await gh.updateTagRef(owner, repo, opts.tag, sha);
   if (moved === null) {
@@ -401,8 +510,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
   }
 
   const uploads = [
-    { name: dmgAssetName(arch), contentType: 'application/octet-stream', data: readFileSync(dmgPath) },
-    ...(appZipPath ? [{ name: appZipAssetName(arch), contentType: 'application/octet-stream', data: readFileSync(appZipPath) }] : []),
+    ...assets.map((a) => ({ name: a.name, contentType: 'application/octet-stream', data: readFileSync(a.path) })),
     { name: FEED_ASSET_NAME, contentType: 'application/json', data: Buffer.from(feedJson, 'utf8') },
   ];
   const names = new Set(uploads.map((u) => u.name));
@@ -427,12 +535,39 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
   return 0;
 }
 
-async function readFeedEpoch(gh, owner, repo, assetId, log) {
+/**
+ * The files to publish, inferred from --asset (repeatable), --dmg and --app-zip. Without any of them the
+ * historical default (the newest DMG under target/release/bundle/dmg) applies. Throws when a file is
+ * missing, has an unknown extension or two files map to the same stable name.
+ */
+export function collectAssets(opts, root, arch) {
+  const specs = [...opts.assets.map((p) => ({ pattern: p, what: 'asset' }))];
+  if (opts.dmg) specs.push({ pattern: opts.dmg, what: 'dmg' });
+  if (opts.appZip) specs.push({ pattern: opts.appZip, what: 'app.zip' });
+  if (specs.length === 0) specs.push({ pattern: DEFAULTS.dmg, what: 'dmg' });
+
+  const assets = [];
+  for (const { pattern, what } of specs) {
+    const file = resolveGlob(pattern, root);
+    if (!file || !safeStat(file)) {
+      const hint = what === 'dmg' ? ' (compile com "pnpm tauri build --bundles app,dmg" antes de publicar)' : '';
+      throw new Error(`${what === 'dmg' ? 'DMG' : what === 'app.zip' ? 'Zip do app' : 'Asset'} não encontrado: ${pattern}${hint}`);
+    }
+    const inferred = inferAsset(file, arch);
+    if (!inferred) throw new Error(`Não sei publicar ${path.basename(file)}: use .dmg, .app.zip, .msi, -setup.exe, .AppImage ou .deb`);
+    if (what === 'dmg' && inferred.kind !== 'dmg') throw new Error(`--dmg espera um .dmg, recebeu ${path.basename(file)}`);
+    if (what === 'app.zip' && inferred.kind !== 'app_zip') throw new Error(`--app-zip espera um .app.zip, recebeu ${path.basename(file)}`);
+    if (assets.some((a) => a.name === inferred.name)) throw new Error(`Dois arquivos viram o mesmo asset ${inferred.name} (${pattern})`);
+    assets.push({ ...inferred, size: statSync(file).size });
+  }
+  return assets;
+}
+
+async function readFeed(gh, owner, repo, assetId, log) {
   try {
     const buf = await gh.downloadAsset(owner, repo, assetId);
     const parsed = JSON.parse(buf.toString('utf8'));
-    const epoch = Number(parsed?.build?.epoch);
-    return Number.isFinite(epoch) ? epoch : null;
+    return parsed && typeof parsed === 'object' ? parsed : null;
   } catch (err) {
     log(`  latest.json atual ilegível (${err.message}); seguindo com a publicação`);
     return null;

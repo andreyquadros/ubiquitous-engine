@@ -23,14 +23,44 @@ serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
-[target.'cfg(target_os = "macos")'.dependencies]
+# Screenshots on macOS and Windows. Linux captures through `x11rb` instead (see
+# `linux::capture`): xcap's Linux backend links PipeWire and libxcb-randr, which plain CI
+# runners and the `cargo test` host do not have.
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 xcap = "0.9"
+
+[target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
 objc2-core-foundation = "0.3"
 objc2-core-graphics = "0.3"
 keyring = { version = "3.6", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3.6", features = ["windows-native"] }
+# Same major as xcap's, so one copy of the crate is compiled.
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Environment",
+    "Win32_System_Ole",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_UI_Accessibility",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6", features = ["sync-secret-service", "crypto-rust"] }
+libc = "0.2"
+x11rb = { version = "0.13", features = ["screensaver", "xtest"] }
 
 [dev-dependencies]
 tempfile.workspace = true

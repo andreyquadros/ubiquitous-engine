@@ -2,6 +2,7 @@ import { Shield, Square } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useT } from '../../i18n';
 import { fmtCountdown, fmtTime } from '../../lib/format';
+import { useAppStore } from '../../lib/store';
 import type { FocusStatus } from '../../lib/types';
 import { Button } from '../ui/Button';
 import { Card, CardHeader } from '../ui/Card';
@@ -22,6 +23,8 @@ interface Props {
 /** Idle: the task input, the duration chips and "Focar". Active: task, mm:ss countdown, distractions held and "Encerrar". */
 export function SessionCard({ status, defaultMinutes, onStart, onStop, onElapsed }: Props) {
   const t = useT();
+  // macOS runs a Shortcut by name; Windows and Linux run a command line (same setting, other label).
+  const platform = useAppStore((s) => s.settingsView?.platform ?? 'macos');
   const session = status?.session ?? null;
   const [task, setTask] = useState('');
   const [minutes, setMinutes] = useState(defaultMinutes);
@@ -82,7 +85,7 @@ export function SessionCard({ status, defaultMinutes, onStart, onStop, onElapsed
                 <span className="num">{t('focus.session.started_at', { time: fmtTime(session.started_at) })}</span>
                 <span className="num text-ink-2">{t('focus.session.interventions', { count: session.interventions })}</span>
                 {session.hid_windows && <span>{t('focus.session.hid_windows')}</span>}
-                {session.ran_shortcut && <span>{t('focus.session.ran_shortcut')}</span>}
+                {session.ran_shortcut && <span>{t(platform === 'macos' ? 'focus.session.ran_shortcut' : 'focus.session.ran_shortcut.other')}</span>}
               </p>
             </div>
             <div className="text-right">

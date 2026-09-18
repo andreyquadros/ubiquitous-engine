@@ -15,7 +15,7 @@
 | O6 | Custo de API mínimo | Só texto vai ao LLM por padrão; imagens só em blocos ambíguos, com limite/hora; modelo barato para classificação e modelo melhor só para relatórios, em qualquer provedor |
 | O6b | Provedor à escolha | Anthropic Claude, OpenAI ou xAI Grok, cada um com a própria chave; troca em tempo de execução sem reiniciar |
 | O7 | Privacidade | Tudo local (SQLite + imagens no disco do usuário); lista de apps bloqueados; modo privado; retenção configurável; chave no Keychain |
-| O8 | Portabilidade futura (Windows/Linux) | Toda dependência de SO isolada atrás de traits (`ActivitySource`, `ScreenCapturer`, `IdleDetector`) |
+| O8 | Portabilidade (macOS, Windows, Linux) | Toda dependência de SO isolada atrás de traits (`ActivitySource`, `ScreenCapturer`, `IdleDetector`); um adaptador por SO em `ubiqx-platform` |
 
 ## 2. Stack
 
@@ -43,8 +43,8 @@ ubiqx/
 │   ├── ubiqx-core/               # DOMÍNIO: modelos, ports (traits), segmentação, regras, aprendizado,
 │   │                             #   insights, agendamento, redação de dados, renderização de relatórios — sem I/O
 │   ├── ubiqx-storage/            # ADAPTER: SQLite (rusqlite) — repositórios e migrações
-│   ├── ubiqx-platform/           # ADAPTER: macOS (janela ativa, título, idle, print por janela, URL, permissões,
-│   │                             #   Keychain) + plataforma roteirizada (mock) para Linux/CI
+│   ├── ubiqx-platform/           # ADAPTER: macOS, Windows e Linux (janela ativa, título, idle, print por janela,
+│   │                             #   URL, permissões, segredos) + plataforma roteirizada (mock) para testes/CI
 │   ├── ubiqx-ai/                 # ADAPTER: clientes Anthropic e OpenAI-compatível (OpenAI, xAI) + roteador,
 │   │                             #   tabela de preços por provedor, prompts, classificadores texto/visão,
 │   │                             #   redator de relatórios, conselheiro, fakes para testes
@@ -57,7 +57,7 @@ ubiqx/
 │   └── src-tauri/                # Tauri 2: tray de barra de menus, comandos IPC, eventos, notificações
 ├── docs/                         # Arquitetura, guia de teste no macOS, screenshots
 ├── scripts/                      # assinatura de dev, instalação do modelo 3D do UBI
-└── .github/workflows/            # CI: testes Linux + type-check macOS + frontend + build do app no macOS
+└── .github/workflows/            # CI: testes Linux + type-check macOS/Windows + frontend + builds nos três SOs + release
 ```
 
 Regra de dependência (hexagonal): `core` ← `storage | platform | ai` ← `engine` ← `app` ← `desktop | cli`.
@@ -199,6 +199,10 @@ UBI: modelo 3D (`public/ubi/Ubi.glb`, GLTFLoader via react-three-fiber, canvas t
    `cache_control`. Sonnet 5 recebe `thinking: disabled` e os `gpt-5*` recebem `reasoning_effort: minimal` na
    classificação para não cobrar raciocínio; os esquemas JSON são os mesmos para todos os provedores.
 5. **rusqlite** atrás de `Mutex` com chamadas em `spawn_blocking`; nunca se segura o lock entre `await`s.
-6. **Plataforma roteirizada + CLI** para desenvolver e testar o pipeline inteiro em Linux/CI; o módulo macOS é
-   type-checked contra `aarch64-apple-darwin` na CI.
+6. **Plataforma roteirizada + CLI** para desenvolver e testar o pipeline inteiro em Linux/CI; os módulos macOS e
+   Windows são type-checked contra `aarch64-apple-darwin` e `x86_64-pc-windows-msvc` na CI.
 7. **Tempo nunca some**: bloqueios e modo privado redigem, não descartam.
+8. **Um adaptador por SO, uma identidade por SO**: bundle id no macOS, nome do executável no Windows e no Linux;
+   ver [`WINDOWS-LINUX.md`](WINDOWS-LINUX.md). O que ainda falta: Wayland pelos portais (`xdg-desktop-portal`;
+   hoje só X11/XWayland), URL do navegador no Linux por acessibilidade (AT-SPI; hoje só pelo título), eventos de
+   sono/bloqueio de tela e exportação DOCX.

@@ -213,9 +213,9 @@ export interface FocusSettings {
   session_minutes: number;
   /** Seconds between two interventions on the same app or site. Default 20. */
   intervention_cooldown_secs: number;
-  /** Name of a macOS Shortcut run when a session starts (`shortcuts run "<name>"`), or null. */
+  /** macOS: name of a Shortcut run when a session starts (`shortcuts run "<name>"`); Windows/Linux: a command line (cmd /C, sh -c). Null = nothing. */
   macos_focus_shortcut_on: string | null;
-  /** Name of a macOS Shortcut run when a session ends, or null. */
+  /** Same for the end of a session. */
   macos_focus_shortcut_off: string | null;
 }
 
@@ -351,6 +351,9 @@ export interface ClassifyReport {
   skipped_remote: boolean;
 }
 
+/** Operating system the engine runs on (`std::env::consts::OS`). Decides which install hints, permissions and labels the UI shows. */
+export type Platform = 'macos' | 'windows' | 'linux';
+
 export interface SettingsView {
   settings: Settings;
   /** Key status of the *selected* provider (`settings.ai_provider`). */
@@ -363,7 +366,7 @@ export interface SettingsView {
   ai_health: AiHealth;
   tracker_state: TrackerState;
   data_dir: string;
-  platform: 'macos' | 'other';
+  platform: Platform;
   version: string;
 }
 
@@ -391,7 +394,21 @@ export interface BuildInfo {
   branch: string;
 }
 
-/** A release entry of the update feed (latest.json of the rolling "continuous" GitHub release). */
+/** Installer kinds the update feed publishes (scripts/publish-release.mjs); the download button names the extension. */
+export type AssetKind = 'dmg' | 'msi' | 'exe' | 'appimage' | 'deb';
+
+/** One platform entry of latest.json (`platforms["<os>-<arch>"]`), as the feed publishes it. */
+export interface PlatformAsset {
+  url: string;
+  kind: AssetKind;
+  size: number;
+  /** macOS only: the ditto-zipped .app next to the DMG. */
+  app_zip_url: string | null;
+  /** Other installers of the same platform (Windows: the .msi next to the setup .exe; Linux: the .deb next to the AppImage). */
+  alternates?: { url: string; kind: AssetKind; size: number }[];
+}
+
+/** A release entry of the update feed (latest.json of the rolling "continuous" GitHub release), already picked for this platform. */
 export interface ReleaseInfo {
   version: string;
   build: BuildInfo;
@@ -400,7 +417,8 @@ export interface ReleaseInfo {
   download_url: string;
   app_zip_url: string | null;
   release_url: string | null;
-  kind: 'dmg';
+  /** Mirrors `PlatformAsset.kind` of the entry picked for this platform. */
+  kind: AssetKind;
 }
 
 /** What the engine knows about updates right now (`get_update_status`). */
@@ -435,7 +453,7 @@ export interface FocusTarget {
   blocked_count: number;
 }
 
-/** An application found on this Mac (`list_installed_apps`). */
+/** An application found on this computer (`list_installed_apps`). `bundle_id` is the app id: bundle id on macOS, the executable stem on Windows/Linux. */
 export interface InstalledApp {
   name: string;
   bundle_id: string;

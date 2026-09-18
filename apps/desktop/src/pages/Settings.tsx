@@ -12,17 +12,23 @@ import { EmptyState } from '../components/ui/misc';
 import { PageHeader } from '../components/ui/PageHeader';
 import { TagInput } from '../components/ui/TagInput';
 import { Toggle } from '../components/ui/Toggle';
-import { UPDATES_SECTION_ID, fmtBuildDate } from '../components/layout/UpdateBanner';
+import { UPDATES_SECTION_ID, downloadLabel, fmtBuildDate } from '../components/layout/UpdateBanner';
 import { useLocale, useT, type Locale } from '../i18n';
 import { fmtDateNumeric, fmtDateTime, fmtTime, hhmmToInput, inputToHhmm } from '../lib/format';
 import { ipc } from '../lib/ipc';
 import { useAppStore } from '../lib/store';
 import { useToast } from '../lib/toast';
 import { keyStatus, providerInfo, providerPitch, reconcileModels, sameModels } from '../lib/providers';
-import type { AiModels, AiProvider, PermissionKind, PermissionState, PrivateModeDuration, Settings, SettingsView, VisionPolicy } from '../lib/types';
+import type { AiModels, AiProvider, PermissionKind, PermissionState, Platform, PrivateModeDuration, Settings, SettingsView, VisionPolicy } from '../lib/types';
 import { useAsync } from '../lib/useAsync';
 
 export const REPO_URL = 'https://github.com/andreyquadros/ubiquitous-engine';
+
+/** Human name of the OS for the About section (proper nouns, not translated). */
+export const PLATFORM_NAMES: Record<Platform, string> = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
+
+/** Where the API key is kept on each OS: t('settings.<key>'). */
+const keyStoreHintKey = (platform: Platform): string => (platform === 'macos' ? 'settings.key.keychain_hint' : `settings.key.store_hint.${platform}`);
 
 /** Section ids are stable (anchors, tests); labels come from t('settings.section.<key>'). */
 const SECTIONS: { id: string; key: string; Icon: LucideIcon }[] = [
@@ -184,7 +190,7 @@ export function SettingsPage() {
           <PrivacySection draft={draft} patch={patch} view={settingsView} />
           <ReportsSection draft={draft} patch={patch} />
           <UbiSection draft={draft} patch={patch} />
-          <UpdatesSection draft={draft} patch={patch} />
+          <UpdatesSection draft={draft} patch={patch} view={settingsView} />
           {settingsView.platform === 'macos' && <PermissionsSection view={settingsView} />}
           <AboutSection view={settingsView} />
         </div>
@@ -320,7 +326,7 @@ export function ApiKeyForm({ view, provider, onSaved, compact }: { view: Setting
         label={status.configured ? t('settings.key.replace_label', { provider: label }) : t('settings.key.label', { provider: label })}
         hint={
           <span className="inline-flex flex-wrap items-center gap-x-1">
-            {!compact && <span>{t('settings.key.keychain_hint')}</span>}
+            {!compact && <span>{t(keyStoreHintKey(view.platform))}</span>}
             {info && (
               <button type="button" onClick={openConsole} className="inline-flex items-center gap-1 text-volt underline underline-offset-2 transition-colors duration-120 hover:brightness-110">
                 {t('settings.key.create')} <ExternalLink className="size-3" strokeWidth={1.75} aria-hidden />
@@ -562,7 +568,7 @@ function PrivacySection({ draft, patch, view }: SectionProps & { view: SettingsV
   const privateHint = isPrivate ? (draft.private_until ? t('settings.private.on_until', { time: fmtTime(draft.private_until) }) : t('settings.private.on_indefinite')) : t('settings.private.off_hint');
 
   return (
-    <Section id="privacidade" title={t('settings.section.privacy')} description={t('settings.privacy.description')}>
+    <Section id="privacidade" title={t('settings.section.privacy')} description={t(view.platform === 'macos' ? 'settings.privacy.description' : 'settings.privacy.description.other')}>
       <div className="panel-raised p-4 text-sm leading-6 text-ink-2">
         <p className="mb-1 flex items-center gap-2 font-medium text-ink">
           <Shield className="size-4 text-volt" strokeWidth={1.75} aria-hidden /> {t('settings.privacy.leaves.title')}
@@ -774,7 +780,23 @@ function UbiSection({ draft, patch }: SectionProps) {
   );
 }
 
-const INSTALL_COMMANDS = ['xattr -dr com.apple.quarantine /Applications/ubiqX.app', 'codesign --force --deep --options runtime --sign "ubiqX Dev" /Applications/ubiqX.app'];
+/**
+ * Install notes per OS (`settings.updates.install.*`): the hint above the commands, the terminal commands (none on
+ * Windows, where the installer does everything) and the note below. macOS re-signs with "ubiqX Dev" so permissions survive.
+ */
+export const INSTALL_NOTES: Record<Platform, { hint: string; commands: string[]; note: string }> = {
+  macos: {
+    hint: 'settings.updates.install.hint',
+    commands: ['xattr -dr com.apple.quarantine /Applications/ubiqX.app', 'codesign --force --deep --options runtime --sign "ubiqX Dev" /Applications/ubiqX.app'],
+    note: 'settings.updates.install.note',
+  },
+  windows: { hint: 'settings.updates.install.hint.windows', commands: [], note: 'settings.updates.install.note.windows' },
+  linux: {
+    hint: 'settings.updates.install.hint.linux',
+    commands: ['chmod +x ~/Downloads/ubiqX-linux-x86_64.AppImage && ~/Downloads/ubiqX-linux-x86_64.AppImage', 'sudo apt install ./ubiqX-linux-x86_64.deb'],
+    note: 'settings.updates.install.note.linux',
+  },
+};
 const NOTES_PREVIEW_LINES = 6;
 
 /** Release notes: the first lines, then "show all". Whitespace is kept as the commit message had it. */
@@ -800,9 +822,10 @@ function ReleaseNotes({ notes }: { notes: string }) {
   );
 }
 
-function UpdatesSection({ draft, patch }: SectionProps) {
+function UpdatesSection({ draft, patch, view }: SectionProps & { view: SettingsView }) {
   const t = useT();
   const toast = useToast();
+  const install = INSTALL_NOTES[view.platform];
   const status = useAppStore((s) => s.updateStatus);
   const checking = useAppStore((s) => s.updateChecking);
   const loadUpdateStatus = useAppStore((s) => s.loadUpdateStatus);
@@ -831,7 +854,7 @@ function UpdatesSection({ draft, patch }: SectionProps) {
 
   const copyCommands = async () => {
     try {
-      await navigator.clipboard.writeText(INSTALL_COMMANDS.join('\n'));
+      await navigator.clipboard.writeText(install.commands.join('\n'));
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
       toast.success(t('settings.updates.copied'));
@@ -845,7 +868,7 @@ function UpdatesSection({ draft, patch }: SectionProps) {
   const release = status?.available ?? null;
 
   return (
-    <Section id={UPDATES_SECTION_ID} title={t('settings.section.updates')} description={t('settings.updates.description')}>
+    <Section id={UPDATES_SECTION_ID} title={t('settings.section.updates')} description={t(view.platform === 'macos' ? 'settings.updates.description' : 'settings.updates.description.other')}>
       {current ? (
         <dl className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-2.5 text-sm">
           <dt className="text-ink-3">{t('settings.updates.version')}</dt>
@@ -933,7 +956,7 @@ function UpdatesSection({ draft, patch }: SectionProps) {
                   openUpdate().catch(openFailed);
                 }}
               >
-                {t('updates.download')}
+                {downloadLabel(t, release.kind)}
               </Button>
             </div>
           </div>
@@ -941,18 +964,20 @@ function UpdatesSection({ draft, patch }: SectionProps) {
         </div>
       )}
 
-      <div className="flex flex-col gap-2 border-t border-line pt-4">
+      <div className="flex flex-col gap-2 border-t border-line pt-4" data-testid="install-notes">
         <p className="text-sm font-medium">{t('settings.updates.install.title')}</p>
-        <p className="text-xs leading-5 text-ink-2">{t('settings.updates.install.hint')}</p>
-        <div className="relative">
-          <pre className="scroll-thin overflow-x-auto rounded-control bg-panel-2 p-3 pr-28 font-mono text-[12px] leading-5 text-ink" data-testid="install-commands">
-            {INSTALL_COMMANDS.join('\n')}
-          </pre>
-          <Button size="sm" className="absolute top-2 right-2" icon={copied ? <Check className="size-3.5 text-signal" strokeWidth={2} /> : <Copy className="size-3.5" strokeWidth={1.75} />} onClick={() => void copyCommands()}>
-            {copied ? t('settings.updates.copied') : t('settings.updates.copy')}
-          </Button>
-        </div>
-        <p className="text-xs leading-5 text-ink-3">{t('settings.updates.install.note')}</p>
+        <p className="text-xs leading-5 text-ink-2">{t(install.hint)}</p>
+        {install.commands.length > 0 && (
+          <div className="relative">
+            <pre className="scroll-thin overflow-x-auto rounded-control bg-panel-2 p-3 pr-28 font-mono text-[12px] leading-5 text-ink" data-testid="install-commands">
+              {install.commands.join('\n')}
+            </pre>
+            <Button size="sm" className="absolute top-2 right-2" icon={copied ? <Check className="size-3.5 text-signal" strokeWidth={2} /> : <Copy className="size-3.5" strokeWidth={1.75} />} onClick={() => void copyCommands()}>
+              {copied ? t('settings.updates.copied') : t('settings.updates.copy')}
+            </Button>
+          </div>
+        )}
+        <p className="text-xs leading-5 text-ink-3">{t(install.note)}</p>
       </div>
     </Section>
   );
@@ -1075,7 +1100,7 @@ function AboutSection({ view }: { view: SettingsView }) {
           {view.data_dir}
         </dd>
         <dt className="text-ink-3">{t('settings.about.platform')}</dt>
-        <dd>{view.platform === 'macos' ? 'macOS' : t('settings.about.platform_dev')}</dd>
+        <dd>{PLATFORM_NAMES[view.platform] ?? t('settings.about.platform_dev')}</dd>
         <dt className="text-ink-3">{t('settings.about.engine')}</dt>
         <dd>{engine}</dd>
         <dt className="text-ink-3">{t('settings.about.ai')}</dt>

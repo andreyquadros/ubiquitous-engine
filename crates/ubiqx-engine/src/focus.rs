@@ -21,6 +21,86 @@ use crate::state::EngineState;
 /// How far back [`known_domains`] looks.
 const KNOWN_DOMAINS_DAYS: i64 = 30;
 
+/// Application ids (executable stems) the guard never enforces on Windows: the shell that
+/// hosts the taskbar and the file manager, Settings, the Task Manager and the lock screen.
+pub const EXEMPT_APP_IDS_WINDOWS: &[&str] = &[
+    "explorer",
+    "systemsettings",
+    "taskmgr",
+    // The frame that hosts every UWP/Store app: the adapter resolves the hosted app, and when
+    // it cannot, closing the host would take all of them down.
+    "applicationframehost",
+    "lockapp",
+    "searchhost",
+    "startmenuexperiencehost",
+    "shellexperiencehost",
+    "logonui",
+];
+
+/// Application ids (executable stems) the guard never enforces on Linux: the desktop
+/// shells, their file managers and settings.
+pub const EXEMPT_APP_IDS_LINUX: &[&str] = &[
+    "gnome-shell",
+    "plasmashell",
+    "nautilus",
+    "dolphin",
+    "gnome-control-center",
+    "systemsettings",
+    "systemsettings5",
+    "xfce4-panel",
+    "thunar",
+];
+
+/// Terminal emulators, by app id: like the macOS Terminal they are left alone for the
+/// first [`rules_focus::TERMINAL_GRACE_SECS`] of a session (the user may still be closing
+/// things down or launching the task's tools).
+pub const TERMINAL_APP_IDS: &[&str] = &[
+    // Windows
+    "windowsterminal",
+    "cmd",
+    "powershell",
+    "pwsh",
+    "conhost",
+    // Linux
+    "gnome-terminal",
+    "gnome-terminal-server",
+    "konsole",
+    "alacritty",
+    "kitty",
+    "wezterm",
+    "wezterm-gui",
+    "xterm",
+    "tilix",
+    "terminator",
+    "xfce4-terminal",
+    "ptyxis",
+];
+
+/// Whether the guard leaves this window alone: the platform-independent rules of
+/// `ubiqx_core::focus` (ubiqX, Finder, System Settings, the macOS Terminal grace) plus
+/// the shells, settings apps and terminals of Windows and Linux, matched by app id
+/// (executable stem) case-insensitively. `session_age_secs` is `None` when no session runs.
+pub fn is_exempt_window(app_id: &str, app_name: &str, session_age_secs: Option<i64>) -> bool {
+    if rules_focus::is_exempt_app(app_id, app_name, session_age_secs) {
+        return true;
+    }
+    let id = app_id.trim();
+    if id.is_empty() {
+        return false;
+    }
+    if EXEMPT_APP_IDS_WINDOWS
+        .iter()
+        .chain(EXEMPT_APP_IDS_LINUX)
+        .any(|x| x.eq_ignore_ascii_case(id))
+    {
+        return true;
+    }
+    if TERMINAL_APP_IDS.iter().any(|t| t.eq_ignore_ascii_case(id)) {
+        return session_age_secs.is_some_and(|age| age < rules_focus::TERMINAL_GRACE_SECS);
+    }
+    false
+}
+
 /// Id of the sample intervention shown by [`test_intervention`].
 pub const TEST_INTERVENTION_ID: &str = "test";
 
@@ -112,7 +192,7 @@ pub fn guard_once(state: &Arc<EngineState>) -> CoreResult<Option<Intervention>> 
         return Ok(None);
     };
     let session_age = session.as_ref().map(|s| (now - s.started_at).num_seconds());
-    if rules_focus::is_exempt_app(&win.app_id, &win.app_name, session_age) {
+    if is_exempt_window(&win.app_id, &win.app_name, session_age) {
         return Ok(None);
     }
     let url = if platform.urls.supports(&win.app_id) {
@@ -552,4 +632,56 @@ pub fn test_intervention(state: &EngineState) -> CoreResult<()> {
             .notify(&sample.name, &sample.message)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exemptions_cover_every_desktop() {
+        // The core rules still apply.
+        assert!(is_exempt_window("ai.ubiqx.app", "ubiqX", None));
+        assert!(is_exempt_window("com.apple.finder", "Finder", Some(1000)));
+        assert!(is_exempt_window("com.apple.Terminal", "Terminal", Some(30)));
+        assert!(!is_exempt_window(
+            "com.apple.Terminal",
+            "Terminal",
+            Some(61)
+        ));
+        // Windows and Linux shells, by executable stem, whatever the case.
+        assert!(is_exempt_window("explorer", "Windows Explorer", None));
+        assert!(is_exempt_window("Explorer", "", Some(500)));
+        assert!(is_exempt_window("systemsettings", "Settings", None));
+        assert!(is_exempt_window("taskmgr", "Task Manager", None));
+        assert!(is_exempt_window(
+            "applicationframehost",
+            "Application Frame Host",
+            None
+        ));
+        assert!(is_exempt_window("gnome-shell", "GNOME Shell", None));
+        assert!(is_exempt_window("plasmashell", "Plasma", None));
+        assert!(is_exempt_window("nautilus", "Files", None));
+        assert!(is_exempt_window("dolphin", "Dolphin", None));
+        assert!(is_exempt_window("gnome-control-center", "Settings", None));
+        // Terminals get the grace period only.
+        for t in [
+            "windowsterminal",
+            "cmd",
+            "powershell",
+            "gnome-terminal-server",
+            "konsole",
+            "alacritty",
+            "kitty",
+            "wezterm-gui",
+        ] {
+            assert!(is_exempt_window(t, "", Some(10)), "{t} in grace");
+            assert!(!is_exempt_window(t, "", Some(60)), "{t} after grace");
+            assert!(!is_exempt_window(t, "", None), "{t} without a session");
+        }
+        // Ordinary apps are never exempt.
+        assert!(!is_exempt_window("chrome", "Google Chrome", Some(10)));
+        assert!(!is_exempt_window("firefox", "Firefox", None));
+        assert!(!is_exempt_window("", "", None));
+    }
 }

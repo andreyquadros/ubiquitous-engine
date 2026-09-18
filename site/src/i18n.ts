@@ -34,6 +34,8 @@ export interface OsCard {
   name: string;
   requires: string;
   cta: string;
+  /** Text link to the secondary installer (.msi, .deb), when the OS has one. */
+  alt?: string;
 }
 export interface Faq {
   q: string;
@@ -90,6 +92,10 @@ export interface Copy {
     soon: string;
     releases: string;
     macos: { title: string; steps: string[]; damaged: string; copy: string; copied: string; guide: string };
+    windows: { title: string; steps: string[] };
+    linux: { title: string; steps: string[]; terminal: string; copy: string; copied: string };
+    /** Link to docs/WINDOWS-LINUX.md, under the Windows and Linux panels. */
+    otherGuide: string;
   };
   faq: { eyebrow: string; title: string; items: Faq[] };
   footer: { tagline: string; repo: string; releases: string; docs: string; contact: string; rights: string; source: string };
@@ -130,7 +136,7 @@ const ptBR: Copy = {
     secondary: 'Ver os planos',
     trust: 'Tudo fica no seu Mac. Sem contas, sem telemetria.',
     mascotAlt: 'UBI, o mascote do ubiqX: um robô branco com visor escuro, crista azul e faixa laranja',
-    platforms: 'macOS agora. Windows e Linux em breve.',
+    platforms: 'macOS, Windows e Linux.',
   },
   how: {
     eyebrow: 'Como funciona',
@@ -223,7 +229,7 @@ const ptBR: Copy = {
         bullets: [
           'Tudo incluso: rastreamento, revisão, relatórios, foco e UBI',
           'Atualizações por um ano',
-          'macOS agora, Windows e Linux em breve',
+          'macOS, Windows e Linux',
           'Você paga a IA direto ao provedor (centavos por dia)',
         ],
         highlight: 'Você paga a IA direto ao provedor (centavos por dia)',
@@ -253,11 +259,11 @@ const ptBR: Copy = {
   downloads: {
     eyebrow: 'Baixar',
     title: 'Instale no seu computador.',
-    intro: 'O ubiqX roda na barra de menus e começa a registrar assim que você permite.',
+    intro: 'O ubiqX roda na barra de menus (ou na bandeja do sistema) e começa a registrar assim que você permite.',
     os: [
       { id: 'macos', name: 'macOS', requires: 'macOS 13 ou mais recente, Apple Silicon', cta: 'Baixar .dmg' },
-      { id: 'windows', name: 'Windows', requires: 'Windows 10 e 11', cta: 'Baixar instalador' },
-      { id: 'linux', name: 'Linux', requires: 'AppImage ou .deb', cta: 'Baixar' },
+      { id: 'windows', name: 'Windows', requires: 'Windows 10 e 11, 64 bits', cta: 'Baixar instalador (.exe)', alt: 'ou o pacote .msi' },
+      { id: 'linux', name: 'Linux', requires: 'Sessão X11 (Xorg), 64 bits', cta: 'Baixar AppImage', alt: 'ou o pacote .deb' },
     ],
     soon: 'Em breve',
     releases: 'Todas as versões no GitHub',
@@ -274,6 +280,26 @@ const ptBR: Copy = {
       copied: 'Copiado',
       guide: 'Guia completo de instalação e permissões',
     },
+    windows: {
+      title: 'Primeira abertura no Windows',
+      steps: [
+        'Abra o instalador e siga os passos; o ubiqX fica na bandeja do sistema, ao lado do relógio.',
+        'Se o SmartScreen aparecer, clique em “Mais informações” e depois em “Executar assim mesmo”: o instalador ainda não tem assinatura de editor.',
+        'Nenhuma permissão a conceder: título da janela e URL do navegador (Chrome, Edge, Brave, Opera, Vivaldi, Firefox) são lidos pela acessibilidade do próprio Windows.',
+      ],
+    },
+    linux: {
+      title: 'Primeira abertura no Linux',
+      steps: [
+        'Torne o AppImage executável e abra, ou instale o .deb; o ubiqX aparece na bandeja do sistema.',
+        'Precisa de uma sessão X11 (“GNOME on Xorg”, “Plasma (X11)”): em sessão Wayland o app só vê os programas que rodam pelo XWayland; os nativos Wayland ficam invisíveis.',
+        'A URL do navegador vem só do título da janela; sem ela, os sites entram pelo nome do app.',
+      ],
+      terminal: 'No terminal:',
+      copy: 'Copiar comandos',
+      copied: 'Copiado',
+    },
+    otherGuide: 'O que funciona no Windows e no Linux, limitações e como compilar',
   },
   faq: {
     eyebrow: 'Perguntas frequentes',
@@ -285,7 +311,11 @@ const ptBR: Copy = {
       },
       {
         q: 'Quais permissões o app pede e por quê?',
-        a: 'Gravação de Tela, para ler o título da janela ativa e tirar os prints esparsos. Automação, para perguntar ao navegador qual URL está aberta. Nenhuma das duas lê teclas nem conteúdo, e você pode negar a segunda: fica só o título.',
+        a: 'No macOS: Gravação de Tela, para ler o título da janela ativa e tirar os prints esparsos, e Automação, para perguntar ao navegador qual URL está aberta. Nenhuma das duas lê teclas nem conteúdo, e você pode negar a segunda: fica só o título. No Windows e no Linux não há permissão a conceder.',
+      },
+      {
+        q: 'Funciona no Windows e no Linux?',
+        a: 'Sim, com o mesmo app e o mesmo feed de atualização. No Windows, a URL da aba ativa vem da acessibilidade do sistema (Chrome, Edge, Brave, Opera, Vivaldi e Firefox) e o Foco fecha apps, fecha abas e minimiza as outras janelas. No Linux, o app vê a janela ativa em sessões X11; numa sessão Wayland só os programas que rodam pelo XWayland são rastreados (os nativos Wayland ficam para uma versão futura, pelos portais) e a URL é lida só do título do navegador. A chave de API fica no Gerenciador de Credenciais ou no chaveiro do sistema.',
       },
       {
         q: 'Chave própria ou IA do Ubi: qual escolho?',
@@ -351,7 +381,7 @@ const en: Copy = {
     secondary: 'See the plans',
     trust: 'Everything stays on your Mac. No accounts, no telemetry.',
     mascotAlt: 'UBI, the ubiqX mascot: a white robot with a dark visor, a blue crest and an orange sash',
-    platforms: 'macOS today. Windows and Linux soon.',
+    platforms: 'macOS, Windows and Linux.',
   },
   how: {
     eyebrow: 'How it works',
@@ -444,7 +474,7 @@ const en: Copy = {
         bullets: [
           'Everything included: tracking, review, reports, focus and UBI',
           'Updates for a year',
-          'macOS now, Windows and Linux soon',
+          'macOS, Windows and Linux',
           'You pay the AI directly to the provider (cents a day)',
         ],
         highlight: 'You pay the AI directly to the provider (cents a day)',
@@ -474,11 +504,11 @@ const en: Copy = {
   downloads: {
     eyebrow: 'Download',
     title: 'Install it on your computer.',
-    intro: 'ubiqX lives in the menu bar and starts recording as soon as you allow it.',
+    intro: 'ubiqX lives in the menu bar (or the system tray) and starts recording as soon as you allow it.',
     os: [
       { id: 'macos', name: 'macOS', requires: 'macOS 13 or later, Apple Silicon', cta: 'Download .dmg' },
-      { id: 'windows', name: 'Windows', requires: 'Windows 10 and 11', cta: 'Download installer' },
-      { id: 'linux', name: 'Linux', requires: 'AppImage or .deb', cta: 'Download' },
+      { id: 'windows', name: 'Windows', requires: 'Windows 10 and 11, 64-bit', cta: 'Download installer (.exe)', alt: 'or the .msi package' },
+      { id: 'linux', name: 'Linux', requires: 'X11 (Xorg) session, 64-bit', cta: 'Download AppImage', alt: 'or the .deb package' },
     ],
     soon: 'Coming soon',
     releases: 'All releases on GitHub',
@@ -495,6 +525,26 @@ const en: Copy = {
       copied: 'Copied',
       guide: 'Full installation and permissions guide',
     },
+    windows: {
+      title: 'First launch on Windows',
+      steps: [
+        'Open the installer and follow the steps; ubiqX sits in the system tray, next to the clock.',
+        'If SmartScreen shows up, choose “More info” and then “Run anyway”: the installer has no publisher signature yet.',
+        'Nothing to grant: the window title and the browser URL (Chrome, Edge, Brave, Opera, Vivaldi, Firefox) are read through Windows accessibility.',
+      ],
+    },
+    linux: {
+      title: 'First launch on Linux',
+      steps: [
+        'Make the AppImage executable and open it, or install the .deb; ubiqX shows up in the system tray.',
+        'It needs an X11 session (“GNOME on Xorg”, “Plasma (X11)”): on a Wayland session the app only sees programs running through XWayland; Wayland-native ones stay invisible.',
+        'The browser URL comes from the window title only; without it, sites count under the app name.',
+      ],
+      terminal: 'In a terminal:',
+      copy: 'Copy commands',
+      copied: 'Copied',
+    },
+    otherGuide: 'What works on Windows and Linux, limitations and how to build',
   },
   faq: {
     eyebrow: 'Frequently asked questions',
@@ -506,7 +556,11 @@ const en: Copy = {
       },
       {
         q: 'Which permissions does it ask for, and why?',
-        a: 'Screen Recording, to read the active window title and take the sparse screenshots. Automation, to ask the browser which URL is open. Neither reads keystrokes or content, and you can deny the second one: you keep the title only.',
+        a: 'On macOS: Screen Recording, to read the active window title and take the sparse screenshots, and Automation, to ask the browser which URL is open. Neither reads keystrokes or content, and you can deny the second one: you keep the title only. On Windows and Linux there is nothing to grant.',
+      },
+      {
+        q: 'Does it work on Windows and Linux?',
+        a: 'Yes, same app and same update feed. On Windows, the active tab URL comes from system accessibility (Chrome, Edge, Brave, Opera, Vivaldi and Firefox) and Focus quits apps, closes tabs and minimises the other windows. On Linux, the app sees the active window on X11 sessions; on a Wayland session only programs running through XWayland are tracked (Wayland-native ones are left for a future version, through the portals) and the URL is read from the browser title only. The API key lives in the Credential Manager or the system keyring.',
       },
       {
         q: 'Own key or Ubi AI: which one should I pick?',

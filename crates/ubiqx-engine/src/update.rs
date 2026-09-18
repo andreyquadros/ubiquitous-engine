@@ -289,6 +289,7 @@ mod tests {
                 kind: "dmg".into(),
                 size: Some(1),
                 app_zip_url: None,
+                alternates: Vec::new(),
             },
         );
         UpdateFeed {

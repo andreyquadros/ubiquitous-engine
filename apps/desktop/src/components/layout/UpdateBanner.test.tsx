@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setLocale } from '../../i18n';
 import { __mock } from '../../lib/mock';
 import { useAppStore } from '../../lib/store';
-import { UpdateBanner, fmtBuildDate, hasPendingUpdate } from './UpdateBanner';
+import { UpdateBanner, downloadLabel, fmtBuildDate, hasPendingUpdate } from './UpdateBanner';
 
 function Where() {
   const loc = useLocation();
@@ -117,6 +117,28 @@ describe('UpdateBanner (mock backend)', () => {
     expect(shown.every((v) => !v)).toBe(true);
     expect(screen.queryByTestId('update-banner')).not.toBeInTheDocument();
     expect(useAppStore.getState().updateStatus?.dismissed).toBe(true);
+  });
+
+  it('names the installer of the running OS on the download button', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    __mock.setPlatform('windows');
+    __mock.setUpdate(true);
+    renderBanner();
+    await act(async () => {
+      await useAppStore.getState().loadUpdateStatus();
+    });
+    expect(useAppStore.getState().updateStatus?.available?.kind).toBe('exe');
+    fireEvent.click(await screen.findByRole('button', { name: 'Baixar (.exe)' }));
+    await waitFor(() => expect(open).toHaveBeenCalledWith(expect.stringMatching(/ubiqX-windows-x86_64-setup\.exe$/), '_blank', 'noopener'));
+    expect(screen.queryByRole('button', { name: 'Baixar (.dmg)' })).not.toBeInTheDocument();
+
+    // Linux: the AppImage is the primary installer of the feed entry
+    __mock.setPlatform('linux');
+    act(() => {
+      useAppStore.getState().applyEvent({ type: 'update_available', release: __mock.sampleRelease() });
+    });
+    expect(await screen.findByRole('button', { name: 'Baixar (.AppImage)' })).toBeInTheDocument();
+    expect(downloadLabel((k) => k, 'deb')).toBe('updates.download.deb');
   });
 
   it('stays hidden on development builds', async () => {

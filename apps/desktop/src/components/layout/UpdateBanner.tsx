@@ -5,7 +5,7 @@ import { useT } from '../../i18n';
 import { fmtDateTime } from '../../lib/format';
 import { useAppStore } from '../../lib/store';
 import { useToast } from '../../lib/toast';
-import type { UpdateStatus } from '../../lib/types';
+import type { AssetKind, UpdateStatus } from '../../lib/types';
 import { Button } from '../ui/Button';
 
 /** Settings section the "how to install" link jumps to (`id="sec-atualizacoes"` in pages/Settings.tsx). */
@@ -14,13 +14,17 @@ export const UPDATES_SECTION_ID = 'atualizacoes';
 /** pt "18/09 15:04" / en "09/18 15:04" for a build epoch (unix seconds); 0 = development build. */
 export const fmtBuildDate = (epoch: number, devLabel: string): string => (epoch > 0 ? fmtDateTime(new Date(epoch * 1000).toISOString()) : devLabel);
 
+/** Label of the download button for an installer kind: "Baixar (.dmg)", "Baixar (.exe)", "Baixar (.AppImage)"… (keys `updates.download.<kind>`). */
+export const downloadLabel = (t: (key: string) => string, kind: AssetKind): string => t(`updates.download.${kind}`);
+
 /** True when the banner and the Settings dot should show: an update the user has not dismissed, on a CI build. */
 export const hasPendingUpdate = (status: UpdateStatus | null): status is UpdateStatus & { available: NonNullable<UpdateStatus['available']> } =>
   !!status && status.enabled && status.available !== null && !status.dismissed;
 
 /**
- * Compact strip above every page: "new build available", download the DMG, dismiss, or jump to the install notes.
- * Hidden when there is no update, when the user dismissed this build, or on development builds.
+ * Compact strip above every page: "new build available", download the installer of this OS (the button names its
+ * extension), dismiss, or jump to the install notes. Hidden when there is no update, when the user dismissed this
+ * build, or on development builds.
  */
 export function UpdateBanner() {
   const t = useT();
@@ -64,7 +68,7 @@ export function UpdateBanner() {
               {t('updates.later')}
             </Button>
             <Button size="sm" variant="primary" icon={<ArrowDownToLine className="size-3.5" strokeWidth={2} aria-hidden />} onClick={download}>
-              {t('updates.download')}
+              {downloadLabel(t, release.kind)}
             </Button>
           </div>
         </motion.div>

@@ -586,7 +586,12 @@ pub fn run() {
             // Menus are built once the engine is up, so their labels follow the stored
             // language; `update_settings` relabels them in place afterwards.
             let (app_menu, hide_window) = build_app_menu(&handle, lang)?;
+            // The application menu (with the Cmd+Q override) is a macOS concept; on
+            // Windows and Linux it would become a menu bar inside the dashboard window.
+            #[cfg(target_os = "macos")]
             app.set_menu(app_menu)?;
+            #[cfg(not(target_os = "macos"))]
+            drop(app_menu);
             let menus = build_tray(app, lang, hide_window)?;
             app.manage(menus);
 

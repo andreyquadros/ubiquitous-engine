@@ -99,6 +99,62 @@ describe('Settings · language', () => {
   });
 });
 
+describe('Settings · Windows and Linux (platform from the settings view)', () => {
+  beforeEach(() => {
+    __mock.reset();
+    useAppStore.setState({ settingsView: null, updateStatus: null });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('on Windows hides the macOS-only bits and explains the installer', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    __mock.setPlatform('windows');
+    __mock.setUpdate(true);
+    await useAppStore.getState().loadSettings();
+    renderPage();
+    await screen.findByRole('heading', { name: 'Atualizações' });
+    // no permissions section, neither in the rail nor in the page
+    expect(screen.queryByRole('heading', { name: 'Permissões do macOS' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Permissões do macOS' })).not.toBeInTheDocument();
+    // copy that named the Mac, the Keychain or macOS notifications has its Windows twin
+    expect(screen.getByText('Tudo fica no seu computador. Só sai o mínimo necessário para a IA classificar e escrever relatórios.')).toBeInTheDocument();
+    expect(screen.getByText(/Gerenciador de Credenciais do Windows/)).toBeInTheDocument();
+    expect(screen.getByText(/numa notificação do sistema\.$/)).toBeInTheDocument();
+    expect(screen.getByText('Windows', { selector: 'dd' })).toBeInTheDocument();
+    expect(screen.getByText('C:\\Users\\andrey\\AppData\\Roaming\\ai.ubiqx.app')).toBeInTheDocument();
+    // install notes: the SmartScreen hint, no terminal commands
+    const notes = screen.getByTestId('install-notes');
+    expect(notes).toHaveTextContent('Abra o instalador e siga os passos; o Windows pode pedir confirmação do SmartScreen.');
+    expect(notes).toHaveTextContent('Executar assim mesmo');
+    expect(screen.queryByTestId('install-commands')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copiar comandos' })).not.toBeInTheDocument();
+    // the release panel downloads the setup .exe
+    const panel = await screen.findByTestId('update-release');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Baixar (.exe)' }));
+    await waitFor(() => expect(open).toHaveBeenCalledWith(expect.stringMatching(/ubiqX-windows-x86_64-setup\.exe$/), '_blank', 'noopener'));
+  });
+
+  it('on Linux shows the AppImage and .deb commands', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    __mock.setPlatform('linux');
+    await useAppStore.getState().loadSettings();
+    setLocale('en');
+    renderPage();
+    await screen.findByRole('heading', { name: 'Updates' });
+    expect(screen.queryByRole('heading', { name: 'macOS permissions' })).not.toBeInTheDocument();
+    expect(screen.getByText('Linux', { selector: 'dd' })).toBeInTheDocument();
+    expect(screen.getByText(/system keyring \(Secret Service\)/)).toBeInTheDocument();
+    const notes = screen.getByTestId('install-notes');
+    expect(notes).toHaveTextContent('Make the AppImage executable (chmod +x) and open it, or install the .deb:');
+    expect(screen.getByTestId('install-commands')).toHaveTextContent('chmod +x ~/Downloads/ubiqX-linux-x86_64.AppImage');
+    expect(screen.getByTestId('install-commands')).toHaveTextContent('sudo apt install ./ubiqX-linux-x86_64.deb');
+    fireEvent.click(screen.getByRole('button', { name: 'Copy commands' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/^chmod \+x .*\nsudo apt install \.\/ubiqX-linux-x86_64\.deb$/)));
+    setLocale('pt-BR');
+  });
+});
+
 describe('Settings · updates section (mock backend)', () => {
   beforeEach(async () => {
     __mock.reset();

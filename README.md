@@ -3,15 +3,17 @@
 </p>
 
 <h1 align="center">ubiqX</h1>
-<p align="center"><strong>Rastreamento inteligente de atividade para macOS, com IA nativa e um mascote que cuida do seu foco.</strong></p>
+<p align="center"><strong>Rastreamento inteligente de atividade para macOS, Windows e Linux, com IA nativa e um mascote que cuida do seu foco.</strong></p>
 <p align="center">
   <a href="https://github.com/andreyquadros/ubiquitous-engine/actions/workflows/ci.yml"><img src="https://github.com/andreyquadros/ubiquitous-engine/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <img src="https://img.shields.io/badge/Rust-1.85%2B-orange" alt="Rust"/>
   <img src="https://img.shields.io/badge/Tauri-2-blue" alt="Tauri 2"/>
   <img src="https://img.shields.io/badge/macOS-13%2B-black" alt="macOS 13+"/>
+  <img src="https://img.shields.io/badge/Windows-10%2F11-0078D4" alt="Windows 10/11"/>
+  <img src="https://img.shields.io/badge/Linux-X11-FCC624" alt="Linux (X11)"/>
 </p>
 
-O ubiqX roda em segundo plano na barra de menus, observa **em qual app, janela e site você está**, tira
+O ubiqX roda em segundo plano na barra de menus (ou na bandeja do sistema), observa **em qual app, janela e site você está**, tira
 prints esparsos **só da janela ativa**, e enquadra cada bloco de tempo nas **categorias que você cria**
 (IFRO, Incubadora, Cidades Inteligentes…). No horário que você escolher, gera um **relatório diário por
 categoria** pronto para virar o relatório mensal de cada instituição. Se ele errar, você corrige em um clique —
@@ -62,6 +64,22 @@ e ele aprende. O **UBI**, o mascote, mostra seu humor de foco e avisa quando voc
 |---|---|
 | ![Configurações](docs/screenshots/settings.png) | ![Onboarding](docs/screenshots/onboarding.png) |
 
+## Sistemas suportados
+
+| | macOS 13+ (Apple Silicon) | Windows 10/11 (x64) | Linux x64 (X11) |
+|---|---|---|---|
+| Instalador | `.dmg` (+ `.app.zip`) | `-setup.exe` (NSIS) e `.msi` | `.AppImage` e `.deb` |
+| App, janela e título em foco | sim | sim | sim em sessão X11; em sessão Wayland só os apps que rodam pelo XWayland ([guia](docs/WINDOWS-LINUX.md#4-limitações-conhecidas)) |
+| URL da aba ativa | Safari, Chrome, Arc, Brave, Edge, Vivaldi, Opera (Automação) | Chrome, Edge, Brave, Opera, Vivaldi, Firefox (UI Automation) | só pelo título da janela |
+| Screenshots da janela ativa | sim | sim | sim (X11) |
+| Permissões a conceder | Gravação de tela, Automação | nenhuma | nenhuma |
+| Chave de API | Keychain | Gerenciador de Credenciais (ou arquivo do usuário) | chaveiro Secret Service (ou arquivo `0600`) |
+| Foco: fechar app / aba, esconder janelas | sim | sim (minimiza) | sim (minimiza) |
+| Ao começar/encerrar a sessão de foco | atalho do app Atalhos | linha de comando | linha de comando |
+| Atualização automática (feed `continuous`) | sim | sim | sim |
+
+Windows e Linux: instalação, limitações e diferenças em [`docs/WINDOWS-LINUX.md`](docs/WINDOWS-LINUX.md).
+
 ## Site
 
 A landing page que apresenta o ubiqX AI como produto (planos, downloads, telas) vive em [`site/`](site/) e é publicada no GitHub Pages
@@ -72,11 +90,12 @@ em `https://<owner>.github.io/ubiquitous-engine/` pelo workflow `site.yml`; dese
 | Camada | Tecnologia |
 |---|---|
 | Núcleo / daemon | **Rust** — workspace hexagonal (`core` → `storage` / `platform` / `ai` → `engine` → `app` → `desktop` / `cli`) |
-| Desktop | **Tauri 2** (tray na barra de menus, notificações, iniciar com o sistema) |
+| Desktop | **Tauri 2** (tray na barra de menus ou na bandeja, notificações, iniciar com o sistema) |
 | UI | **React 19 + TypeScript + Vite + Tailwind 4**, Recharts, Framer Motion, react-three-fiber (UBI em 3D) |
 | Dados | **SQLite** local (`rusqlite`, WAL) |
 | IA | **Anthropic Messages API**, **OpenAI Chat Completions** ou **xAI Grok** (API compatível com OpenAI) via HTTP, escolhida pelo usuário; saída estruturada JSON em todas |
-| Segredos | Keychain do macOS (`keyring`) |
+| Plataforma | macOS (Accessibility, AppleScript, ScreenCaptureKit), Windows (crate `windows`: Win32, UI Automation), Linux (`x11rb`, `/proc`) |
+| Segredos | Keychain do macOS, Gerenciador de Credenciais do Windows ou Secret Service (`keyring`), com arquivo do usuário como reserva |
 
 Detalhes em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -98,10 +117,11 @@ Sem toolchain local: baixe o `.app` pronto do GitHub Actions (artifact `ubiqX-ma
 [`docs/MACOS-TESTING.md`](docs/MACOS-TESTING.md) § 3.1.
 
 **Atualizações.** Cada push vira a release rolante [`continuous`](https://github.com/andreyquadros/ubiquitous-engine/releases/tag/continuous)
-(`.dmg`, `.app.zip` e `latest.json`), publicada pelo GitHub Actions e, com um token, também pelo Codemagic. O app
-instalado consulta o `latest.json` ao abrir e a cada 6 h e avisa com banner, notificação e item no menu da barra
-quando há um build mais novo; **Baixar** abre o `.dmg`. Instalação, token do Codemagic e `UBIQX_UPDATE_FEED_URL`
-em [`docs/MACOS-TESTING.md`](docs/MACOS-TESTING.md) § 3.2.
+(`.dmg` + `.app.zip`, `-setup.exe` + `.msi`, `.AppImage` + `.deb` e um `latest.json` com as três plataformas),
+publicada de uma vez pelo GitHub Actions e, com um token, também pelo Codemagic (só macOS; as plataformas do feed
+são mescladas). O app instalado consulta o `latest.json` ao abrir e a cada 6 h e avisa com banner, notificação e
+item no menu da bandeja quando há um build mais novo; **Baixar** abre o instalador do sistema em uso. Instalação,
+token do Codemagic e `UBIQX_UPDATE_FEED_URL` em [`docs/MACOS-TESTING.md`](docs/MACOS-TESTING.md) § 3.2.
 
 Na primeira execução o onboarding pede para **escolher a IA** e colar a chave correspondente, a permissão de
 **Gravação de Tela** (reinicie o app depois de conceder) e a **Automação** para o navegador; depois você cria as
@@ -132,8 +152,12 @@ cargo run -p ubiqx-cli -- --ephemeral --fake-ai simulate --seconds 60 --events
 # interface no navegador com dados simulados (sem Tauri)
 cd apps/desktop && pnpm install && pnpm dev        # http://localhost:1420  (?onboarding=1 mostra o onboarding)
 
-# app desktop em modo dev (macOS)
+# app desktop em modo dev (macOS, Windows ou Linux)
 cd apps/desktop && pnpm tauri dev
+
+# instaladores de Windows e Linux (ver docs/WINDOWS-LINUX.md § 2)
+cd apps/desktop && pnpm tauri build --bundles msi,nsis        # Windows
+cd apps/desktop && pnpm tauri build --bundles appimage,deb    # Linux
 ```
 
 Variáveis úteis: `UBIQX_LOG=debug` (log), `UBIQX_FAKE_AI=1` (IA falsa no app desktop), `UBIQX_SCRIPTED=1`
@@ -145,8 +169,9 @@ CLI: `ubiqx status [data]`, `ubiqx classify`, `ubiqx report <data> --category <i
 
 ## Estado do projeto
 
-MVP v0.1 — pronto para o primeiro teste local no macOS. Ver [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §8 para as
-decisões e os próximos passos (ScreenCaptureKit, eventos de sono/bloqueio de tela, exportação DOCX, Windows/Linux).
+MVP v0.1 — pronto para o primeiro teste local no macOS, no Windows e no Linux (X11). Ver
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §8 para as decisões e os próximos passos (ScreenCaptureKit, eventos de
+sono/bloqueio de tela, exportação DOCX, Wayland pelos portais, URL do navegador no Linux por acessibilidade).
 
 ## Licença
 

@@ -93,12 +93,18 @@ o app avisa, você baixa o `.dmg` com um clique e instala como no § 3.1.
 
 **Como funciona.** A CI publica cada build na release rolante **`continuous`** do repositório
 (`https://github.com/andreyquadros/ubiquitous-engine/releases/tag/continuous`). A release recebe sempre os
-mesmos três arquivos, com nomes estáveis: `ubiqX-macos-aarch64.dmg`, `ubiqX-macos-aarch64.app.zip` e
-`latest.json`, o "feed" com versão, data do commit (`build.epoch`), número do build, sha e as notas do commit.
-Cada binário sai da compilação com esses mesmos números gravados (`scripts/build-info.sh` os calcula e o
-`build.rs` os grava). O app baixa o `latest.json` 45 s depois de abrir e depois a cada 6 h; se a versão for
-maior, ou igual com um commit mais novo, há atualização. Builds de desenvolvimento (`pnpm tauri dev`, sem
-git) não verificam sozinhos; a verificação manual em Configurações continua funcionando para testar.
+mesmos arquivos, com nomes estáveis, para as três plataformas: `ubiqX-macos-aarch64.dmg` e
+`ubiqX-macos-aarch64.app.zip` (macOS), `ubiqX-windows-x86_64-setup.exe` e `ubiqX-windows-x86_64.msi`
+(Windows), `ubiqX-linux-x86_64.AppImage` e `ubiqX-linux-x86_64.deb` (Linux), mais o `latest.json`, o "feed"
+com versão, data do commit (`build.epoch`), número do build, sha, as notas do commit e uma entrada por
+plataforma em `platforms` (`darwin-aarch64`, `windows-x86_64`, `linux-x86_64`, cada uma com `url`, `kind`,
+`size` e, no macOS, `app_zip_url`). O app escolhe a entrada do sistema e da arquitetura em que roda (com
+`…-universal` e depois qualquer chave do mesmo sistema como reserva). Cada binário sai da compilação com
+esses mesmos números gravados (`scripts/build-info.sh` os calcula e o `build.rs` os grava). O app baixa o
+`latest.json` 45 s depois de abrir e depois a cada 6 h; se a versão for maior, ou igual com um commit mais
+novo, há atualização. Builds de desenvolvimento (`pnpm tauri dev`, sem git) não verificam sozinhos; a
+verificação manual em Configurações continua funcionando para testar. Instalação no Windows e no Linux:
+[`WINDOWS-LINUX.md`](WINDOWS-LINUX.md) § 1.
 
 **Onde aparece.** Um banner no topo do app com a data e o sha do build e os botões **Como instalar**,
 **Depois** e **Baixar (.dmg)**; a seção **Atualizações** em Configurações (build atual, última verificação,
@@ -108,10 +114,13 @@ git) não verificam sozinhos; a verificação manual em Configurações continua
 enquanto nenhum build novo é conhecido e **Baixar a nova versão (18/09 15:04 a1b2c3d)…** depois que um
 aparece. **Depois** esconde o banner só daquele build; o próximo avisa de novo.
 
-**GitHub Actions (automático).** Já está configurado: todo push compila o app e o DMG e roda a publicação com o
-`GITHUB_TOKEN` que o próprio Actions fornece (o job tem `permissions: contents: write`). Pull requests só
-compilam. Um push novo cancela o build anterior do mesmo branch, e a publicação recusa sobrescrever um build
-mais novo do que o dela, então a release nunca "volta no tempo".
+**GitHub Actions (automático).** Já está configurado: todo push compila os três sistemas (jobs `macos-app`,
+`windows-app` e `linux-app`) e o job `publish-continuous` publica os seis instaladores e o `latest.json` de
+uma vez, com o `GITHUB_TOKEN` que o próprio Actions fornece (o job tem `permissions: contents: write`), então o
+feed nunca mostra um build pela metade. Pull requests só compilam. Um push novo cancela o build anterior do
+mesmo branch, e a publicação recusa sobrescrever um build mais novo do que o dela, então a release nunca
+"volta no tempo". Quando o `latest.json` já publicado é do **mesmo** commit (Codemagic e Actions a publicar o
+mesmo push), as plataformas são mescladas: cada publicador troca só as suas.
 
 **Codemagic (opcional, precisa de um token).** O Codemagic não recebe token do GitHub sozinho. Para ele
 também publicar:
@@ -128,8 +137,9 @@ também publicar:
    (e `- ubiqx_apple` se também tiver o grupo de assinatura). Faça commit.
 
 Sem o grupo a etapa *Publicar atualização (GitHub Releases)* escreve "Publicação pulada: GITHUB_TOKEN não
-definido" e o build continua disponível em Artifacts. Os dois caminhos publicam na mesma release; quem
-terminar por último com o commit mais novo vence, o outro pula.
+definido" e o build continua disponível em Artifacts. Os dois caminhos publicam na mesma release: com o
+mesmo commit as plataformas se somam (o Codemagic só traz o macOS); com commits diferentes, quem terminar por
+último com o commit mais novo vence e o outro pula.
 
 **Instalar a atualização.** O botão **Baixar** abre o `.dmg` no navegador. O bundle continua com assinatura
 ad hoc e em quarentena, então repita a sequência do § 3.1:
@@ -148,7 +158,8 @@ ele, o mesmo app. Se pular o `codesign`, o novo build volta a pedir tudo.
 **Outro feed.** Para apontar o app a um fork ou a um servidor próprio, compile com
 `UBIQX_UPDATE_FEED_URL=https://.../latest.json pnpm tauri build` (o valor fica gravado no binário; o padrão é o
 `latest.json` da release `continuous` deste repositório). O `scripts/publish-release.mjs` aceita `--repo`,
-`--tag` e `--dmg` para publicar em outro lugar; `node scripts/publish-release.mjs --help` lista tudo.
+`--tag` e vários `--asset` (plataforma e tipo inferidos pelo nome do arquivo; `--dmg` e `--app-zip` continuam
+valendo) para publicar em outro lugar; `node scripts/publish-release.mjs --help` lista tudo.
 
 ## 4. Primeira execução (onboarding)
 

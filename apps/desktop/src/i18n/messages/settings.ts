@@ -55,6 +55,8 @@ const messages = {
     'key.label': 'Chave de API da {provider}',
     'key.replace_label': 'Trocar a chave de API da {provider}',
     'key.keychain_hint': 'Fica só no Keychain do macOS; nunca vai para um arquivo.',
+    'key.store_hint.windows': 'Fica no Gerenciador de Credenciais do Windows (ou, se ele falhar, num arquivo só seu na pasta de dados); nunca sai da máquina.',
+    'key.store_hint.linux': 'Fica no chaveiro do sistema (Secret Service) ou, sem ele, num arquivo só seu na pasta de dados; nunca sai da máquina.',
     'key.create': 'Criar chave',
     'key.validate_save': 'Validar e salvar',
     'toast.key_saved': 'Chave da {provider} salva no Keychain',
@@ -102,6 +104,7 @@ const messages = {
 
     // privacy
     'privacy.description': 'Tudo fica no seu Mac. Só sai o mínimo necessário para a IA classificar e escrever relatórios.',
+    'privacy.description.other': 'Tudo fica no seu computador. Só sai o mínimo necessário para a IA classificar e escrever relatórios.',
     'privacy.leaves.title': 'O que sai da sua máquina',
     'privacy.leaves.body':
       'Para a IA escolhida (Anthropic, OpenAI ou xAI) vão apenas: <b>nome do app, título da janela, domínio</b> (nunca a URL completa nem o conteúdo da página) e, quando a política visual permite, um <b>screenshot reduzido da janela ativa</b> em blocos ambíguos. Apps e domínios bloqueados nunca são registrados. Nada mais: sem telemetria, sem sincronização.',
@@ -247,6 +250,7 @@ const messages = {
 
     // updates
     'updates.description': 'Cada commit vira um build no CI. Quando sai um mais novo que este, o ubiqX avisa aqui, na faixa do topo e numa notificação do macOS.',
+    'updates.description.other': 'Cada commit vira um build no CI. Quando sai um mais novo que este, o ubiqX avisa aqui, na faixa do topo e numa notificação do sistema.',
     'updates.version': 'Versão',
     'updates.build': 'Build',
     'updates.build_number': 'Número',
@@ -271,6 +275,10 @@ const messages = {
     'updates.install.title': 'Instalar a nova versão',
     'updates.install.hint': 'Abra o .dmg e arraste o ubiqX para Aplicativos. Se o macOS disser que o app está danificado, rode no Terminal:',
     'updates.install.note': 'O segundo comando assina o app de novo com o certificado "ubiqX Dev", o que mantém as permissões do macOS entre builds.',
+    'updates.install.hint.windows': 'Abra o instalador e siga os passos; o Windows pode pedir confirmação do SmartScreen.',
+    'updates.install.note.windows': 'O instalador substitui a versão anterior e mantém seus dados e configurações. Se o SmartScreen aparecer, clique em “Mais informações” e depois em “Executar assim mesmo”.',
+    'updates.install.hint.linux': 'Torne o AppImage executável (chmod +x) e abra, ou instale o .deb:',
+    'updates.install.note.linux': 'O AppImage roda de qualquer pasta; o .deb instala em /usr/bin e substitui a versão anterior. Os dados ficam em ~/.local/share/ai.ubiqx.app.',
     'updates.copy': 'Copiar comandos',
     'updates.copied': 'Copiado',
     'updates.copy_failed': 'Não foi possível copiar',
@@ -328,6 +336,8 @@ const messages = {
     'key.label': '{provider} API key',
     'key.replace_label': 'Replace the {provider} API key',
     'key.keychain_hint': 'Stored only in the macOS Keychain; it never touches a file.',
+    'key.store_hint.windows': 'Stored in the Windows Credential Manager (or, when that fails, in a file only you can read under the data folder); it never leaves the machine.',
+    'key.store_hint.linux': 'Stored in the system keyring (Secret Service) or, without one, in a file only you can read under the data folder; it never leaves the machine.',
     'key.create': 'Create a key',
     'key.validate_save': 'Validate and save',
     'toast.key_saved': '{provider} key saved to the Keychain',
@@ -375,6 +385,7 @@ const messages = {
 
     // privacy
     'privacy.description': 'Everything stays on your Mac. Only the bare minimum leaves it, so the AI can classify and write reports.',
+    'privacy.description.other': 'Everything stays on your computer. Only the bare minimum leaves it, so the AI can classify and write reports.',
     'privacy.leaves.title': 'What leaves your machine',
     'privacy.leaves.body':
       'Your chosen AI (Anthropic, OpenAI or xAI) receives only: <b>app name, window title, domain</b> (never the full URL or the page content) and, when the visual policy allows it, a <b>downscaled screenshot of the active window</b> for ambiguous blocks. Blocked apps and domains are never recorded. Nothing else: no telemetry, no sync.',
@@ -520,6 +531,7 @@ const messages = {
 
     // updates
     'updates.description': 'Every commit becomes a CI build. When a newer one than this is out, ubiqX says so here, in the top banner and in a macOS notification.',
+    'updates.description.other': 'Every commit becomes a CI build. When a newer one than this is out, ubiqX says so here, in the top banner and in a system notification.',
     'updates.version': 'Version',
     'updates.build': 'Build',
     'updates.build_number': 'Number',
@@ -544,6 +556,10 @@ const messages = {
     'updates.install.title': 'Install the new version',
     'updates.install.hint': 'Open the .dmg and drag ubiqX to Applications. If macOS says the app is damaged, run in Terminal:',
     'updates.install.note': 'The second command re-signs the app with the "ubiqX Dev" certificate, which keeps macOS permissions stable across builds.',
+    'updates.install.hint.windows': 'Open the installer and follow the steps; Windows may ask for a SmartScreen confirmation.',
+    'updates.install.note.windows': 'The installer replaces the previous version and keeps your data and settings. If SmartScreen shows up, choose “More info” and then “Run anyway”.',
+    'updates.install.hint.linux': 'Make the AppImage executable (chmod +x) and open it, or install the .deb:',
+    'updates.install.note.linux': 'The AppImage runs from any folder; the .deb installs into /usr/bin and replaces the previous version. Data lives in ~/.local/share/ai.ubiqx.app.',
     'updates.copy': 'Copy commands',
     'updates.copied': 'Copied',
     'updates.copy_failed': "Couldn't copy",

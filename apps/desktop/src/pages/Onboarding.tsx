@@ -17,13 +17,13 @@ import { ipc } from '../lib/ipc';
 import { useAppStore } from '../lib/store';
 import { Toaster, useToast } from '../lib/toast';
 import { keyStatus, providerInfo, providerPitch } from '../lib/providers';
-import type { AiProvider, Category, Mood, Settings, SettingsView, VisionPolicy } from '../lib/types';
+import type { AiProvider, Category, Mood, Platform, Settings, SettingsView, VisionPolicy } from '../lib/types';
 import { ApiKeyForm, PermissionRows, providerSwitchPatch } from './Settings';
 
 type Translate = ReturnType<typeof useT>;
 
 /** Step ids and icons; titles and UBI's rail speech come from t('onboarding.step.<id>') / t('onboarding.rail.<id>'). */
-const STEPS = [
+const ALL_STEPS = [
   { id: 'intro', Icon: Shield },
   { id: 'ai', Icon: BrainCircuit },
   { id: 'perms', Icon: ShieldCheck },
@@ -33,11 +33,19 @@ const STEPS = [
   { id: 'finish', Icon: Rocket },
 ] as const;
 
+type Step = (typeof ALL_STEPS)[number];
+
+/** The steps this OS goes through: the permissions step exists only on macOS (Windows and Linux ask for nothing). */
+export const stepsFor = (platform: Platform): readonly Step[] => (platform === 'macos' ? ALL_STEPS : ALL_STEPS.filter((s) => s.id !== 'perms'));
+
+/** Copy that mentions the Mac, the Keychain or the menu bar has an `.other` twin for Windows and Linux. */
+const platformKey = (key: string, platform: Platform): string => (platform === 'macos' ? key : `${key}.other`);
+
 /** `?step=N` (1-based) opens the wizard on that step — used by the screenshot script; defaults to step 1. */
-function stepFromQuery(): number {
+function stepFromQuery(total: number): number {
   try {
     const n = Number(new URLSearchParams(window.location.search).get('step'));
-    return Number.isInteger(n) && n >= 1 && n <= STEPS.length ? n - 1 : 0;
+    return Number.isInteger(n) && n >= 1 && n <= total ? n - 1 : 0;
   } catch {
     return 0;
   }
@@ -79,7 +87,9 @@ export function Onboarding() {
   const navigate = useNavigate();
   const toast = useToast();
   const reduce = useReducedMotion();
-  const [step, setStep] = useState(stepFromQuery);
+  const platform: Platform = settingsView?.platform ?? 'macos';
+  const STEPS = useMemo(() => stepsFor(platform), [platform]);
+  const [step, setStep] = useState(() => stepFromQuery(STEPS.length));
   const [draft, setDraft] = useState<Settings | null>(settingsView?.settings ?? null);
   const [cats, setCats] = useState<CatDraft[]>([]);
   /** True while the list is still the untouched starters: they follow the language until the user edits them. */
@@ -128,11 +138,11 @@ export function Onboarding() {
     }
   };
 
-  const mood: Mood = useMemo(() => (step === 0 ? 'calm' : step === STEPS.length - 1 ? 'excited' : 'focused'), [step]);
+  const mood: Mood = useMemo(() => (step === 0 ? 'calm' : step === STEPS.length - 1 ? 'excited' : 'focused'), [step, STEPS.length]);
 
   if (!draft || !settingsView) return null;
 
-  const current = STEPS[step] ?? STEPS[0];
+  const current = STEPS[Math.min(step, STEPS.length - 1)] ?? STEPS[0];
 
   const saveCats = async () => {
     const valid = cats.filter((c) => c.name.trim());
@@ -244,7 +254,7 @@ export function Onboarding() {
           })}
         </ol>
 
-        <p className="relative mt-auto px-6 pb-5 text-xs leading-5 text-ink-3">{t('onboarding.rail_footer')}</p>
+        <p className="relative mt-auto px-6 pb-5 text-xs leading-5 text-ink-3">{t(platformKey('onboarding.rail_footer', platform))}</p>
       </aside>
 
       {/* Right: the step panel */}
@@ -263,7 +273,7 @@ export function Onboarding() {
               {/* The language switch sits at the top of the first step so the rest of the flow can be read in the chosen language. */}
               {current.id === 'intro' && <LanguageSelect compact value={locale} onChange={changeLanguage} className="-my-1" />}
             </div>
-            {current.id === 'intro' && <IntroStep />}
+            {current.id === 'intro' && <IntroStep platform={platform} />}
             {current.id === 'ai' && <AiStep view={settingsView} draft={draft} onSelect={(p) => void selectProvider(p)} />}
             {current.id === 'perms' && <PermsStep view={settingsView} />}
             {current.id === 'cats' && <CatsStep cats={cats} setCats={editCats} />}
@@ -308,13 +318,13 @@ function StepTitle({ title, children }: { title: string; children: ReactNode }) 
   );
 }
 
-function IntroStep() {
+function IntroStep({ platform }: { platform: Platform }) {
   const t = useT();
   const items: { Icon: typeof Shield; title: string; text: string }[] = [
     { Icon: Timer, title: t('onboarding.intro.logged_title'), text: t('onboarding.intro.logged_text') },
     { Icon: Eye, title: t('onboarding.intro.screenshots_title'), text: t('onboarding.intro.screenshots_text') },
     { Icon: Shield, title: t('onboarding.intro.ai_title'), text: t('onboarding.intro.ai_text') },
-    { Icon: Lock, title: t('onboarding.intro.local_title'), text: t('onboarding.intro.local_text') },
+    { Icon: Lock, title: t(platformKey('onboarding.intro.local_title', platform)), text: t(platformKey('onboarding.intro.local_text', platform)) },
   ];
   return (
     <>
@@ -342,7 +352,7 @@ function AiStep({ view, draft, onSelect }: { view: SettingsView; draft: Settings
   const info = providerInfo(view, selected);
   return (
     <>
-      <StepTitle title={t('onboarding.ai.title')}>{t('onboarding.ai.lead')}</StepTitle>
+      <StepTitle title={t('onboarding.ai.title')}>{t(platformKey('onboarding.ai.lead', view.platform))}</StepTitle>
       <div role="radiogroup" aria-label={t('onboarding.ai.provider_group')} className="grid grid-cols-1 gap-3 min-[900px]:grid-cols-3" data-testid="provider-cards">
         {view.providers.map((p) => {
           const pitch = providerPitch(p.id, t);
@@ -405,7 +415,7 @@ function AiStep({ view, draft, onSelect }: { view: SettingsView; draft: Settings
         <ApiKeyForm view={view} provider={selected} compact />
         <p className="mt-3 text-xs leading-5 text-ink-3">
           {info ? `${t('onboarding.ai.create_key_at', { host: info.console_url.replace(/^https?:\/\//, '') })} ` : ''}
-          {t('onboarding.ai.key_storage')}
+          {t(platformKey('onboarding.ai.key_storage', view.platform))}
         </p>
       </div>
     </>
@@ -564,7 +574,7 @@ function FinishStep({ draft, patch, view }: { draft: Settings; patch: (p: Partia
   ];
   return (
     <>
-      <StepTitle title={t('onboarding.finish.title')}>{t('onboarding.finish.lead')}</StepTitle>
+      <StepTitle title={t('onboarding.finish.title')}>{t(platformKey('onboarding.finish.lead', view.platform))}</StepTitle>
       <div className="panel-raised mb-4 flex items-start gap-3 px-4 py-3 text-sm" data-testid="finish-ai-summary">
         <BrainCircuit className="mt-0.5 size-4 shrink-0 text-volt" strokeWidth={1.75} aria-hidden />
         <div className="min-w-0 leading-6">
@@ -586,7 +596,7 @@ function FinishStep({ draft, patch, view }: { draft: Settings; patch: (p: Partia
         </div>
       </div>
       <div className="panel flex flex-col gap-5 p-5">
-        <Field label={t('onboarding.finish.launch_at_login')} hint={t('onboarding.finish.launch_at_login_hint')} inline>
+        <Field label={t('onboarding.finish.launch_at_login')} hint={t(platformKey('onboarding.finish.launch_at_login_hint', view.platform))} inline>
           {(id) => <Toggle id={id} checked={draft.launch_at_login} onChange={(v) => patch({ launch_at_login: v })} />}
         </Field>
         <Field label={t('onboarding.finish.tracking')} hint={t('onboarding.finish.tracking_hint')} inline>

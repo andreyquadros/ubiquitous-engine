@@ -6,7 +6,12 @@ const messages = {
   'pt-BR': {
     'banner.title': 'Nova versão do ubiqX disponível: build {date} ({sha})',
     'banner.badge': 'Atualização disponível',
-    download: 'Baixar (.dmg)',
+    // download button, one label per installer kind of the feed (ReleaseInfo.kind)
+    'download.dmg': 'Baixar (.dmg)',
+    'download.exe': 'Baixar (.exe)',
+    'download.msi': 'Baixar (.msi)',
+    'download.appimage': 'Baixar (.AppImage)',
+    'download.deb': 'Baixar (.deb)',
     later: 'Depois',
     how_to_install: 'Como instalar',
     release_page: 'Página do release',
@@ -17,7 +22,11 @@ const messages = {
   en: {
     'banner.title': 'New ubiqX version available: build {date} ({sha})',
     'banner.badge': 'Update available',
-    download: 'Download (.dmg)',
+    'download.dmg': 'Download (.dmg)',
+    'download.exe': 'Download (.exe)',
+    'download.msi': 'Download (.msi)',
+    'download.appimage': 'Download (.AppImage)',
+    'download.deb': 'Download (.deb)',
     later: 'Later',
     how_to_install: 'How to install',
     release_page: 'Release page',

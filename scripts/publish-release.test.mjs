@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, beforeEach, describe, test } from 'node:test';
 
-import { main, makeFeed, parseArgs, parseRepo, trimNotes, resolveGlob } from './publish-release.mjs';
+import { buildPlatforms, compareFeeds, inferAsset, main, makeFeed, mergeFeeds, parseArgs, parseRepo, trimNotes, resolveGlob } from './publish-release.mjs';
 
 const OWNER = 'andreyquadros';
 const REPO = 'ubiquitous-engine';
@@ -138,11 +138,11 @@ function createMockGitHub() {
       state.log = [];
       state.failNext = [];
     },
-    seedRelease({ feedEpoch, assets = ['ubiqX-macos-aarch64.dmg', 'ubiqX-macos-aarch64.app.zip'] }) {
+    seedRelease({ feedEpoch, assets = ['ubiqX-macos-aarch64.dmg', 'ubiqX-macos-aarch64.app.zip'], platforms = {} }) {
       const r = { id: state.nextId++, tag_name: 'continuous', name: 'old', body: 'old notes', target_commitish: 'a'.repeat(40), assets: [] };
       for (const name of assets) r.assets.push({ id: state.nextId++, name, content: Buffer.from('old'), contentType: 'application/octet-stream' });
       if (feedEpoch !== undefined) {
-        const feed = { schema: 1, product: 'ubiqX', version: '0.1.0', build: { epoch: feedEpoch, number: 1, sha: 'aaaaaaa', branch: 'main' }, platforms: {} };
+        const feed = { schema: 1, product: 'ubiqX', version: '0.1.0', build: { epoch: feedEpoch, number: 1, sha: 'aaaaaaa', branch: 'main' }, platforms };
         r.assets.push({ id: state.nextId++, name: 'latest.json', content: Buffer.from(JSON.stringify(feed)), contentType: 'application/json' });
       }
       state.releases.push(r);
@@ -168,6 +168,10 @@ describe('publish-release', () => {
   let work;
   let dmg;
   let appZip;
+  let winExe;
+  let winMsi;
+  let linuxAppImage;
+  let linuxDeb;
   let out;
   let lines;
   const log = (line) => lines.push(String(line));
@@ -178,8 +182,16 @@ describe('publish-release', () => {
     dmg = path.join(work, 'ubiqX_0.1.0_aarch64.dmg');
     appZip = path.join(work, 'ubiqX-macos-aarch64.app.zip');
     out = path.join(work, 'out');
+    winExe = path.join(work, 'ubiqX-windows-x86_64-setup.exe');
+    winMsi = path.join(work, 'ubiqX_0.1.0_x64_en-US.msi');
+    linuxAppImage = path.join(work, 'ubiqX-linux-x86_64.AppImage');
+    linuxDeb = path.join(work, 'ubiqX_0.1.0_amd64.deb');
     writeFileSync(dmg, Buffer.alloc(2048, 1));
     writeFileSync(appZip, Buffer.alloc(512, 2));
+    writeFileSync(winExe, Buffer.alloc(3000, 3));
+    writeFileSync(winMsi, Buffer.alloc(3100, 4));
+    writeFileSync(linuxAppImage, Buffer.alloc(4000, 5));
+    writeFileSync(linuxDeb, Buffer.alloc(4100, 6));
   });
   after(async () => {
     await gh.close();
@@ -317,6 +329,98 @@ describe('publish-release', () => {
     assert.deepEqual(gh.state.releases[0].assets.map((a) => a.name), ['ubiqX-macos-aarch64.dmg', 'latest.json']);
   });
 
+  test('--asset publishes several platforms at once under their stable names', async () => {
+    const code = await run(['--asset', dmg, '--asset', appZip, '--asset', winExe, '--asset', winMsi, '--asset', linuxAppImage, '--asset', linuxDeb, '--out', out, '--arch', 'aarch64', '--api', api, '--uploads', `${api}/uploads`]);
+    assert.equal(code, 0, lines.join('\n'));
+    const release = gh.state.releases[0];
+    assert.deepEqual(release.assets.map((a) => a.name), [
+      'ubiqX-macos-aarch64.dmg',
+      'ubiqX-macos-aarch64.app.zip',
+      'ubiqX-windows-x86_64-setup.exe',
+      'ubiqX-windows-x86_64.msi',
+      'ubiqX-linux-x86_64.AppImage',
+      'ubiqX-linux-x86_64.deb',
+      'latest.json',
+    ]);
+    assert.equal(release.assets.find((a) => a.name === 'ubiqX-windows-x86_64.msi').content.length, 3100);
+    assert.equal(release.assets.find((a) => a.name === 'ubiqX-linux-x86_64.deb').content.length, 4100);
+
+    const feed = JSON.parse(readFileSync(path.join(out, 'latest.json'), 'utf8'));
+    assert.deepEqual(Object.keys(feed.platforms), ['darwin-aarch64', 'linux-x86_64', 'windows-x86_64']);
+    const download = `https://github.com/${OWNER}/${REPO}/releases/download/continuous`;
+    assert.deepEqual(feed.platforms['windows-x86_64'], {
+      url: `${download}/ubiqX-windows-x86_64-setup.exe`,
+      kind: 'exe',
+      size: 3000,
+      app_zip_url: null,
+      alternates: [{ url: `${download}/ubiqX-windows-x86_64.msi`, kind: 'msi', size: 3100 }],
+    });
+    assert.deepEqual(feed.platforms['linux-x86_64'], {
+      url: `${download}/ubiqX-linux-x86_64.AppImage`,
+      kind: 'appimage',
+      size: 4000,
+      app_zip_url: null,
+      alternates: [{ url: `${download}/ubiqX-linux-x86_64.deb`, kind: 'deb', size: 4100 }],
+    });
+    assert.equal(feed.platforms['darwin-aarch64'].kind, 'dmg');
+    assert.equal(feed.platforms['darwin-aarch64'].app_zip_url, `${download}/ubiqX-macos-aarch64.app.zip`);
+    assert.deepEqual(JSON.parse(release.assets.at(-1).content.toString()), feed);
+  });
+
+  test('same build epoch: merges the platforms already published (ours win per key, the others stay)', async () => {
+    const download = `https://github.com/${OWNER}/${REPO}/releases/download/continuous`;
+    const seeded = gh.seedRelease({
+      feedEpoch: 1758221040,
+      assets: ['ubiqX-windows-x86_64-setup.exe', 'ubiqX-macos-aarch64.dmg'],
+      platforms: {
+        'windows-x86_64': { url: `${download}/ubiqX-windows-x86_64-setup.exe`, kind: 'exe', size: 77, app_zip_url: null },
+        'darwin-aarch64': { url: `${download}/ubiqX-macos-aarch64.dmg`, kind: 'dmg', size: 1, app_zip_url: null },
+      },
+    });
+    const code = await run(argv());
+    assert.equal(code, 0, lines.join('\n'));
+    assert.match(lines.join('\n'), /mesclad/);
+    const release = gh.state.releases[0];
+    assert.equal(release.id, seeded.id);
+    const feed = JSON.parse(release.assets.find((a) => a.name === 'latest.json').content.toString());
+    assert.deepEqual(Object.keys(feed.platforms), ['darwin-aarch64', 'windows-x86_64']);
+    assert.equal(feed.platforms['windows-x86_64'].size, 77, 'the other publisher\'s entry survives');
+    assert.equal(feed.platforms['darwin-aarch64'].size, 2048, 'ours replaces the same key');
+    assert.equal(feed.platforms['darwin-aarch64'].app_zip_url, `${download}/ubiqX-macos-aarch64.app.zip`);
+    assert.deepEqual(JSON.parse(readFileSync(path.join(out, 'latest.json'), 'utf8')), feed, 'the merged feed is what --out gets');
+    // the windows installer was not touched, only what we uploaded was replaced
+    assert.equal(release.assets.find((a) => a.name === 'ubiqX-windows-x86_64-setup.exe').content.toString(), 'old');
+    assert.equal(gh.state.log.filter((l) => l.startsWith('DELETE')).length, 2, 'dmg and latest.json replaced');
+  });
+
+  test('newer build: replaces the feed, the other platforms wait for their own publish', async () => {
+    const download = `https://github.com/${OWNER}/${REPO}/releases/download/continuous`;
+    gh.seedRelease({
+      feedEpoch: 1758000000,
+      assets: ['ubiqX-windows-x86_64-setup.exe'],
+      platforms: { 'windows-x86_64': { url: `${download}/ubiqX-windows-x86_64-setup.exe`, kind: 'exe', size: 77, app_zip_url: null } },
+    });
+    const code = await run(argv());
+    assert.equal(code, 0, lines.join('\n'));
+    assert.match(lines.join('\n'), /mais antigo/);
+    const feed = JSON.parse(gh.state.releases[0].assets.find((a) => a.name === 'latest.json').content.toString());
+    assert.deepEqual(Object.keys(feed.platforms), ['darwin-aarch64']);
+    assert.equal(feed.build.epoch, 1758221040);
+  });
+
+  test('refuses a file with an unknown extension and an --asset that is missing', async () => {
+    const bogus = path.join(work, 'ubiqX-windows-x86_64.txt');
+    writeFileSync(bogus, 'x');
+    let code = await run(['--asset', bogus, '--out', out, '--api', api, '--uploads', `${api}/uploads`]);
+    assert.equal(code, 1);
+    assert.match(lines.join('\n'), /Não sei publicar ubiqX-windows-x86_64\.txt/);
+    lines = [];
+    code = await run(['--asset', path.join(work, 'nothing-*.AppImage'), '--out', out, '--api', api, '--uploads', `${api}/uploads`]);
+    assert.equal(code, 1);
+    assert.match(lines.join('\n'), /Asset não encontrado/);
+    assert.deepEqual(gh.state.log, []);
+  });
+
   test('--help prints the usage and does nothing else', async () => {
     const code = await main(['--help'], { GITHUB_TOKEN: 'x' }, { log, error: log });
     assert.equal(code, 0);
@@ -330,8 +434,10 @@ describe('helpers', () => {
     assert.equal(o.tag, 'nightly');
     assert.equal(o.api, 'http://x');
     assert.equal(o.strict, true);
-    assert.equal(o.dmg, 'target/release/bundle/dmg/*.dmg');
+    assert.equal(o.dmg, null, 'the DMG default only applies when neither --asset nor --dmg is given');
+    assert.deepEqual(o.assets, []);
     assert.equal(o.uploads, 'https://uploads.github.com');
+    assert.deepEqual(parseArgs(['--asset', 'a.dmg', '--asset=b.deb']).assets, ['a.dmg', 'b.deb']);
     assert.throws(() => parseArgs(['--bogus']), /Opção desconhecida/);
     assert.throws(() => parseArgs(['--tag']), /Falta o valor/);
   });
@@ -352,10 +458,57 @@ describe('helpers', () => {
   });
 
   test('makeFeed builds stable download URLs', () => {
-    const feed = makeFeed({ owner: 'o', repo: 'r', tag: 'continuous', version: '0.2.0', build: { epoch: 1, number: 2, sha: 'abc1234', branch: 'main' }, arch: 'x86_64', dmgSize: 10, hasAppZip: false, publishedAt: '2026-01-01T00:00:00Z', notes: 'n' });
+    const asset = { ...inferAsset('/x/ubiqX_0.2.0_x64.dmg', 'aarch64'), size: 10 };
+    const feed = makeFeed({ owner: 'o', repo: 'r', tag: 'continuous', version: '0.2.0', build: { epoch: 1, number: 2, sha: 'abc1234', branch: 'main' }, assets: [asset], publishedAt: '2026-01-01T00:00:00Z', notes: 'n' });
     assert.equal(feed.platforms['darwin-x86_64'].url, 'https://github.com/o/r/releases/download/continuous/ubiqX-macos-x86_64.dmg');
+    assert.equal(feed.platforms['darwin-x86_64'].kind, 'dmg');
     assert.equal(feed.platforms['darwin-x86_64'].app_zip_url, null);
+    assert.equal(feed.platforms['darwin-x86_64'].alternates, undefined);
     assert.equal(feed.release_url, 'https://github.com/o/r/releases/tag/continuous');
+  });
+
+  test('inferAsset reads platform, kind and arch from the file name', () => {
+    const pick = ({ kind, platformKey, name }) => ({ kind, platformKey, name });
+    assert.deepEqual(pick(inferAsset('ubiqX-macos-aarch64.dmg', 'x86_64')), { kind: 'dmg', platformKey: 'darwin-aarch64', name: 'ubiqX-macos-aarch64.dmg' });
+    assert.deepEqual(pick(inferAsset('dist/ubiqX-macos-aarch64.app.zip', 'x86_64')), { kind: 'app_zip', platformKey: 'darwin-aarch64', name: 'ubiqX-macos-aarch64.app.zip' });
+    assert.deepEqual(pick(inferAsset('ubiqX-windows-x86_64.msi', 'aarch64')), { kind: 'msi', platformKey: 'windows-x86_64', name: 'ubiqX-windows-x86_64.msi' });
+    assert.deepEqual(pick(inferAsset('ubiqX-windows-x86_64-setup.exe', 'aarch64')), { kind: 'exe', platformKey: 'windows-x86_64', name: 'ubiqX-windows-x86_64-setup.exe' });
+    assert.deepEqual(pick(inferAsset('ubiqX-linux-x86_64.AppImage', 'aarch64')), { kind: 'appimage', platformKey: 'linux-x86_64', name: 'ubiqX-linux-x86_64.AppImage' });
+    assert.deepEqual(pick(inferAsset('ubiqX-linux-aarch64.deb', 'x86_64')), { kind: 'deb', platformKey: 'linux-aarch64', name: 'ubiqX-linux-aarch64.deb' });
+    // Tauri's own output names: the arch token wins over the fallback, the extension gives the kind
+    assert.deepEqual(pick(inferAsset('ubiqX_0.1.0_x64_en-US.msi', 'aarch64')), { kind: 'msi', platformKey: 'windows-x86_64', name: 'ubiqX-windows-x86_64.msi' });
+    assert.deepEqual(pick(inferAsset('ubiqX_0.1.0_x64-setup.exe', 'aarch64')), { kind: 'exe', platformKey: 'windows-x86_64', name: 'ubiqX-windows-x86_64-setup.exe' });
+    assert.deepEqual(pick(inferAsset('ubiqx_0.1.0_amd64.AppImage', 'aarch64')), { kind: 'appimage', platformKey: 'linux-x86_64', name: 'ubiqX-linux-x86_64.AppImage' });
+    assert.deepEqual(pick(inferAsset('ubiqx_0.1.0_amd64.deb', 'aarch64')), { kind: 'deb', platformKey: 'linux-x86_64', name: 'ubiqX-linux-x86_64.deb' });
+    assert.deepEqual(pick(inferAsset('ubiqX_0.1.0_aarch64.dmg', 'x86_64')), { kind: 'dmg', platformKey: 'darwin-aarch64', name: 'ubiqX-macos-aarch64.dmg' });
+    // no arch anywhere: --arch decides
+    assert.deepEqual(pick(inferAsset('ubiqX.dmg', 'arm64')), { kind: 'dmg', platformKey: 'darwin-aarch64', name: 'ubiqX-macos-aarch64.dmg' });
+    assert.equal(inferAsset('ubiqX-windows-x86_64.txt', 'x86_64'), null);
+    assert.equal(inferAsset('ubiqX-linux-x86_64.msi', 'x86_64'), null, 'os and extension must agree');
+  });
+
+  test('buildPlatforms keeps one entry per key, the primary kind first and the rest as alternates', () => {
+    const d = 'https://d';
+    const a = (name, size) => ({ ...inferAsset(name, 'x86_64'), size });
+    const platforms = buildPlatforms([a('ubiqX-windows-x86_64.msi', 2), a('ubiqX-windows-x86_64-setup.exe', 1), a('ubiqX-linux-x86_64.deb', 4), a('ubiqX-linux-x86_64.AppImage', 3)], d);
+    assert.deepEqual(Object.keys(platforms), ['linux-x86_64', 'windows-x86_64']);
+    assert.equal(platforms['windows-x86_64'].url, `${d}/ubiqX-windows-x86_64-setup.exe`);
+    assert.deepEqual(platforms['windows-x86_64'].alternates, [{ url: `${d}/ubiqX-windows-x86_64.msi`, kind: 'msi', size: 2 }]);
+    assert.equal(platforms['linux-x86_64'].kind, 'appimage');
+    assert.deepEqual(platforms['linux-x86_64'].alternates, [{ url: `${d}/ubiqX-linux-x86_64.deb`, kind: 'deb', size: 4 }]);
+    assert.throws(() => buildPlatforms([a('ubiqX-macos-x86_64.app.zip', 1)], d), /sem o instalador/);
+  });
+
+  test('compareFeeds and mergeFeeds', () => {
+    const ours = { build: { epoch: 100 }, platforms: { 'darwin-aarch64': { size: 2 } } };
+    assert.equal(compareFeeds(null, ours), 'newer');
+    assert.equal(compareFeeds({ build: {} }, ours), 'newer');
+    assert.equal(compareFeeds({ build: { epoch: 99 } }, ours), 'newer');
+    assert.equal(compareFeeds({ build: { epoch: 100 } }, ours), 'same');
+    assert.equal(compareFeeds({ build: { epoch: 101 } }, ours), 'older');
+    const merged = mergeFeeds({ build: { epoch: 100 }, platforms: { 'windows-x86_64': { size: 7 }, 'darwin-aarch64': { size: 1 } } }, ours);
+    assert.deepEqual(merged, { build: { epoch: 100 }, platforms: { 'darwin-aarch64': { size: 2 }, 'windows-x86_64': { size: 7 } } });
+    assert.deepEqual(mergeFeeds(null, ours).platforms, ours.platforms);
   });
 
   test('resolveGlob picks a matching file and returns null when none matches', () => {
