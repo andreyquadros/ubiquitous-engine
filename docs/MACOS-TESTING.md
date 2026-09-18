@@ -53,19 +53,26 @@ gerado com `ditto`, que preserva permissões e symlinks). Repositório público:
 
 1. Entre em https://codemagic.io com a conta do GitHub, *Add application* → este repositório → *codemagic.yaml*.
 2. *Start new build* → workflow *ubiqX macOS app* → escolha o branch (`main` ou `claude/...`).
-3. No fim, baixe o `.app` (zipado) ou o `.dmg` em *Artifacts*. Pushes em `main` e `claude/*` também disparam
-   builds sozinhos (ajuste `triggering` no yaml para mudar isso).
+3. No fim, em *Artifacts*, baixe `ubiquitous-engine_<n>_artifacts.zip`: dentro vêm o `ubiqX.app` e o
+   `ubiqX_<versão>_aarch64.dmg`. Um build leva ~13 min na primeira vez (o cache do `target` é enviado ao final).
+   Pushes em `main` e `claude/*` também disparam builds sozinhos (ajuste `triggering` no yaml para mudar isso).
 
 **Abrir um app baixado.** O bundle sai com assinatura ad hoc e o macOS põe downloads em quarentena, então
 aparece "está danificado" ou "desenvolvedor não identificado". Remova a quarentena e assine com a sua
-identidade local do passo 2 (assim as permissões sobrevivem a novos downloads):
+identidade local do passo 2 (assim as permissões sobrevivem a novos downloads). Prefira o `.dmg` quando
+houver: ele preserva permissões e symlinks do bundle.
 
 ```bash
-cd ~/Downloads && ditto -x -k ubiqX.app.zip .        # ou duplo clique no zip
-xattr -dr com.apple.quarantine ubiqX.app
-codesign --force --deep --options runtime --sign "ubiqX Dev" ubiqX.app   # = scripts/codesign-dev.sh ~/Downloads/ubiqX.app
-open ubiqX.app
+cd ~/Downloads && ditto -x -k ubiquitous-engine_*_artifacts.zip ubiqx-build && cd ubiqx-build
+open *.dmg                                   # arraste o ubiqX para Aplicativos e ejete a imagem
+xattr -dr com.apple.quarantine /Applications/ubiqX.app
+codesign --force --deep --options runtime --sign "ubiqX Dev" /Applications/ubiqX.app   # = scripts/codesign-dev.sh /Applications/ubiqX.app
+open /Applications/ubiqX.app
 ```
+
+Sem `.dmg` (build do GitHub Actions, ou DMG que falhou), use o `ubiqX.app` do zip: `ditto -x -k` no zip,
+`xattr -dr com.apple.quarantine ubiqX.app`, assine e abra. Se mesmo assim o macOS disser "danificado", o zip
+perdeu o bit de execução: `chmod +x ubiqX.app/Contents/MacOS/ubiqX` e assine de novo.
 
 Depois siga o passo 4 normalmente. Para o app já sair assinado da nuvem, exporte o certificado `ubiqX Dev`
 como `.p12` (Acesso às Chaves → Meus Certificados → botão direito → Exportar) e cadastre no Codemagic um grupo
