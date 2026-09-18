@@ -69,10 +69,13 @@ describe('Onboarding (mock backend)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Continuar/ }));
     await screen.findByRole('heading', { name: 'Escolha sua IA' });
-    expect(screen.getByText(/guardada no cofre de senhas do sistema/)).toBeInTheDocument();
+    // The own-key card is the one open by default, and its key-storage line names the OS store
+    expect(screen.getByText(/cofre de senhas do sistema/)).toBeInTheDocument();
+    expect(screen.queryByText(/Keychain/)).not.toBeInTheDocument();
     expect(screen.getByText('Passo 2 de 6')).toBeInTheDocument();
-    // "Pular por enquanto" on the AI step lands on the categories, not on macOS permissions
-    fireEvent.click(screen.getByRole('button', { name: 'Pular por enquanto' }));
+    // Moving on from the AI step lands on the categories, not on macOS permissions
+    // (unlicensed, so the shortcut reads "Continuar sem licença por enquanto")
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar sem licença por enquanto' }));
     await screen.findByRole('heading', { name: 'Suas categorias de trabalho' });
     expect(screen.getByText('Passo 3 de 6')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Permissões do macOS' })).not.toBeInTheDocument();

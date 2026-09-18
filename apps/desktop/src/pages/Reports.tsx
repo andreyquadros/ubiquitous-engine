@@ -3,6 +3,7 @@ import { Copy, Download, FileText, RefreshCw } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Badge } from '../components/ui/Badge';
+import { useLicenseGate } from '../components/layout/LicenseBanner';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { DayNav } from '../components/ui/DayNav';
@@ -161,6 +162,9 @@ function ReportCard({ category, report, date, onChange, defaultTime }: { categor
     setDirty(false);
   }, [report]);
 
+  // Hard enforcement only: without a license the dialog explains the plans instead of calling the AI.
+  const licenseGate = useLicenseGate();
+
   const generate = async () => {
     setBusy(true);
     try {
@@ -243,7 +247,7 @@ function ReportCard({ category, report, date, onChange, defaultTime }: { categor
               {t('reports.copy_markdown')}
             </Button>
           )}
-          <Button size="sm" variant={draft || dirty ? 'secondary' : 'primary'} icon={<RefreshCw className="size-3.5" strokeWidth={1.75} aria-hidden />} onClick={() => void generate()} loading={busy}>
+          <Button size="sm" variant={draft || dirty ? 'secondary' : 'primary'} icon={<RefreshCw className="size-3.5" strokeWidth={1.75} aria-hidden />} onClick={licenseGate.guard(() => void generate())} loading={busy}>
             {draft ? t('reports.regenerate') : t('reports.generate_now')}
           </Button>
         </div>
@@ -317,6 +321,7 @@ function ReportCard({ category, report, date, onChange, defaultTime }: { categor
           </div>
         </div>
       )}
+      {licenseGate.dialog}
     </Card>
   );
 }

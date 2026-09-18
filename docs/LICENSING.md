@@ -181,6 +181,8 @@ Observações:
 
 O par de desenvolvimento tem a chave pública `de87f36a111822ff93cdc9c39d06a543e179b2345d593826e04fac4d46a1c210`
 comprometida em `license.rs`; a chave privada fica com o responsável pelo produto (fora do
-repositório). Chaves de exemplo para testes e mocks (`sub_dev_annual_0001`, `sub_dev_managed_0001`,
-válidas até 2027-09-18, e `sub_dev_expired_0001`, expirada em 2026-01-01) constam nos mocks do
-frontend e nos testes do serviço (`services/ubi-api/tests/license_cli.rs`).
+repositório). A chave de exemplo assinada com esse par (`sub_dev_managed_0001`, mensal, válida até
+2027-09-18) está nos testes do serviço (`services/ubi-api/tests/license_cli.rs`); emita outras
+com `ubi-license issue`. O mock do frontend (`apps/desktop/src/lib/mock.ts`) não usa essas
+chaves: ele monta as suas (`__mock.sampleLicenseKeys`, assinatura fictícia, validade relativa
+ao carregamento) porque nada ali verifica assinatura.

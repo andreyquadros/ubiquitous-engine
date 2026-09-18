@@ -45,6 +45,13 @@ jobs:
         # crate is not checked here: its dependencies (ring, libsqlite3-sys) compile C for MSVC and need
         # cl.exe plus the Windows SDK, so windows-app builds it for real on a Windows runner.
         run: cargo check -p ubiqx-platform --target x86_64-pc-windows-msvc
+      - name: Ubi AI proxy service (own workspace)
+        # services/ubi-api is excluded from the app workspace (it is deployed on its own), so
+        # its manifest is named explicitly. Its tests run against an in-process vendor double.
+        run: |
+          cargo fmt --manifest-path services/ubi-api/Cargo.toml -- --check
+          cargo clippy --manifest-path services/ubi-api/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path services/ubi-api/Cargo.toml
 
   frontend:
     name: Frontend (Vite + TypeScript)

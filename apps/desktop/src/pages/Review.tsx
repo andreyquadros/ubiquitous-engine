@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'framer-
 import { Check, ChevronDown, Wand2 } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { useLicenseGate } from '../components/layout/LicenseBanner';
 import { Ubi } from '../components/ubi/Ubi';
 import { AppAvatar, SourceBadge, SuggestionChips } from '../components/ui/BlockBits';
 import { BlockDetails } from '../components/ui/BlockDetails';
@@ -359,6 +360,9 @@ export function Review() {
     el?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex]);
 
+  // Hard enforcement only: without a license the dialog explains the plans instead of running the AI.
+  const licenseGate = useLicenseGate();
+
   const classifyNow = async () => {
     setClassifying(true);
     try {
@@ -412,7 +416,7 @@ export function Review() {
         actions={
           <>
             <DayNav date={date} onChange={setDate} />
-            <Button variant="primary" icon={<Wand2 className="size-[18px]" strokeWidth={1.75} aria-hidden />} loading={classifying} onClick={() => void classifyNow()}>
+            <Button variant="primary" icon={<Wand2 className="size-[18px]" strokeWidth={1.75} aria-hidden />} loading={classifying} onClick={licenseGate.guard(() => void classifyNow())}>
               {t('review.classify_now')}
             </Button>
           </>
@@ -535,6 +539,7 @@ export function Review() {
           </Card>
         </div>
       )}
+      {licenseGate.dialog}
     </div>
   );
 }

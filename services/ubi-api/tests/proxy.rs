@@ -14,18 +14,40 @@ fn header(resp: &reqwest::Response, name: &str) -> Option<String> {
 }
 
 #[tokio::test]
-async fn healthz_reports_models() {
+async fn healthz_is_alive_without_naming_the_vendor() {
     let h = Harness::start().await;
+    let r = h.http.get(h.url("/healthz")).send().await.unwrap();
+    let body = r.text().await.unwrap();
+    let v: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["ok"], true);
+    assert_eq!(v["service"], "ubi-api");
+    assert!(v.get("version").is_some());
+    // A public probe never says which models or vendor sit behind the aliases.
+    assert!(
+        v.get("models").is_none() && v.get("vendor").is_none(),
+        "{body}"
+    );
+    assert!(
+        !body.contains("mock-fast-model") && !body.contains("mock-smart-model"),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn admin_models_names_them_for_the_operator_only() {
+    let h = Harness::start().await;
+    let r = h.http.get(h.url("/admin/models")).send().await.unwrap();
+    assert_eq!(r.status(), 401, "no token, no models");
     let v: Value = h
         .http
-        .get(h.url("/healthz"))
+        .get(h.url("/admin/models"))
+        .bearer_auth(ADMIN_TOKEN)
         .send()
         .await
         .unwrap()
         .json()
         .await
         .unwrap();
-    assert_eq!(v["ok"], true);
     assert_eq!(v["models"]["ubi-fast"], "mock-fast-model");
     assert_eq!(v["models"]["ubi-smart"], "mock-smart-model");
 }

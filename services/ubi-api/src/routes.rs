@@ -62,6 +62,7 @@ impl AppState {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
+        .route("/admin/models", get(admin_models))
         .route("/v1/license/status", get(license_status))
         .route("/v1/messages", post(messages))
         .route("/admin/licenses/revoke", post(admin_revoke))
@@ -243,16 +244,13 @@ fn authorize_managed(
 // Public routes
 // ---------------------------------------------------------------------------------------------
 
-async fn healthz(State(state): State<AppState>) -> Json<Value> {
+/// Public liveness probe. It names no vendor and no model: which models sit behind the
+/// aliases is the operator's business, logged at start-up and served by `/admin/models`.
+async fn healthz() -> Json<Value> {
     Json(json!({
         "ok": true,
         "service": "ubi-api",
         "version": env!("CARGO_PKG_VERSION"),
-        "vendor": state.config.vendor,
-        "models": {
-            license::UBI_MODEL_FAST: state.config.model_fast,
-            license::UBI_MODEL_SMART: state.config.model_smart,
-        },
     }))
 }
 
@@ -552,6 +550,21 @@ async fn admin_revoke(
 struct UsageQuery {
     #[serde(default)]
     month: Option<String>,
+}
+
+/// Which vendor and which model ids the aliases resolve to, for the operator.
+async fn admin_models(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    require_admin(&state, &headers)?;
+    Ok(Json(json!({
+        "vendor": state.config.vendor,
+        "models": {
+            license::UBI_MODEL_FAST: state.config.model_fast,
+            license::UBI_MODEL_SMART: state.config.model_smart,
+        },
+    })))
 }
 
 async fn admin_usage(

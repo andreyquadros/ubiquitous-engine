@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ActivityBlock, BlockGroup, Category, Id } from '../lib/types';
+import type { ActivityBlock, BlockGroup, Category, Id, LicenseStatus } from '../lib/types';
 
 const categories: Category[] = [
   { id: 'cat-ifro', name: 'IFRO', color: '#2563EB', icon: 'graduation-cap', description: '', keywords: [], report_time: null, report_template: null, is_productive: true, is_system: false, archived: false, sort_order: 0, created_at: '2026-01-01T00:00:00Z' },
@@ -100,7 +100,7 @@ describe('Review page', () => {
     reclassifyGroup.mockClear();
     getScreenshot.mockClear();
     __clearScreenshotCache();
-    useAppStore.setState({ categories, date: '2026-09-17', dataVersion: 0 });
+    useAppStore.setState({ categories, date: '2026-09-17', dataVersion: 0, license: null });
   });
 
   it('lists the pending groups (unsettled first) and assigns the nth category with the keyboard', async () => {
@@ -244,6 +244,24 @@ describe('Review page', () => {
     expect(screen.getByText(/a fila está vazia/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Ver a Timeline' })).toHaveAttribute('href', '/timeline');
     expect(screen.queryAllByTestId('review-row')).toHaveLength(0);
+  });
+
+  it('under hard enforcement "Classificar agora" opens the license dialog instead of calling the AI', async () => {
+    const hard: LicenseStatus = { state: 'unlicensed', plan: null, expires_at: null, days_left: null, key_hint: null, enforcement: 'hard', managed_usage: null };
+    useAppStore.setState({ license: hard });
+    vi.mocked(ipc.classifyNow).mockClear();
+    renderPage();
+    await waitFor(() => expect(pendingRows()).toHaveLength(3));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Classificar agora' }));
+    expect(await screen.findByText('Licença necessária')).toBeInTheDocument();
+    expect(ipc.classifyNow).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Já tenho uma chave' })).toBeInTheDocument();
+
+    // the same button runs under soft enforcement, which is what this build ships
+    act(() => useAppStore.setState({ license: { ...hard, enforcement: 'soft' } }));
+    fireEvent.click(screen.getByRole('button', { name: 'Classificar agora' }));
+    await waitFor(() => expect(ipc.classifyNow).toHaveBeenCalled());
   });
 
   it('speaks English when the locale is en and keeps the number shortcuts', async () => {

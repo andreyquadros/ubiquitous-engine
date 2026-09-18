@@ -5,6 +5,7 @@ import { FocusTrend, WeeklyStacked, type WeekDay } from '../components/charts/We
 import { NUDGE_ICON } from '../components/ubi/UbiCard';
 import { Ubi } from '../components/ubi/Ubi';
 import { Badge } from '../components/ui/Badge';
+import { useLicenseGate } from '../components/layout/LicenseBanner';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader, StatTile } from '../components/ui/Card';
 import { EmptyState, Skeleton } from '../components/ui/misc';
@@ -83,6 +84,9 @@ function AdviceCard() {
   const [busy, setBusy] = useState(false);
   const toast = useToast();
 
+  // Hard enforcement only: without a license the dialog explains the plans instead of calling the AI.
+  const licenseGate = useLicenseGate();
+
   const generate = async () => {
     setBusy(true);
     try {
@@ -102,7 +106,7 @@ function AdviceCard() {
         title={t('insights.advice.title')}
         subtitle={t('insights.advice.subtitle')}
         action={
-          <Button size="sm" variant={advice ? 'secondary' : 'primary'} icon={<Sparkles className="size-3.5" strokeWidth={1.75} />} loading={busy} onClick={() => void generate()}>
+          <Button size="sm" variant={advice ? 'secondary' : 'primary'} icon={<Sparkles className="size-3.5" strokeWidth={1.75} />} loading={busy} onClick={licenseGate.guard(() => void generate())}>
             {advice ? t('insights.advice.generate_again') : t('common.generate')}
           </Button>
         }
@@ -137,6 +141,7 @@ function AdviceCard() {
           )}
         </div>
       </div>
+      {licenseGate.dialog}
     </Card>
   );
 }

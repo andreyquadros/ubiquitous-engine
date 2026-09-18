@@ -1557,6 +1557,48 @@ async fn stored_license_is_verified_at_start_and_survives_an_offline_proxy() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_managed_rejection_that_is_not_the_budget_keeps_its_own_reason() {
+    // The proxy refuses for a reason other than the plan's budget (a model it does not offer).
+    // The budget pause must stay out of it: it is cleared by the next budget check, which would
+    // otherwise put the AI back to Ok and hide why the calls are failing.
+    let server = FakeLicenseServer::new(Some(usage(1.5)));
+    let managed = issue_license(Plan::MonthlyManaged, 30);
+    let h = harness_with(HarnessOptions {
+        ai: failing_ai(|| CoreError::AiRejected("modelo recusado pela IA do Ubi".into())),
+        license: license_deps(server.clone()),
+        license_key: Some(managed),
+        seed: |store| {
+            let mut s = SettingsRepo::load(store).unwrap();
+            s.ai_provider = AiProvider::Ubi;
+            SettingsRepo::save(store, &s).unwrap();
+        },
+        ..Default::default()
+    })
+    .await;
+    assert_eq!(h.handle.ai_health(), AiHealth::Ok);
+
+    BlockRepo::insert(h.store.as_ref(), &pending_block("p1", 5)).unwrap();
+    assert!(h.handle.classify_now().await.unwrap().skipped_remote);
+    let reason = match h.handle.ai_health() {
+        AiHealth::Paused { reason } => reason,
+        other => panic!("unexpected {other:?}"),
+    };
+    assert!(reason.contains("modelo recusado"), "{reason}");
+    assert!(
+        ubiqx_engine::classify::budget_allows(h.handle.state()).unwrap(),
+        "the month's budget is not spent, so it is not what stops the calls"
+    );
+
+    // The budget check ran and left the rejection's own pause in place.
+    assert_eq!(h.handle.ai_health(), AiHealth::Paused { reason });
+    assert!(h.handle.classify_now().await.unwrap().skipped_remote);
+
+    // The usage was still asked for, so a budget that is in fact spent is learned here.
+    assert!(!server.calls.lock().is_empty());
+    h.handle.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn hard_enforcement_blocks_ai_entry_points_but_not_tracking() {
     let h = harness_with(HarnessOptions {
         ai: keyed_fake_ai(),

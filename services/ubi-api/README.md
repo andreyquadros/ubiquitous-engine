@@ -33,7 +33,7 @@ description (plans, enforcement, payment flow) is in `docs/LICENSING.md` (Portug
 | `UBI_API_LISTEN` | `0.0.0.0:8080` | Bind address. |
 | `UBI_LICENSE_PUBKEY_HEX` | the key compiled into `ubiqx-core` | Ed25519 public key license keys must verify against. Set it only to rotate. |
 | `UBI_LICENSE_PRIVKEY_HEX` | — | Ed25519 private key used by the payment webhook to **issue** keys. Without it `subscription.created/renewed` answer `503`. Secret. |
-| `UBI_ADMIN_TOKEN` | — | Bearer token for `/admin/licenses/revoke` and `/admin/usage`. Without it they answer `503`. Secret. |
+| `UBI_ADMIN_TOKEN` | — | Bearer token for `/admin/licenses/revoke`, `/admin/usage` and `/admin/models`. Without it they answer `503`. Secret. |
 | `UBI_WEBHOOK_SECRET` | — | HMAC-SHA256 secret of `/admin/webhooks/generic`. Without it the webhook answers `503`. Secret. |
 | `UBI_VENDOR` | `anthropic` | Upstream vendor (only `anthropic` today). |
 | `ANTHROPIC_API_KEY` | — | The operator's vendor key. Required. Secret. |
@@ -51,7 +51,8 @@ description (plans, enforcement, payment flow) is in `docs/LICENSING.md` (Portug
 
 | Route | Auth | Behaviour |
 |---|---|---|
-| `GET /healthz` | none | `{"ok":true,"models":{"ubi-fast":…,"ubi-smart":…}}` |
+| `GET /healthz` | none | `{"ok":true,"service":"ubi-api","version":…}` |
+| `GET /admin/models` | `Authorization: Bearer $UBI_ADMIN_TOKEN` | `{"vendor":…,"models":{"ubi-fast":…,"ubi-smart":…}}` |
 | `GET /v1/license/status` | `x-api-key: <license>` | `200 {plan, expires_at, days_left, key_hint, month, spent_usd, budget_usd, state}` for any genuine key; `state` is `valid`, `expired` or `revoked`. `401 {state:"invalid", …}` when the key does not verify. The app merges `month/spent_usd/budget_usd` into its local verdict. `budget_usd` is `0` for annual keys. |
 | `POST /v1/messages` | `x-api-key: <license>` (or `Authorization: Bearer`) | Anthropic Messages API passthrough, see below. The optional `x-ubiqx-plan` header must be `monthly_managed`. |
 

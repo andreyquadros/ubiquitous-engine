@@ -55,14 +55,12 @@ const messages = {
 
     // step 2: AI
     'ai.title': 'Escolha sua IA',
-    'ai.lead': 'Quem vai ler os blocos ambíguos e escrever os seus relatórios. Cada provedor usa a própria chave de API, guardada no Keychain do macOS; dá para trocar depois em Configurações. Sem chave, o ubiqX funciona só com regras e memória.',
     'ai.provider_group': 'Provedor de IA',
     'ai.recommended': 'Recomendados: {classify} para classificar e {report} para relatórios.',
     'ai.cost_basis': 'estimativa com 8 h por dia',
     'ai.key_configured': 'Chave configurada {hint}',
     'ai.create_key_at': 'Crie a chave em {host} (link “Criar chave” acima).',
     'ai.key_storage': 'Ela fica no Keychain do macOS e pode ser trocada em Configurações.',
-    'ai.lead.other': 'Quem vai ler os blocos ambíguos e escrever os seus relatórios. Cada provedor usa a própria chave de API, guardada no cofre de senhas do sistema; dá para trocar depois em Configurações. Sem chave, o ubiqX funciona só com regras e memória.',
     'ai.key_storage.other': 'Ela fica no cofre de senhas do sistema e pode ser trocada em Configurações.',
 
     // step 3: permissions
@@ -208,14 +206,12 @@ const messages = {
 
     // step 2: AI
     'ai.title': 'Pick your AI',
-    'ai.lead': 'Who reads the ambiguous blocks and writes your reports. Each provider uses its own API key, stored in the macOS Keychain; you can switch later in Settings. Without a key, ubiqX runs on rules and memory only.',
     'ai.provider_group': 'AI provider',
     'ai.recommended': 'Recommended: {classify} for classification and {report} for reports.',
     'ai.cost_basis': 'estimate at 8 h a day',
     'ai.key_configured': 'Key configured {hint}',
     'ai.create_key_at': 'Create your key at {host} (the “Create a key” link above).',
     'ai.key_storage': 'It stays in the macOS Keychain and can be changed in Settings.',
-    'ai.lead.other': 'Who reads the ambiguous blocks and writes your reports. Each provider uses its own API key, stored in the system password store; you can switch later in Settings. Without a key, ubiqX runs on rules and memory only.',
     'ai.key_storage.other': 'It stays in the system password store and can be changed in Settings.',
 
     // step 3: permissions

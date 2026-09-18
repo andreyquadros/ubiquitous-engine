@@ -26,11 +26,24 @@ pub enum Vendor {
 }
 
 impl Vendor {
+    /// The id used in the configuration and in the operator-facing output.
+    pub fn id(self) -> &'static str {
+        match self {
+            Vendor::Anthropic => "anthropic",
+        }
+    }
+
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "anthropic" => Some(Vendor::Anthropic),
             _ => None,
         }
+    }
+}
+
+impl std::fmt::Display for Vendor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.id())
     }
 }
 

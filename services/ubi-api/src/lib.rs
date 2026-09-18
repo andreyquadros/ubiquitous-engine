@@ -37,7 +37,13 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(listen)
         .await
         .with_context(|| format!("binding {listen}"))?;
-    info!(%listen, "ubi-api listening");
+    info!(
+        %listen,
+        vendor = %state.config.vendor,
+        fast = %state.config.model_fast,
+        smart = %state.config.model_smart,
+        "ubi-api listening"
+    );
     axum::serve(listener, router(state))
         .with_graceful_shutdown(shutdown_signal())
         .await

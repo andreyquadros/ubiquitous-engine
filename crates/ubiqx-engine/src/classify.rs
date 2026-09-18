@@ -427,8 +427,19 @@ pub async fn run_once(state: &Arc<EngineState>, force: bool) -> CoreResult<Class
                 // the month's usage now, so the budget check owns the pause and lifts it
                 // when the month rolls over instead of retrying against a closed door.
                 if settings.ai_provider.is_managed() && matches!(e, CoreError::AiRejected(_)) {
-                    crate::license::refresh_managed_usage(state).await;
-                    state.budget_paused.store(true, Ordering::SeqCst);
+                    // Learn the month's usage now. When the refusal was the plan's budget, the
+                    // budget check owns the pause and lifts it at the month rollover instead of
+                    // retrying against a closed door; a refusal for any other reason (a model the
+                    // plan does not offer, a revoked key) leaves the budget gate open, since
+                    // pausing on it would hide the real reason behind "budget spent".
+                    let status = crate::license::refresh_managed_usage(state).await;
+                    let spent = status
+                        .managed_usage
+                        .as_ref()
+                        .is_some_and(|u| crate::license::managed_budget_exhausted(u, state.now()));
+                    if spent {
+                        state.budget_paused.store(true, Ordering::SeqCst);
+                    }
                 }
                 handle_remote_failure(state, chunk, &e);
                 if matches!(e, CoreError::AiRefused) {
