@@ -7,7 +7,9 @@ use tauri::{AppHandle, State};
 use tauri_plugin_autostart::ManagerExt;
 use ubiqx_core::ports::*;
 use ubiqx_core::*;
-use ubiqx_engine::{BlockGroup, DashboardData, EngineHandle, PrivateModeDuration, ReclassifyScope};
+use ubiqx_engine::{
+    BlockGroup, DashboardData, EngineHandle, PrivateModeDuration, ReclassifyScope, ScreenshotData,
+};
 
 use crate::AppState;
 
@@ -156,6 +158,19 @@ pub async fn get_review_groups(
     let date = parse_date(&date)?;
     blocking(engine(&state), move |e| {
         ubiqx_engine::review_groups(e.state(), date)
+    })
+    .await
+}
+
+/// The screenshot attached to a block, or `null` when there is none (never captured, or
+/// already purged after classification).
+#[tauri::command]
+pub async fn get_screenshot(
+    state: State<'_, AppState>,
+    block_id: String,
+) -> IpcResult<Option<ScreenshotData>> {
+    blocking(engine(&state), move |e| {
+        ubiqx_engine::screenshot_for_block(e.state(), &block_id)
     })
     .await
 }
@@ -753,6 +768,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         get_dashboard,
         get_timeline,
         get_review_groups,
+        get_screenshot,
         get_ai_sent,
         reclassify,
         reclassify_group,

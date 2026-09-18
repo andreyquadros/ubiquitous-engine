@@ -39,6 +39,40 @@ const messages = {
     select_a_group: 'Selecione um grupo na lista',
     'keys.move': 'mover',
     'keys.assign': 'atribuir',
+    'keys.details': 'detalhes',
+
+    // Row details (every block of the group, so the user can decide with context)
+    'details.open': 'Ver detalhes do grupo',
+    'details.close': 'Ocultar detalhes do grupo',
+    'details.loading': 'Carregando os blocos do grupo',
+    'details.blocks_one': '{count} bloco neste grupo',
+    'details.blocks_other': '{count} blocos neste grupo',
+    'block.range': '{from} até {to}, {duration}',
+    'block.no_title': 'Sem título',
+    'block.ai_payload': 'Dados enviados à IA',
+    'block.ai_payload_hide': 'Ocultar dados enviados à IA',
+    'block.not_sent': 'Nada foi enviado à IA para este bloco.',
+    'block.no_screenshot': 'Sem captura de tela para este bloco.',
+    'block.screenshot_gone': 'A captura foi apagada depois da classificação.',
+    'block.keep_hint': 'Para ver a imagem ao revisar, ative “Manter screenshots para revisão” nas configurações.',
+    'block.screenshot_alt': 'Captura de {app} às {time}',
+    'block.screenshot_open': 'Ampliar captura',
+    'block.screenshot_loading': 'Carregando captura',
+    'block.screenshot_dialog': '{app}, {range}',
+
+    // Reviewed groups (decided by the user) collect at the bottom
+    'reviewed.title': 'Revisados neste dia ({count})',
+    'reviewed.hint': 'Clique em um grupo para reabrir e reatribuir.',
+    'reviewed.show': 'Mostrar os grupos revisados',
+    'reviewed.hide': 'Ocultar os grupos revisados',
+    'reviewed.empty': 'Nenhum grupo revisado ainda.',
+    'suggestions.after': 'Da última decisão',
+
+    // Queue cleared: everything was decided by the user
+    'done.speech': 'Fila limpa!',
+    'done.title': 'Tudo revisado',
+    'done.body_one': 'Você decidiu {count} grupo neste dia. Novos blocos em dúvida aparecem aqui.',
+    'done.body_other': 'Você decidiu {count} grupos neste dia. Novos blocos em dúvida aparecem aqui.',
 
     // Toasts
     'toast.classified_one': '{count} bloco classificado',
@@ -92,6 +126,40 @@ const messages = {
     select_a_group: 'Select a group from the list',
     'keys.move': 'move',
     'keys.assign': 'assign',
+    'keys.details': 'details',
+
+    // Row details (every block of the group, so the user can decide with context)
+    'details.open': 'Show group details',
+    'details.close': 'Hide group details',
+    'details.loading': 'Loading the blocks in this group',
+    'details.blocks_one': '{count} block in this group',
+    'details.blocks_other': '{count} blocks in this group',
+    'block.range': '{from} to {to}, {duration}',
+    'block.no_title': 'No title',
+    'block.ai_payload': 'Data sent to the AI',
+    'block.ai_payload_hide': 'Hide data sent to the AI',
+    'block.not_sent': 'Nothing was sent to the AI for this block.',
+    'block.no_screenshot': 'No screenshot for this block.',
+    'block.screenshot_gone': 'The screenshot was deleted after classification.',
+    'block.keep_hint': 'To see the image while reviewing, turn on “Keep screenshots for review” in Settings.',
+    'block.screenshot_alt': 'Screenshot of {app} at {time}',
+    'block.screenshot_open': 'Enlarge screenshot',
+    'block.screenshot_loading': 'Loading screenshot',
+    'block.screenshot_dialog': '{app}, {range}',
+
+    // Reviewed groups (decided by the user) collect at the bottom
+    'reviewed.title': 'Reviewed on this day ({count})',
+    'reviewed.hint': 'Click a group to reopen it and reassign.',
+    'reviewed.show': 'Show reviewed groups',
+    'reviewed.hide': 'Hide reviewed groups',
+    'reviewed.empty': 'No group reviewed yet.',
+    'suggestions.after': 'From your last decision',
+
+    // Queue cleared: everything was decided by the user
+    'done.speech': 'Queue cleared!',
+    'done.title': 'All reviewed',
+    'done.body_one': 'You decided {count} group on this day. New uncertain blocks will show up here.',
+    'done.body_other': 'You decided {count} groups on this day. New uncertain blocks will show up here.',
 
     // Toasts
     'toast.classified_one': '{count} block classified',

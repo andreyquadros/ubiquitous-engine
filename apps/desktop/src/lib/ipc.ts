@@ -21,6 +21,7 @@ import type {
   ReclassifyScope,
   Rule,
   RuleSuggestion,
+  ScreenshotData,
   Settings,
   SettingsView,
   AiProvider,
@@ -44,6 +45,8 @@ export const ipc = {
   getTimeline: (date: IsoDate) => call<ActivityBlock[]>('get_timeline', { date }),
   getReviewGroups: (date: IsoDate) => call<BlockGroup[]>('get_review_groups', { date }),
   getAiSent: (date: IsoDate) => call<ActivityBlock[]>('get_ai_sent', { date }),
+  /** Screenshot still stored for a block; `null` when none was taken or it has already been deleted. */
+  getScreenshot: (blockId: Id) => call<ScreenshotData | null>('get_screenshot', { blockId }),
 
   // Corrections (learning)
   reclassify: (blockId: Id, categoryId: Id, scope: ReclassifyScope, note?: string) =>

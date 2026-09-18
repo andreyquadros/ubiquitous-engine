@@ -28,6 +28,7 @@ import {
   type ReportItem,
   type Rule,
   type RuleSuggestion,
+  type ScreenshotData,
   type Settings,
   type SettingsView,
   type TrackerState,
@@ -269,7 +270,7 @@ const DAY_SPECS: Spec[] = [
   [5, 'WhatsApp', 'WhatsApp', null, null, 0.4, 'llm', { review: true, desc: 'Conversa com a equipe da AgroTech', sent: true, shot: true }],
   [25, 'Modo privado', '', null, SYSTEM_CATEGORIES.private, 1, 'rule'],
   [50, 'Ocioso', '', null, SYSTEM_CATEGORIES.break, 1, 'rule'],
-  [15, 'Google Chrome', 'Caixa de entrada (3) - andrey.quadros@ifro.edu.br - Gmail', 'https://mail.google.com/mail/u/0/#inbox', CAT_INCUB, 0.62, 'llm', { review: true, desc: 'Respostas aos mentores sobre a agenda do Demo Day', sent: true }],
+  [15, 'Google Chrome', 'Caixa de entrada (3) - andrey.quadros@ifro.edu.br - Gmail', 'https://mail.google.com/mail/u/0/#inbox', CAT_INCUB, 0.62, 'llm', { review: true, desc: 'Respostas aos mentores sobre a agenda do Demo Day', sent: true, shot: true }],
   [52, 'Visual Studio Code', 'ingest_sensores.py — cidades-inteligentes', null, CAT_CIDADES, 0.91, 'memory', { desc: 'Ingestão dos sensores de qualidade do ar (MQTT → TimescaleDB)' }],
   [3, 'Google Chrome', 'python - paho-mqtt reconnect after broker restart - Stack Overflow', 'https://stackoverflow.com/questions/12345', CAT_CIDADES, 0.75, 'llm', { sent: true }],
   [6, 'Terminal', 'python ingest_sensores.py — cidades-inteligentes', null, CAT_CIDADES, 0.8, 'llm', { sent: true }],
@@ -290,7 +291,7 @@ const DAY_SPECS: Spec[] = [
   [4, 'Terminal', 'git push — tcc-orientacao', null, CAT_IFRO, 0.68, 'llm', { sent: true }],
   [25, 'Visual Studio Code', 'revisao-cap3.md — tcc-orientacao', null, CAT_IFRO, 0.68, 'llm', { review: true, desc: 'Revisão do capítulo 3 do TCC da orientanda (metodologia)', sent: true }],
   [8, 'Google Chrome', 'Caixa de entrada (5) - andrey.quadros@ifro.edu.br - Gmail', 'https://mail.google.com/mail/u/0/#inbox', CAT_INCUB, 0.58, 'llm', { review: true, sent: true }],
-  [20, 'Google Chrome', 'TEDx: Cidades inteligentes de verdade — YouTube', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', CAT_CIDADES, 0.58, 'llm', { review: true, desc: 'Palestra sobre sensoriamento urbano (referência para o projeto)', sent: true }],
+  [20, 'Google Chrome', 'TEDx: Cidades inteligentes de verdade — YouTube', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', CAT_CIDADES, 0.58, 'llm', { review: true, desc: 'Palestra sobre sensoriamento urbano (referência para o projeto)', sent: true, shot: true }],
 ];
 
 function specToBlock(date: IsoDate, spec: Spec, startIso: IsoDateTime, mins: number): ActivityBlock {
@@ -1072,6 +1073,35 @@ export function subscribe(handler: Handler): () => void {
 }
 
 /* ------------------------------------------------------------------ */
+/* screenshots                                                         */
+/* ------------------------------------------------------------------ */
+
+const escapeXml = (s: string): string => s.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
+const toBase64 = (s: string): string => {
+  const bytes = new TextEncoder().encode(s);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+};
+
+/** A 640×400 SVG "screenshot" showing the app name and window title, so the review panel can be exercised without real captures. */
+export function placeholderScreenshot(app: string, title: string): ScreenshotData {
+  const color = `hsl(${[...app].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 0)} 60% 55%)`;
+  const shortTitle = title.length > 64 ? `${title.slice(0, 63)}…` : title;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">` +
+    `<rect width="640" height="400" fill="#0c1220"/>` +
+    `<rect x="0" y="0" width="640" height="36" fill="#121a2b"/>` +
+    `<circle cx="18" cy="18" r="6" fill="#ff5c7a"/><circle cx="38" cy="18" r="6" fill="#ffc24d"/><circle cx="58" cy="18" r="6" fill="#2ee6a6"/>` +
+    `<text x="320" y="23" fill="#9daec7" font-family="Inter, sans-serif" font-size="13" text-anchor="middle">${escapeXml(shortTitle)}</text>` +
+    `<rect x="24" y="60" width="592" height="316" rx="10" fill="#121a2b" stroke="${color}" stroke-opacity=".35"/>` +
+    `<text x="320" y="200" fill="${color}" font-family="Sora, Inter, sans-serif" font-size="28" font-weight="600" text-anchor="middle">${escapeXml(app)}</text>` +
+    `<text x="320" y="236" fill="#7487a6" font-family="Inter, sans-serif" font-size="14" text-anchor="middle">${escapeXml(pick('captura simulada', 'simulated capture'))}</text>` +
+    `</svg>`;
+  return { mime: 'image/svg+xml', data_base64: toBase64(svg), width: 640, height: 400 };
+}
+
+/* ------------------------------------------------------------------ */
 /* command handlers                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -1088,6 +1118,12 @@ const commands: Record<string, Cmd> = {
   get_timeline: (a) => [...dayBlocks(str(a.date, 'date'))].sort((x, y) => x.started_at.localeCompare(y.started_at)),
   get_review_groups: (a) => reviewGroups(str(a.date, 'date')),
   get_ai_sent: (a) => dayBlocks(str(a.date, 'date')).filter((b) => b.ai_sent_at),
+  get_screenshot: (a) => {
+    const found = findBlock(str(a.blockId, 'blockId'));
+    if (!found) throw new Error('Bloco não encontrado');
+    if (!found.block.screenshot_id) return null;
+    return placeholderScreenshot(found.block.app_name, found.block.title);
+  },
 
   reclassify: (a) => {
     const found = findBlock(str(a.blockId, 'blockId'));

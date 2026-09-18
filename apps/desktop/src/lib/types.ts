@@ -285,6 +285,14 @@ export interface DashboardData {
   hourly_focus: (number | null)[];
 }
 
+/** A stored screenshot, inlined for the UI (`get_screenshot`). `null` from the command means it is gone or was never taken. */
+export interface ScreenshotData {
+  mime: string;
+  data_base64: string;
+  width: number | null;
+  height: number | null;
+}
+
 export interface BlockGroup {
   key: string;
   app_id: string;

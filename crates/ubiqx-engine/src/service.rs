@@ -2,7 +2,9 @@
 //! meant to be run through `spawn_blocking` by the shell.
 
 use std::collections::HashMap;
+use std::path::Path;
 
+use base64::Engine as _;
 use chrono::{Duration, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use ubiqx_core::insights::compute_stats;
@@ -10,6 +12,7 @@ use ubiqx_core::ports::*;
 use ubiqx_core::scheduler::{day_range, month_range};
 use ubiqx_core::*;
 
+use crate::screenshots::screenshots_dir;
 use crate::state::EngineState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +51,62 @@ pub struct BlockGroup {
     pub needs_review: bool,
     pub description: Option<String>,
     pub first_started_at: chrono::DateTime<Utc>,
+}
+
+/// A stored screenshot, ready to be shown by the UI (`data:{mime};base64,{data_base64}`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScreenshotData {
+    pub mime: String,
+    pub data_base64: String,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
+/// The screenshot attached to a block, for the review screen.
+///
+/// `None` when the block has no screenshot, when the metadata row or the file is gone
+/// (screenshots are deleted after classification unless `keep_screenshots_for_review` is
+/// on) or when the stored path points outside the app's screenshots directory. An unknown
+/// block is an error.
+pub fn screenshot_for_block(
+    state: &EngineState,
+    block_id: &str,
+) -> CoreResult<Option<ScreenshotData>> {
+    let repos = &state.deps.repos;
+    let block = repos
+        .blocks
+        .get(block_id)?
+        .ok_or_else(|| CoreError::NotFound(format!("block {block_id}")))?;
+    let Some(screenshot_id) = block.screenshot_id.as_deref() else {
+        return Ok(None);
+    };
+    let Some(shot) = repos.screenshots.get(screenshot_id)? else {
+        return Ok(None);
+    };
+    // Only files inside the screenshots directory are ever read: the path column is data,
+    // and canonicalising both sides resolves symlinks before the prefix check. A missing
+    // file (or directory) fails to canonicalise, which is the "already purged" case.
+    let (Ok(path), Ok(root)) = (
+        Path::new(&shot.path).canonicalize(),
+        screenshots_dir(&state.deps.data_dir).canonicalize(),
+    ) else {
+        return Ok(None);
+    };
+    if !path.starts_with(&root) {
+        tracing::warn!(path = %shot.path, "screenshot path outside the screenshots dir");
+        return Ok(None);
+    }
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(CoreError::Platform(format!("read screenshot: {e}"))),
+    };
+    Ok(Some(ScreenshotData {
+        mime: "image/jpeg".into(),
+        data_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+        width: Some(shot.width),
+        height: Some(shot.height),
+    }))
 }
 
 pub fn local_day_range(date: NaiveDate) -> TimeRange {
