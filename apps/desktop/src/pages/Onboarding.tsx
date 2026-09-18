@@ -208,7 +208,7 @@ export function Onboarding() {
         </div>
 
         <div className="relative flex flex-col items-center px-6 pt-9 pb-4">
-          <Ubi mood={mood} size={176} variant="flat" speaking={t(`onboarding.rail.${current.id}`)} />
+          <Ubi mood={mood} size={176} speaking={t(`onboarding.rail.${current.id}`)} />
         </div>
 
         <ol className="relative mt-2 flex flex-col px-6" aria-label={t('onboarding.steps')}>

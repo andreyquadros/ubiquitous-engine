@@ -125,7 +125,10 @@ export function UbiSvg({ mood, size = 160, className }: { mood: Mood; size?: num
       </defs>
 
       {/* ground glow */}
-      <motion.ellipse cx={100} cy={230} rx={54} ry={8} fill={color} opacity={0.4} filter={`url(#${soft})`} animate={reduce ? undefined : { rx: [54, 46, 54], opacity: [0.4, 0.26, 0.4] }} transition={loop} />
+      {/* Floor shadow: scaled through a group (animating the `rx` attribute makes browsers log "Expected length"). */}
+      <motion.g style={{ transformOrigin: '100px 230px' }} animate={reduce ? undefined : { scaleX: [1, 0.85, 1], opacity: [0.4, 0.26, 0.4] }} transition={loop} opacity={0.4}>
+        <ellipse cx={100} cy={230} rx={54} ry={8} fill={color} filter={`url(#${soft})`} />
+      </motion.g>
 
       <motion.g animate={reduce ? undefined : { y: [0, -6, 0] }} transition={loop}>
         {/* flowing ribbon (behind body) */}

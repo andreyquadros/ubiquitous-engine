@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { setLocale } from '../i18n';
 
 vi.mock('@react-three/fiber', () => ({ Canvas: () => null, useFrame: () => undefined }));
-vi.mock('@react-three/drei', () => ({ useGLTF: Object.assign(() => ({ scene: {} }), { preload: () => undefined }), Float: () => null, Center: () => null }));
 
 import { Insights } from './Insights';
 

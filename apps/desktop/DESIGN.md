@@ -143,9 +143,12 @@ Charts: `FocusDial({ score, mood, size?, stroke?, label?, animate? })` (alias `F
 `DayBar({ blocks, categories, onSelect?, height?, date?, animate? })` (now-marker when `date` is today),
 `HourlyFocus({ hourly, height?, animate? })`, `WeeklyStacked({ days, categories, height? })`, `FocusTrend({ days, height? })`.
 
-UBI: `Ubi({ mood, size?, speaking?, variant?: 'auto'|'svg', className? })` picks PNG → GLB → SVG;
+UBI: `Ubi({ mood, size?, speaking?, variant?: 'auto'|'flat'|'svg', crop?, className? })` picks GLB → PNG → SVG (`flat`:
+PNG → SVG, for the rail head avatar); `Ubi3d({ mood, size, fallback? })` (the user's `/ubi/Ubi.glb` via GLTFLoader on a
+transparent premultiplied canvas: RoomEnvironment IBL, mood fill light, float/parallax/blink, stops off screen);
 `UbiImage({ mood, size?, crop?: 'full'|'head', parallax?, glowFloor? })` (the user's `/ubi/ubi.png`, background removed
-client-side); `UbiSvg({ mood, size? })` fallback; `UbiCard({ data, nudge })` = assistant panel (nudge, AI status, budget).
+client-side); `FloorGlow({ mood, size, reduce })` shared mood pool under both; `UbiSvg({ mood, size? })` fallback;
+`UbiCard({ data, nudge })` = assistant panel (nudge, AI status, budget).
 
 Class vocabulary for pages: `.panel`, `.panel-raised`, `.glass`, `.display`, `.num`, `.eyebrow`, `.glow-volt`,
 `.glow-ember`, `.scroll-thin`, `.md`; utilities `bg-canvas|panel|panel-2|panel-3`, `text-ink|ink-2|ink-3`,

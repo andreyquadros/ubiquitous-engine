@@ -3,7 +3,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@react-three/fiber', () => ({ Canvas: () => null, useFrame: () => undefined }));
-vi.mock('@react-three/drei', () => ({ useGLTF: Object.assign(() => ({ scene: {} }), { preload: () => undefined }), Float: () => null, Center: () => null }));
 
 import { getLocale, setLocale } from '../i18n';
 import { __mock } from '../lib/mock';

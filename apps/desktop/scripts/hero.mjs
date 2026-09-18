@@ -45,6 +45,8 @@ try {
   });
   const page = await context.newPage();
   page.on('pageerror', (err) => console.error('page error:', err.message));
+  // The hero is the flat art: hide the GLB so 'auto' resolves to the PNG (or the SVG) instead of the 3D canvas.
+  await page.route('**/ubi/Ubi.glb', (route) => route.fulfill({ status: 404, body: '' }));
   await page.goto('http://localhost:1423/?theme=dark#/', { waitUntil: 'networkidle' });
   const HERO = '[data-testid="ubi-hero"]';
   await page.waitForSelector(`${HERO} [data-testid="ubi-png"] img, ${HERO} [data-testid="ubi-svg"]`, { timeout: 20000 });

@@ -2,22 +2,37 @@
 
 O mascote é renderizado, nesta ordem de preferência:
 
-1. **`ubi.png`** — a ilustração oficial (robô ninja branco com visor preto). O app remove o fundo branco
+1. **`Ubi.glb`** — o modelo 3D, carregado direto com o `GLTFLoader` do Three.js (React Three Fiber) num canvas
+   transparente (`alpha: true`, alpha pré-multiplicado + antialias), então ele se sobrepõe à interface sem contorno
+   pixelizado. Ganha luz de ambiente (RoomEnvironment, sem rede), luz de preenchimento e brilho no chão na cor do
+   humor, flutuação com o ritmo do humor, paralaxe leve ao passar o mouse e uma piscada nos materiais emissivos
+   (`eye`, `visor`, `crest`, `glow`). Sem WebGL (ou se o arquivo não carregar) cai para o item seguinte.
+2. **`ubi.png`** — a ilustração oficial (robô ninja branco com visor preto). O app remove o fundo branco
    sozinho (preenchimento a partir das bordas, com 1–2 px de suavização), então pode ser o PNG "como veio".
-   Ganha flutuação, brilho no chão na cor do humor, sombra e um paralaxe leve ao passar o mouse.
-2. **`Ubi.glb`** — o modelo 3D (React Three Fiber + drei `useGLTF`), usado quando não há PNG.
-3. **SVG** (`src/components/ubi/UbiSvg.tsx`) — desenho interno, usado quando nada foi instalado ou não há WebGL.
+   Também é o avatar da cabeça no pill "Rastreando" (variante `flat`, sem WebGL).
+3. **SVG** (`src/components/ubi/UbiSvg.tsx`) — desenho interno, usado quando nada foi instalado.
 
 Na raiz do repositório há um script que instala os dois arquivos de uma vez:
 
 ```bash
-scripts/install-ubi-model.sh                 # procura ~/Downloads/Ubi.glb e o ubi*.png mais recente
-scripts/install-ubi-model.sh ~/Downloads/ubi.png ~/Downloads/Ubi.glb
+scripts/install-ubi-model.sh                 # procura o ubi*.glb e o ubi*.png mais recentes em ~/Downloads
+scripts/install-ubi-model.sh ~/Downloads/ubi.glb ~/Downloads/ubi.png
 ```
 
-O `ubi.png` deve ser commitado: é ele que os builds na nuvem (GitHub Actions e Codemagic) empacotam no
-`.app`. O `Ubi.glb` continua ignorado pelo git (cada máquina instala o seu). Depois de instalar, reinicie o
-`pnpm dev` (ou gere o app de novo). `pnpm hero` regenera `docs/ubi-hero.png` a partir da arte instalada.
+**Os dois arquivos devem ser commitados** (`public/ubi/Ubi.glb` e `public/ubi/ubi.png`): são eles que os builds na
+nuvem (GitHub Actions e Codemagic) empacotam no `.app`. Depois de instalar, reinicie o `pnpm dev` (ou gere o app de
+novo). `pnpm hero` regenera `docs/ubi-hero.png` a partir da arte instalada.
 
-Dicas para o modelo: exporte com o personagem centralizado na origem, olhando para +Z, tamanho ~2 unidades,
-texturas embutidas (glTF binário). O decoder Draco local está em `public/draco/`.
+Dicas para exportar o modelo (glTF binário, `.glb`):
+
+- personagem centralizado na origem e em pé sobre o chão — o app recalcula a caixa, centraliza, apoia os pés em
+  y = 0 e escala a maior dimensão para ~2,4 unidades, então o tamanho do export não importa;
+- olhando para +Z (de frente para a câmera). Se o export olhar para outro lado, ajuste `ROTATION_Y` em
+  `src/components/ubi/Ubi3d.tsx` (`Math.PI` para um modelo de costas);
+- texturas embutidas no `.glb` (nada é buscado na rede: o CSP do app bloqueia);
+- compressão Draco é opcional — o decoder local está em `public/draco/`;
+- mantenha o arquivo abaixo de ~10 MB (ele vai no bundle do app e no repositório). Um export grande passa por
+  `scripts/optimize-ubi-model.sh export.glb`: texturas em 1024 px e geometria em Draco (o `Ubi.glb` atual veio de
+  um export de 34 MB com texturas 4K e ficou com ~3 MB, sem diferença visível no tamanho em que o UBI aparece);
+- materiais de olhos/visor/crista com nome contendo `eye`, `visor`, `crest`, `glow` ou `emiss` recebem a cor do humor
+  como emissiva e piscam; os demais ficam como exportados.

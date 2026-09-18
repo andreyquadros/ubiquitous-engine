@@ -33,8 +33,11 @@ O sistema de design ("painel de instrumentos à noite") está em [`DESIGN.md`](D
 
 ## Mascote (UBI)
 
-Ordem de preferência: **`public/ubi/ubi.png`** (a ilustração oficial; o fundo branco é removido pelo app e ele
-ganha flutuação, brilho e paralaxe) → `public/ubi/Ubi.glb` (3D) → SVG interno. Com o PNG em `~/Downloads`, rode
-`scripts/install-ubi-model.sh` na raiz do repositório (ele copia o `ubi*.png` mais recente, ou o último `.png`
-da pasta) e reinicie o `pnpm dev`. `pnpm hero` regenera `docs/ubi-hero.png` a partir da arte instalada.
-Detalhes em `public/ubi/README.md`.
+Ordem de preferência: **`public/ubi/Ubi.glb`** (o modelo 3D, carregado direto com o `GLTFLoader` num canvas
+transparente sobre a interface; luz de ambiente local, brilho no chão na cor do humor, flutuação, paralaxe e
+piscada) → `public/ubi/ubi.png` (a ilustração; o fundo branco é removido pelo app) → SVG interno. Sem WebGL, ou se o
+modelo falhar, o app cai para o PNG e depois para o SVG. Com o `ubi.glb` (e/ou o PNG) em `~/Downloads`, rode
+`scripts/install-ubi-model.sh` na raiz do repositório (ele copia o `ubi*.glb` e o `ubi*.png` mais recentes) e
+reinicie o `pnpm dev`. **Commite os dois arquivos**: os builds na nuvem (GitHub Actions e Codemagic) só empacotam
+o que está no repositório. `pnpm hero` regenera `docs/ubi-hero.png` a partir da arte instalada. Detalhes (dicas de
+export, `ROTATION_Y`, Draco) em `public/ubi/README.md`.

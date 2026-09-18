@@ -3,6 +3,7 @@ import { useEffect, useState, type PointerEvent } from 'react';
 import clsx from 'clsx';
 import type { Mood } from '../../lib/types';
 import { MOOD_GLOW } from './moods';
+import { FLOAT_PERIOD, FloorGlow } from './FloorGlow';
 import { useT } from '../../i18n';
 
 /** The user's own UBI art, installed by scripts/install-ubi-model.sh. */
@@ -279,7 +280,7 @@ export function UbiImage({ mood, size = 160, crop = 'full', parallax = true, glo
   }
 
   const boxH = size * 1.2;
-  const speed = mood === 'sleeping' ? 5.6 : mood === 'excited' ? 3.2 : 4.2;
+  const speed = FLOAT_PERIOD[mood];
   return (
     <div
       className={clsx('relative select-none', className)}
@@ -291,15 +292,7 @@ export function UbiImage({ mood, size = 160, crop = 'full', parallax = true, glo
       onPointerMove={onMove}
       onPointerLeave={onLeave}
     >
-      {glowFloor && (
-        <motion.span
-          className="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 rounded-[50%]"
-          style={{ width: size * 0.62, height: size * 0.11, background: `radial-gradient(closest-side, ${glow}, transparent)`, filter: 'blur(6px)', opacity: 0.7 }}
-          animate={reduce ? undefined : { scaleX: [1, 0.86, 1], opacity: [0.7, 0.45, 0.7] }}
-          transition={{ duration: speed, repeat: Infinity, ease: 'easeInOut' }}
-          aria-hidden
-        />
-      )}
+      {glowFloor && <FloorGlow mood={mood} size={size} reduce={reduce} />}
       <motion.div
         className="absolute inset-x-0 top-0"
         style={{ height: boxH - size * 0.06 }}

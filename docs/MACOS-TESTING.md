@@ -81,9 +81,10 @@ de variáveis `ubiqx_apple` com `APPLE_CERTIFICATE` (`base64 -i ubiqx-dev.p12 | 
 certificado *Developer ID* (Apple Developer Program) mais `APPLE_ID`, `APPLE_PASSWORD` e `APPLE_TEAM_ID` o
 Tauri também notariza, e o app abre em qualquer Mac sem os comandos acima.
 
-**Arte do UBI.** Os builds na nuvem só incluem o mascote se `apps/desktop/public/ubi/ubi.png` estiver no
-repositório: envie o PNG pelo GitHub (*Add file → Upload files* dentro da pasta, nome exatamente `ubi.png`)
-ou rode `scripts/install-ubi-model.sh` e faça commit do arquivo. O `Ubi.glb` continua fora do git.
+**Arte do UBI.** Os builds na nuvem só incluem o mascote se os arquivos estiverem no repositório: o modelo 3D
+`apps/desktop/public/ubi/Ubi.glb` (o UBI principal) e/ou a ilustração `apps/desktop/public/ubi/ubi.png`. Envie-os
+pelo GitHub (*Add file → Upload files* dentro da pasta, nomes exatamente `Ubi.glb` e `ubi.png`) ou rode
+`scripts/install-ubi-model.sh` e faça commit dos dois arquivos — o `Ubi.glb` deve ser commitado como o PNG.
 
 ## 4. Primeira execução (onboarding)
 

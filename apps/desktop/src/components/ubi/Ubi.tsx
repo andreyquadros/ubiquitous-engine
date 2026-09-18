@@ -1,10 +1,11 @@
-import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { Component, lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import clsx from 'clsx';
 import type { Mood } from '../../lib/types';
 import { UbiSvg } from './UbiSvg';
 import { probePng, UbiImage, __resetPngProbe } from './UbiImage';
 
+// three and the loaders stay out of the initial bundle: the chunk is fetched only when the model exists.
 const Ubi3d = lazy(() => import('./Ubi3d'));
 
 export interface UbiProps {
@@ -12,7 +13,7 @@ export interface UbiProps {
   size?: number;
   speaking?: string;
   /**
-   * `auto` (default): PNG → 3D model → SVG. `flat`: PNG → SVG (no WebGL; rail avatar).
+   * `auto` (default): 3D model → PNG → SVG. `flat`: PNG → SVG (no WebGL; rail/head avatar).
    * `svg`: always the inline drawing (tests, tiny sizes).
    */
   variant?: 'auto' | 'svg' | 'flat';
@@ -33,7 +34,7 @@ const webglAvailable = (): boolean => {
   }
 };
 
-/** Checks once whether the 3D model exists and WebGL works; otherwise the SVG UBI is used. */
+/** Checks once whether the 3D model exists and WebGL works; otherwise the PNG or the SVG UBI is used. */
 export function probeGlb(): Promise<boolean> {
   if (!probe) {
     probe = (async () => {
@@ -57,10 +58,13 @@ export function __resetProbe(): void {
   __resetPngProbe();
 }
 
-class Boundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+class Boundary extends Component<{ fallback: ReactNode; onError: () => void; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  componentDidCatch() {
+    this.props.onError();
   }
   render() {
     return this.state.failed ? this.props.fallback : this.props.children;
@@ -72,29 +76,34 @@ type Mode = 'svg' | 'png' | '3d';
 /** The mascot with an optional speech bubble. Picks the richest available presentation. */
 export function Ubi({ mood, size = 160, speaking, variant = 'auto', crop = 'full', className }: UbiProps) {
   const [mode, setMode] = useState<Mode>('svg');
+  const [pngOk, setPngOk] = useState(false);
   const reduce = useReducedMotion();
 
   useEffect(() => {
     if (variant === 'svg') return;
     let alive = true;
     void (async () => {
-      if (await probePng()) return alive && setMode('png');
-      if (variant === 'auto' && (await probeGlb())) return alive && setMode('3d');
-      return undefined;
+      const [png, glb] = await Promise.all([probePng(), variant === 'auto' ? probeGlb() : Promise.resolve(false)]);
+      if (!alive) return;
+      setPngOk(png);
+      setMode(glb ? '3d' : png ? 'png' : 'svg');
     })();
     return () => {
       alive = false;
     };
   }, [variant]);
 
+  // The model exists but could not be loaded/rendered (bad export, WebGL context lost…): fall back to the PNG when it exists.
+  const onGlbError = useCallback(() => setMode(pngOk ? 'png' : 'svg'), [pngOk]);
+
   const svg = <UbiSvg mood={mood} size={size} />;
   let art: ReactNode = svg;
   if (mode === 'png') art = <UbiImage mood={mood} size={size} crop={crop} />;
   else if (mode === '3d')
     art = (
-      <Boundary fallback={svg}>
+      <Boundary fallback={pngOk ? <UbiImage mood={mood} size={size} crop={crop} /> : svg} onError={onGlbError}>
         <Suspense fallback={svg}>
-          <Ubi3d mood={mood} size={size} />
+          <Ubi3d mood={mood} size={size} fallback={svg} />
         </Suspense>
       </Boundary>
     );

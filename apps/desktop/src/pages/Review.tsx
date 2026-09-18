@@ -430,7 +430,7 @@ export function Review() {
         </div>
       ) : !groups?.length ? (
         <Card className="flex flex-col items-center gap-4 py-12 text-center">
-          <Ubi mood="excited" size={132} variant="flat" speaking={t('review.empty.speech')} />
+          <Ubi mood="excited" size={132} speaking={t('review.empty.speech')} />
           <div>
             <p className="display text-lg text-ink">{t('review.empty.title')}</p>
             <p className="mx-auto mt-1 max-w-sm text-sm leading-5 text-ink-2">{t('review.empty.body')}</p>
@@ -462,7 +462,7 @@ export function Review() {
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-4 px-5 py-12 text-center" data-testid="review-done">
-                  <Ubi mood="excited" size={132} variant="flat" speaking={t('review.done.speech')} />
+                  <Ubi mood="excited" size={132} speaking={t('review.done.speech')} />
                   <div>
                     <p className="display text-lg text-ink">{t('review.done.title')}</p>
                     <p className="mx-auto mt-1 max-w-sm text-sm leading-5 text-ink-2">{t('review.done.body', { count: reviewed.length })}</p>

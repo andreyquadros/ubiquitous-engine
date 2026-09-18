@@ -158,7 +158,8 @@ e orçamento), **Timeline** (blocos com reclassificação em 1 clique, divisão,
 **Revisão** (grupos por app/domínio ordenados por duração × incerteza, atalhos de teclado, sugestões "Sempre"),
 **Relatórios** (diário editável + mensal exportável), **Categorias & Regras**, **Insights** (semana, recomendações do
 UBI), **Configurações** (IA, rastreamento, privacidade, permissões, UBI) e **Onboarding** em 7 passos.
-UBI: modelo 3D (`public/ubi/Ubi.glb`, react-three-fiber) com fallback SVG; humor derivado do score de foco.
+UBI: modelo 3D (`public/ubi/Ubi.glb`, GLTFLoader via react-three-fiber, canvas transparente) com fallback para o PNG
+(`public/ubi/ubi.png`) e depois SVG; humor derivado do score de foco.
 
 ## 7. Segurança & privacidade
 

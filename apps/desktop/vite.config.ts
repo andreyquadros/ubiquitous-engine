@@ -38,7 +38,9 @@ export default defineConfig(() => ({
     rollupOptions: {
       output: {
         manualChunks: (id: string) => {
-          if (/node_modules\/(three|@react-three)\//.test(id)) return 'three';
+          // three + @react-three/fiber are NOT a manual chunk on purpose: they are only reached through the lazy
+          // import of components/ubi/Ubi3d, so the bundler splits them into that chunk by itself, and the modules
+          // they share with the app (zustand, scheduler) stay in the entry instead of dragging three into it.
           if (/node_modules\/(recharts|d3-|victory-vendor)/.test(id)) return 'charts';
           return undefined;
         },
