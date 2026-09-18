@@ -20,9 +20,10 @@ export function Gate() {
   if (settingsError) {
     return (
       <div className="flex h-screen items-center justify-center p-8 text-center">
-        <div className="card max-w-md p-6">
-          <h1 className="text-lg font-semibold">Não foi possível conectar ao motor do ubiqX</h1>
+        <div className="panel max-w-md p-6">
+          <h1 className="display text-lg">Não foi possível conectar ao motor do ubiqX</h1>
           <p className="mt-2 text-sm text-ink-2">{settingsError}</p>
+          <p className="mt-3 text-xs text-ink-3">Feche e abra o app de novo. Se continuar, veja os logs em Configurações.</p>
         </div>
       </div>
     );
@@ -38,6 +39,7 @@ export function Gate() {
   return <Outlet />;
 }
 
+/** Left rail + scrolling content column (max 1280 px, 24 px gutters) + toasts. */
 export function AppShell() {
   useEngineEvents();
   const date = useAppStore((s) => s.date);
@@ -55,12 +57,12 @@ export function AppShell() {
   }, [loadCategories]);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden">
+    <div className="flex h-screen w-screen overflow-hidden bg-canvas">
       <Sidebar needsReview={needsReview} />
       <main className="relative flex min-w-0 flex-1 flex-col">
         <div data-tauri-drag-region className="h-[38px] shrink-0" />
-        <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-6 pb-10 min-[1180px]:px-8">
-          <div className="mx-auto w-full max-w-[1320px]">
+        <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-6 pb-10">
+          <div className="mx-auto w-full max-w-[1280px]">
             <Outlet />
           </div>
         </div>

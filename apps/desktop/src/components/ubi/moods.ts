@@ -1,12 +1,12 @@
 import type { Mood } from '../../lib/types';
 
-/** Glow colour per mood: brand blue by default, UBI's sash orange when excited. */
+/** Glow colour per mood: volt by default, UBI's sash ember when excited, rose when worried. */
 export const MOOD_GLOW: Record<Mood, string> = {
-  sleeping: '#94a3b8',
-  calm: '#3b82f6',
-  focused: '#2563eb',
-  excited: '#f97316',
-  worried: '#ef4444',
+  sleeping: '#7487a6',
+  calm: '#4d8dff',
+  focused: '#2ee6a6',
+  excited: '#ff7a1f',
+  worried: '#ff5c7a',
 };
 
 export const MOOD_TIP: Record<Mood, string> = {

@@ -1,16 +1,22 @@
 import clsx from 'clsx';
 import type { ReactNode } from 'react';
 
-type Tone = 'neutral' | 'brand' | 'accent' | 'success' | 'warning' | 'danger' | 'violet';
+/** Semantic tones; `brand`/`accent`/`success`/`warning`/`danger` are aliases kept for existing pages. */
+type Tone = 'neutral' | 'volt' | 'ember' | 'signal' | 'rose' | 'violet' | 'amber' | 'brand' | 'accent' | 'success' | 'warning' | 'danger';
 
 const TONES: Record<Tone, string> = {
-  neutral: 'bg-surface-2 text-ink-2 border-line',
-  brand: 'bg-brand-50 text-brand-700 border-brand-100 dark:bg-brand-900/30 dark:text-brand-300 dark:border-brand-900/60',
-  accent: 'bg-accent-50 text-accent-700 border-accent-100 dark:bg-accent-900/20 dark:text-accent-300 dark:border-accent-700/40',
-  success: 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-900/60',
-  warning: 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-900/60',
-  danger: 'bg-red-50 text-red-700 border-red-100 dark:bg-red-900/30 dark:text-red-300 dark:border-red-900/60',
-  violet: 'bg-violet-50 text-violet-700 border-violet-100 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-900/60',
+  neutral: 'bg-panel-2 text-ink-2 border-line',
+  volt: 'bg-volt/12 text-volt border-volt/30',
+  ember: 'bg-ember/12 text-ember border-ember/30',
+  signal: 'bg-signal/12 text-signal border-signal/30',
+  rose: 'bg-rose/12 text-rose border-rose/30',
+  violet: 'bg-violet/12 text-violet border-violet/30',
+  amber: 'bg-amber/12 text-amber border-amber/30',
+  brand: 'bg-volt/12 text-volt border-volt/30',
+  accent: 'bg-ember/12 text-ember border-ember/30',
+  success: 'bg-signal/12 text-signal border-signal/30',
+  warning: 'bg-amber/12 text-amber border-amber/30',
+  danger: 'bg-rose/12 text-rose border-rose/30',
 };
 
 export function Badge({ tone = 'neutral', children, className, title }: { tone?: Tone; children: ReactNode; className?: string; title?: string }) {
@@ -21,11 +27,14 @@ export function Badge({ tone = 'neutral', children, className, title }: { tone?:
   );
 }
 
-/** Coloured status dot + text. */
-export function StatusPill({ color, children, className }: { color: string; children: ReactNode; className?: string }) {
+/** Coloured status dot + text. `pulse` adds a slow breathing halo (live states only). */
+export function StatusPill({ color, children, className, pulse }: { color: string; children: ReactNode; className?: string; pulse?: boolean }) {
   return (
-    <span className={clsx('inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink-2', className)}>
-      <span className="size-2 rounded-full" style={{ background: color, boxShadow: `0 0 0 3px ${color}22` }} />
+    <span className={clsx('inline-flex items-center gap-1.5 rounded-pill border border-line bg-panel px-2.5 py-1 text-xs font-medium text-ink-2', className)}>
+      <span className="relative flex size-2">
+        {pulse && <span className="absolute inset-0 animate-ping rounded-full opacity-40 motion-reduce:hidden" style={{ background: color, animationDuration: '2.4s' }} />}
+        <span className="size-2 rounded-full" style={{ background: color, boxShadow: `0 0 0 3px color-mix(in oklab, ${color} 18%, transparent)` }} />
+      </span>
       {children}
     </span>
   );

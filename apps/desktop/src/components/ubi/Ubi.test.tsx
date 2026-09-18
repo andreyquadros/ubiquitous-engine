@@ -21,6 +21,15 @@ describe('Ubi', () => {
     await waitFor(() => expect(screen.queryByTestId('ubi-3d')).not.toBeInTheDocument());
   });
 
+  it('prefers the PNG when /ubi/ubi.png exists', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => (String(url).endsWith('.png') ? new Response(null, { status: 200, headers: { 'content-type': 'image/png' } }) : new Response(null, { status: 404 }))),
+    );
+    render(<Ubi mood="calm" />);
+    await waitFor(() => expect(screen.getByTestId('ubi')).toHaveAttribute('data-ubi-mode', 'png'));
+  });
+
   it('renders every mood', () => {
     for (const mood of ['sleeping', 'calm', 'focused', 'excited', 'worried'] as const) {
       const { unmount } = render(<Ubi mood={mood} variant="svg" />);

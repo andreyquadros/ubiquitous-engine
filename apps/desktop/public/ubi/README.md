@@ -1,17 +1,22 @@
-# Modelo 3D do UBI
+# Arte do UBI
 
-Coloque o arquivo **`Ubi.glb`** nesta pasta (`apps/desktop/public/ubi/Ubi.glb`) para que o mascote
-seja renderizado em 3D (React Three Fiber + drei `useGLTF`).
+O mascote é renderizado, nesta ordem de preferência:
 
-Na raiz do repositório há um script que copia o modelo de `~/Downloads`:
+1. **`ubi.png`** — a ilustração oficial (robô ninja branco com visor preto). O app remove o fundo branco
+   sozinho (preenchimento a partir das bordas, com 1–2 px de suavização), então pode ser o PNG "como veio".
+   Ganha flutuação, brilho no chão na cor do humor, sombra e um paralaxe leve ao passar o mouse.
+2. **`Ubi.glb`** — o modelo 3D (React Three Fiber + drei `useGLTF`), usado quando não há PNG.
+3. **SVG** (`src/components/ubi/UbiSvg.tsx`) — desenho interno, usado quando nada foi instalado ou não há WebGL.
+
+Na raiz do repositório há um script que instala os dois arquivos de uma vez:
 
 ```bash
-scripts/install-ubi-model.sh            # usa ~/Downloads/Ubi.glb
-scripts/install-ubi-model.sh /caminho/para/Ubi.glb
+scripts/install-ubi-model.sh                 # procura ~/Downloads/Ubi.glb e o ubi*.png mais recente
+scripts/install-ubi-model.sh ~/Downloads/ubi.png ~/Downloads/Ubi.glb
 ```
 
-Sem o arquivo (ou sem WebGL), a interface usa automaticamente a versão em **SVG** do UBI
-(`src/components/ubi/UbiSvg.tsx`) — nada quebra. O `.glb` é ignorado pelo git; cada máquina precisa ter o seu.
+Os dois arquivos são ignorados pelo git; cada máquina instala os seus. Depois de instalar, reinicie o
+`pnpm dev` (ou gere o app de novo). `pnpm hero` regenera `docs/ubi-hero.png` a partir da arte instalada.
 
 Dicas para o modelo: exporte com o personagem centralizado na origem, olhando para +Z, tamanho ~2 unidades,
-texturas embutidas (glTF binário) e, se possível, comprimido com Draco desativado (o loader padrão não usa Draco).
+texturas embutidas (glTF binário). O decoder Draco local está em `public/draco/`.

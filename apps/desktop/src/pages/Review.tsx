@@ -1,15 +1,17 @@
 import clsx from 'clsx';
-import { AlertTriangle, ChevronDown, Sparkles, Wand2 } from 'lucide-react';
+import { ChevronDown, Wand2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppAvatar, ConfidenceBar, SourceBadge, SuggestionChips } from '../components/ui/BlockBits';
+import { Link } from 'react-router-dom';
+import { Ubi } from '../components/ubi/Ubi';
+import { AppAvatar, SourceBadge, SuggestionChips } from '../components/ui/BlockBits';
 import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
-import { CategoryChip } from '../components/ui/CategoryChip';
+import { Card, CardHeader } from '../components/ui/Card';
+import { CategoryChip, CategoryPicker } from '../components/ui/CategoryChip';
 import { DayNav } from '../components/ui/DayNav';
-import { EmptyState, Kbd, Skeleton } from '../components/ui/misc';
+import { Kbd, Skeleton } from '../components/ui/misc';
 import { PageHeader } from '../components/ui/PageHeader';
-import { assignableCategories, iconFor, isUncategorized } from '../lib/categories';
-import { fmtDateLong, fmtDuration, fmtMinutes } from '../lib/format';
+import { assignableCategories, isUncategorized } from '../lib/categories';
+import { fmtDateLong, fmtDuration, fmtMinutes, fmtPercent, fmtTime } from '../lib/format';
 import { ipc } from '../lib/ipc';
 import { useAppStore } from '../lib/store';
 import { useToast } from '../lib/toast';
@@ -22,6 +24,31 @@ const isTypingTarget = (t: EventTarget | null): boolean => {
   const tag = el.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
 };
+
+/** Page-local: a 3 px confidence line. Volt when the classifier is sure enough, ember when it needs a human. */
+function ConfidenceLine({ value, className }: { value: number; className?: string }) {
+  const pct = Math.max(0, Math.min(1, value));
+  const low = pct < 0.6;
+  return (
+    <div className={clsx('flex items-center gap-2', className)} title={`Confiança: ${fmtPercent(pct)}`}>
+      <div className="h-[3px] w-14 overflow-hidden rounded-pill bg-panel-3">
+        <div className="h-full rounded-pill transition-[width] duration-300 ease-out" style={{ width: `${pct * 100}%`, background: low ? 'var(--ember)' : 'var(--volt)' }} />
+      </div>
+      <span className="num w-8 text-right text-[11px] text-ink-3">{fmtPercent(pct)}</span>
+    </div>
+  );
+}
+
+/** One sentence from the numbers: how much the queue asks of the user today. */
+function subtitle(date: string, groups: BlockGroup[] | null, uncategorizedSecs: number): string {
+  const day = fmtDateLong(date);
+  if (!groups) return day;
+  if (!groups.length) return `${day}: a fila está vazia.`;
+  const n = groups.length;
+  const first = n === 1 ? '1 grupo espera sua decisão' : `${n} grupos esperam sua decisão`;
+  const second = uncategorizedSecs > 0 ? `${fmtMinutes(uncategorizedSecs)} ainda sem categoria` : 'nada sem categoria';
+  return `${day}: ${first}, ${second}.`;
+}
 
 export function Review() {
   const date = useAppStore((s) => s.date);
@@ -71,29 +98,33 @@ export function Review() {
     [busyKey, date, groups, setData, toast, bumpData],
   );
 
-  // keyboard: ↑/↓ move, 1–9 assign nth category
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!groups?.length || isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (document.querySelector('[role="dialog"]')) return;
-      if (e.key === 'ArrowDown' || e.key === 'j') {
+  // keyboard: ↑/↓ (or j/k) move, 1–9 assign the nth category.
+  // The handler is kept in a ref updated on every render, so the single window listener always sees the
+  // latest groups/selection (re-subscribing in an effect lagged behind the DOM right after the data loaded).
+  const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
+  onKeyRef.current = (e: KeyboardEvent) => {
+    if (!groups?.length || isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (document.querySelector('[role="dialog"]')) return;
+    if (e.key === 'ArrowDown' || e.key === 'j') {
+      e.preventDefault();
+      setSelected((i) => Math.min(groups.length - 1, i + 1));
+    } else if (e.key === 'ArrowUp' || e.key === 'k') {
+      e.preventDefault();
+      setSelected((i) => Math.max(0, i - 1));
+    } else if (/^[1-9]$/.test(e.key)) {
+      const cat = assignable[Number(e.key) - 1];
+      const group = groups[selected];
+      if (cat && group) {
         e.preventDefault();
-        setSelected((i) => Math.min(groups.length - 1, i + 1));
-      } else if (e.key === 'ArrowUp' || e.key === 'k') {
-        e.preventDefault();
-        setSelected((i) => Math.max(0, i - 1));
-      } else if (/^[1-9]$/.test(e.key)) {
-        const cat = assignable[Number(e.key) - 1];
-        const group = groups[selected];
-        if (cat && group) {
-          e.preventDefault();
-          void assign(group, cat.id);
-        }
+        void assign(group, cat.id);
       }
-    };
+    }
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => onKeyRef.current(e);
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [groups, selected, assignable, assign]);
+  }, []);
 
   useEffect(() => {
     const el = listRef.current?.querySelector<HTMLElement>(`[data-index="${selected}"]`);
@@ -106,7 +137,7 @@ export function Review() {
       const r = await ipc.classifyNow();
       toast.success(
         'Classificação concluída',
-        `${r.local} local · ${r.remote} pela IA · ${r.vision} por visão · ${r.needs_review} para revisar${r.skipped_remote ? ' · IA ignorada (somente local)' : ''}`,
+        `${r.local} pelas regras, ${r.remote} pela IA, ${r.vision} por visão e ${r.needs_review} para revisar.${r.skipped_remote ? ' A IA foi ignorada (modo somente local).' : ''}`,
       );
       await reload();
       bumpData();
@@ -127,129 +158,139 @@ export function Review() {
     }
   };
 
+  const current = groups?.[selected] ?? null;
+
   return (
     <div data-testid="page-review">
       <PageHeader
         title="Revisão"
-        subtitle={groups ? `${groups.length} grupos · ${fmtMinutes(uncategorizedSecs)} sem categoria · ${fmtDateLong(date)}` : fmtDateLong(date)}
+        subtitle={subtitle(date, groups, uncategorizedSecs)}
         actions={
           <>
             <DayNav date={date} onChange={setDate} />
-            <Button variant="primary" icon={<Wand2 className="size-4" />} loading={classifying} onClick={() => void classifyNow()}>
+            <Button variant="primary" icon={<Wand2 className="size-[18px]" strokeWidth={1.75} aria-hidden />} loading={classifying} onClick={() => void classifyNow()}>
               Classificar agora
             </Button>
           </>
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-ink-3">
-        <span className="flex items-center gap-1.5">
-          <Kbd>↑</Kbd>
-          <Kbd>↓</Kbd> mover
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Kbd>1</Kbd>–<Kbd>9</Kbd> atribuir categoria
-        </span>
-        <ul className="flex flex-wrap items-center gap-2" aria-label="Atalhos de categoria">
-          {assignable.slice(0, 9).map((c, i) => {
-            const Icon = iconFor(c.icon);
-            return (
-              <li key={c.id} className="flex items-center gap-1 rounded-md border border-line bg-surface px-1.5 py-0.5">
-                <Kbd>{i + 1}</Kbd>
-                <Icon className="size-3" style={{ color: c.color }} />
-                <span className="text-ink-2">{c.name}</span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-
       {loading && !groups ? (
-        <div className="flex flex-col gap-2">
-          {[...Array(6)].map((_, i) => (
-            <Skeleton key={i} className="h-14" />
-          ))}
+        <div className="grid grid-cols-12 gap-5">
+          <div className="col-span-12 flex flex-col gap-2 min-[1100px]:col-span-8">
+            {[...Array(6)].map((_, i) => (
+              <Skeleton key={i} className="h-14" />
+            ))}
+          </div>
+          <Skeleton className="col-span-12 h-72 min-[1100px]:col-span-4" />
         </div>
       ) : !groups?.length ? (
-        <Card>
-          <EmptyState icon={<Sparkles className="size-5" />} title="Nada para revisar" description="Todos os blocos do dia estão classificados com boa confiança." />
+        <Card className="flex flex-col items-center gap-4 py-12 text-center">
+          <Ubi mood="excited" size={132} variant="flat" speaking="Fila vazia. Bom trabalho!" />
+          <div>
+            <p className="display text-lg text-ink">Nada para revisar</p>
+            <p className="mx-auto mt-1 max-w-sm text-sm leading-5 text-ink-2">Todos os blocos do dia estão classificados com boa confiança. Quando algo ficar em dúvida, aparece aqui.</p>
+          </div>
+          <Link to="/timeline" className="inline-flex h-9 items-center rounded-control border border-line-2 bg-panel px-3.5 text-sm font-medium text-ink transition-colors duration-150 hover:bg-panel-2">
+            Ver a Timeline
+          </Link>
         </Card>
       ) : (
-        <Card padded={false} className="divide-y divide-line">
-          <div ref={listRef} role="list" aria-label="Grupos para revisão">
-            {groups.map((g, i) => {
-              const active = i === selected;
-              const busy = busyKey === g.key;
-              return (
-                <div
-                  key={g.key}
-                  role="listitem"
-                  data-index={i}
-                  data-testid="review-row"
-                  aria-current={active ? 'true' : undefined}
-                  onClick={() => setSelected(i)}
-                  className={clsx('cursor-default border-b border-line transition-colors last:border-b-0', active ? 'bg-brand-50/60 dark:bg-brand-900/15' : 'hover:bg-surface-2/60')}
-                >
-                  <div className="flex items-center gap-3 px-4 py-2.5">
-                    <span className={clsx('h-8 w-0.5 shrink-0 rounded-full', active ? 'bg-brand-600' : 'bg-transparent')} aria-hidden />
-                    <AppAvatar name={g.app_name} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {g.app_name}
-                        {g.domain && <span className="ml-1.5 font-normal text-ink-3">· {g.domain}</span>}
-                      </p>
-                      <p className="truncate text-xs text-ink-3">{g.description ?? g.title}</p>
-                    </div>
-                    <span className="w-16 shrink-0 text-right text-xs font-medium tabular-nums text-ink-2">{fmtDuration(g.total_secs, { compact: true })}</span>
-                    <span className="w-9 shrink-0 text-center text-[11px] tabular-nums text-ink-3" title="Blocos no grupo">
-                      ×{g.block_ids.length}
-                    </span>
-                    <CategoryChip categories={categories} categoryId={g.category_id} className="w-40 justify-center" />
-                    <ConfidenceBar value={g.min_confidence} className="w-24" />
-                    <span className="w-5 shrink-0 text-amber-500" title={g.needs_review ? 'Precisa de revisão' : ''}>
-                      {g.needs_review && <AlertTriangle className="size-4" />}
-                    </span>
-                    <SourceBadge source={g.source} />
-                    <ChevronDown className={clsx('size-4 shrink-0 text-ink-3 transition-transform', active && 'rotate-180')} />
-                  </div>
-                  {active && (
-                    <div className="flex flex-col gap-2 px-4 pb-3 pl-[76px]">
-                      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Atribuir categoria">
-                        {assignable.map((c, n) => {
-                          const Icon = iconFor(c.icon);
-                          const current = c.id === g.category_id;
-                          return (
-                            <button
-                              key={c.id}
-                              type="button"
-                              disabled={busy}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void assign(g, c.id);
-                              }}
-                              className={clsx(
-                                'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 text-xs font-medium transition-colors disabled:opacity-60',
-                                current ? 'border-transparent text-white' : 'border-line bg-surface text-ink-2 hover:bg-surface-2 hover:text-ink',
-                              )}
-                              style={current ? { background: c.color } : undefined}
-                            >
-                              {n < 9 && <kbd className={clsx(current && 'border-white/40 bg-white/20 text-white')}>{n + 1}</kbd>}
-                              <Icon className="size-3.5" style={current ? undefined : { color: c.color }} />
-                              {c.name}
-                            </button>
-                          );
-                        })}
+        <div className="grid grid-cols-12 items-start gap-5">
+          <Card padded={false} className="col-span-12 overflow-hidden min-[1100px]:col-span-8">
+            <div ref={listRef} role="list" aria-label="Grupos para revisão">
+              {groups.map((g, i) => {
+                const active = i === selected;
+                const busy = busyKey === g.key;
+                return (
+                  <div
+                    key={g.key}
+                    role="listitem"
+                    data-index={i}
+                    data-testid="review-row"
+                    aria-current={active ? 'true' : undefined}
+                    onClick={() => setSelected(i)}
+                    className={clsx(
+                      'relative cursor-default border-b border-line transition-colors duration-150 last:border-b-0',
+                      active ? 'bg-volt-soft' : 'hover:bg-panel-2/60',
+                      busy && 'opacity-60',
+                    )}
+                  >
+                    {active && <span className="absolute top-2 bottom-2 left-0 w-[3px] rounded-r-full bg-volt shadow-[0_0_12px_2px_rgb(77_141_255/.55)]" aria-hidden />}
+                    <div className="flex items-center gap-3 px-4 py-2.5">
+                      <AppAvatar name={g.app_name} />
+                      <div className="min-w-0 flex-1">
+                        <p className="flex min-w-0 items-baseline gap-x-2 text-sm leading-5 font-medium text-ink">
+                          <span className="max-w-[24ch] shrink-0 truncate">{g.app_name}</span>
+                          {g.domain && <span className="min-w-0 truncate text-xs font-normal text-ink-3">{g.domain}</span>}
+                        </p>
+                        <p className="truncate text-xs leading-4 text-ink-3">{g.description ?? g.title}</p>
                       </div>
-                      {suggestions[g.key] && (
-                        <SuggestionChips suggestions={suggestions[g.key] ?? []} categories={categories} accepted={accepted} onAccept={(s) => void acceptSuggestion(s)} />
-                      )}
+                      <span className="num w-14 shrink-0 text-right">
+                        <span className="block text-xs leading-4 font-medium text-ink-2">{fmtDuration(g.total_secs, { compact: true })}</span>
+                        <span className="block text-[11px] leading-4 text-ink-3" title="Blocos no grupo">
+                          {g.block_ids.length} {g.block_ids.length === 1 ? 'bloco' : 'blocos'}
+                        </span>
+                      </span>
+                      <span className="flex w-36 shrink-0 items-center justify-end gap-2">
+                        {g.needs_review && <span className="size-1.5 shrink-0 rounded-full bg-ember shadow-[0_0_8px_rgb(255_122_31/.6)]" role="img" aria-label="Precisa de revisão" title="Precisa de revisão" />}
+                        <CategoryChip categories={categories} categoryId={g.category_id} />
+                      </span>
+                      <ConfidenceLine value={g.min_confidence} className="hidden shrink-0 min-[1280px]:flex" />
+                      <SourceBadge source={g.source} />
+                      <ChevronDown className={clsx('size-4 shrink-0 text-ink-4 transition-transform duration-180', active && 'rotate-180')} strokeWidth={1.75} aria-hidden />
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Card>
+                    {active && (
+                      <div className="flex flex-col gap-2 px-4 pb-3 pl-[60px]">
+                        <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs leading-4 text-ink-3">
+                          <span>
+                            Começou às <span className="num text-ink-2">{fmtTime(g.first_started_at)}</span>
+                          </span>
+                          <span>
+                            Confiança mínima <span className="num text-ink-2">{fmtPercent(g.min_confidence)}</span>
+                          </span>
+                          {g.title && g.description && <span className="truncate">{g.title}</span>}
+                        </p>
+                        <p className="text-xs text-ink-3">
+                          Pressione <Kbd>1</Kbd> a <Kbd>9</Kbd> ou escolha a categoria ao lado; a decisão vale para {g.block_ids.length === 1 ? 'este bloco' : `os ${g.block_ids.length} blocos`} e ensina o classificador.
+                        </p>
+                        {suggestions[g.key] && (
+                          <SuggestionChips suggestions={suggestions[g.key] ?? []} categories={categories} accepted={accepted} onAccept={(s) => void acceptSuggestion(s)} />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          <Card className="col-span-12 min-[1100px]:sticky min-[1100px]:top-2 min-[1100px]:col-span-4" aria-label="Atribuir categoria">
+            <CardHeader
+              title="Atribuir ao grupo selecionado"
+              subtitle={
+                current ? (
+                  <>
+                    {current.app_name}
+                    {current.domain ? ` em ${current.domain}` : ''}, {fmtDuration(current.total_secs, { compact: true })}
+                  </>
+                ) : (
+                  'Selecione um grupo na lista'
+                )
+              }
+            />
+            <CategoryPicker categories={categories} value={current?.category_id ?? null} numbered disabled={!current || !!busyKey} onPick={(id) => current && void assign(current, id)} className="-mx-1.5" />
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line pt-3 text-xs text-ink-3">
+              <span className="flex items-center gap-1.5">
+                <Kbd>↑</Kbd>
+                <Kbd>↓</Kbd> mover
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Kbd>1</Kbd>–<Kbd>9</Kbd> atribuir
+              </span>
+            </div>
+          </Card>
+        </div>
       )}
     </div>
   );

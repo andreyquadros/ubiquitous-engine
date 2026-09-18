@@ -17,15 +17,19 @@ export function CategoryChip({ categories, categoryId, size = 'sm', interactive,
   const color = cat?.color ?? UNCATEGORIZED_COLOR;
   const Icon = iconFor(cat?.icon ?? 'circle-dashed');
   const cls = clsx(
-    'inline-flex items-center gap-1.5 rounded-full border font-medium whitespace-nowrap transition-colors',
+    'inline-flex items-center gap-1.5 rounded-pill border font-medium whitespace-nowrap transition-[filter,background-color] duration-150',
     size === 'sm' ? 'h-6 px-2 text-[11px]' : 'h-7 px-2.5 text-xs',
-    interactive && 'cursor-pointer hover:brightness-95 dark:hover:brightness-125',
+    interactive && 'cursor-pointer hover:brightness-110',
     className,
   );
-  const style = { color, borderColor: `${color}55`, background: `${color}14` };
+  const style = {
+    color: `color-mix(in oklab, ${color} 82%, var(--ink))`,
+    borderColor: `color-mix(in oklab, ${color} 35%, transparent)`,
+    background: `color-mix(in oklab, ${color} 12%, transparent)`,
+  };
   const inner = (
     <>
-      <Icon className={size === 'sm' ? 'size-3' : 'size-3.5'} />
+      <Icon className={size === 'sm' ? 'size-3' : 'size-3.5'} strokeWidth={1.75} style={{ color }} aria-hidden />
       {cat?.name ?? 'Sem categoria'}
     </>
   );
@@ -69,16 +73,16 @@ export function CategoryPicker({ categories, value, onPick, numbered, disabled, 
               disabled={disabled}
               onClick={() => onPick(c.id)}
               className={clsx(
-                'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm transition-colors hover:bg-surface-2 disabled:opacity-50',
-                active && 'bg-surface-2',
+                'flex w-full items-center gap-2.5 rounded-[8px] px-2 py-1.5 text-left text-sm transition-colors duration-120 hover:bg-panel-2 disabled:opacity-50',
+                active && 'bg-volt-soft',
               )}
             >
-              <span className="flex size-6 items-center justify-center rounded-md" style={{ background: `${c.color}22`, color: c.color }}>
-                <Icon className="size-3.5" />
+              <span className="flex size-6 items-center justify-center rounded-md" style={{ background: `color-mix(in oklab, ${c.color} 16%, transparent)`, color: c.color }}>
+                <Icon className="size-3.5" strokeWidth={1.75} />
               </span>
               <span className="flex-1 truncate">{c.name}</span>
               {numbered && i < 9 && <kbd>{i + 1}</kbd>}
-              {active && <Check className="size-3.5 text-brand-600" />}
+              {active && <Check className="size-3.5 text-volt" strokeWidth={2} />}
             </button>
           </li>
         );

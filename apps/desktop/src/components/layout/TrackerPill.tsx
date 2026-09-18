@@ -9,13 +9,14 @@ import { Ubi } from '../ubi/Ubi';
 import { IconButton } from '../ui/Button';
 
 const COLORS: Record<TrackerState, string> = {
-  running: '#10b981',
-  paused: '#f59e0b',
-  private: '#64748b',
-  idle: '#94a3b8',
-  blocked: '#ef4444',
+  running: 'var(--signal)',
+  paused: 'var(--amber)',
+  private: 'var(--violet)',
+  idle: 'var(--ink-4)',
+  blocked: 'var(--rose)',
 };
 
+/** Rail footer: mini UBI, tracker state and the pause/resume control. */
 export function TrackerPill() {
   const state = useAppStore((s) => s.trackerState);
   const setTrackerState = useAppStore((s) => s.setTrackerState);
@@ -25,6 +26,7 @@ export function TrackerPill() {
   const toast = useToast();
 
   const running = state === 'running' || state === 'idle';
+  const color = COLORS[state];
 
   const toggle = async () => {
     setBusy(true);
@@ -44,18 +46,18 @@ export function TrackerPill() {
   };
 
   return (
-    <div className="flex items-center gap-2 rounded-xl border border-line bg-surface p-1.5 min-[1180px]:pr-2" data-testid="tracker-pill">
-      <div className="hidden size-8 items-center justify-center overflow-hidden min-[1180px]:flex" aria-hidden>
-        <Ubi mood={state === 'paused' ? 'sleeping' : mood} size={26} variant="svg" />
+    <div className="flex items-center gap-2 rounded-control border border-line bg-panel p-1.5 min-[1180px]:pr-2" data-testid="tracker-pill">
+      <div className="hidden size-8 items-center justify-center overflow-hidden rounded-full bg-panel-2 min-[1180px]:flex" aria-hidden>
+        <Ubi mood={state === 'paused' ? 'sleeping' : mood} size={26} variant="flat" crop="head" />
       </div>
       <div className="hidden min-w-0 flex-1 min-[1180px]:block">
         <p className="flex items-center gap-1.5 text-xs font-medium">
-          <span className="size-2 rounded-full" style={{ background: COLORS[state], boxShadow: `0 0 0 3px ${COLORS[state]}26` }} />
+          <span className="size-2 rounded-full" style={{ background: color, boxShadow: `0 0 0 3px color-mix(in oklab, ${color} 18%, transparent)` }} />
           {TRACKER_LABEL[state]}
         </p>
       </div>
       <IconButton label={running ? 'Pausar rastreamento' : 'Retomar rastreamento'} size="sm" onClick={toggle} disabled={busy} title={TRACKER_LABEL[state]}>
-        {running ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+        {running ? <Pause className="size-3.5" strokeWidth={1.75} /> : <Play className="size-3.5" strokeWidth={1.75} />}
       </IconButton>
     </div>
   );

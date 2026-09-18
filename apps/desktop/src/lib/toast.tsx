@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CheckCircle2, CircleAlert, Info, X } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -41,10 +41,13 @@ export function useToast() {
 }
 
 const ICONS = { success: CheckCircle2, error: CircleAlert, info: Info } as const;
+const COLORS = { success: 'text-signal', error: 'text-rose', info: 'text-volt' } as const;
 
+/** Glass toasts, bottom-right, one accent line per kind. */
 export function Toaster() {
   const toasts = useToastStore((s) => s.toasts);
   const dismiss = useToastStore((s) => s.dismiss);
+  const reduce = useReducedMotion();
   return (
     <div className="pointer-events-none fixed right-4 bottom-4 z-[100] flex w-[340px] flex-col gap-2" aria-live="polite" role="status">
       <AnimatePresence>
@@ -53,25 +56,19 @@ export function Toaster() {
           return (
             <motion.div
               key={t.id}
-              initial={{ opacity: 0, y: 12, scale: 0.98 }}
+              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.98 }}
-              transition={{ duration: 0.18 }}
-              className="card pointer-events-auto flex items-start gap-3 p-3 shadow-pop"
+              exit={reduce ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
+              transition={{ duration: reduce ? 0 : 0.18, ease: [0.16, 1, 0.3, 1] }}
+              className="glass pointer-events-auto flex items-start gap-3 p-3"
             >
-              <Icon
-                className={clsx('mt-0.5 size-4 shrink-0', {
-                  'text-emerald-500': t.kind === 'success',
-                  'text-red-500': t.kind === 'error',
-                  'text-brand-500': t.kind === 'info',
-                })}
-              />
+              <Icon className={clsx('mt-0.5 size-4 shrink-0', COLORS[t.kind])} strokeWidth={1.75} aria-hidden />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{t.title}</p>
                 {t.message && <p className="mt-0.5 text-xs text-ink-2">{t.message}</p>}
               </div>
-              <button className="rounded-md p-1 text-ink-3 hover:bg-surface-2 hover:text-ink" onClick={() => dismiss(t.id)} aria-label="Fechar">
-                <X className="size-3.5" />
+              <button className="rounded-md p-1 text-ink-3 hover:bg-panel-2 hover:text-ink" onClick={() => dismiss(t.id)} aria-label="Fechar">
+                <X className="size-3.5" strokeWidth={1.75} />
               </button>
             </motion.div>
           );

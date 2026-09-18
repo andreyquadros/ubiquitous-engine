@@ -23,12 +23,12 @@ export function Toggle({ checked, onChange, id, disabled, label, size = 'md' }: 
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={clsx(
-        'relative inline-flex shrink-0 items-center rounded-full border border-transparent transition-colors disabled:opacity-50',
+        'relative inline-flex shrink-0 items-center rounded-pill border transition-[background-color,border-color,box-shadow] duration-150 disabled:cursor-not-allowed disabled:opacity-50',
         w,
-        checked ? 'bg-brand-600' : 'bg-surface-3',
+        checked ? 'border-volt bg-volt shadow-[0_0_12px_rgb(77_141_255/.35)]' : 'border-line-2 bg-panel-3',
       )}
     >
-      <span className={clsx('inline-block rounded-full bg-white shadow-sm transition-transform', knob, checked ? move : 'translate-x-0.5')} />
+      <span className={clsx('inline-block rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/.35)] transition-transform duration-150', knob, checked ? move : 'translate-x-0.5')} />
     </button>
   );
 }

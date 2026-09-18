@@ -4,16 +4,17 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/ubi/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="dark light" />
     <title>ubiqX</title>
+    <style>html { background: #060a14; } html:not(.dark) { background: #f3f5fa; }</style>
     <script>
       // Apply the persisted theme before the first paint to avoid a flash.
       (function () {
         try {
           var q = new URLSearchParams(window.location.search).get('theme');
           var stored = q || localStorage.getItem('ubiqx-theme');
-          var dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
-          if (dark) document.documentElement.classList.add('dark');
+          // Dark is the default instrument panel; only an explicit 'light' preference turns it off.
+          if (stored !== 'light') document.documentElement.classList.add('dark');
         } catch (e) {}
       })();
     </script>

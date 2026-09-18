@@ -1,8 +1,9 @@
 import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import clsx from 'clsx';
 import type { Mood } from '../../lib/types';
 import { UbiSvg } from './UbiSvg';
+import { probePng, UbiImage, __resetPngProbe } from './UbiImage';
 
 const Ubi3d = lazy(() => import('./Ubi3d'));
 
@@ -10,8 +11,13 @@ export interface UbiProps {
   mood: Mood;
   size?: number;
   speaking?: string;
-  /** Force the SVG version (tiny avatars, tests). */
-  variant?: 'auto' | 'svg';
+  /**
+   * `auto` (default): PNG → 3D model → SVG. `flat`: PNG → SVG (no WebGL; rail avatar).
+   * `svg`: always the inline drawing (tests, tiny sizes).
+   */
+  variant?: 'auto' | 'svg' | 'flat';
+  /** `head` = circular head crop (PNG only; the SVG is simply drawn small). */
+  crop?: 'full' | 'head';
   className?: string;
 }
 
@@ -45,9 +51,10 @@ export function probeGlb(): Promise<boolean> {
   return probe;
 }
 
-/** Test hook: reset the cached probe. */
+/** Test hook: reset the cached probes (GLB and PNG). */
 export function __resetProbe(): void {
   probe = null;
+  __resetPngProbe();
 }
 
 class Boundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
@@ -60,48 +67,57 @@ class Boundary extends Component<{ fallback: ReactNode; children: ReactNode }, {
   }
 }
 
-export function Ubi({ mood, size = 160, speaking, variant = 'auto', className }: UbiProps) {
-  const [use3d, setUse3d] = useState(false);
+type Mode = 'svg' | 'png' | '3d';
+
+/** The mascot with an optional speech bubble. Picks the richest available presentation. */
+export function Ubi({ mood, size = 160, speaking, variant = 'auto', crop = 'full', className }: UbiProps) {
+  const [mode, setMode] = useState<Mode>('svg');
+  const reduce = useReducedMotion();
 
   useEffect(() => {
     if (variant === 'svg') return;
     let alive = true;
-    void probeGlb().then((ok) => {
-      if (alive) setUse3d(ok);
-    });
+    void (async () => {
+      if (await probePng()) return alive && setMode('png');
+      if (variant === 'auto' && (await probeGlb())) return alive && setMode('3d');
+      return undefined;
+    })();
     return () => {
       alive = false;
     };
   }, [variant]);
 
   const svg = <UbiSvg mood={mood} size={size} />;
+  let art: ReactNode = svg;
+  if (mode === 'png') art = <UbiImage mood={mood} size={size} crop={crop} />;
+  else if (mode === '3d')
+    art = (
+      <Boundary fallback={svg}>
+        <Suspense fallback={svg}>
+          <Ubi3d mood={mood} size={size} />
+        </Suspense>
+      </Boundary>
+    );
 
   return (
-    <div className={clsx('relative inline-flex flex-col items-center', className)} data-testid="ubi">
+    <div className={clsx('relative inline-flex flex-col items-center', className)} data-testid="ubi" data-ubi-mode={mode}>
       <AnimatePresence>
         {speaking && (
           <motion.div
             key={speaking}
             role="status"
-            initial={{ opacity: 0, y: 6, scale: 0.96 }}
+            initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.96 }}
-            className="card relative mb-2 max-w-[260px] px-3 py-2 text-center text-xs leading-5 text-ink"
+            exit={reduce ? { opacity: 0 } : { opacity: 0, y: 4, scale: 0.96 }}
+            transition={{ duration: reduce ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="glass relative z-10 mb-2 max-w-[260px] px-3 py-2 text-center text-xs leading-5 text-ink"
           >
             {speaking}
-            <span className="absolute -bottom-1.5 left-1/2 size-3 -translate-x-1/2 rotate-45 border-r border-b border-line bg-surface" aria-hidden />
+            <span className="absolute -bottom-1.5 left-1/2 size-3 -translate-x-1/2 rotate-45 border-r border-b border-line-2 bg-[color-mix(in_oklab,var(--panel)_86%,transparent)]" aria-hidden />
           </motion.div>
         )}
       </AnimatePresence>
-      {use3d ? (
-        <Boundary fallback={svg}>
-          <Suspense fallback={svg}>
-            <Ubi3d mood={mood} size={size} />
-          </Suspense>
-        </Boundary>
-      ) : (
-        svg
-      )}
+      {art}
     </div>
   );
 }

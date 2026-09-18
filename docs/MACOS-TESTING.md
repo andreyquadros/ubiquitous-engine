@@ -28,7 +28,7 @@ binário. Um binário sem assinatura estável muda de identidade a cada compila�
 
 ```bash
 git clone https://github.com/andreyquadros/ubiquitous-engine ubiqx && cd ubiqx
-scripts/install-ubi-model.sh ~/Downloads/Ubi.glb   # opcional: mascote 3D
+scripts/install-ubi-model.sh                       # opcional: arte do UBI (ubi.png e/ou Ubi.glb em ~/Downloads)
 cd apps/desktop && pnpm install
 pnpm tauri build                                   # gera target/release/bundle/macos/ubiqX.app
 cd ../.. && scripts/codesign-dev.sh                # assina com "ubiqX Dev"

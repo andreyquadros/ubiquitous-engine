@@ -130,19 +130,20 @@ export const NUDGE_KIND_LABEL: Record<string, string> = {
   attention: 'Atenção',
 };
 
+/** Semantic colour for a focus score (CSS variables from index.css so it follows the theme). */
 export const focusColor = (score: number): string => {
-  if (score >= 75) return '#10b981';
-  if (score >= 50) return '#2563eb';
-  if (score >= 30) return '#f97316';
-  return '#ef4444';
+  if (score >= 75) return 'var(--signal)';
+  if (score >= 50) return 'var(--volt)';
+  if (score >= 30) return 'var(--amber)';
+  return 'var(--rose)';
 };
 
 /** Initial letter used for app avatars. */
 export const appInitial = (name: string): string => (name.trim()[0] ?? '?').toUpperCase();
 
-/** Deterministic pastel-ish colour for an app name (used by avatars). */
+/** Deterministic colour for an app name (used by avatars as a tint, not a fill). */
 export const appColor = (name: string): string => {
   let h = 0;
   for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
-  return `hsl(${h} 55% 52%)`;
+  return `hsl(${h} 70% 62%)`;
 };

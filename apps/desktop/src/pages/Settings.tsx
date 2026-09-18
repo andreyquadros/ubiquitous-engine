@@ -1,9 +1,9 @@
 import clsx from 'clsx';
-import { AlertTriangle, Bell, BrainCircuit, Camera, Check, Download, ExternalLink, Info, KeyRound, ListRestart, Loader2, RefreshCw, Shield, ShieldCheck, Trash2, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, Bell, BrainCircuit, Camera, Check, Download, ExternalLink, EyeOff, Info, KeyRound, ListRestart, Loader2, RefreshCw, Shield, ShieldCheck, Trash2, type LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Badge, StatusPill } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { Card, CardHeader } from '../components/ui/Card';
+import { Card } from '../components/ui/Card';
 import { Dialog } from '../components/ui/Dialog';
 import { Field, Input, Textarea } from '../components/ui/Field';
 import { EmptyState } from '../components/ui/misc';
@@ -15,7 +15,7 @@ import { ipc } from '../lib/ipc';
 import { useAppStore } from '../lib/store';
 import { useToast } from '../lib/toast';
 import { PROVIDER_PITCH, keyStatus, providerInfo, reconcileModels, sameModels } from '../lib/providers';
-import type { AiModels, AiProvider, PermissionKind, PermissionState, Settings, SettingsView, VisionPolicy } from '../lib/types';
+import type { AiModels, AiProvider, PermissionKind, PermissionState, PrivateModeDuration, Settings, SettingsView, VisionPolicy } from '../lib/types';
 import { useAsync } from '../lib/useAsync';
 
 export const REPO_URL = 'https://github.com/andreyquadros/ubiquitous-engine';
@@ -25,8 +25,8 @@ const SECTIONS: { id: string; label: string; Icon: LucideIcon }[] = [
   { id: 'rastreamento', label: 'Rastreamento', Icon: RefreshCw },
   { id: 'privacidade', label: 'Privacidade', Icon: Shield },
   { id: 'relatorios', label: 'Relatórios', Icon: Info },
-  { id: 'ubi', label: 'UBI & notificações', Icon: Bell },
-  { id: 'permissoes', label: 'Permissões (macOS)', Icon: ShieldCheck },
+  { id: 'ubi', label: 'UBI e notificações', Icon: Bell },
+  { id: 'permissoes', label: 'Permissões do macOS', Icon: ShieldCheck },
   { id: 'sobre', label: 'Sobre', Icon: Info },
 ];
 
@@ -69,9 +69,37 @@ function useSettingsDraft() {
   return { draft, patch, status, settingsView };
 }
 
+/** Highlights the section nearest the top of the scroll area (no-op where IntersectionObserver is missing, e.g. jsdom). */
+function useScrollSpy(ids: string[], setActive: (id: string) => void) {
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return;
+    const visible = new Map<string, number>();
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const id = e.target.id.replace(/^sec-/, '');
+          if (e.isIntersecting) visible.set(id, e.boundingClientRect.top);
+          else visible.delete(id);
+        }
+        const top = [...visible.entries()].sort((a, b) => a[1] - b[1])[0];
+        if (top) setActive(top[0]);
+      },
+      { rootMargin: '-10% 0px -60% 0px', threshold: 0 },
+    );
+    for (const id of ids) {
+      const el = document.getElementById(`sec-${id}`);
+      if (el) obs.observe(el);
+    }
+    return () => obs.disconnect();
+  }, [ids, setActive]);
+}
+
 export function SettingsPage() {
   const { draft, patch, status, settingsView } = useSettingsDraft();
   const [active, setActive] = useState('ia');
+  const sections = useMemo(() => SECTIONS.filter((s) => s.id !== 'permissoes' || settingsView?.platform === 'macos'), [settingsView?.platform]);
+  const ids = useMemo(() => sections.map((s) => s.id), [sections]);
+  useScrollSpy(ids, setActive);
 
   if (!draft || !settingsView) return null;
 
@@ -84,22 +112,22 @@ export function SettingsPage() {
     <div data-testid="page-settings">
       <PageHeader
         title="Configurações"
-        subtitle="Tudo é salvo automaticamente."
+        subtitle="Cada mudança é salva sozinha."
         actions={
-          <span className="flex items-center gap-1.5 text-xs text-ink-3" aria-live="polite">
+          <span className="flex h-9 items-center gap-1.5 text-xs text-ink-3" aria-live="polite">
             {status === 'saving' && (
               <>
-                <Loader2 className="size-3.5 animate-spin" /> Salvando…
+                <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} aria-hidden /> Salvando…
               </>
             )}
             {status === 'saved' && (
               <>
-                <Check className="size-3.5 text-emerald-500" /> Salvo
+                <Check className="size-3.5 text-signal" strokeWidth={2} aria-hidden /> Salvo
               </>
             )}
             {status === 'error' && (
               <>
-                <AlertTriangle className="size-3.5 text-red-500" /> Erro ao salvar
+                <AlertTriangle className="size-3.5 text-rose" strokeWidth={1.75} aria-hidden /> Não foi salvo
               </>
             )}
           </span>
@@ -107,25 +135,33 @@ export function SettingsPage() {
       />
       <div className="grid grid-cols-12 gap-6">
         <nav className="col-span-12 min-[1100px]:sticky min-[1100px]:top-0 min-[1100px]:col-span-3 min-[1100px]:self-start" aria-label="Seções">
-          <ul className="flex flex-row flex-wrap gap-1 min-[1100px]:flex-col">
-            {SECTIONS.filter((s) => s.id !== 'permissoes' || settingsView.platform === 'macos').map(({ id, label, Icon }) => (
-              <li key={id}>
-                <button
-                  type="button"
-                  onClick={() => go(id)}
-                  className={clsx('flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm transition-colors', active === id ? 'bg-surface text-ink shadow-soft' : 'text-ink-2 hover:bg-surface-2 hover:text-ink')}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  {label}
-                </button>
-              </li>
-            ))}
+          <ul className="flex flex-row flex-wrap gap-0.5 min-[1100px]:flex-col">
+            {sections.map(({ id, label, Icon }) => {
+              const on = active === id;
+              return (
+                <li key={id} className="relative">
+                  {on && <span className="absolute top-2 bottom-2 -left-3 hidden w-[3px] rounded-r-full bg-volt min-[1100px]:block" aria-hidden />}
+                  <button
+                    type="button"
+                    onClick={() => go(id)}
+                    aria-current={on ? 'true' : undefined}
+                    className={clsx(
+                      'flex h-10 w-full items-center gap-2.5 rounded-control px-3 text-left text-sm font-medium transition-colors duration-150',
+                      on ? 'bg-volt-soft text-ink' : 'text-ink-2 hover:bg-panel-2 hover:text-ink',
+                    )}
+                  >
+                    <Icon className={clsx('size-[18px] shrink-0', on ? 'text-volt' : 'text-ink-3')} strokeWidth={1.75} aria-hidden />
+                    {label}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </nav>
-        <div className="col-span-12 flex flex-col gap-6 min-[1100px]:col-span-9">
+        <div className="col-span-12 flex flex-col gap-5 min-[1100px]:col-span-9">
           <AiSection draft={draft} patch={patch} view={settingsView} />
           <TrackingSection draft={draft} patch={patch} />
-          <PrivacySection draft={draft} patch={patch} />
+          <PrivacySection draft={draft} patch={patch} view={settingsView} />
           <ReportsSection draft={draft} patch={patch} />
           <UbiSection draft={draft} patch={patch} />
           {settingsView.platform === 'macos' && <PermissionsSection view={settingsView} />}
@@ -138,13 +174,24 @@ export function SettingsPage() {
 
 type SectionProps = { draft: Settings; patch: (p: Partial<Settings>) => void };
 
-function Section({ id, title, description, children }: { id: string; title: string; description?: string; children: React.ReactNode }) {
+function Section({ id, title, description, action, children }: { id: string; title: string; description?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <Card id={`sec-${id}`} className="scroll-mt-4">
-      <CardHeader title={<span className="text-base">{title}</span>} subtitle={description} />
-      <div className="flex flex-col gap-5">{children}</div>
+    <Card id={`sec-${id}`} className="scroll-mt-4" padded={false}>
+      <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+        <div className="min-w-0">
+          <h2 className="display text-[17px] leading-6">{title}</h2>
+          {description && <p className="mt-1 text-xs leading-5 text-ink-2">{description}</p>}
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
+      </div>
+      <div className="flex flex-col gap-5 p-5">{children}</div>
     </Card>
   );
+}
+
+/** A hairline between two groups of settings inside a section. */
+function Divider() {
+  return <hr className="border-line" />;
 }
 
 function NumberField({ label, hint, value, onChange, min, max, step, suffix }: { label: string; hint?: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; suffix?: string }) {
@@ -152,8 +199,8 @@ function NumberField({ label, hint, value, onChange, min, max, step, suffix }: {
     <Field label={label} hint={hint}>
       {(id) => (
         <div className="flex items-center gap-2">
-          <Input id={id} type="number" value={value} min={min} max={max} step={step} onChange={(e) => onChange(Number(e.target.value))} className="w-28 tabular-nums" />
-          {suffix && <span className="text-xs text-ink-3">{suffix}</span>}
+          <Input id={id} type="number" value={value} min={min} max={max} step={step} onChange={(e) => onChange(Number(e.target.value))} className="num w-28" />
+          {suffix && <span className="text-xs whitespace-nowrap text-ink-3">{suffix}</span>}
         </div>
       )}
     </Field>
@@ -202,22 +249,23 @@ export function ApiKeyForm({ view, provider, onSaved, compact }: { view: Setting
   return (
     <div className="flex flex-col gap-3" data-testid={`api-key-form-${provider}`}>
       {status.configured && (
-        <div className="flex items-center gap-2 text-sm">
-          <KeyRound className="size-4 text-emerald-500" />
-          Chave configurada <span className="font-mono text-ink-2">{status.hint ?? '…'}</span>
-          <Button size="sm" variant="ghost" onClick={() => void submit(null)} loading={busy}>
+        <div className="flex flex-wrap items-center gap-2 rounded-control border border-signal/25 bg-signal/8 px-3 py-2 text-sm">
+          <KeyRound className="size-4 text-signal" strokeWidth={1.75} aria-hidden />
+          <span>Chave configurada</span>
+          <span className="num font-mono text-ink-2">{status.hint ?? '…'}</span>
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void submit(null)} loading={busy}>
             Remover
           </Button>
         </div>
       )}
       <Field
-        label={status.configured ? `Trocar chave de API da ${label}` : `Chave de API da ${label}`}
+        label={status.configured ? `Trocar a chave de API da ${label}` : `Chave de API da ${label}`}
         hint={
           <span className="inline-flex flex-wrap items-center gap-x-1">
-            {!compact && <span>Armazenada apenas no Keychain do macOS. Nunca é gravada em arquivo.</span>}
+            {!compact && <span>Fica só no Keychain do macOS; nunca vai para um arquivo.</span>}
             {info && (
-              <button type="button" onClick={openConsole} className="inline-flex items-center gap-1 text-brand-600 underline underline-offset-2 hover:text-brand-700 dark:text-brand-400">
-                Criar chave <ExternalLink className="size-3" />
+              <button type="button" onClick={openConsole} className="inline-flex items-center gap-1 text-volt underline underline-offset-2 transition-colors duration-120 hover:brightness-110">
+                Criar chave <ExternalLink className="size-3" strokeWidth={1.75} aria-hidden />
               </button>
             )}
           </span>
@@ -226,15 +274,15 @@ export function ApiKeyForm({ view, provider, onSaved, compact }: { view: Setting
         {(id) => (
           <div className="flex gap-2">
             <Input id={id} type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={`${info?.key_prefix ?? ''}…`} className="font-mono" />
-            <Button variant="primary" className="shrink-0 whitespace-nowrap" onClick={() => void submit(key.trim())} disabled={!key.trim()} loading={busy}>
+            <Button variant="primary" className="shrink-0" onClick={() => void submit(key.trim())} disabled={!key.trim()} loading={busy}>
               Validar e salvar
             </Button>
           </div>
         )}
       </Field>
       {result && (
-        <p className={clsx('flex items-center gap-1.5 text-xs', result.valid ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')} role="status">
-          {result.valid ? <Check className="size-3.5" /> : <AlertTriangle className="size-3.5" />}
+        <p className={clsx('flex items-start gap-1.5 text-xs leading-5', result.valid ? 'text-signal' : 'text-rose')} role="status">
+          {result.valid ? <Check className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} aria-hidden /> : <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />}
           {result.message}
         </p>
       )}
@@ -245,7 +293,7 @@ export function ApiKeyForm({ view, provider, onSaved, compact }: { view: Setting
 /** Segmented control over the providers the backend knows; shows a key icon on the ones with a stored key. */
 export function ProviderPicker({ view, value, onChange, size = 'md' }: { view: SettingsView; value: AiProvider; onChange: (p: AiProvider) => void; size?: 'md' | 'lg' }) {
   return (
-    <div role="radiogroup" aria-label="Provedor de IA" className="inline-flex flex-wrap items-center gap-0.5 rounded-xl bg-surface-2 p-1">
+    <div role="radiogroup" aria-label="Provedor de IA" className="inline-flex flex-wrap items-center gap-0.5 self-start rounded-control border border-line bg-panel-2 p-1">
       {view.providers.map((p) => {
         const configured = keyStatus(view, p.id).configured;
         const active = value === p.id;
@@ -256,10 +304,14 @@ export function ProviderPicker({ view, value, onChange, size = 'md' }: { view: S
             role="radio"
             aria-checked={active}
             onClick={() => onChange(p.id)}
-            className={clsx('inline-flex items-center gap-1.5 rounded-lg px-3 font-medium transition-colors', size === 'lg' ? 'h-9 text-sm' : 'h-8 text-sm', active ? 'bg-surface text-ink shadow-sm' : 'text-ink-2 hover:text-ink')}
+            className={clsx(
+              'inline-flex items-center gap-1.5 rounded-[7px] px-3 font-medium transition-colors duration-150',
+              size === 'lg' ? 'h-9 text-sm' : 'h-8 text-sm',
+              active ? 'bg-panel text-ink shadow-[inset_0_0_0_1px_var(--line-2)]' : 'text-ink-2 hover:text-ink',
+            )}
           >
             {p.label}
-            {configured && <KeyRound className="size-3.5 text-emerald-500" aria-label="chave configurada" />}
+            {configured && <KeyRound className="size-3.5 text-signal" strokeWidth={1.75} aria-label="chave configurada" />}
           </button>
         );
       })}
@@ -315,25 +367,27 @@ function ModelFields({ draft, patch, view }: SectionProps & { view: SettingsView
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[13px] font-medium">Modelos</span>
-        <span className="text-xs text-ink-3">{info?.label ?? provider}</span>
-        <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" icon={<RefreshCw className="size-3.5" />} onClick={() => void listModels()} loading={loading} disabled={!hasKey} title={hasKey ? undefined : 'Salve a chave deste provedor para listar os modelos'}>
+        <div className="min-w-0">
+          <span className="text-[13px] font-medium">Modelos da {info?.label ?? provider}</span>
+          <p className="text-xs text-ink-3">Digite um id ou escolha entre os modelos da conta.</p>
+        </div>
+        <div className="ml-auto flex items-center gap-1.5">
+          <Button size="sm" icon={<RefreshCw className="size-3.5" strokeWidth={1.75} />} onClick={() => void listModels()} loading={loading} disabled={!hasKey} title={hasKey ? undefined : 'Salve a chave deste provedor para listar os modelos'}>
             Listar modelos da conta
           </Button>
-          <Button size="sm" variant="ghost" icon={<ListRestart className="size-3.5" />} disabled={!info || isDefault} onClick={() => info && patch({ models: { ...info.default_models } })}>
+          <Button size="sm" variant="ghost" icon={<ListRestart className="size-3.5" strokeWidth={1.75} />} disabled={!info || isDefault} onClick={() => info && patch({ models: { ...info.default_models } })}>
             Padrões do provedor
           </Button>
         </div>
       </div>
       {error && (
-        <p className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400" role="status">
-          <AlertTriangle className="size-3.5" /> Não foi possível listar os modelos: {error}
+        <p className="flex items-center gap-1.5 text-xs text-rose" role="status">
+          <AlertTriangle className="size-3.5" strokeWidth={1.75} aria-hidden /> Não foi possível listar os modelos: {error}
         </p>
       )}
       {models?.provider === provider && !error && (
-        <p className="text-xs text-ink-3" role="status">
-          {models.ids.length} modelos disponíveis na conta — digite ou escolha nos campos abaixo.
+        <p className="num text-xs text-ink-3" role="status">
+          {models.ids.length} modelos disponíveis na conta. Digite ou escolha nos campos abaixo.
         </p>
       )}
       <datalist id={listId}>
@@ -341,7 +395,7 @@ function ModelFields({ draft, patch, view }: SectionProps & { view: SettingsView
           <option key={m} value={m} />
         ))}
       </datalist>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 min-[900px]:grid-cols-3">
         {MODEL_SLOTS.map((slot) => (
           <Field key={slot.key} label={slot.label} hint={slot.hint}>
             {(id) => <Input id={id} list={listId} value={draft.models[slot.key]} spellCheck={false} autoComplete="off" placeholder={info?.default_models[slot.key]} onChange={(e) => patch({ models: { ...draft.models, [slot.key]: e.target.value } })} className="font-mono text-xs" />}
@@ -356,27 +410,30 @@ function AiSection({ draft, patch, view }: SectionProps & { view: SettingsView }
   const health = view.ai_health;
   const pill =
     health.state === 'ok'
-      ? { color: '#10b981', text: 'IA ativa' }
+      ? { color: 'var(--signal)', text: 'IA ativa' }
       : health.state === 'not_configured'
-        ? { color: '#94a3b8', text: 'Não configurada' }
+        ? { color: 'var(--ink-4)', text: 'Sem chave' }
         : health.state === 'paused'
-          ? { color: '#f59e0b', text: `Pausada — ${health.reason}` }
-          : { color: '#ef4444', text: `Instável — ${health.reason} (até ${fmtTime(health.until)})` };
+          ? { color: 'var(--amber)', text: `Pausada: ${health.reason}` }
+          : { color: 'var(--rose)', text: `Instável: ${health.reason}, até ${fmtTime(health.until)}` };
 
   return (
-    <Section id="ia" title="IA" description="Classificação, análise visual e relatórios usam a API do provedor escolhido com a sua chave. Você pode trocar de provedor a qualquer momento; cada um guarda a própria chave.">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <StatusPill color={pill.color}>{pill.text}</StatusPill>
-        <span className="text-xs text-ink-3">{PROVIDER_PITCH[draft.ai_provider].cost} estimados com 8 h/dia</span>
-      </div>
-      <Field label="Provedor de IA" hint="O ícone de chave indica os provedores que já têm chave salva.">
+    <Section
+      id="ia"
+      title="IA"
+      description="Classificação, análise visual e relatórios usam a API do provedor escolhido com a sua chave. Troque de provedor quando quiser; cada um guarda a própria chave."
+      action={<StatusPill color={pill.color}>{pill.text}</StatusPill>}
+    >
+      <Field label="Provedor de IA" hint={`A chave verde marca os provedores que já têm chave salva. Com ${PROVIDER_PITCH[draft.ai_provider].short}, ${PROVIDER_PITCH[draft.ai_provider].cost} estimados com 8 h por dia.`}>
         {() => <ProviderPicker view={view} value={draft.ai_provider} onChange={(p) => patch(providerSwitchPatch(view, draft, p))} />}
       </Field>
       <ApiKeyForm view={view} provider={draft.ai_provider} />
+      <Divider />
       <ModelFields draft={draft} patch={patch} view={view} />
-      <div className="grid grid-cols-2 gap-4">
-        <NumberField label="Orçamento mensal" hint="Ao atingir, a IA pausa até o próximo mês (a classificação local continua)." value={draft.ai_monthly_budget_usd} min={0} step={0.5} onChange={(v) => patch({ ai_monthly_budget_usd: v })} suffix="US$/mês" />
-        <NumberField label="Máximo de imagens por hora" hint="Limita quantos screenshots vão para o modelo de visão." value={draft.max_vision_per_hour} min={0} max={60} onChange={(v) => patch({ max_vision_per_hour: v })} suffix="imagens/h" />
+      <Divider />
+      <div className="grid grid-cols-1 gap-4 min-[720px]:grid-cols-2">
+        <NumberField label="Orçamento mensal" hint="Ao atingir, a IA pausa até o próximo mês; a classificação local continua." value={draft.ai_monthly_budget_usd} min={0} step={0.5} onChange={(v) => patch({ ai_monthly_budget_usd: v })} suffix="US$ por mês" />
+        <NumberField label="Máximo de imagens por hora" hint="Limita quantos screenshots vão para o modelo de visão." value={draft.max_vision_per_hour} min={0} max={60} onChange={(v) => patch({ max_vision_per_hour: v })} suffix="imagens por hora" />
       </div>
       <Field label="Somente local" hint="Nada é enviado à API: só regras e memória classificam. Relatórios e recomendações ficam indisponíveis." inline>
         {(id) => <Toggle id={id} checked={draft.local_only} onChange={(v) => patch({ local_only: v })} />}
@@ -399,12 +456,12 @@ function TrackingSection({ draft, patch }: SectionProps) {
   };
   return (
     <Section id="rastreamento" title="Rastreamento" description="Como o ubiqX observa o app ativo.">
-      <Field label="Rastreamento ativo" hint="Desligue para pausar completamente (o ícone na barra de menus mostra o estado)." inline>
+      <Field label="Rastreamento ativo" hint="Desligue para pausar por completo; o ícone na barra de menus mostra o estado." inline>
         {(id) => <Toggle id={id} checked={draft.tracking_enabled} onChange={(v) => void toggleTracking(v)} />}
       </Field>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 min-[900px]:grid-cols-3">
         <NumberField label="Intervalo de amostragem" value={draft.sample_interval_secs} min={1} max={60} onChange={(v) => patch({ sample_interval_secs: v })} suffix="s" />
-        <NumberField label="Limiar de ociosidade" hint="Sem teclado/mouse por esse tempo = ocioso." value={draft.idle_threshold_secs} min={30} step={30} onChange={(v) => patch({ idle_threshold_secs: v })} suffix="s" />
+        <NumberField label="Limiar de ociosidade" hint="Sem teclado nem mouse por esse tempo conta como ocioso." value={draft.idle_threshold_secs} min={30} step={30} onChange={(v) => patch({ idle_threshold_secs: v })} suffix="s" />
         <NumberField label="Bloco mínimo" hint="Blocos menores são mesclados ao vizinho." value={draft.min_block_secs} min={5} onChange={(v) => patch({ min_block_secs: v })} suffix="s" />
       </div>
       <Field label="Iniciar com o sistema" hint="Abre o ubiqX na barra de menus ao fazer login." inline>
@@ -414,61 +471,83 @@ function TrackingSection({ draft, patch }: SectionProps) {
   );
 }
 
-function PrivacySection({ draft, patch }: SectionProps) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
+const PRIVATE_OPTIONS: { value: PrivateModeDuration; label: string }[] = [
+  { value: 'minutes30', label: '30 min' },
+  { value: 'hour1', label: '1 hora' },
+  { value: 'until_tomorrow', label: 'Até amanhã' },
+  { value: 'indefinite', label: 'Até eu desligar' },
+];
+
+function PrivacySection({ draft, patch, view }: SectionProps & { view: SettingsView }) {
   const [aiSentOpen, setAiSentOpen] = useState(false);
-  const [busy, setBusy] = useState<'export' | 'delete' | null>(null);
-  const bumpData = useAppStore((s) => s.bumpData);
+  const [busy, setBusy] = useState(false);
+  const setTrackerState = useAppStore((s) => s.setTrackerState);
+  const loadSettings = useAppStore((s) => s.loadSettings);
   const toast = useToast();
   const mode = draft.vision_policy.mode;
   const onlyApps = draft.vision_policy.mode === 'only_apps' ? draft.vision_policy.apps : [];
+  const isPrivate = view.tracker_state === 'private' || draft.private_mode;
 
   const setPolicy = (p: VisionPolicy) => patch({ vision_policy: p });
 
-  const exportData = async () => {
-    setBusy('export');
+  const setPrivate = async (d: PrivateModeDuration) => {
+    setBusy(true);
     try {
-      const path = await ipc.exportData();
-      toast.success('Dados exportados', path);
+      await ipc.setPrivateMode(d);
+      setTrackerState(d === 'off' ? (draft.tracking_enabled ? 'running' : 'paused') : 'private');
+      await loadSettings();
+      toast.success(d === 'off' ? 'Modo privado desligado' : 'Modo privado ligado', d === 'off' ? 'O registro voltou.' : 'Nada é registrado enquanto ele estiver ligado.');
     } catch (e) {
-      toast.error('Falha ao exportar', e instanceof Error ? e.message : String(e));
+      toast.error('Não foi possível mudar o modo privado', e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(null);
-    }
-  };
-
-  const deleteAll = async () => {
-    setBusy('delete');
-    try {
-      await ipc.deleteAllData();
-      setConfirmDelete(false);
-      bumpData();
-      toast.success('Todos os dados foram apagados');
-    } catch (e) {
-      toast.error('Falha ao apagar', e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
 
   return (
     <Section id="privacidade" title="Privacidade" description="Tudo fica no seu Mac. Só sai o mínimo necessário para a IA classificar e escrever relatórios.">
-      <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-4 text-sm leading-6 text-ink-2 dark:border-brand-900/50 dark:bg-brand-900/15">
+      <div className="panel-raised p-4 text-sm leading-6 text-ink-2">
         <p className="mb-1 flex items-center gap-2 font-medium text-ink">
-          <Shield className="size-4 text-brand-600" /> O que sai da sua máquina
+          <Shield className="size-4 text-volt" strokeWidth={1.75} aria-hidden /> O que sai da sua máquina
         </p>
         <p>
-          Para a IA escolhida (Anthropic, OpenAI ou xAI) vão apenas: <strong>nome do app, título da janela, domínio</strong> (nunca a URL completa nem o conteúdo da página) e, quando a
-          política visual permite, um <strong>screenshot reduzido da janela ativa</strong> em blocos ambíguos. Apps e domínios bloqueados nunca são registrados.
-          Nada mais — sem telemetria, sem sincronização.
+          Para a IA escolhida (Anthropic, OpenAI ou xAI) vão apenas: <strong className="text-ink">nome do app, título da janela, domínio</strong> (nunca a URL completa nem o conteúdo da página) e, quando a política visual permite, um{' '}
+          <strong className="text-ink">screenshot reduzido da janela ativa</strong> em blocos ambíguos. Apps e domínios bloqueados nunca são registrados. Nada mais: sem telemetria, sem sincronização.
         </p>
-        <button type="button" onClick={() => setAiSentOpen(true)} className="mt-2 inline-flex items-center gap-1 text-brand-600 underline underline-offset-2 hover:text-brand-700 dark:text-brand-400">
-          Ver dados enviados à IA hoje <ExternalLink className="size-3" />
+        <button type="button" onClick={() => setAiSentOpen(true)} className="mt-2 inline-flex items-center gap-1 text-volt underline underline-offset-2 transition-colors duration-120 hover:brightness-110">
+          Ver o que foi enviado à IA hoje <ExternalLink className="size-3" strokeWidth={1.75} aria-hidden />
         </button>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3 rounded-control border border-line px-4 py-3">
+        <span className={clsx('flex size-8 shrink-0 items-center justify-center rounded-[8px]', isPrivate ? 'bg-violet/15 text-violet' : 'bg-panel-2 text-ink-3')} aria-hidden>
+          <EyeOff className="size-4" strokeWidth={1.75} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">Modo privado</p>
+          <p className="text-xs text-ink-3">
+            {isPrivate ? (draft.private_until ? `Ligado até ${fmtTime(draft.private_until)}. Nada é registrado.` : 'Ligado até você desligar. Nada é registrado.') : 'Pausa o registro por um tempo, sem mexer no rastreamento.'}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {isPrivate ? (
+            <Button size="sm" onClick={() => void setPrivate('off')} loading={busy}>
+              Desligar
+            </Button>
+          ) : (
+            PRIVATE_OPTIONS.map((o) => (
+              <Button key={o.value} size="sm" onClick={() => void setPrivate(o.value)} disabled={busy}>
+                {o.label}
+              </Button>
+            ))
+          )}
+        </div>
+      </div>
+
+      <Divider />
+
       <div className="flex flex-col gap-2">
-        <span className="text-[13px] font-medium">Análise visual (screenshots para a IA)</span>
+        <span className="text-[13px] font-medium">Análise visual: screenshots para a IA</span>
         <div role="radiogroup" aria-label="Política de análise visual" className="flex flex-col gap-2">
           {(
             [
@@ -477,19 +556,7 @@ function PrivacySection({ draft, patch }: SectionProps) {
               { value: 'all_except_blocked', label: 'Todos, exceto bloqueados', hint: 'Padrão. Screenshots reduzidos de qualquer app que não esteja bloqueado ou negado.' },
             ] as const
           ).map((opt) => (
-            <label key={opt.value} className={clsx('flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors', mode === opt.value ? 'border-brand-500 bg-brand-50/60 dark:bg-brand-900/20' : 'border-line hover:bg-surface-2')}>
-              <input
-                type="radio"
-                name="vision_policy"
-                className="mt-1 accent-brand-600"
-                checked={mode === opt.value}
-                onChange={() => setPolicy(opt.value === 'only_apps' ? { mode: 'only_apps', apps: onlyApps } : { mode: opt.value })}
-              />
-              <span>
-                <span className="block text-sm font-medium">{opt.label}</span>
-                <span className="block text-xs text-ink-3">{opt.hint}</span>
-              </span>
-            </label>
+            <RadioRow key={opt.value} name="vision_policy" checked={mode === opt.value} title={opt.label} text={opt.hint} onChange={() => setPolicy(opt.value === 'only_apps' ? { mode: 'only_apps', apps: onlyApps } : { mode: opt.value })} />
           ))}
         </div>
         {mode === 'only_apps' && (
@@ -497,19 +564,21 @@ function PrivacySection({ draft, patch }: SectionProps) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 min-[720px]:grid-cols-2">
         <Field label="Apps sem análise visual" hint="Nunca enviam screenshot, mesmo com a política acima.">
           {(id) => <TagInput id={id} value={draft.vision_denied_apps} onChange={(v) => patch({ vision_denied_apps: v })} placeholder="1Password…" />}
         </Field>
-        <Field label="Apps bloqueados" hint="Não são registrados de forma alguma (nem título, nem tempo).">
+        <Field label="Apps bloqueados" hint="Não são registrados de forma alguma: nem título, nem tempo.">
           {(id) => <TagInput id={id} value={draft.blocked_apps} onChange={(v) => patch({ blocked_apps: v })} placeholder="1Password, Banco…" />}
         </Field>
-        <Field label="Domínios bloqueados" hint="Sites que nunca entram no registro." className="col-span-2">
+        <Field label="Domínios bloqueados" hint="Sites que nunca entram no registro." className="min-[720px]:col-span-2">
           {(id) => <TagInput id={id} value={draft.blocked_domains} onChange={(v) => patch({ blocked_domains: v })} placeholder="bb.com.br, nubank.com.br…" />}
         </Field>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <Divider />
+
+      <div className="grid grid-cols-1 gap-4 min-[900px]:grid-cols-3">
         <NumberField label="Intervalo de screenshots" value={draft.screenshot_interval_secs} min={30} step={30} onChange={(v) => patch({ screenshot_interval_secs: v })} suffix="s" />
         <NumberField label="Retenção" hint="Imagens são apagadas depois disso." value={draft.screenshot_retention_hours} min={1} onChange={(v) => patch({ screenshot_retention_hours: v })} suffix="h" />
         <NumberField label="Tamanho máximo" value={draft.screenshot_max_edge} min={256} step={64} onChange={(v) => patch({ screenshot_max_edge: v })} suffix="px" />
@@ -518,37 +587,21 @@ function PrivacySection({ draft, patch }: SectionProps) {
         {(id) => <Toggle id={id} checked={draft.keep_screenshots_for_review} onChange={(v) => patch({ keep_screenshots_for_review: v })} />}
       </Field>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
-        <Button icon={<Download className="size-4" />} onClick={() => void exportData()} loading={busy === 'export'}>
-          Exportar meus dados
-        </Button>
-        <Button variant="danger" icon={<Trash2 className="size-4" />} onClick={() => setConfirmDelete(true)}>
-          Apagar todos os dados
-        </Button>
-      </div>
-
-      <Dialog
-        open={confirmDelete}
-        onClose={() => setConfirmDelete(false)}
-        title="Apagar todos os dados?"
-        description="Blocos, screenshots, relatórios, correções e regras aprendidas serão removidos permanentemente. As configurações e a chave de API são mantidas."
-        width="sm"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
-              Cancelar
-            </Button>
-            <Button variant="danger" onClick={() => void deleteAll()} loading={busy === 'delete'}>
-              Apagar tudo
-            </Button>
-          </>
-        }
-      >
-        <p className="text-sm text-ink-2">Esta ação não pode ser desfeita. Exporte seus dados antes, se quiser guardar um histórico.</p>
-      </Dialog>
-
       <AiSentDialog open={aiSentOpen} onClose={() => setAiSentOpen(false)} />
     </Section>
+  );
+}
+
+/** A selectable row with a native radio, styled: the chosen one gets a volt hairline and tint. */
+function RadioRow({ name, checked, title, text, onChange }: { name: string; checked: boolean; title: string; text: string; onChange: () => void }) {
+  return (
+    <label className={clsx('flex cursor-pointer items-start gap-3 rounded-control border p-3 transition-colors duration-150', checked ? 'border-volt/60 bg-volt-soft' : 'border-line hover:bg-panel-2')}>
+      <input type="radio" name={name} className="mt-1 accent-[var(--volt)]" checked={checked} onChange={onChange} />
+      <span>
+        <span className="block text-sm font-medium">{title}</span>
+        <span className="block text-xs leading-5 text-ink-3">{text}</span>
+      </span>
+    </label>
   );
 }
 
@@ -564,15 +617,17 @@ function AiSentDialog({ open, onClose }: { open: boolean; onClose: () => void })
       ) : (
         <ul className="flex flex-col gap-2">
           {data.map((b) => (
-            <li key={b.id} className="rounded-xl border border-line p-3">
-              <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                <span className="font-medium">
-                  {fmtTime(b.started_at)} · {b.app_name}
-                  {b.domain ? ` · ${b.domain}` : ''}
+            <li key={b.id} className="rounded-control border border-line p-3">
+              <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                <span className="num font-medium">{fmtTime(b.started_at)}</span>
+                <span className="font-medium">{b.app_name}</span>
+                {b.domain && <span className="text-ink-2">{b.domain}</span>}
+                <span className="ml-auto flex items-center gap-2 text-ink-3">
+                  {b.screenshot_id && <Badge tone="violet">com imagem</Badge>}
+                  {b.ai_sent_at && <span className="num">{fmtDateTime(b.ai_sent_at)}</span>}
                 </span>
-                <span className="text-ink-3">{b.ai_sent_at ? fmtDateTime(b.ai_sent_at) : ''}{b.screenshot_id ? ' · com imagem' : ''}</span>
               </div>
-              <pre className="scroll-thin overflow-x-auto rounded-lg bg-surface-2 p-2 font-mono text-[11px] leading-4 text-ink-2">{b.ai_payload ?? '(payload não retido)'}</pre>
+              <pre className="scroll-thin overflow-x-auto rounded-[8px] bg-panel-2 p-2 font-mono text-[11px] leading-4 text-ink-2">{b.ai_payload ?? '(payload não retido)'}</pre>
             </li>
           ))}
         </ul>
@@ -585,7 +640,7 @@ function ReportsSection({ draft, patch }: SectionProps) {
   return (
     <Section id="relatorios" title="Relatórios" description="Contexto que a IA usa para escrever relatórios na sua voz.">
       <Field label="Horário padrão" hint="Usado pelas categorias sem horário próprio.">
-        {(id) => <Input id={id} type="time" value={hhmmToInput(draft.report_default_time)} onChange={(e) => e.target.value && patch({ report_default_time: inputToHhmm(e.target.value) })} className="w-36" />}
+        {(id) => <Input id={id} type="time" value={hhmmToInput(draft.report_default_time)} onChange={(e) => e.target.value && patch({ report_default_time: inputToHhmm(e.target.value) })} className="num w-36" />}
       </Field>
       <Field label="Quem é você" hint="Cargo, instituições, projetos, como gosta que os relatórios sejam escritos.">
         {(id) => (
@@ -618,11 +673,16 @@ function UbiSection({ draft, patch }: SectionProps) {
   const snoozed = n.snoozed_until && new Date(n.snoozed_until).getTime() > Date.now();
 
   return (
-    <Section id="ubi" title="UBI & notificações" description="Quando e como o mascote pode te interromper.">
+    <Section
+      id="ubi"
+      title="UBI e notificações"
+      description="Quando e como o mascote pode te interromper."
+      action={snoozed && n.snoozed_until ? <Badge tone="amber">em silêncio até {fmtTime(n.snoozed_until)}</Badge> : undefined}
+    >
       <Field label="Avisos do UBI" hint="Desligue para o UBI só observar." inline>
         {(id) => <Toggle id={id} checked={n.enabled} onChange={(v) => setN({ enabled: v })} />}
       </Field>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+      <div className={clsx('grid grid-cols-1 gap-x-8 gap-y-3 rounded-control border border-line p-4 min-[720px]:grid-cols-2', !n.enabled && 'opacity-60')}>
         {(
           [
             ['unproductive', 'Improdutividade', 'Muito tempo em categorias não produtivas.'],
@@ -637,26 +697,27 @@ function UbiSection({ draft, patch }: SectionProps) {
           </Field>
         ))}
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 min-[720px]:grid-cols-2">
         <NumberField label="Máximo por dia" value={n.max_per_day} min={0} max={50} onChange={(v) => setN({ max_per_day: v })} suffix="avisos" />
         <NumberField label="Intervalo mínimo" value={n.cooldown_mins} min={1} onChange={(v) => setN({ cooldown_mins: v })} suffix="min" />
       </div>
-      <div className="grid grid-cols-3 items-end gap-4">
-        <Field label="Horário silencioso" inline>
+      <Divider />
+      <div className="grid grid-cols-1 items-end gap-4 min-[720px]:grid-cols-3">
+        <Field label="Horário silencioso" hint="Sem avisos nem notificações." inline>
           {(id) => <Toggle id={id} checked={draft.quiet_hours.enabled} onChange={(v) => patch({ quiet_hours: { ...draft.quiet_hours, enabled: v } })} />}
         </Field>
         <Field label="Das">
-          {(id) => <Input id={id} type="time" value={hhmmToInput(draft.quiet_hours.start)} disabled={!draft.quiet_hours.enabled} onChange={(e) => e.target.value && patch({ quiet_hours: { ...draft.quiet_hours, start: inputToHhmm(e.target.value) } })} />}
+          {(id) => <Input id={id} type="time" className="num" value={hhmmToInput(draft.quiet_hours.start)} disabled={!draft.quiet_hours.enabled} onChange={(e) => e.target.value && patch({ quiet_hours: { ...draft.quiet_hours, start: inputToHhmm(e.target.value) } })} />}
         </Field>
         <Field label="Até">
-          {(id) => <Input id={id} type="time" value={hhmmToInput(draft.quiet_hours.end)} disabled={!draft.quiet_hours.enabled} onChange={(e) => e.target.value && patch({ quiet_hours: { ...draft.quiet_hours, end: inputToHhmm(e.target.value) } })} />}
+          {(id) => <Input id={id} type="time" className="num" value={hhmmToInput(draft.quiet_hours.end)} disabled={!draft.quiet_hours.enabled} onChange={(e) => e.target.value && patch({ quiet_hours: { ...draft.quiet_hours, end: inputToHhmm(e.target.value) } })} />}
         </Field>
       </div>
       <Field label="Apps silenciosos" hint="Nenhum aviso enquanto estes apps estiverem em primeiro plano (reuniões, apresentações).">
         {(id) => <TagInput id={id} value={n.silent_apps} onChange={(v) => setN({ silent_apps: v })} placeholder="Microsoft Teams, Keynote…" />}
       </Field>
       <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
-        <span className="text-sm text-ink-2">Silenciar agora:</span>
+        <span className="mr-1 text-sm text-ink-2">Silenciar agora por</span>
         <Button size="sm" onClick={() => void snooze(30)}>
           30 min
         </Button>
@@ -666,17 +727,16 @@ function UbiSection({ draft, patch }: SectionProps) {
         <Button size="sm" onClick={() => void snooze(4 * 60)}>
           4 horas
         </Button>
-        {snoozed && n.snoozed_until && <Badge tone="warning">silenciado até {fmtTime(n.snoozed_until)}</Badge>}
       </div>
     </Section>
   );
 }
 
 const PERM_LABEL: Record<PermissionState, { text: string; color: string }> = {
-  granted: { text: 'Concedida', color: '#10b981' },
-  denied: { text: 'Negada', color: '#ef4444' },
-  unknown: { text: 'Não solicitada', color: '#94a3b8' },
-  not_applicable: { text: 'Não se aplica', color: '#94a3b8' },
+  granted: { text: 'Concedida', color: 'var(--signal)' },
+  denied: { text: 'Negada', color: 'var(--rose)' },
+  unknown: { text: 'Não solicitada', color: 'var(--ink-4)' },
+  not_applicable: { text: 'Não se aplica', color: 'var(--ink-4)' },
 };
 
 export function PermissionRows({ view, onChanged }: { view: SettingsView; onChanged?: () => void }) {
@@ -684,8 +744,8 @@ export function PermissionRows({ view, onChanged }: { view: SettingsView; onChan
   const loadSettings = useAppStore((s) => s.loadSettings);
   const toast = useToast();
   const rows: { kind: PermissionKind; label: string; hint: string }[] = [
-    { kind: 'screen_recording', label: 'Gravação de Tela', hint: 'Necessária para ler títulos de janela e tirar screenshots. Sem ela, os blocos ficam sem título.' },
-    { kind: 'automation', label: 'Automação (navegadores)', hint: 'Lê a URL da aba ativa do Chrome/Safari/Arc via AppleScript. O macOS pergunta uma vez por navegador.' },
+    { kind: 'screen_recording', label: 'Gravação de tela', hint: 'Necessária para ler títulos de janela e tirar screenshots. Sem ela, os blocos ficam sem título.' },
+    { kind: 'automation', label: 'Automação nos navegadores', hint: 'Lê a URL da aba ativa do Chrome, Safari ou Arc via AppleScript. O macOS pergunta uma vez por navegador.' },
     { kind: 'accessibility', label: 'Acessibilidade', hint: 'Opcional. Melhora a detecção de ociosidade e do app ativo em alguns apps.' },
   ];
   const request = async (kind: PermissionKind) => {
@@ -701,15 +761,15 @@ export function PermissionRows({ view, onChanged }: { view: SettingsView; onChan
     }
   };
   return (
-    <ul className="divide-y divide-line rounded-xl border border-line">
+    <ul className="divide-y divide-line rounded-card border border-line">
       {rows.map((r) => {
         const state = view.permissions[r.kind];
         const p = PERM_LABEL[state];
         return (
-          <li key={r.kind} className="flex items-center gap-4 p-3">
-            <div className="min-w-0 flex-1">
+          <li key={r.kind} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+            <div className="min-w-0 flex-1 basis-60">
               <p className="text-sm font-medium">{r.label}</p>
-              <p className="text-xs text-ink-3">{r.hint}</p>
+              <p className="text-xs leading-5 text-ink-3">{r.hint}</p>
             </div>
             <StatusPill color={p.color}>{p.text}</StatusPill>
             {state !== 'granted' && state !== 'not_applicable' && (
@@ -730,12 +790,12 @@ function PermissionsSection({ view }: { view: SettingsView }) {
   const titlesEmpty = useMemo(() => !!dash && dash.timeline.length > 0 && dash.timeline.filter((b) => b.app_id !== 'idle' && b.app_id !== 'private').every((b) => !b.title), [dash]);
   const needsRestart = view.permissions.screen_recording === 'granted' && titlesEmpty;
   return (
-    <Section id="permissoes" title="Permissões (macOS)" description="O macOS exige permissões explícitas para ler janelas e capturar a tela.">
+    <Section id="permissoes" title="Permissões do macOS" description="O macOS exige permissões explícitas para ler janelas e capturar a tela.">
       <PermissionRows view={view} />
       {needsRestart && (
-        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900/50 dark:bg-amber-900/20">
-          <Camera className="size-4 text-amber-600" />
-          <span className="flex-1">A permissão foi concedida, mas os títulos ainda chegam vazios. O macOS só aplica a Gravação de Tela após reiniciar o app.</span>
+        <div className="flex flex-wrap items-center gap-3 rounded-control border border-amber/40 bg-amber/10 p-3 text-sm">
+          <Camera className="size-4 shrink-0 text-amber" strokeWidth={1.75} aria-hidden />
+          <span className="flex-1 basis-60 leading-5">A permissão foi concedida, mas os títulos ainda chegam vazios. O macOS só aplica a Gravação de tela depois de reiniciar o app.</span>
           <Button size="sm" variant="primary" onClick={() => void ipc.restartApp()}>
             Reiniciar o ubiqX
           </Button>
@@ -746,37 +806,92 @@ function PermissionsSection({ view }: { view: SettingsView }) {
 }
 
 function AboutSection({ view }: { view: SettingsView }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState<'export' | 'delete' | null>(null);
+  const bumpData = useAppStore((s) => s.bumpData);
   const toast = useToast();
+
+  const exportData = async () => {
+    setBusy('export');
+    try {
+      const path = await ipc.exportData();
+      toast.success('Dados exportados', path);
+    } catch (e) {
+      toast.error('Não foi possível exportar', e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const deleteAll = async () => {
+    setBusy('delete');
+    try {
+      await ipc.deleteAllData();
+      setConfirmDelete(false);
+      bumpData();
+      toast.success('Todos os dados foram apagados');
+    } catch (e) {
+      toast.error('Não foi possível apagar', e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const engine = view.tracker_state === 'running' ? 'Rastreando' : view.tracker_state === 'paused' ? 'Pausado' : view.tracker_state === 'private' ? 'Modo privado' : view.tracker_state === 'idle' ? 'Ocioso' : 'Bloqueado';
+  const ai = view.ai_health.state === 'ok' ? 'Ativa' : view.ai_health.state === 'not_configured' ? 'Sem chave' : view.ai_health.state === 'paused' ? 'Pausada' : 'Instável';
+
   return (
-    <Section id="sobre" title="Sobre">
-      <dl className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-2 text-sm">
+    <Section id="sobre" title="Sobre" description="Feito com Rust, Tauri 2 e React. O UBI agradece as correções: cada uma o deixa mais esperto.">
+      <dl className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-2.5 text-sm">
         <dt className="text-ink-3">Versão</dt>
-        <dd className="font-medium">ubiqX {view.version}</dd>
+        <dd className="num font-medium">ubiqX {view.version}</dd>
         <dt className="text-ink-3">Pasta de dados</dt>
-        <dd className="truncate font-mono text-xs" title={view.data_dir}>
+        <dd className="truncate font-mono text-xs leading-5" title={view.data_dir}>
           {view.data_dir}
         </dd>
         <dt className="text-ink-3">Plataforma</dt>
         <dd>{view.platform === 'macos' ? 'macOS' : 'Outra (modo de desenvolvimento)'}</dd>
         <dt className="text-ink-3">Motor</dt>
-        <dd>
-          {view.tracker_state === 'running' ? 'rastreando' : view.tracker_state} · IA {view.ai_health.state === 'ok' ? 'ok' : view.ai_health.state}
-        </dd>
+        <dd>{engine}</dd>
+        <dt className="text-ink-3">IA</dt>
+        <dd>{ai}</dd>
       </dl>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
+        <Button icon={<Download className="size-4" strokeWidth={1.75} />} onClick={() => void exportData()} loading={busy === 'export'}>
+          Exportar meus dados
+        </Button>
         <Button
-          icon={<ExternalLink className="size-4" />}
+          icon={<ExternalLink className="size-4" strokeWidth={1.75} />}
           onClick={() => {
             ipc.openExternal(REPO_URL).catch((e: unknown) => toast.error('Não foi possível abrir', e instanceof Error ? e.message : String(e)));
           }}
         >
           Repositório no GitHub
         </Button>
+        <Button variant="danger" className="ml-auto" icon={<Trash2 className="size-4" strokeWidth={1.75} />} onClick={() => setConfirmDelete(true)}>
+          Apagar todos os dados
+        </Button>
       </div>
-      <p className="text-xs text-ink-3">
-        Feito com Rust, Tauri 2 e React. O UBI agradece as correções: cada uma o deixa mais esperto.
-      </p>
+
+      <Dialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title="Apagar todos os dados?"
+        description="Blocos, screenshots, relatórios, correções e regras aprendidas serão removidos de vez. As configurações e a chave de API ficam."
+        width="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
+              Cancelar
+            </Button>
+            <Button variant="danger" onClick={() => void deleteAll()} loading={busy === 'delete'}>
+              Apagar tudo
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm leading-6 text-ink-2">Não dá para desfazer. Exporte seus dados antes, se quiser guardar um histórico.</p>
+      </Dialog>
     </Section>
   );
 }
-

@@ -3,7 +3,7 @@ import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTML
 import { useId } from 'react';
 
 const base =
-  'w-full rounded-xl border border-line-strong bg-surface px-3 text-sm text-ink placeholder:text-ink-3 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/25 disabled:opacity-60 disabled:bg-surface-2';
+  'w-full rounded-control border border-line-2 bg-panel-2 px-3 text-sm text-ink placeholder:text-ink-4 transition-[border-color,box-shadow] duration-150 focus:border-volt focus:outline-none focus:ring-2 focus:ring-volt/25 disabled:cursor-not-allowed disabled:opacity-50';
 
 export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={clsx(base, 'h-9', className)} {...rest} />;
@@ -22,7 +22,7 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
 }
 
 const CHEVRON =
-  "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>\")";
+  "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%237487a6' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>\")";
 
 interface FieldProps {
   label: ReactNode;

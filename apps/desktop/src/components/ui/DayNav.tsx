@@ -23,13 +23,13 @@ export function DayNav({ date, onChange, className }: { date: IsoDate; onChange:
     el.click();
   };
   return (
-    <div className={clsx('inline-flex h-9 items-center gap-0.5 rounded-xl border border-line bg-surface p-0.5', className)}>
+    <div className={clsx('inline-flex h-9 items-center gap-0.5 rounded-control border border-line bg-panel p-0.5', className)}>
       <IconButton label="Dia anterior" size="sm" onClick={() => onChange(shiftDate(date, -1))}>
-        <ChevronLeft className="size-4" />
+        <ChevronLeft className="size-4" strokeWidth={1.75} />
       </IconButton>
       <div className="relative">
-        <button type="button" onClick={openPicker} className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-sm font-medium tabular-nums hover:bg-surface-2" aria-label={`Escolher data (${fmtDateNumeric(date)})`}>
-          <CalendarDays className="size-3.5 text-ink-3" />
+        <button type="button" onClick={openPicker} className="num flex h-7 items-center gap-1.5 rounded-[8px] px-2 text-sm font-medium hover:bg-panel-2" aria-label={`Escolher data (${fmtDateNumeric(date)})`}>
+          <CalendarDays className="size-3.5 text-ink-3" strokeWidth={1.75} />
           <span className="text-ink-3">{fmtWeekday(date)}</span>
           {fmtDateNumeric(date)}
         </button>
@@ -45,13 +45,13 @@ export function DayNav({ date, onChange, className }: { date: IsoDate; onChange:
         />
       </div>
       <IconButton label="Próximo dia" size="sm" disabled={isToday(date)} onClick={() => onChange(shiftDate(date, 1))}>
-        <ChevronRight className="size-4" />
+        <ChevronRight className="size-4" strokeWidth={1.75} />
       </IconButton>
       <button
         type="button"
         onClick={() => onChange(todayIso())}
         disabled={isToday(date)}
-        className="h-7 rounded-lg px-2 text-xs font-medium text-brand-600 hover:bg-brand-50 disabled:text-ink-3 disabled:hover:bg-transparent dark:text-brand-400 dark:hover:bg-brand-900/30"
+        className="h-7 rounded-[8px] px-2 text-xs font-medium text-volt transition-colors hover:bg-volt-soft disabled:text-ink-4 disabled:hover:bg-transparent"
       >
         Hoje
       </button>

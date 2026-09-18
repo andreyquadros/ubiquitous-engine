@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
 import clsx from 'clsx';
@@ -14,8 +14,10 @@ interface Props {
   width?: 'sm' | 'md' | 'lg';
 }
 
+/** Modal on a glass panel. Escape and backdrop close it; focus moves to the first control. */
 export function Dialog({ open, onClose, title, description, children, footer, width = 'md' }: Props) {
   const panel = useRef<HTMLDivElement>(null);
+  const reduce = useReducedMotion();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -36,11 +38,11 @@ export function Dialog({ open, onClose, title, description, children, footer, wi
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/40 p-6 backdrop-blur-[2px]"
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-[#02040a]/60 p-6 backdrop-blur-[3px]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
+          transition={{ duration: reduce ? 0 : 0.15 }}
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) onClose();
           }}
@@ -50,23 +52,23 @@ export function Dialog({ open, onClose, title, description, children, footer, wi
             role="dialog"
             aria-modal="true"
             aria-label={typeof title === 'string' ? title : undefined}
-            className={clsx('card max-h-[85vh] w-full overflow-hidden shadow-pop', width === 'sm' ? 'max-w-sm' : width === 'lg' ? 'max-w-3xl' : 'max-w-lg')}
-            initial={{ opacity: 0, y: 10, scale: 0.98 }}
+            className={clsx('glass max-h-[85vh] w-full overflow-hidden rounded-shell', width === 'sm' ? 'max-w-sm' : width === 'lg' ? 'max-w-3xl' : 'max-w-lg')}
+            initial={reduce ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.98 }}
-            transition={{ duration: 0.18 }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.98 }}
+            transition={{ duration: reduce ? 0 : 0.18, ease: [0.16, 1, 0.3, 1] }}
           >
             <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
-              <div>
-                <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+              <div className="min-w-0">
+                <h2 className="display text-base">{title}</h2>
                 {description && <p className="mt-0.5 text-xs text-ink-2">{description}</p>}
               </div>
               <IconButton label="Fechar" onClick={onClose} size="sm">
-                <X className="size-4" />
+                <X className="size-4" strokeWidth={1.75} />
               </IconButton>
             </div>
             <div className="scroll-thin max-h-[60vh] overflow-y-auto px-5 py-4">{children}</div>
-            {footer && <div className="flex items-center justify-end gap-2 border-t border-line bg-surface-2/50 px-5 py-3">{footer}</div>}
+            {footer && <div className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">{footer}</div>}
           </motion.div>
         </motion.div>
       )}

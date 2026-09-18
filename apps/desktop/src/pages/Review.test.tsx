@@ -32,6 +32,7 @@ vi.mock('../lib/ipc', () => ({
 }));
 
 import { Review } from './Review';
+import { ipc } from '../lib/ipc';
 import { useAppStore } from '../lib/store';
 
 describe('Review page', () => {
@@ -58,6 +59,20 @@ describe('Review page', () => {
 
     // the rule suggestion chip shows up after the correction
     await waitFor(() => expect(screen.getByText(/mail\.google\.com/, { selector: 'button span' })).toBeInTheDocument());
+  });
+
+  it('celebrates an empty queue with UBI and a way forward', async () => {
+    vi.mocked(ipc.getReviewGroups).mockResolvedValueOnce([]);
+    render(
+      <MemoryRouter>
+        <Review />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText('Nada para revisar')).toBeInTheDocument());
+    expect(screen.getByTestId('ubi')).toBeInTheDocument();
+    expect(screen.getByText(/a fila está vazia/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ver a Timeline' })).toHaveAttribute('href', '/timeline');
+    expect(screen.queryAllByTestId('review-row')).toHaveLength(0);
   });
 
   it('ignores shortcuts while typing in an input', async () => {

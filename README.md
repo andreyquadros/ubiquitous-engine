@@ -82,7 +82,7 @@ Guia completo (assinatura estável, permissões, onde ficam os dados, problemas 
 
 ```bash
 git clone https://github.com/andreyquadros/ubiquitous-engine ubiqx && cd ubiqx
-scripts/install-ubi-model.sh ~/Downloads/Ubi.glb   # opcional: coloca o UBI 3D na interface
+scripts/install-ubi-model.sh                       # opcional: instala a arte do UBI (ubi.png e/ou Ubi.glb de ~/Downloads)
 cd apps/desktop && pnpm install && pnpm tauri build
 cd ../.. && scripts/codesign-dev.sh                # identidade "ubiqX Dev" — permissões sobrevivem a rebuilds
 open target/release/bundle/macos/ubiqX.app
