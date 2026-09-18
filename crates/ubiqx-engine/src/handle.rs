@@ -206,7 +206,7 @@ impl EngineHandle {
     /// Productivity recommendations from the advisor, cached per local day.
     pub async fn advice(&self, force: bool) -> CoreResult<Advice> {
         let state = self.state.clone();
-        let today = crate::service::today();
+        let today = crate::service::today(&state);
         let key = format!("advice_{today}");
         if !force {
             if let Some(cached) = state.deps.repos.kv.get(&key)? {

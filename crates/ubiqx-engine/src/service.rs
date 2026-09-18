@@ -54,8 +54,11 @@ pub fn local_day_range(date: NaiveDate) -> TimeRange {
     day_range(date)
 }
 
-pub fn today() -> NaiveDate {
-    Local::now().date_naive()
+/// The engine's current local date. Always derived from the injected clock (never the wall
+/// clock) so caches keyed by day agree with the rest of the engine, including in tests and
+/// around midnight.
+pub fn today(state: &EngineState) -> NaiveDate {
+    state.now().with_timezone(&Local).date_naive()
 }
 
 pub fn dashboard(state: &EngineState, date: NaiveDate) -> CoreResult<DashboardData> {
