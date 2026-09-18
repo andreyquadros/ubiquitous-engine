@@ -60,14 +60,18 @@ workflows:
           curl -fsSL "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/${ASSET}" -o "$HOME/.local/bin/pnpm"
           chmod +x "$HOME/.local/bin/pnpm"
           export PATH="$HOME/.local/bin:$PATH"
-          echo "pnpm em uso: $(command -v pnpm) $(pnpm --version)"
+          # A máquina do Codemagic tem um package.json acima do clone configurado para yarn; com a checagem
+          # estrita ligada o pnpm 10 recusa rodar ("This project is configured to use yarn").
+          export npm_config_package_manager_strict=false
           cd apps/desktop
+          echo "pnpm em uso: $(command -v pnpm) $(pnpm --version)"
           pnpm install --frozen-lockfile
       - name: Compilar ubiqX.app
         script: |
           set -e
           source "$HOME/.cargo/env"
           export PATH="$HOME/.local/bin:$PATH"
+          export npm_config_package_manager_strict=false
           cd apps/desktop
           export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
           pnpm tauri build --bundles app
@@ -77,6 +81,7 @@ workflows:
           set -e
           source "$HOME/.cargo/env"
           export PATH="$HOME/.local/bin:$PATH"
+          export npm_config_package_manager_strict=false
           cd apps/desktop
           export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
           pnpm tauri build --bundles dmg
