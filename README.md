@@ -36,7 +36,11 @@ e ele aprende. O **UBI**, o mascote, mostra seu humor de foco e avisa quando voc
   Custo típico estimado: **US$ 3–6/mês** com Claude, menos com OpenAI ou Grok; orçamento mensal configurável
   que pausa a IA ao ser atingido.
 - **Você escolhe a IA**: Anthropic Claude, OpenAI ou xAI Grok, cada uma com a sua própria chave de API guardada no
-  Keychain. Troque quando quiser em Configurações → IA; as chaves das outras ficam guardadas.
+  cofre do sistema (Keychain no macOS, Gerenciador de Credenciais no Windows, Secret Service no Linux). Troque
+  quando quiser em Configurações → IA; as chaves das outras ficam guardadas.
+- **Ou a IA do Ubi**: no plano mensal você não precisa de chave nenhuma. Uma licença assinada libera os modelos
+  `ubi-fast` e `ubi-smart` através do proxy do ubiqX, que mede o gasto do mês e mostra quanto resta em
+  Configurações. Como funciona e como operar o serviço: [`docs/LICENSING.md`](docs/LICENSING.md).
 - **Privacidade por padrão**: URLs sem query string, e-mails/telefones/CPF/CNPJ mascarados, títulos de apps de
   mensagens reduzidos ao nome do app; "Dados enviados à IA" mostra exatamente o que saiu da máquina. Modo privado
   com prazo, apps e domínios bloqueados e janelas anônimas viram blocos "[privado]" — o tempo conta, o conteúdo não.
