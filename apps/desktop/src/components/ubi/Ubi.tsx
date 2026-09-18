@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import clsx from 'clsx';
 import type { Mood } from '../../lib/types';
@@ -73,11 +73,49 @@ class Boundary extends Component<{ fallback: ReactNode; onError: () => void; chi
 
 type Mode = 'svg' | 'png' | '3d';
 
+/** Dev-only overrides (`window.__ubiqxUbi.set({ mood, speaking })`) so the rig can be driven from the browser. */
+interface Override {
+  mood?: Mood;
+  speaking?: string | null;
+}
+const overrideListeners = new Set<(o: Override) => void>();
+declare global {
+  interface Window {
+    __ubiqxUbi?: { set: (o: Override) => void; reset: () => void };
+  }
+}
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  window.__ubiqxUbi = {
+    set: (o) => overrideListeners.forEach((l) => l(o)),
+    reset: () => overrideListeners.forEach((l) => l({})),
+  };
+}
+
 /** The mascot with an optional speech bubble. Picks the richest available presentation. */
-export function Ubi({ mood, size = 160, speaking, variant = 'auto', crop = 'full', className }: UbiProps) {
+export function Ubi({ mood: moodProp, size = 160, speaking: speakingProp, variant = 'auto', crop = 'full', className }: UbiProps) {
   const [mode, setMode] = useState<Mode>('svg');
   const [pngOk, setPngOk] = useState(false);
+  const [override, setOverride] = useState<Override>({});
   const reduce = useReducedMotion();
+  const bubble = useRef<HTMLDivElement>(null);
+  // Callback ref for the bubble: with `key={speaking}` the exiting and the entering bubble would share one object ref,
+  // and the old bubble's unmount (0.2 s later) would null it out from under the new one. Each bubble only clears itself.
+  const setBubble = useCallback((el: HTMLDivElement | null) => {
+    if (el) bubble.current = el;
+    return () => {
+      if (bubble.current === el) bubble.current = null;
+    };
+  }, []);
+  const mood = override.mood ?? moodProp;
+  const speaking = override.speaking === undefined ? speakingProp : (override.speaking ?? undefined);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || variant !== 'auto') return;
+    overrideListeners.add(setOverride);
+    return () => {
+      overrideListeners.delete(setOverride);
+    };
+  }, [variant]);
 
   useEffect(() => {
     if (variant === 'svg') return;
@@ -103,7 +141,7 @@ export function Ubi({ mood, size = 160, speaking, variant = 'auto', crop = 'full
     art = (
       <Boundary fallback={pngOk ? <UbiImage mood={mood} size={size} crop={crop} /> : svg} onError={onGlbError}>
         <Suspense fallback={svg}>
-          <Ubi3d mood={mood} size={size} fallback={svg} />
+          <Ubi3d mood={mood} size={size} fallback={svg} speaking={speaking} bubbleRef={bubble} />
         </Suspense>
       </Boundary>
     );
@@ -114,6 +152,7 @@ export function Ubi({ mood, size = 160, speaking, variant = 'auto', crop = 'full
         {speaking && (
           <motion.div
             key={speaking}
+            ref={setBubble}
             role="status"
             initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}

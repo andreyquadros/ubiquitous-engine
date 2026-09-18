@@ -69,7 +69,14 @@ button text.** Numbers in sentences use pt-BR forms from `lib/format.ts` (`2h10`
 
 One orchestrated page-load moment, on Hoje only: dial arc draws in 900 ms `ease-out-expo`, the number counts up, the
 24h track segments and the hourly bars rise with a 35 ms stagger. UBI floats (y 0 → -8 → 0, 4.2 s, ease-in-out).
-Everything else answers a user action: expand/collapse 180 ms, popover 120 ms, dialog 180 ms in / 120 ms out,
+
+UBI's motion vocabulary (the rigged 3D model): one base clip per mood — `Idle` (calm; focused at 0.85×), `Excited`,
+`Worried`, `Sleep` — cross-faded in 0.35 s, and short one-shots that return to it: `Yes` when a new line appears in the
+bubble (at most one nod per 6 s), `Wave` when the mood turns excited or the mascot is tapped, `No` on a tap while
+worried. On top of the clips the head follows the pointer anywhere in the window (yaw ±45°, pitch −25…+30°, damped at
+8/s, 70 % Head / 30 % Neck) and glances at the speech bubble for 2.5 s on every new line and for 1.2 s every 10 s.
+Reduced motion freezes the clips on their first frame, keeps the look-at without easing and plays no one-shots. The
+PNG/SVG stand-ins and an unrigged export keep the plain float. Everything else answers a user action: expand/collapse 180 ms, popover 120 ms, dialog 180 ms in / 120 ms out,
 toggle 150 ms, hover colour 120 ms. No hover-lift on cards, no fade-up on every section. `useReducedMotion()` from
 framer-motion guards every animated component; CSS `prefers-reduced-motion` zeroes durations globally. Animate
 transform/opacity/stroke-dashoffset only.
@@ -144,8 +151,9 @@ Charts: `FocusDial({ score, mood, size?, stroke?, label?, animate? })` (alias `F
 `HourlyFocus({ hourly, height?, animate? })`, `WeeklyStacked({ days, categories, height? })`, `FocusTrend({ days, height? })`.
 
 UBI: `Ubi({ mood, size?, speaking?, variant?: 'auto'|'flat'|'svg', crop?, className? })` picks GLB → PNG → SVG (`flat`:
-PNG → SVG, for the rail head avatar); `Ubi3d({ mood, size, fallback? })` (the user's `/ubi/Ubi.glb` via GLTFLoader on a
-transparent premultiplied canvas: RoomEnvironment IBL, mood fill light, float/parallax/blink, stops off screen);
+PNG → SVG, for the rail head avatar); `Ubi3d({ mood, size, fallback?, speaking?, bubbleRef? })` (the user's `/ubi/Ubi.glb` via GLTFLoader on a
+transparent premultiplied canvas: RoomEnvironment IBL, mood fill light, blink, mood clips + one-shots and the head
+look-at when the export is rigged (`ubi/rig.ts`), float/parallax otherwise, stops off screen);
 `UbiImage({ mood, size?, crop?: 'full'|'head', parallax?, glowFloor? })` (the user's `/ubi/ubi.png`, background removed
 client-side); `FloorGlow({ mood, size, reduce })` shared mood pool under both; `UbiSvg({ mood, size? })` fallback;
 `UbiCard({ data, nudge })` = assistant panel (nudge, AI status, budget).

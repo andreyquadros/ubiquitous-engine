@@ -21,3 +21,7 @@ Thumbs.db
 !.vscode/extensions.json
 # Local data created by the CLI during development
 /.ubiqx-dev
+
+# Python tooling (scripts/ubi-rig)
+__pycache__/
+*.pyc

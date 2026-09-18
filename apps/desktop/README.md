@@ -41,3 +41,15 @@ modelo falhar, o app cai para o PNG e depois para o SVG. Com o `ubi.glb` (e/ou o
 reinicie o `pnpm dev`. **Commite os dois arquivos**: os builds na nuvem (GitHub Actions e Codemagic) só empacotam
 o que está no repositório. `pnpm hero` regenera `docs/ubi-hero.png` a partir da arte instalada. Detalhes (dicas de
 export, `ROTATION_Y`, Draco) em `public/ubi/README.md`.
+
+O modelo é **rigado e animado**: o `Ubi.glb` traz um esqueleto (`Root > Hips > Spine > Chest > Neck > Head`, braços,
+pernas e o osso `Orb` da esfera) e os clipes `Idle`, `Excited`, `Worried`, `Sleep` (um por humor, em loop) e `Yes`,
+`No`, `Wave`, `Jump` (curtos). `src/components/ubi/Ubi3d.tsx` toca o clipe do humor com `AnimationMixer` (crossfade
+de 0,35 s), dispara `Yes` quando a fala do balão muda, `Wave` quando o humor vira "empolgado" ou ao clicar no mascote
+(`No` se estiver preocupado) e, por cima dos clipes, gira a cabeça (70 % `Head`, 30 % `Neck`) para seguir o mouse em
+qualquer ponto da janela e para olhar o balão de dica a cada nova frase e a cada ~10 s. A lógica pura (clipe por
+humor, ângulos com limites e amortecimento, agenda das olhadas) fica em `src/components/ubi/rig.ts`. Se o clipe de um
+humor faltar, vale o `Idle`; se o export não tiver esqueleto, o app mantém a flutuação do corpo inteiro. Para depurar,
+a caixa `data-testid="ubi-3d"` expõe `data-ubi-rig` (1 = esqueleto com `Head`), `data-ubi-clip` (clipe base) e
+`data-ubi-look` (yaw,pitch em graus); em `pnpm dev`, `window.__ubiqxUbi.set({ mood: 'worried', speaking: 'Oi' })`
+força humor e fala do mascote da página (`reset()` desfaz).

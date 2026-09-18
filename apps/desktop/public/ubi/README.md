@@ -23,6 +23,15 @@ scripts/install-ubi-model.sh ~/Downloads/ubi.glb ~/Downloads/ubi.png
 nuvem (GitHub Actions e Codemagic) empacotam no `.app`. Depois de instalar, reinicie o `pnpm dev` (ou gere o app de
 novo). `pnpm hero` regenera `docs/ubi-hero.png` a partir da arte instalada.
 
+## Rig e animações
+
+O `Ubi.glb` do app não é o export bruto: ele passa por `scripts/ubi-rig/rig_ubi.py`, que lê o export (uma malha
+rígida) e devolve o modelo com esqueleto (21 ossos: `Root`, `Hips`, `Spine`, `Chest`, `Neck`, `Head`, braços e pernas
+`.L`/`.R`, `Orb`) e oito clipes (`Idle`, `Yes`, `No`, `Wave`, `Jump`, `Excited`, `Worried`, `Sleep`), já otimizado
+(texturas 1024 px, Draco). O app toca os clipes por humor e vira a cabeça para o mouse e para o balão de fala. Para
+gerar de novo a partir de um export novo, siga `scripts/ubi-rig/README.md` (Blender como módulo Python, sem
+interface). Sem esqueleto no arquivo o app volta ao movimento de corpo inteiro.
+
 Dicas para exportar o modelo (glTF binário, `.glb`):
 
 - personagem centralizado na origem e em pé sobre o chão — o app recalcula a caixa, centraliza, apoia os pés em
@@ -30,7 +39,8 @@ Dicas para exportar o modelo (glTF binário, `.glb`):
 - olhando para +Z (de frente para a câmera). Se o export olhar para outro lado, ajuste `ROTATION_Y` em
   `src/components/ubi/Ubi3d.tsx` (`Math.PI` para um modelo de costas);
 - texturas embutidas no `.glb` (nada é buscado na rede: o CSP do app bloqueia);
-- compressão Draco é opcional — o decoder local está em `public/draco/`;
+- compressão Draco é opcional — o decoder local está em `public/draco/` (ela preserva `JOINTS_0`/`WEIGHTS_0`, o
+  esqueleto e as animações);
 - mantenha o arquivo abaixo de ~10 MB (ele vai no bundle do app e no repositório). Um export grande passa por
   `scripts/optimize-ubi-model.sh export.glb`: texturas em 1024 px e geometria em Draco (o `Ubi.glb` atual veio de
   um export de 34 MB com texturas 4K e ficou com ~3 MB, sem diferença visível no tamanho em que o UBI aparece);

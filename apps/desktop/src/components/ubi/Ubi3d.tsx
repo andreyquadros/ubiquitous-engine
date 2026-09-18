@@ -10,6 +10,22 @@ import { useT } from '../../i18n';
 import type { Mood } from '../../lib/types';
 import { FLOAT_PERIOD, FloorGlow } from './FloorGlow';
 import { MOOD_GLOW } from './moods';
+import {
+  BODY_MOTION_WITH_RIG,
+  CLIPS,
+  Cooldown,
+  easeLook,
+  formatLook,
+  GlanceScheduler,
+  lookAtBubble,
+  lookAtPoint,
+  LOOK_MAX_DT,
+  resolveLook,
+  Rig,
+  tapClipFor,
+  YES_COOLDOWN,
+  type Look,
+} from './rig';
 
 /** The user's model, installed by scripts/install-ubi-model.sh and committed with the app. */
 export const GLB_URL = '/ubi/Ubi.glb';
@@ -34,6 +50,8 @@ const LOOK_AT = new THREE.Vector3(0, FIT * 0.5, 0);
  */
 const GL = { alpha: true, antialias: true, premultipliedAlpha: true, powerPreference: 'low-power' as const };
 const DPR: [number, number] = [1, 2];
+/** The debugging attributes are refreshed at most this often (seconds). */
+const ATTR_INTERVAL = 0.1;
 
 let draco: DRACOLoader | null = null;
 /** Attaches the local Draco decoder; used by `useLoader` and its preload. */
@@ -119,17 +137,111 @@ interface Pointer {
 /** Static pose per mood, used when motion is reduced and as the resting pose the idle motion swings around. */
 const REST_PITCH: Record<Mood, number> = { sleeping: 0.16, calm: 0, focused: 0, excited: 0, worried: 0.05 };
 
-function Model({ mood, pointer, reduce, onReady }: { mood: Mood; pointer: RefObject<Pointer>; reduce: boolean; onReady: () => void }) {
+/** Seconds from a monotonic clock, for the glance/one-shot scheduling (independent of the render clock). */
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+
+interface ModelProps {
+  mood: Mood;
+  size: number;
+  speaking?: string;
+  /** The wrapper box (canvas rect for the look-at, debugging attributes). */
+  box: RefObject<HTMLDivElement | null>;
+  /** The speech bubble element, when one is on screen. */
+  bubble?: RefObject<HTMLElement | null>;
+  /** Box-local pointer for the whole-body parallax. */
+  pointer: RefObject<Pointer>;
+  /** Imperative hooks the wrapper calls (a tap on the mascot). */
+  handle: RefObject<{ tap: () => void } | null>;
+  reduce: boolean;
+  onReady: () => void;
+}
+
+function Model({ mood, size, speaking, box, bubble, pointer, handle, reduce, onReady }: ModelProps) {
   const gltf = useLoader(GLTFLoader, GLB_URL, configureLoader);
   const invalidate = useThree((s) => s.invalidate);
-  const group = useRef<THREE.Group>(null);
   const eased = useRef({ yaw: 0, pitch: 0 });
   const { object, emissives } = useMemo(() => normalise(gltf), [gltf]);
+  // the whole-body float/parallax moves this holder; the clips and the look-at move the bones inside. It lives in a
+  // ref (not a memo): StrictMode's second memo call would re-parent the model into a discarded group.
+  const holder = useRef<THREE.Group | null>(null);
+  holder.current ??= new THREE.Group();
+  const group = holder.current;
+  const rig = useMemo(() => new Rig(object, gltf.animations ?? []), [object, gltf]);
+  const rigged = rig.rigged;
+  const bodyK = rigged ? BODY_MOTION_WITH_RIG : 1;
+  // look-at state: the eased angles, the pointer target (window-level) and the bubble glance
+  const look = useRef<Look>({ yaw: 0, pitch: 0 });
+  const pointerLook = useRef<Look | null>(null);
+  const glance = useRef(new GlanceScheduler()).current;
+  const yesGate = useRef(new Cooldown(YES_COOLDOWN)).current;
+  const lastAttr = useRef(-1);
+  const glanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevMood = useRef<Mood | null>(null);
 
   useEffect(() => {
     onReady();
     return () => emissives.forEach((m) => m.dispose());
   }, [emissives, onReady]);
+
+  useEffect(() => {
+    box.current?.setAttribute('data-ubi-rig', rig.rigged ? '1' : '0');
+    rig.attach();
+    return () => rig.detach();
+  }, [rig, box]);
+
+  // base clip per mood (a wave first when the mood turns excited)
+  useEffect(() => {
+    if (rigged) {
+      if (prevMood.current && prevMood.current !== mood && mood === 'excited') rig.playOnce(CLIPS.wave, reduce);
+      const base = rig.setMood(mood, reduce);
+      box.current?.setAttribute('data-ubi-clip', base?.name ?? '');
+    }
+    prevMood.current = mood;
+  }, [mood, reduce, rig, rigged, box]);
+
+  // the speech appeared or changed: glance at the bubble and nod
+  useEffect(() => {
+    if (!speaking) return;
+    const t = now();
+    glance.speech(t);
+    if (rigged && yesGate.take(t)) rig.playOnce(CLIPS.yes, reduce);
+    invalidate();
+  }, [speaking, rigged, reduce, rig, glance, yesGate, invalidate]);
+
+  useEffect(() => {
+    handle.current = {
+      tap: () => {
+        if (rigged) rig.playOnce(tapClipFor(mood), reduce);
+      },
+    };
+    return () => {
+      handle.current = null;
+    };
+  }, [handle, rig, rigged, mood, reduce]);
+
+  // the head follows the pointer anywhere in the window
+  useEffect(() => {
+    if (!rigged) return;
+    const onMove = (e: globalThis.PointerEvent) => {
+      const el = box.current;
+      if (!el) return;
+      pointerLook.current = lookAtPoint(el.getBoundingClientRect(), size, e.clientX, e.clientY);
+      if (reduce) invalidate();
+    };
+    const onOut = (e: globalThis.PointerEvent) => {
+      // the pointer left the window: back to the clip's own head motion
+      if (e.relatedTarget) return;
+      pointerLook.current = null;
+      if (reduce) invalidate();
+    };
+    window.addEventListener('pointermove', onMove, { passive: true });
+    document.addEventListener('pointerout', onOut);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerout', onOut);
+      if (glanceTimer.current) clearTimeout(glanceTimer.current);
+    };
+  }, [rigged, reduce, size, box, invalidate]);
 
   useEffect(() => {
     const c = new THREE.Color(MOOD_GLOW[mood]);
@@ -139,24 +251,49 @@ function Model({ mood, pointer, reduce, onReady }: { mood: Mood; pointer: RefObj
   }, [mood, emissives, reduce, invalidate]);
 
   useFrame((state: RootState, dt: number) => {
-    const g = group.current;
-    if (!g) return;
+    const g = group;
+    const t = state.clock.elapsedTime;
+    // the parallax damping integrates at most 50 ms per frame; the clips keep wall time up to LOOK_MAX_DT so a laggy
+    // machine does not play the nod in slow motion while the (wall-clock) glance at the bubble has already ended
+    const d = Math.min(dt, 0.05);
+
+    if (rigged) {
+      // clips first, the look-at on top
+      rig.update(reduce ? 0 : Math.min(dt, LOOK_MAX_DT));
+      const clock = now();
+      const bubbleEl = bubble?.current ?? null;
+      const el = box.current;
+      let target: Look | null = null;
+      if (glance.active(clock, !!bubbleEl) && bubbleEl && el) target = lookAtBubble(el.getBoundingClientRect(), size, bubbleEl.getBoundingClientRect());
+      rig.look(easeLook(look.current, resolveLook(target, pointerLook.current), Math.min(dt, LOOK_MAX_DT), reduce));
+      if (reduce) {
+        // demand frameloop: schedule the frame that ends/starts the next glance
+        if (glanceTimer.current) clearTimeout(glanceTimer.current);
+        const at = glance.nextChange(clock);
+        glanceTimer.current = Number.isFinite(at) ? setTimeout(invalidate, Math.max(0, at - clock) * 1000 + 20) : null;
+      }
+      // throttled while the loop runs; with the on-demand frameloop (reduced motion) every frame may be the last one
+      // before the next pointer event, so the attribute is written unconditionally there
+      if (el && (reduce || lastAttr.current < 0 || clock - lastAttr.current >= ATTR_INTERVAL)) {
+        lastAttr.current = clock;
+        el.setAttribute('data-ubi-look', formatLook(look.current));
+      }
+    }
+
     if (reduce) {
       g.position.y = 0;
-      g.rotation.set(REST_PITCH[mood], 0, 0);
+      g.rotation.set(rigged ? 0 : REST_PITCH[mood], 0, 0);
       for (const m of emissives) m.emissiveIntensity = mood === 'sleeping' ? 0.35 : 1.1;
       return;
     }
-    const t = state.clock.elapsedTime;
-    const d = Math.min(dt, 0.05);
     const w = (Math.PI * 2) / FLOAT_PERIOD[mood];
-    // pointer parallax: a few degrees towards the cursor, eased
+    // pointer parallax: a few degrees towards the cursor, eased (a third of it when the rig turns the head)
     const p = pointer.current ?? { x: 0, y: 0 };
-    eased.current.yaw = THREE.MathUtils.damp(eased.current.yaw, p.x * 0.35, 6, d);
-    eased.current.pitch = THREE.MathUtils.damp(eased.current.pitch, p.y * 0.18, 6, d);
+    eased.current.yaw = THREE.MathUtils.damp(eased.current.yaw, p.x * 0.35 * bodyK, 6, d);
+    eased.current.pitch = THREE.MathUtils.damp(eased.current.pitch, p.y * 0.18 * bodyK, 6, d);
     let y = 0;
     let yaw = Math.sin(t * w * 0.5) * 0.07;
-    let pitch = REST_PITCH[mood];
+    let pitch = rigged ? 0 : REST_PITCH[mood];
     let roll = 0;
     switch (mood) {
       case 'sleeping':
@@ -178,8 +315,8 @@ function Model({ mood, pointer, reduce, onReady }: { mood: Mood; pointer: RefObj
         y = Math.sin(t * w) * 0.08;
         roll = Math.sin(t * w) * 0.02;
     }
-    g.position.y = y;
-    g.rotation.set(pitch + eased.current.pitch, yaw + eased.current.yaw, roll);
+    g.position.y = y * bodyK;
+    g.rotation.set(pitch * bodyK + eased.current.pitch, yaw * bodyK + eased.current.yaw, roll * bodyK);
     if (emissives.length) {
       let k = 1;
       if (mood === 'sleeping') k = 0.8 + Math.sin(t * w) * 0.2;
@@ -194,9 +331,9 @@ function Model({ mood, pointer, reduce, onReady }: { mood: Mood; pointer: RefObj
   });
 
   return (
-    <group ref={group}>
+    <primitive object={group}>
       <primitive object={object} />
-    </group>
+    </primitive>
   );
 }
 
@@ -225,20 +362,31 @@ export interface Ubi3dProps {
   size: number;
   /** Shown in the same box until the model is on screen (the SVG UBI), then cross-faded out. */
   fallback?: ReactNode;
+  /** The speech text: when it appears or changes UBI glances at the bubble and nods. */
+  speaking?: string;
+  /** The bubble element (rendered by `Ubi`), the target of the glances. */
+  bubbleRef?: RefObject<HTMLElement | null>;
 }
 
 /**
  * UBI from the user's glTF: direct GLTFLoader (+ local Draco), transparent premultiplied canvas over the UI,
- * RoomEnvironment IBL, mood-coloured fill light and floor glow, idle float with a mood tempo, pointer parallax
- * and a blink on emissive eye/visor materials. Honors prefers-reduced-motion and stops rendering off screen.
+ * RoomEnvironment IBL, mood-coloured fill light and floor glow, a blink on emissive eye/visor materials and, with a
+ * rigged export, one clip per mood (Idle/Excited/Worried/Sleep), one-shots (Yes on new speech, Wave/No on a tap,
+ * Wave when the mood turns excited) and a procedural head look-at that follows the pointer and glances at the speech
+ * bubble. An unrigged export keeps the whole-body float and parallax. Honors prefers-reduced-motion (clips frozen
+ * at their first frame, look-at without easing) and stops rendering off screen.
+ *
+ * Debugging attributes on the box: `data-ubi-rig` ("1" with a Head bone and clips), `data-ubi-clip` (base clip),
+ * `data-ubi-look` ("yaw,pitch" in degrees, ≤ 10×/s).
  */
-export default function Ubi3d({ mood, size, fallback }: Ubi3dProps) {
+export default function Ubi3d({ mood, size, fallback, speaking, bubbleRef }: Ubi3dProps) {
   const t = useT();
   const reduce = !!useReducedMotion();
   const glow = MOOD_GLOW[mood];
   const box = useRef<HTMLDivElement>(null);
   const active = useActive(box);
   const pointer = useRef<Pointer>({ x: 0, y: 0 });
+  const handle = useRef<{ tap: () => void } | null>(null);
   const [ready, setReady] = useState(false);
   const onReady = useRef(() => setReady(true)).current;
   const frameloop = !active ? 'never' : reduce ? 'demand' : 'always';
@@ -265,6 +413,7 @@ export default function Ubi3d({ mood, size, fallback }: Ubi3dProps) {
       aria-label={t('ubi.mascot', { mood: t(`common.mood.${mood}`) })}
       onPointerMove={onMove}
       onPointerLeave={onLeave}
+      onPointerDown={() => handle.current?.tap()}
     >
       <FloorGlow mood={mood} size={size} reduce={reduce} />
       {!ready && fallback && (
@@ -293,7 +442,7 @@ export default function Ubi3d({ mood, size, fallback }: Ubi3dProps) {
         <pointLight position={[0, -1.4, 2.2]} color={glow} intensity={mood === 'sleeping' ? 2 : 7} distance={7} decay={2} />
         <directionalLight position={[-3, 2.5, -3]} intensity={0.5} color={glow} />
         <Suspense fallback={null}>
-          <Model mood={mood} pointer={pointer} reduce={reduce} onReady={onReady} />
+          <Model mood={mood} size={size} speaking={speaking} box={box} bubble={bubbleRef} pointer={pointer} handle={handle} reduce={reduce} onReady={onReady} />
         </Suspense>
       </Canvas>
     </div>

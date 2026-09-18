@@ -6,8 +6,15 @@ import type { Mood } from '../../lib/types';
 // (a broken export / a lost WebGL context) so the fallback chain can be asserted.
 const ubi3d = vi.hoisted(() => ({
   impl: (props: { mood: Mood; size: number }) => <div data-testid="ubi-3d" data-mood={props.mood} />,
+  /** The last `bubbleRef` the 3D component received (the glance target). */
+  bubbleRef: null as null | { current: HTMLElement | null },
 }));
-vi.mock('./Ubi3d', () => ({ default: (props: { mood: Mood; size: number }) => ubi3d.impl(props) }));
+vi.mock('./Ubi3d', () => ({
+  default: (props: { mood: Mood; size: number; bubbleRef?: { current: HTMLElement | null } }) => {
+    ubi3d.bubbleRef = props.bubbleRef ?? null;
+    return ubi3d.impl(props);
+  },
+}));
 
 import { Ubi, __resetProbe } from './Ubi';
 
@@ -51,6 +58,23 @@ describe('Ubi', () => {
     render(<Ubi mood="calm" />);
     await waitFor(() => expect(screen.getByTestId('ubi')).toHaveAttribute('data-ubi-mode', '3d'));
     await waitFor(() => expect(screen.getByTestId('ubi-3d')).toHaveAttribute('data-mood', 'calm'));
+  });
+
+  it('keeps the bubble ref on the mounted bubble across a speech change (the exiting bubble never nulls it)', async () => {
+    vi.stubGlobal('fetch', serve({ glb: true }));
+    const { rerender } = render(<Ubi mood="calm" speaking="Primeira frase" />);
+    await waitFor(() => expect(screen.getByTestId('ubi')).toHaveAttribute('data-ubi-mode', '3d'));
+    await waitFor(() => expect(ubi3d.bubbleRef?.current).toBe(screen.getByText('Primeira frase')));
+    // `key={speaking}` remounts the bubble: the new one takes the ref at once…
+    rerender(<Ubi mood="calm" speaking="Segunda frase" />);
+    expect(ubi3d.bubbleRef?.current).toBe(screen.getByText('Segunda frase'));
+    // …and keeps it once the old one has finished its exit animation and unmounted
+    await waitFor(() => expect(screen.queryByText('Primeira frase')).not.toBeInTheDocument(), { timeout: 4000 });
+    expect(ubi3d.bubbleRef?.current).toBe(screen.getByText('Segunda frase'));
+    // no bubble at all → null
+    rerender(<Ubi mood="calm" />);
+    await waitFor(() => expect(screen.queryByText('Segunda frase')).not.toBeInTheDocument(), { timeout: 4000 });
+    expect(ubi3d.bubbleRef?.current).toBeNull();
   });
 
   it('uses the PNG when only /ubi/ubi.png exists', async () => {
