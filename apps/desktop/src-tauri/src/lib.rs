@@ -142,7 +142,7 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
                 "report_today" => {
                     let engine = engine.clone();
                     tauri::async_runtime::spawn(async move {
-                        let today = ubiqx_engine::today();
+                        let today = ubiqx_engine::today(engine.state());
                         let cats = engine
                             .state()
                             .deps
