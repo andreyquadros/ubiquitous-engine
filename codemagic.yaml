@@ -49,19 +49,25 @@ workflows:
       - name: pnpm 10 e dependências do frontend
         script: |
           set -e
-          # Instala o pnpm num prefixo do usuário: não depende de permissão no diretório global do npm.
-          export NPM_CONFIG_PREFIX="$HOME/.npm-global"
-          export PATH="$HOME/.npm-global/bin:$PATH"
-          node --version && npm --version
-          npm install -g pnpm@10
-          pnpm --version
+          # Diagnóstico do que a máquina já traz (não interrompe a etapa).
+          echo "arch: $(uname -m)"; node --version; npm --version
+          echo "npm prefix: $(npm config get prefix 2>/dev/null || true)"
+          echo "pnpm pré-instalado: $(command -v pnpm 2>/dev/null || echo nenhum) $(pnpm --version 2>/dev/null || true)"
+          # Binário standalone do pnpm, com versão fixa: não passa pelo npm nem pelo /usr/local.
+          PNPM_VERSION=10.34.5
+          case "$(uname -m)" in arm64|aarch64) ASSET=pnpm-macos-arm64 ;; *) ASSET=pnpm-macos-x64 ;; esac
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/${ASSET}" -o "$HOME/.local/bin/pnpm"
+          chmod +x "$HOME/.local/bin/pnpm"
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "pnpm em uso: $(command -v pnpm) $(pnpm --version)"
           cd apps/desktop
           pnpm install --frozen-lockfile
       - name: Compilar ubiqX.app
         script: |
           set -e
           source "$HOME/.cargo/env"
-          export PATH="$HOME/.npm-global/bin:$PATH"
+          export PATH="$HOME/.local/bin:$PATH"
           cd apps/desktop
           export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
           pnpm tauri build --bundles app
@@ -70,7 +76,7 @@ workflows:
         script: |
           set -e
           source "$HOME/.cargo/env"
-          export PATH="$HOME/.npm-global/bin:$PATH"
+          export PATH="$HOME/.local/bin:$PATH"
           cd apps/desktop
           export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
           pnpm tauri build --bundles dmg
