@@ -145,6 +145,10 @@ async fn classify_loop(state: Arc<EngineState>, cancel: CancellationToken, every
 
 async fn reports_loop(state: Arc<EngineState>, cancel: CancellationToken, every: Duration) {
     let mut tick = interval(every);
+    // The first pass waits one period (30 s in production), like the nudges and the focus
+    // guard: an immediate pass at start-up raced report settings written through the handle
+    // right after the engine came up (seen as a flaky pipeline test on slower machines).
+    tick.tick().await;
     loop {
         tokio::select! {
             _ = cancel.cancelled() => break,
