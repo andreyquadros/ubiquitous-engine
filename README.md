@@ -62,6 +62,11 @@ e ele aprende. O **UBI**, o mascote, mostra seu humor de foco e avisa quando voc
 |---|---|
 | ![Configurações](docs/screenshots/settings.png) | ![Onboarding](docs/screenshots/onboarding.png) |
 
+## Site
+
+A landing page que apresenta o ubiqX AI como produto (planos, downloads, telas) vive em [`site/`](site/) e é publicada no GitHub Pages
+em `https://<owner>.github.io/ubiquitous-engine/` pelo workflow `site.yml`; desenvolvimento e deploy em [`site/README.md`](site/README.md).
+
 ## Stack
 
 | Camada | Tecnologia |

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#060a14" />
+    <title>ubiqX AI</title>
+    <meta name="description" content="Rastreamento automático de tempo para o seu Mac, com IA que classifica cada bloco nas suas categorias e um mascote que cuida do seu foco. Tudo fica na sua máquina." />
+    <link rel="canonical" href="%SITE_URL%" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="128x128" href="./favicon-128.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ubiqX AI" />
+    <meta property="og:title" content="ubiqX AI. Seu tempo, entendido." />
+    <meta property="og:description" content="Um mascote que cuida do seu foco. Rastreamento automático, categorias suas, relatórios prontos." />
+    <meta property="og:url" content="%SITE_URL%" />
+    <meta property="og:image" content="%SITE_URL%og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="UBI, o mascote do ubiqX, ao lado do título: Seu tempo, entendido." />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:locale:alternate" content="en_US" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ubiqX AI. Seu tempo, entendido." />
+    <meta name="twitter:description" content="Um mascote que cuida do seu foco. Rastreamento automático, categorias suas, relatórios prontos." />
+    <meta name="twitter:image" content="%SITE_URL%og.png" />
+    <script>
+      // Apply the language before the first paint so the first render does not flicker.
+      (function () {
+        try {
+          var q = new URLSearchParams(window.location.search).get('lang');
+          var stored = q || localStorage.getItem('ubiqx-site.lang') || navigator.language || 'pt-BR';
+          var l = String(stored).toLowerCase().indexOf('en') === 0 ? 'en' : 'pt-BR';
+          document.documentElement.lang = l;
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
