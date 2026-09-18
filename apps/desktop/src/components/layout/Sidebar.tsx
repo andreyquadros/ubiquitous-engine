@@ -1,5 +1,6 @@
 import clsx from 'clsx';
-import { Clock, FileText, LayoutDashboard, ListChecks, Moon, Settings, Sparkles, Sun, Tags, type LucideIcon } from 'lucide-react';
+import { Clock, FileText, LayoutDashboard, ListChecks, Moon, Settings, Shield, Sparkles, Sun, Tags, type LucideIcon } from 'lucide-react';
+import { useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAppStore } from '../../lib/store';
 import { useT } from '../../i18n';
@@ -12,8 +13,11 @@ interface Item {
   label: string;
   Icon: LucideIcon;
   badge?: number;
-  /** A quiet volt dot (an update is waiting in Settings). */
+  /** A quiet volt dot (an update is waiting in Settings; a focus session is running). */
   dot?: boolean;
+  /** Screen-reader text and test id for the dot. */
+  dotLabel?: string;
+  dotTestId?: string;
 }
 
 /** UBI's head as a mark: white shell, black visor, two volt crescents. */
@@ -42,7 +46,14 @@ export function Sidebar({ needsReview }: { needsReview: number }) {
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
   const updatePending = useAppStore((s) => hasPendingUpdate(s.updateStatus));
+  const sessionActive = useAppStore((s) => !!s.focusStatus?.session && !s.focusStatus.session.ended_at);
+  const loadFocusStatus = useAppStore((s) => s.loadFocusStatus);
   const t = useT();
+
+  // Once per shell mount; afterwards the `focus_session` events keep it fresh.
+  useEffect(() => {
+    void loadFocusStatus();
+  }, [loadFocusStatus]);
 
   const items: Item[] = [
     { to: '/', label: t('nav.today'), Icon: LayoutDashboard },
@@ -51,7 +62,8 @@ export function Sidebar({ needsReview }: { needsReview: number }) {
     { to: '/reports', label: t('nav.reports'), Icon: FileText },
     { to: '/categories', label: t('nav.categories'), Icon: Tags },
     { to: '/insights', label: t('nav.insights'), Icon: Sparkles },
-    { to: '/settings', label: t('nav.settings'), Icon: Settings, dot: updatePending },
+    { to: '/settings', label: t('nav.settings'), Icon: Settings, dot: updatePending, dotLabel: t('updates.banner.badge'), dotTestId: 'nav-update-dot' },
+    { to: '/focus', label: t('nav.focus'), Icon: Shield, dot: sessionActive, dotLabel: t('nav.focus_session_active'), dotTestId: 'nav-focus-dot' },
   ];
 
   return (
@@ -69,7 +81,7 @@ export function Sidebar({ needsReview }: { needsReview: number }) {
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 px-3">
-        {items.map(({ to, label, Icon, badge, dot }) => (
+        {items.map(({ to, label, Icon, badge, dot, dotLabel, dotTestId }) => (
           <NavLink
             key={to}
             to={to}
@@ -96,8 +108,8 @@ export function Sidebar({ needsReview }: { needsReview: number }) {
                   </span>
                 ) : null}
                 {dot && !badge ? (
-                  <span className="absolute top-2.5 right-2.5 size-1.5 rounded-full bg-volt min-[1180px]:static min-[1180px]:ml-auto" data-testid="nav-update-dot">
-                    <span className="sr-only">{t('updates.banner.badge')}</span>
+                  <span className="absolute top-2.5 right-2.5 size-1.5 rounded-full bg-volt min-[1180px]:static min-[1180px]:ml-auto" data-testid={dotTestId}>
+                    <span className="sr-only">{dotLabel}</span>
                   </span>
                 ) : null}
               </>

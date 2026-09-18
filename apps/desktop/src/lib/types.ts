@@ -126,7 +126,8 @@ export type NudgeKind =
   | 'praise'
   | 'idle'
   | 'report_ready'
-  | 'attention';
+  | 'attention'
+  | 'focus_prompt';
 
 export interface Nudge {
   id: Id;
@@ -200,6 +201,24 @@ export interface NudgeSettings {
   snoozed_until: IsoDateTime | null;
 }
 
+/** Focus guard and focus sessions (`Settings.focus`; serde defaults on the Rust side, so old rows load). */
+export interface FocusSettings {
+  /** Enforce the block list (the guard loop runs only while this is on). Default true. */
+  guard_enabled: boolean;
+  /** During a focus session, also hold whatever the rules map to the built-in Distraction category. Default true. */
+  block_distraction_in_session: boolean;
+  /** Hide the other windows when a session starts (macOS: System Events). Default true. */
+  hide_others_on_start: boolean;
+  /** Default session length offered by the UI (5..=240). Default 45. */
+  session_minutes: number;
+  /** Seconds between two interventions on the same app or site. Default 20. */
+  intervention_cooldown_secs: number;
+  /** Name of a macOS Shortcut run when a session starts (`shortcuts run "<name>"`), or null. */
+  macos_focus_shortcut_on: string | null;
+  /** Name of a macOS Shortcut run when a session ends, or null. */
+  macos_focus_shortcut_off: string | null;
+}
+
 export interface Settings {
   tracking_enabled: boolean;
   sample_interval_secs: number;
@@ -232,6 +251,8 @@ export interface Settings {
   onboarding_done: boolean;
   /** Automatic update checks (45 s after start, then every 6 h). Defaults to true on the Rust side. */
   check_updates: boolean;
+  /** Focus guard and focus sessions. */
+  focus: FocusSettings;
 }
 
 export type TrackerState = 'running' | 'paused' | 'private' | 'idle' | 'blocked';
@@ -396,6 +417,72 @@ export interface UpdateStatus {
   checking: boolean;
 }
 
+/* ------------------------------------------------------------------ */
+/* Focus guard (blocked apps and sites, interventions, focus sessions) */
+/* ------------------------------------------------------------------ */
+
+export type FocusTargetKind = 'app' | 'site';
+
+/** An app or site the user asked ubiqX to hold. `key` = bundle id for apps, lower-case registrable domain for sites (matches any subdomain). */
+export interface FocusTarget {
+  id: Id;
+  kind: FocusTargetKind;
+  name: string;
+  key: string;
+  enabled: boolean;
+  created_at: IsoDateTime;
+  last_blocked_at: IsoDateTime | null;
+  blocked_count: number;
+}
+
+/** An application found on this Mac (`list_installed_apps`). */
+export interface InstalledApp {
+  name: string;
+  bundle_id: string;
+  path: string;
+}
+
+/** What the guard did when a blocked app or site came to the front. */
+export type InterventionAction = 'app_quit' | 'tab_closed' | 'tab_blanked' | 'notified';
+
+export interface Intervention {
+  id: Id;
+  at: IsoDateTime;
+  target_id: Id | null;
+  kind: FocusTargetKind;
+  name: string;
+  key: string;
+  action: InterventionAction;
+  session_id: Id | null;
+  /** The line UBI showed, in the UI language. */
+  message: string;
+}
+
+export interface FocusSession {
+  id: Id;
+  task: string;
+  started_at: IsoDateTime;
+  ends_at: IsoDateTime;
+  ended_at: IsoDateTime | null;
+  interventions: number;
+  hid_windows: boolean;
+  ran_shortcut: boolean;
+}
+
+export interface FocusStatus {
+  session: FocusSession | null;
+  remaining_secs: number | null;
+  targets_enabled: number;
+  interventions_today: number;
+  guard_enabled: boolean;
+}
+
+/** A domain seen in the user's own blocks, with the time spent there (`list_known_domains`, most time first). */
+export interface KnownDomain {
+  domain: string;
+  seconds: number;
+}
+
 /** Events pushed by the engine on the `engine` channel. */
 export type EngineEvent =
   | { type: 'block_opened'; block: ActivityBlock }
@@ -407,4 +494,7 @@ export type EngineEvent =
   | { type: 'ai_health'; health: AiHealth }
   | { type: 'permission_required'; permission: string }
   | { type: 'screenshot_taken'; screenshot_id: Id; block_id: Id | null }
-  | { type: 'update_available'; release: ReleaseInfo };
+  | { type: 'update_available'; release: ReleaseInfo }
+  | { type: 'intervention'; intervention: Intervention }
+  /** Emitted on start, on end (session with `ended_at` set) and whenever `interventions` increments. */
+  | { type: 'focus_session'; session: FocusSession | null };

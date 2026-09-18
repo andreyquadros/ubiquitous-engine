@@ -340,6 +340,66 @@ impl EngineHandle {
         self.state.deps.platform.permissions.request(kind)
     }
 
+    // -- Focus guard ------------------------------------------------------------------------
+
+    /// Installed applications, for the focus page's search (cached by the platform).
+    pub fn installed_apps(&self) -> CoreResult<Vec<InstalledApp>> {
+        crate::focus::installed_apps(&self.state)
+    }
+
+    /// Domains from the user's own activity, most time first.
+    pub fn known_domains(&self, limit: usize) -> CoreResult<Vec<KnownDomain>> {
+        crate::focus::known_domains(&self.state, limit)
+    }
+
+    pub fn focus_targets(&self) -> CoreResult<Vec<FocusTarget>> {
+        crate::focus::list_targets(&self.state)
+    }
+
+    /// Adds a blocked app or site; adding one that exists re-enables it. Keys are normalised
+    /// (domains lower-cased without scheme, path or `www.`).
+    pub fn add_focus_target(
+        &self,
+        kind: FocusTargetKind,
+        name: &str,
+        key: &str,
+    ) -> CoreResult<FocusTarget> {
+        crate::focus::add_target(&self.state, kind, name, key)
+    }
+
+    pub fn set_focus_target_enabled(&self, id: &str, enabled: bool) -> CoreResult<FocusTarget> {
+        crate::focus::set_target_enabled(&self.state, id, enabled)
+    }
+
+    pub fn remove_focus_target(&self, id: &str) -> CoreResult<()> {
+        crate::focus::remove_target(&self.state, id)
+    }
+
+    /// Interventions, newest first.
+    pub fn interventions(&self, limit: usize) -> CoreResult<Vec<Intervention>> {
+        crate::focus::list_interventions(&self.state, limit)
+    }
+
+    pub fn focus_status(&self) -> CoreResult<FocusStatus> {
+        crate::focus::status(&self.state)
+    }
+
+    /// Starts a focus session (`CoreError::Invalid` for a blank task or a length outside
+    /// 5..=240 minutes); a running session is ended first.
+    pub fn start_focus_session(&self, task: &str, minutes: u32) -> CoreResult<FocusSession> {
+        crate::focus::start_session(&self.state, task, minutes)
+    }
+
+    /// Ends the running session early; `None` when there is none.
+    pub fn stop_focus_session(&self) -> CoreResult<Option<FocusSession>> {
+        crate::focus::stop_session(&self.state)
+    }
+
+    /// Shows the intervention window with a sample message; records nothing.
+    pub fn test_intervention(&self) -> CoreResult<()> {
+        crate::focus::test_intervention(&self.state)
+    }
+
     /// Deletes everything derived from activity: blocks (the open one included), screenshots
     /// (rows and files), reports, corrections, learned rules, nudges, the AI usage ledger, the
     /// key/value cache (advice, report scheduling) and the JSON exports folder. Categories,

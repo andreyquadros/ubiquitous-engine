@@ -4,7 +4,25 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ubiqx_core::ports::*;
-use ubiqx_core::{BuildInfo, Clock};
+use ubiqx_core::{BuildInfo, Clock, CoreResult, Intervention};
+
+/// [`InterventionPresenter`] that only logs: the CLI, tests and any shell without a window.
+/// It answers `false`, so the engine falls back to an OS notification.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct LogInterventionPresenter;
+
+impl InterventionPresenter for LogInterventionPresenter {
+    fn show(&self, intervention: &Intervention) -> CoreResult<bool> {
+        tracing::info!(
+            target: "ubiqx::focus",
+            name = %intervention.name,
+            action = intervention.action.as_str(),
+            message = %intervention.message,
+            "intervention"
+        );
+        Ok(false)
+    }
+}
 
 #[derive(Clone)]
 pub struct PlatformPorts {
@@ -17,6 +35,12 @@ pub struct PlatformPorts {
     pub notifier: Arc<dyn Notifier>,
     /// Where `latest.json` comes from (HTTP in production, a static feed in tests).
     pub update_feed: Arc<dyn UpdateFeedSource>,
+    /// Installed applications, for the focus page's search.
+    pub apps: Arc<dyn AppCatalog>,
+    /// What the focus guard may do to a distraction.
+    pub enforcer: Arc<dyn Enforcer>,
+    /// Shows the intervention window ([`LogInterventionPresenter`] without a shell).
+    pub presenter: Arc<dyn InterventionPresenter>,
 }
 
 #[derive(Clone)]
@@ -32,6 +56,7 @@ pub struct Repos {
     pub usage: Arc<dyn UsageRepo>,
     pub kv: Arc<dyn KvRepo>,
     pub maintenance: Arc<dyn MaintenanceRepo>,
+    pub focus: Arc<dyn FocusRepo>,
 }
 
 impl Repos {
@@ -49,6 +74,7 @@ impl Repos {
             + UsageRepo
             + KvRepo
             + MaintenanceRepo
+            + FocusRepo
             + 'static,
     {
         Self {
@@ -62,7 +88,8 @@ impl Repos {
             settings: store.clone(),
             usage: store.clone(),
             kv: store.clone(),
-            maintenance: store,
+            maintenance: store.clone(),
+            focus: store,
         }
     }
 }

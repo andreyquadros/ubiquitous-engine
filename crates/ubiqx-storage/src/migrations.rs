@@ -185,9 +185,55 @@ VALUES
      '[]', 0, 1, 0, 930, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
 "##;
 
+/// Version 2: the focus guard. Blocked targets (unique per kind + key), the interventions
+/// UBI made and the focus sessions. Interventions keep no foreign key to their target so the
+/// history survives a removed target.
+const V2: &str = r##"
+-- Focus targets (blocked apps and sites) ---------------------------------------------------
+CREATE TABLE focus_targets (
+    id              TEXT PRIMARY KEY NOT NULL,
+    kind            TEXT NOT NULL,                -- app | site
+    name            TEXT NOT NULL,
+    key             TEXT NOT NULL,                -- bundle id | registrable domain
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    created_at      INTEGER NOT NULL,
+    last_blocked_at INTEGER,
+    blocked_count   INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (kind, key)
+);
+
+-- Interventions (what the guard held, and what UBI said) ----------------------------------
+CREATE TABLE interventions (
+    id         TEXT PRIMARY KEY NOT NULL,
+    at         INTEGER NOT NULL,
+    target_id  TEXT,
+    kind       TEXT NOT NULL,                     -- app | site
+    name       TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    action     TEXT NOT NULL,                     -- app_quit | tab_closed | tab_blanked | notified
+    session_id TEXT,
+    message    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX idx_interventions_at ON interventions(at);
+
+-- Focus sessions --------------------------------------------------------------------------
+CREATE TABLE focus_sessions (
+    id            TEXT PRIMARY KEY NOT NULL,
+    task          TEXT NOT NULL,
+    started_at    INTEGER NOT NULL,
+    ends_at       INTEGER NOT NULL,
+    ended_at      INTEGER,
+    interventions INTEGER NOT NULL DEFAULT 0,
+    hid_windows   INTEGER NOT NULL DEFAULT 0,
+    ran_shortcut  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_focus_sessions_started ON focus_sessions(started_at);
+CREATE INDEX idx_focus_sessions_active  ON focus_sessions(started_at) WHERE ended_at IS NULL;
+"##;
+
 /// All migrations, oldest first.
 pub fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![M::up(V1)])
+    Migrations::new(vec![M::up(V1), M::up(V2)])
 }
 
 /// Brings `conn` to the latest schema version. Idempotent: reopening an up-to-date database
@@ -224,6 +270,6 @@ mod tests {
         let mut conn = Connection::open_in_memory().expect("memory db");
         apply(&mut conn).expect("first apply");
         apply(&mut conn).expect("second apply");
-        assert_eq!(current_version(&conn).expect("version"), 1);
+        assert_eq!(current_version(&conn).expect("version"), 2);
     }
 }

@@ -105,6 +105,36 @@ pub trait Notifier: Send + Sync {
     fn notify(&self, title: &str, body: &str) -> CoreResult<()>;
 }
 
+/// Applications installed on this machine (for the focus page's search).
+pub trait AppCatalog: Send + Sync {
+    /// Every installed application with a bundle identifier, sorted by name. Implementations
+    /// cache the scan, so the call is cheap to repeat.
+    fn installed_apps(&self) -> CoreResult<Vec<InstalledApp>>;
+}
+
+/// What the focus guard may do to a distraction. Every method answers `Ok(true)` when the
+/// action took effect and `Ok(false)` when the platform could not do it (the engine then
+/// falls back to the next action, or to a notification); `Err` only for unexpected failures.
+pub trait Enforcer: Send + Sync {
+    /// Asks the application with this bundle id to quit (graceful, may be refused).
+    fn quit_app(&self, bundle_id: &str) -> CoreResult<bool>;
+    /// Closes the active tab of the front window of the browser with this bundle id.
+    fn close_active_tab(&self, browser_bundle_id: &str) -> CoreResult<bool>;
+    /// Sends the active tab of that browser to `about:blank`.
+    fn blank_active_tab(&self, browser_bundle_id: &str) -> CoreResult<bool>;
+    /// Hides every other application's windows, keeping the one with this bundle id (and
+    /// ubiqX itself) visible.
+    fn hide_others(&self, keep_bundle_id: &str) -> CoreResult<bool>;
+    /// Runs the macOS Shortcut with this name (`shortcuts run "<name>"`).
+    fn run_shortcut(&self, name: &str) -> CoreResult<bool>;
+}
+
+/// Shows UBI's intervention window. Implemented by the desktop shell; `Ok(false)` means the
+/// window could not be shown and the engine falls back to an OS notification.
+pub trait InterventionPresenter: Send + Sync {
+    fn show(&self, intervention: &Intervention) -> CoreResult<bool>;
+}
+
 /// Fetches the update feed (`latest.json`) the CI publishes next to every build.
 #[async_trait]
 pub trait UpdateFeedSource: Send + Sync {
@@ -250,6 +280,35 @@ pub trait NudgeRepo: Send + Sync {
     fn count_since(&self, since: DateTime<Utc>) -> CoreResult<u64>;
 }
 
+/// Focus guard persistence: blocked targets, interventions and focus sessions.
+pub trait FocusRepo: Send + Sync {
+    /// Every target, enabled first, then by name.
+    fn list_targets(&self) -> CoreResult<Vec<FocusTarget>>;
+    fn get_target(&self, id: &str) -> CoreResult<Option<FocusTarget>>;
+    /// Inserts the target, or, when one with the same `(kind, key)` exists, re-enables that
+    /// one and returns it (its id, name and counters are kept).
+    fn upsert_target(&self, target: &FocusTarget) -> CoreResult<FocusTarget>;
+    fn set_target_enabled(&self, id: &str, enabled: bool) -> CoreResult<FocusTarget>;
+    /// Removes the target; its interventions stay as history.
+    fn remove_target(&self, id: &str) -> CoreResult<()>;
+    /// Bumps `blocked_count` and sets `last_blocked_at`.
+    fn touch_blocked(&self, id: &str, at: DateTime<Utc>) -> CoreResult<()>;
+
+    fn insert_intervention(&self, intervention: &Intervention) -> CoreResult<()>;
+    fn get_intervention(&self, id: &str) -> CoreResult<Option<Intervention>>;
+    /// Newest first.
+    fn list_interventions(&self, limit: usize) -> CoreResult<Vec<Intervention>>;
+    fn count_interventions_since(&self, since: DateTime<Utc>) -> CoreResult<u64>;
+
+    fn insert_session(&self, session: &FocusSession) -> CoreResult<()>;
+    /// Full-row update of an existing session.
+    fn update_session(&self, session: &FocusSession) -> CoreResult<()>;
+    /// The session without `ended_at`, newest when several were left behind.
+    fn active_session(&self) -> CoreResult<Option<FocusSession>>;
+    /// Newest first.
+    fn list_sessions(&self, limit: usize) -> CoreResult<Vec<FocusSession>>;
+}
+
 /// Small key/value store for engine state that must survive restarts
 /// (e.g. `last_report_check`).
 pub trait KvRepo: Send + Sync {
@@ -260,8 +319,9 @@ pub trait KvRepo: Send + Sync {
 /// Bulk maintenance of the store ("Apagar todos os dados").
 pub trait MaintenanceRepo: Send + Sync {
     /// Removes every activity-derived row in one transaction: blocks (open ones included),
-    /// screenshots, corrections, reports, nudges, AI usage, the key/value cache and learned
-    /// rules. Categories, user-authored rules and settings are kept.
+    /// screenshots, corrections, reports, nudges, AI usage, the key/value cache, learned
+    /// rules, interventions and focus sessions. Categories, user-authored rules, settings
+    /// and the focus targets are kept.
     fn wipe_user_data(&self) -> CoreResult<()>;
 }
 

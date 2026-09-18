@@ -4,6 +4,7 @@
 mod blocks;
 mod categories;
 mod corrections;
+mod focus;
 mod kv;
 mod maintenance;
 mod nudges;

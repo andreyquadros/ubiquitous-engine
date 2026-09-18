@@ -130,6 +130,24 @@ impl EventSink for PrintSink {
                 "⬆ nova versão disponível: {} ({}) {}",
                 release.version, release.build.sha, release.download_url
             ),
+            EngineEvent::Intervention { intervention } => println!(
+                "✋ UBI segurou {} ({}): {}",
+                intervention.name,
+                intervention.action.as_str(),
+                intervention.message
+            ),
+            EngineEvent::FocusSession { session } => match session {
+                Some(s) if s.ended_at.is_some() => println!(
+                    "◆ sessão de foco encerrada: \"{}\" ({} distrações seguradas)",
+                    s.task, s.interventions
+                ),
+                Some(s) => println!(
+                    "◆ sessão de foco: \"{}\" até {}",
+                    s.task,
+                    s.ends_at.with_timezone(&Local).format("%H:%M")
+                ),
+                None => println!("◆ sem sessão de foco"),
+            },
             EngineEvent::BlockOpened { .. } | EngineEvent::ScreenshotTaken { .. } => {}
         }
     }

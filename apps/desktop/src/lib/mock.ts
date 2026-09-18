@@ -3,6 +3,7 @@
 // write commands and emits fake engine events so the UI behaves like the real app.
 
 import { getLocale } from '../i18n';
+import { normalizeDomain } from './format';
 import {
   SYSTEM_CATEGORIES,
   type ActivityBlock,
@@ -40,6 +41,14 @@ import {
   type BuildInfo,
   type ReleaseInfo,
   type UpdateStatus,
+  type FocusSession,
+  type FocusStatus,
+  type FocusTarget,
+  type FocusTargetKind,
+  type InstalledApp,
+  type Intervention,
+  type InterventionAction,
+  type KnownDomain,
 } from './types';
 import { PROVIDER_IDS, reconcileModels } from './providers';
 
@@ -543,7 +552,122 @@ const defaultSettings = (): Settings => ({
   launch_at_login: true,
   onboarding_done: true,
   check_updates: true,
+  focus: {
+    guard_enabled: true,
+    block_distraction_in_session: true,
+    hide_others_on_start: true,
+    session_minutes: 45,
+    intervention_cooldown_secs: 20,
+    macos_focus_shortcut_on: null,
+    macos_focus_shortcut_off: null,
+  },
 });
+
+/* ------------------------------------------------------------------ */
+/* focus guard (blocked apps and sites, interventions, sessions)       */
+/* ------------------------------------------------------------------ */
+
+/** What `list_installed_apps` finds on this Mac (sorted by name, like the Rust side). */
+const INSTALLED_APPS: InstalledApp[] = [
+  { name: 'Discord', bundle_id: 'com.hnc.Discord', path: '/Applications/Discord.app' },
+  { name: 'Google Chrome', bundle_id: 'com.google.Chrome', path: '/Applications/Google Chrome.app' },
+  { name: 'Slack', bundle_id: 'com.tinyspeck.slackmacgap', path: '/Applications/Slack.app' },
+  { name: 'Steam', bundle_id: 'com.valvesoftware.steam', path: '/Applications/Steam.app' },
+  { name: 'WhatsApp', bundle_id: 'net.whatsapp.WhatsApp', path: '/Applications/WhatsApp.app' },
+  { name: 'Xcode', bundle_id: 'com.apple.dt.Xcode', path: '/Applications/Xcode.app' },
+];
+
+const minutesAgo = (mins: number): IsoDateTime => new Date(Date.now() - mins * 60_000).toISOString();
+
+/** The engine rotates these in order per process (same list for apps and sites); the mock follows the UI locale. */
+const interventionMessage = (i: number): string => {
+  const pt = ['Não! Foque na sua produtividade.', 'Esse app fica pra depois. Sua meta agradece.', 'Você bloqueou isso por um motivo. Volta pro que importa.', 'Não hoje. Que tal mais 20 minutos de foco?', 'Eu seguro a distração; você segura o foco.'];
+  const english = ['No! Focus on your productivity.', 'That one can wait. Your goal says thanks.', 'You blocked this for a reason. Back to what matters.', 'Not today. How about 20 more minutes of focus?', 'I hold the distraction; you hold the focus.'];
+  const list = en() ? english : pt;
+  return list[((i % list.length) + list.length) % list.length] as string;
+};
+
+const TARGET_YOUTUBE = 'tgt-youtube';
+const TARGET_INSTAGRAM = 'tgt-instagram';
+const TARGET_DISCORD = 'tgt-discord';
+
+/** Three targets; YouTube was blocked 3 minutes ago (so disabling it triggers the three warnings). */
+const seedTargets = (): FocusTarget[] => {
+  const created = atLocal(shiftDays(today(), -12), 9, 30);
+  return [
+    { id: TARGET_YOUTUBE, kind: 'site', name: 'YouTube', key: 'youtube.com', enabled: true, created_at: created, last_blocked_at: minutesAgo(3), blocked_count: 7 },
+    { id: TARGET_INSTAGRAM, kind: 'site', name: 'Instagram', key: 'instagram.com', enabled: true, created_at: created, last_blocked_at: minutesAgo(130), blocked_count: 3 },
+    { id: TARGET_DISCORD, kind: 'app', name: 'Discord', key: 'com.hnc.Discord', enabled: false, created_at: atLocal(shiftDays(today(), -5), 14, 0), last_blocked_at: atLocal(shiftDays(today(), -1), 16, 20), blocked_count: 1 },
+  ];
+};
+
+/** Four interventions today, newest first. */
+const seedInterventions = (sessionId: Id | null): Intervention[] => {
+  const mk = (i: number, at: IsoDateTime, target: FocusTarget, action: InterventionAction, session: Id | null): Intervention => ({
+    id: `itv-${i}`,
+    at,
+    target_id: target.id,
+    kind: target.kind,
+    name: target.name,
+    key: target.key,
+    action,
+    session_id: session,
+    message: interventionMessage(i),
+  });
+  const [yt, ig, dc] = seedTargets() as [FocusTarget, FocusTarget, FocusTarget];
+  return [mk(3, minutesAgo(3), yt, 'tab_closed', sessionId), mk(2, minutesAgo(48), ig, 'tab_closed', null), mk(1, minutesAgo(125), dc, 'app_quit', null), mk(0, minutesAgo(190), yt, 'tab_blanked', null)];
+};
+
+/** A 45-minute session started 12 minutes ago (`?session=active`, `__mock.setFocus({ session: 'active' })`). */
+const sampleSession = (): FocusSession => ({
+  id: 'fs-active',
+  task: pick('terminar o relatório do IFRO', 'finish the IFRO report'),
+  started_at: minutesAgo(12),
+  ends_at: new Date(Date.now() + 33 * 60_000).toISOString(),
+  ended_at: null,
+  interventions: 1,
+  hid_windows: true,
+  ran_shortcut: false,
+});
+
+/** The "a lot of windows" nudge the engine stores after 10 app switches in 15 minutes (`?nudge=focus_prompt`). */
+const focusPromptNudge = (): Nudge => ({
+  id: uid('ndg'),
+  at: new Date().toISOString(),
+  kind: 'focus_prompt',
+  title: pick('Muitas janelas', 'A lot of windows'),
+  message: pick(
+    'Você tem alternado entre muitas janelas, que tal focar mais? Que tarefa você precisa fazer agora e quer que eu te ajude com um foco maior?',
+    "You've been switching between a lot of windows. How about focusing more? What do you need to get done right now, and shall I help you focus on it?",
+  ),
+  seen: false,
+});
+
+/** `?session=active` and `?nudge=focus_prompt` are read once at module load (like `?lang=`), so a reset keeps them. */
+const FOCUS_FROM_QUERY: { session: boolean; nudge: boolean } = (() => {
+  try {
+    if (typeof window === 'undefined') return { session: false, nudge: false };
+    const q = new URLSearchParams(window.location.search);
+    return { session: q.get('session') === 'active', nudge: q.get('nudge') === 'focus_prompt' };
+  } catch {
+    return { session: false, nudge: false };
+  }
+})();
+
+interface FocusState {
+  targets: FocusTarget[];
+  interventions: Intervention[];
+  session: FocusSession | null;
+  /** Timer that ends the active session at `ends_at` (browser only). */
+  timer: ReturnType<typeof setTimeout> | null;
+  /** Index of the next intervention message (the engine rotates per process). */
+  nextMessage: number;
+}
+
+const freshFocusState = (): FocusState => {
+  const session = FOCUS_FROM_QUERY.session ? sampleSession() : null;
+  return { targets: seedTargets(), interventions: seedInterventions(session?.id ?? null), session, timer: null, nextMessage: 4 };
+};
 
 /* ------------------------------------------------------------------ */
 /* updates (rolling "continuous" GitHub release)                       */
@@ -617,6 +741,7 @@ interface State {
   usage: AiUsageTotals;
   advices: number;
   update: UpdateState;
+  focus: FocusState;
 }
 
 const onboardingFromQuery = (): boolean => {
@@ -637,7 +762,7 @@ function freshState(): State {
     rules: seedRules(),
     blocks: new Map<IsoDate, ActivityBlock[]>(),
     reports: seedReports(t),
-    nudges: seedNudges(t),
+    nudges: FOCUS_FROM_QUERY.nudge ? [focusPromptNudge(), ...seedNudges(t)] : seedNudges(t),
     settings,
     keyHints: { anthropic: 'f3a9', openai: null, xai: null },
     permissions: { screen_recording: 'granted', automation: 'granted', accessibility: 'unknown' },
@@ -646,6 +771,7 @@ function freshState(): State {
     usage: { calls: 412, input_tokens: 1_234_567, output_tokens: 98_765, cost_usd: 1.37 },
     advices: 0,
     update: freshUpdateState(),
+    focus: freshFocusState(),
   };
 }
 
@@ -1085,6 +1211,108 @@ function refreshAiHealth(): void {
   else if (S.settings.local_only) S.aiHealth = { state: 'paused', reason: 'Modo somente local ativado' };
   else if (S.usage.cost_usd >= S.settings.ai_monthly_budget_usd) S.aiHealth = { state: 'paused', reason: 'Orçamento mensal atingido' };
   else S.aiHealth = { state: 'ok' };
+}
+
+/* ------------------------------------------------------------------ */
+/* focus guard: derived data and session lifecycle                     */
+/* ------------------------------------------------------------------ */
+
+const sortTargets = (list: FocusTarget[]): FocusTarget[] => [...list].sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name));
+
+/** Domains of the last 7 days of blocks, most time first (`list_known_domains`). */
+function knownDomains(limit: number): KnownDomain[] {
+  const secs = new Map<string, number>();
+  for (let i = 0; i < 7; i++) {
+    for (const b of dayBlocks(shiftDays(today(), -i))) {
+      if (!b.domain) continue;
+      const d = normalizeDomain(b.domain);
+      secs.set(d, (secs.get(d) ?? 0) + secsBetween(b.started_at, b.ended_at));
+    }
+  }
+  return [...secs.entries()]
+    .map(([domain, seconds]) => ({ domain, seconds: Math.round(seconds) }))
+    .sort((a, b) => b.seconds - a.seconds)
+    .slice(0, limit);
+}
+
+const activeSession = (): FocusSession | null => {
+  const s = S.focus.session;
+  return s && !s.ended_at ? s : null;
+};
+
+function focusStatus(): FocusStatus {
+  const session = activeSession();
+  const t = today();
+  return {
+    session: session ? structuredClone(session) : null,
+    remaining_secs: session ? Math.max(0, Math.round((new Date(session.ends_at).getTime() - Date.now()) / 1000)) : null,
+    targets_enabled: S.focus.targets.filter((x) => x.enabled).length,
+    interventions_today: S.focus.interventions.filter((i) => localDateOf(i.at) === t).length,
+    guard_enabled: S.settings.focus.guard_enabled,
+  };
+}
+
+/** Ends the active session (timer or user): `ended_at`, the `focus_session` event and a Praise nudge when it lasted 5 min or more. */
+function endSession(): FocusSession | null {
+  const session = activeSession();
+  if (!session) return null;
+  if (S.focus.timer) {
+    clearTimeout(S.focus.timer);
+    S.focus.timer = null;
+  }
+  session.ended_at = new Date().toISOString();
+  const minutes = Math.round(secsBetween(session.started_at, session.ended_at) / 60);
+  if (minutes >= 5) {
+    const nudge: Nudge = {
+      id: uid('ndg'),
+      at: session.ended_at,
+      kind: 'praise',
+      title: pick('Sessão de foco concluída', 'Focus session done'),
+      message: pick(
+        `Sessão de foco concluída: ${minutes} min em "${session.task}", ${session.interventions} distrações seguradas.`,
+        `Focus session done: ${minutes} min on "${session.task}", ${session.interventions} distractions held.`,
+      ),
+      seen: false,
+    };
+    S.nudges.unshift(nudge);
+    setTimeout(() => emit({ type: 'nudge', nudge }), 20);
+  }
+  const snapshot = structuredClone(session);
+  setTimeout(() => emit({ type: 'focus_session', session: snapshot }), 10);
+  return snapshot;
+}
+
+/** What the guard does when a listed app or site comes to the front: records the intervention and pushes the event. */
+function intervene(target: FocusTarget): Intervention {
+  const session = activeSession();
+  const at = new Date().toISOString();
+  const intervention: Intervention = {
+    id: uid('itv'),
+    at,
+    target_id: target.id,
+    kind: target.kind,
+    name: target.name,
+    key: target.key,
+    action: target.kind === 'app' ? 'app_quit' : 'tab_closed',
+    session_id: session?.id ?? null,
+    message: interventionMessage(S.focus.nextMessage++),
+  };
+  S.focus.interventions.unshift(intervention);
+  target.blocked_count += 1;
+  target.last_blocked_at = at;
+  emit({ type: 'intervention', intervention: structuredClone(intervention) });
+  if (session) {
+    session.interventions += 1;
+    emit({ type: 'focus_session', session: structuredClone(session) });
+  }
+  return intervention;
+}
+
+/** The intervention window, previewed in the browser as a 460×188 popup (the Tauri shell opens a real window). */
+function openInterventionPreview(id: string): void {
+  if (typeof window === 'undefined' || !LATENCY_MS) return;
+  const url = `${window.location.pathname}${window.location.search}#/intervention?id=${encodeURIComponent(id)}`;
+  window.open(url, 'ubiqx-intervention', 'popup=yes,width=460,height=188,top=24');
 }
 
 /* ------------------------------------------------------------------ */
@@ -1534,6 +1762,62 @@ const commands: Record<string, Cmd> = {
     if (!rel) throw new Error('not_found: nenhuma atualização disponível');
     if (typeof window !== 'undefined') window.open(rel.download_url, '_blank', 'noopener');
   },
+
+  list_installed_apps: () => [...INSTALLED_APPS].sort((a, b) => a.name.localeCompare(b.name)),
+  list_known_domains: (a) => knownDomains(num(a.limit, 30)),
+  list_focus_targets: () => sortTargets(S.focus.targets),
+  add_focus_target: (a) => {
+    const kind = (a.kind === 'app' ? 'app' : 'site') as FocusTargetKind;
+    const name = str(a.name, 'name').trim();
+    const rawKey = str(a.key, 'key').trim();
+    const key = kind === 'site' ? normalizeDomain(rawKey) : rawKey;
+    if (!key || !name) throw new Error('invalid: nome e chave são obrigatórios');
+    const existing = S.focus.targets.find((x) => x.kind === kind && x.key === key);
+    if (existing) {
+      existing.enabled = true;
+      return existing;
+    }
+    const target: FocusTarget = { id: uid('tgt'), kind, name, key, enabled: true, created_at: new Date().toISOString(), last_blocked_at: null, blocked_count: 0 };
+    S.focus.targets.push(target);
+    return target;
+  },
+  set_focus_target_enabled: (a) => {
+    const target = S.focus.targets.find((x) => x.id === a.id);
+    if (!target) throw new Error('not_found: bloqueio não encontrado');
+    target.enabled = a.enabled === true;
+    return target;
+  },
+  remove_focus_target: (a) => {
+    S.focus.targets = S.focus.targets.filter((x) => x.id !== a.id);
+  },
+  list_interventions: (a) => [...S.focus.interventions].sort((x, y) => y.at.localeCompare(x.at)).slice(0, num(a.limit, 30)),
+  get_focus_status: () => focusStatus(),
+  start_focus_session: (a) => {
+    const task = str(a.task, 'task').trim();
+    const minutes = num(a.minutes, 0);
+    if (!task) throw new Error('invalid: a tarefa está vazia');
+    if (!Number.isInteger(minutes) || minutes < 5 || minutes > 240) throw new Error('invalid: a duração precisa estar entre 5 e 240 minutos');
+    endSession();
+    const now = Date.now();
+    const session: FocusSession = {
+      id: uid('fs'),
+      task,
+      started_at: new Date(now).toISOString(),
+      ends_at: new Date(now + minutes * 60_000).toISOString(),
+      ended_at: null,
+      interventions: 0,
+      hid_windows: S.settings.focus.hide_others_on_start,
+      ran_shortcut: S.settings.focus.macos_focus_shortcut_on !== null,
+    };
+    S.focus.session = session;
+    if (LATENCY_MS) S.focus.timer = setTimeout(endSession, minutes * 60_000);
+    setTimeout(() => emit({ type: 'focus_session', session: structuredClone(session) }), 10);
+    return session;
+  },
+  stop_focus_session: () => endSession(),
+  test_intervention: () => {
+    openInterventionPreview('test');
+  },
 };
 
 export async function handle<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
@@ -1568,6 +1852,35 @@ export const __mock = {
   },
   /** The newer build `setUpdate(true)` serves, for assertions. */
   sampleRelease,
+  /**
+   * Focus guard state for tests and screenshots: `session: 'active'` = the 45-min sample started 12 min ago, `null` ends any
+   * session silently; `nudge: true` stores an unseen `focus_prompt` nudge (and pushes it to subscribers); `targets`/`interventions`
+   * replace the lists.
+   */
+  setFocus(patch: { session?: FocusSession | 'active' | null; nudge?: boolean; targets?: FocusTarget[]; interventions?: Intervention[] }): void {
+    if (patch.session !== undefined) {
+      if (S.focus.timer) clearTimeout(S.focus.timer);
+      S.focus.timer = null;
+      S.focus.session = patch.session === 'active' ? sampleSession() : patch.session ? structuredClone(patch.session) : null;
+    }
+    if (patch.targets) S.focus.targets = structuredClone(patch.targets);
+    if (patch.interventions) S.focus.interventions = structuredClone(patch.interventions);
+    if (patch.nudge) {
+      const nudge = focusPromptNudge();
+      S.nudges.unshift(nudge);
+      if (subscribers.size > 0) setTimeout(() => emit({ type: 'nudge', nudge }), LATENCY_MS ? 300 : 10);
+    }
+  },
+  /** Simulates the guard catching a listed target (the first enabled one by default): records an intervention, pushes the events and, in the browser, opens the panel. */
+  intervene(targetId?: Id): Intervention | null {
+    const target = targetId ? S.focus.targets.find((x) => x.id === targetId) : sortTargets(S.focus.targets).find((x) => x.enabled);
+    if (!target) return null;
+    const intervention = intervene(target);
+    openInterventionPreview(intervention.id);
+    return structuredClone(intervention);
+  },
+  /** The session `setFocus({ session: 'active' })` serves, for assertions. */
+  sampleSession,
   state(): State {
     return S;
   },
@@ -1575,10 +1888,16 @@ export const __mock = {
 
 declare global {
   interface Window {
-    __ubiqxMock?: { reset: () => void; setOnboardingDone: (done: boolean) => void; setUpdate: (release: ReleaseInfo | true | null) => void };
+    __ubiqxMock?: {
+      reset: () => void;
+      setOnboardingDone: (done: boolean) => void;
+      setUpdate: (release: ReleaseInfo | true | null) => void;
+      setFocus: (typeof __mock)['setFocus'];
+      intervene: (typeof __mock)['intervene'];
+    };
   }
 }
 
 if (typeof window !== 'undefined') {
-  window.__ubiqxMock = { reset: __mock.reset, setOnboardingDone: __mock.setOnboardingDone, setUpdate: __mock.setUpdate };
+  window.__ubiqxMock = { reset: __mock.reset, setOnboardingDone: __mock.setOnboardingDone, setUpdate: __mock.setUpdate, setFocus: __mock.setFocus, intervene: __mock.intervene };
 }

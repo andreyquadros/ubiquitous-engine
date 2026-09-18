@@ -1,4 +1,5 @@
-//! ubiqX desktop shell: a menubar (tray) application hosting the engine.
+//! ubiqX desktop shell: a menubar (tray) application hosting the engine, plus the small
+//! always-on-top window UBI uses when the focus guard holds a distraction.
 
 mod commands;
 
@@ -6,12 +7,17 @@ use std::sync::Arc;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
+use tauri::{
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, RunEvent, WebviewUrl,
+    WebviewWindowBuilder, WindowEvent,
+};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_notification::NotificationExt;
 use ubiqx_app::{App, AppConfig};
-use ubiqx_core::ports::{EventSink, Notifier};
-use ubiqx_core::{BuildInfo, CoreError, CoreResult, EngineEvent, ReleaseInfo, UiLanguage};
+use ubiqx_core::ports::{EventSink, InterventionPresenter, Notifier};
+use ubiqx_core::{
+    BuildInfo, CoreError, CoreResult, EngineEvent, Intervention, ReleaseInfo, UiLanguage,
+};
 use ubiqx_engine::PrivateModeDuration;
 
 /// Shared state handed to every command.
@@ -215,6 +221,108 @@ pub fn show_main_window(app: &AppHandle) {
     }
 }
 
+// ------------------------------------------------------------------------------------------
+// Intervention window
+// ------------------------------------------------------------------------------------------
+
+/// Label of the window UBI speaks from when the focus guard holds something.
+pub const INTERVENTION_WINDOW: &str = "intervention";
+
+/// Logical size of the intervention panel (matches the page's fixed layout).
+const INTERVENTION_SIZE: (f64, f64) = (460.0, 188.0);
+
+/// Gap between the top of the monitor and the panel, in logical pixels.
+const INTERVENTION_TOP_GAP: f64 = 24.0;
+
+/// Hash route the page mounts for an intervention id (or `test` for the sample).
+fn intervention_route(id: &str) -> String {
+    let id: String = id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    format!("#/intervention?id={id}")
+}
+
+/// Where the panel goes: centred horizontally, [`INTERVENTION_TOP_GAP`] below the top of the
+/// monitor under the cursor (the primary monitor when that cannot be told).
+fn intervention_position(app: &AppHandle) -> Option<PhysicalPosition<i32>> {
+    let monitor = app
+        .cursor_position()
+        .ok()
+        .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten())?;
+    let scale = monitor.scale_factor();
+    let width = (INTERVENTION_SIZE.0 * scale).round() as i32;
+    let x = monitor.position().x + (monitor.size().width as i32 - width) / 2;
+    let y = monitor.position().y + (INTERVENTION_TOP_GAP * scale).round() as i32;
+    Some(PhysicalPosition::new(x, y))
+}
+
+/// Shows the intervention window for `id`: built on first use, then re-pointed at the new
+/// id and re-shown. The page closes itself after a few seconds or on its button.
+pub fn show_intervention_window(app: &AppHandle, id: &str) -> CoreResult<()> {
+    let route = intervention_route(id);
+    let position = intervention_position(app);
+    let window = match app.get_webview_window(INTERVENTION_WINDOW) {
+        Some(w) => {
+            // A hash change re-renders the route without reloading the page.
+            w.eval(format!(
+                "window.location.hash = {}",
+                serde_json::to_string(&route).unwrap_or_else(|_| "\"#/intervention\"".into())
+            ))
+            .map_err(|e| CoreError::Platform(format!("intervention window: {e}")))?;
+            w
+        }
+        None => {
+            let mut builder = WebviewWindowBuilder::new(
+                app,
+                INTERVENTION_WINDOW,
+                WebviewUrl::App(format!("index.html{route}").into()),
+            )
+            .title("ubiqX")
+            .inner_size(INTERVENTION_SIZE.0, INTERVENTION_SIZE.1)
+            .decorations(false)
+            .shadow(true)
+            .resizable(false)
+            .always_on_top(true)
+            .visible_on_all_workspaces(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .visible(false);
+            if let Some(p) = position {
+                builder = builder.position(p.x as f64, p.y as f64);
+            }
+            builder
+                .build()
+                .map_err(|e| CoreError::Platform(format!("intervention window: {e}")))?
+        }
+    };
+    let _ = window.set_size(LogicalSize::new(INTERVENTION_SIZE.0, INTERVENTION_SIZE.1));
+    if let Some(p) = position {
+        let _ = window.set_position(p);
+    }
+    let _ = window.set_always_on_top(true);
+    window
+        .show()
+        .map_err(|e| CoreError::Platform(format!("intervention window: {e}")))?;
+    Ok(())
+}
+
+/// [`InterventionPresenter`] backed by the intervention window. Every window also receives
+/// the intervention itself as an `intervention` event, so the page can render it without a
+/// round trip.
+struct TauriPresenter(AppHandle);
+
+impl InterventionPresenter for TauriPresenter {
+    fn show(&self, intervention: &Intervention) -> CoreResult<bool> {
+        show_intervention_window(&self.0, &intervention.id)?;
+        if let Err(e) = self.0.emit("intervention", intervention) {
+            tracing::debug!(error = %e, "could not emit the intervention event");
+        }
+        Ok(true)
+    }
+}
+
 /// Builds the tray (labels in `lang`) and returns its relabelable items, without the
 /// application-menu item that [`build_app_menu`] adds.
 fn build_tray(
@@ -407,6 +515,8 @@ pub fn run() {
                 .map_err(|e| format!("app data dir: {e}"))?;
             let sink: Arc<dyn EventSink> = Arc::new(TauriSink(handle.clone()));
             let notifier: Arc<dyn Notifier> = Arc::new(TauriNotifier(handle.clone()));
+            let presenter: Arc<dyn InterventionPresenter> =
+                Arc::new(TauriPresenter(handle.clone()));
             let scripted = if std::env::var("UBIQX_SCRIPTED").is_ok() {
                 Some(ubiqx_app::ubiqx_platform::mock::Scenario::demo_day().looping())
             } else {
@@ -441,6 +551,7 @@ pub fn run() {
                 scripted_platform: scripted,
                 ai,
                 notifier: Some(notifier),
+                presenter: Some(presenter),
                 build,
                 update_feed_url: Some(env!("UBIQX_UPDATE_FEED_URL").to_string()),
             };
@@ -486,7 +597,8 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                // Closing the dashboard must not stop tracking: hide instead.
+                // Closing the dashboard must not stop tracking: hide instead. The
+                // intervention panel is kept too, so the next intervention only re-shows it.
                 api.prevent_close();
                 let _ = window.hide();
             }

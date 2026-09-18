@@ -1,4 +1,4 @@
-import { AlertTriangle, Bell, BrainCircuit, Coffee, Eye, FileText, Hourglass, ThumbsUp, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, Bell, BrainCircuit, Coffee, Eye, FileText, Hourglass, Shield, ThumbsUp, type LucideIcon } from 'lucide-react';
 import { fmtRelative, fmtTime, fmtUsd, intlLocale } from '../../lib/format';
 import { useAppStore } from '../../lib/store';
 import type { AiHealth, DashboardData, Nudge, NudgeKind } from '../../lib/types';
@@ -13,6 +13,7 @@ export const NUDGE_ICON: Record<NudgeKind, LucideIcon> = {
   idle: Hourglass,
   report_ready: FileText,
   attention: AlertTriangle,
+  focus_prompt: Shield,
 };
 
 function aiStatus(h: AiHealth, t: (key: string, vars?: Vars) => string): { label: string; color: string; detail?: string } {

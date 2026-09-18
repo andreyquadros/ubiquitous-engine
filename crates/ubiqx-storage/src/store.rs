@@ -6,7 +6,8 @@ use ubiqx_core::CoreResult;
 use crate::db::Db;
 use crate::error::{StorageError, StorageResult};
 
-/// Implements every persistence port of `ubiqx_core::ports` on top of a [`Db`].
+/// Implements every persistence port of `ubiqx_core::ports` (including `FocusRepo`) on top
+/// of a [`Db`].
 ///
 /// Clone it freely: all clones share the same connection. Because several ports declare
 /// methods with the same name (`insert`, `get`, `upsert`, `delete`, …), call them through the

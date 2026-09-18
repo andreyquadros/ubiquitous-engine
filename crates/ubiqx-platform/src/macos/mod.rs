@@ -7,12 +7,18 @@
 //! * Screenshots: **Screen Recording**.
 //! * Browser URLs: **Automation** (Apple Events) for each browser, prompted on first use.
 //! * Idle time: no permission.
+//! * Closing/blanking a browser tab: the same **Automation** grant as reading its URL.
+//! * Hiding other windows: **Automation** for System Events, prompted the first time a focus
+//!   session starts with "hide the other windows" on.
+//! * Quitting an app: no permission (`NSRunningApplication`).
 
 use std::sync::Arc;
 
 use crate::PlatformServices;
 
+pub mod apps;
 pub mod capture;
+pub mod enforce;
 pub mod frontmost;
 pub mod idle;
 pub mod keychain;
@@ -29,5 +35,7 @@ pub fn services() -> PlatformServices {
         secrets: Arc::new(keychain::KeychainSecretStore::default()),
         notifier: Arc::new(crate::notify::LogNotifier),
         update_feed: Arc::new(crate::update_feed::HttpUpdateFeed::new()),
+        apps: Arc::new(apps::MacAppCatalog::default()),
+        enforcer: Arc::new(enforce::MacEnforcer),
     }
 }

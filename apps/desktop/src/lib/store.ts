@@ -8,7 +8,15 @@ import type {
   Category,
   DashboardData,
   EngineEvent,
+  FocusSession,
+  FocusStatus,
+  FocusTarget,
+  FocusTargetKind,
+  Id,
+  InstalledApp,
+  Intervention,
   IsoDate,
+  KnownDomain,
   Nudge,
   Settings,
   SettingsView,
@@ -71,6 +79,24 @@ interface AppState {
   dismissUpdate: () => Promise<UpdateStatus | null>;
   /** Opens the DMG download of the available release. */
   openUpdate: () => Promise<void>;
+
+  // focus guard (blocked apps and sites) and focus sessions
+  focusStatus: FocusStatus | null;
+  focusTargets: FocusTarget[];
+  interventions: Intervention[];
+  installedApps: InstalledApp[];
+  knownDomains: KnownDomain[];
+  /** Session, counters and guard flag (cheap; the sidebar dot and the dashboard line depend on it). */
+  loadFocusStatus: () => Promise<FocusStatus | null>;
+  /** Status + targets + interventions, for the Focus page and after an intervention. */
+  loadFocus: () => Promise<void>;
+  /** Installed apps and known domains (the search catalogue). */
+  loadFocusCatalog: () => Promise<void>;
+  addFocusTarget: (kind: FocusTargetKind, name: string, key: string) => Promise<FocusTarget>;
+  setFocusTargetEnabled: (id: Id, enabled: boolean) => Promise<FocusTarget>;
+  removeFocusTarget: (id: Id) => Promise<void>;
+  startFocusSession: (task: string, minutes: number) => Promise<FocusSession>;
+  stopFocusSession: () => Promise<FocusSession | null>;
 }
 
 const inflight = new Map<string, Promise<DashboardData>>();
@@ -183,6 +209,22 @@ export const useAppStore = create<AppState>((set, get) => ({
         // optimistically, keeps a dismissed banner from flashing back in.
         void get().loadUpdateStatus();
         break;
+      case 'intervention':
+        // Newest first, deduplicated (the event may arrive before the list was ever loaded).
+        set((s) => ({ interventions: [e.intervention, ...s.interventions.filter((i) => i.id !== e.intervention.id)] }));
+        void get().loadFocus();
+        break;
+      case 'focus_session': {
+        // Show the session (or its end) right away; the status reload brings the counters.
+        const session = e.session && !e.session.ended_at ? e.session : null;
+        set((s) => ({
+          focusStatus: s.focusStatus
+            ? { ...s.focusStatus, session, remaining_secs: session ? Math.max(0, Math.round((new Date(session.ends_at).getTime() - Date.now()) / 1000)) : null }
+            : s.focusStatus,
+        }));
+        void get().loadFocusStatus();
+        break;
+      }
       default:
         break;
     }
@@ -223,7 +265,78 @@ export const useAppStore = create<AppState>((set, get) => ({
     return status;
   },
   openUpdate: () => ipc.openUpdate(),
+
+  focusStatus: null,
+  focusTargets: [],
+  interventions: [],
+  installedApps: [],
+  knownDomains: [],
+  loadFocusStatus: async () => {
+    try {
+      const status = await ipc.getFocusStatus();
+      set({ focusStatus: status });
+      return status;
+    } catch {
+      // An engine without the focus commands: the page shows nothing rather than an error.
+      return null;
+    }
+  },
+  loadFocus: async () => {
+    const [status, targets, interventions] = await Promise.all([ipc.getFocusStatus(), ipc.listFocusTargets(), ipc.listInterventions()]);
+    set({ focusStatus: status, focusTargets: targets, interventions });
+  },
+  loadFocusCatalog: async () => {
+    const [apps, domains] = await Promise.all([ipc.listInstalledApps().catch(() => [] as InstalledApp[]), ipc.listKnownDomains().catch(() => [] as KnownDomain[])]);
+    set({ installedApps: apps, knownDomains: domains });
+  },
+  addFocusTarget: async (kind, name, key) => {
+    const target = await ipc.addFocusTarget(kind, name, key);
+    set((s) => ({ focusTargets: sortTargets([target, ...s.focusTargets.filter((x) => x.id !== target.id)]) }));
+    void get().loadFocusStatus();
+    return target;
+  },
+  setFocusTargetEnabled: async (id, enabled) => {
+    // optimistic
+    set((s) => ({ focusTargets: s.focusTargets.map((x) => (x.id === id ? { ...x, enabled } : x)) }));
+    try {
+      const target = await ipc.setFocusTargetEnabled(id, enabled);
+      set((s) => ({ focusTargets: sortTargets(s.focusTargets.map((x) => (x.id === id ? target : x))) }));
+      void get().loadFocusStatus();
+      return target;
+    } catch (e) {
+      set((s) => ({ focusTargets: s.focusTargets.map((x) => (x.id === id ? { ...x, enabled: !enabled } : x)) }));
+      throw e;
+    }
+  },
+  removeFocusTarget: async (id) => {
+    await ipc.removeFocusTarget(id);
+    set((s) => ({ focusTargets: s.focusTargets.filter((x) => x.id !== id) }));
+    void get().loadFocusStatus();
+  },
+  startFocusSession: async (task, minutes) => {
+    const session = await ipc.startFocusSession(task, minutes);
+    set((s) => ({
+      focusStatus: {
+        session,
+        remaining_secs: Math.max(0, Math.round((new Date(session.ends_at).getTime() - Date.now()) / 1000)),
+        targets_enabled: s.focusStatus?.targets_enabled ?? 0,
+        interventions_today: s.focusStatus?.interventions_today ?? 0,
+        guard_enabled: s.focusStatus?.guard_enabled ?? true,
+      },
+    }));
+    void get().loadFocusStatus();
+    return session;
+  },
+  stopFocusSession: async () => {
+    const session = await ipc.stopFocusSession();
+    set((s) => (s.focusStatus ? { focusStatus: { ...s.focusStatus, session: null, remaining_secs: null } } : {}));
+    void get().loadFocusStatus();
+    return session;
+  },
 }));
+
+/** Enabled first, then by name (the order `list_focus_targets` returns). */
+const sortTargets = (list: FocusTarget[]): FocusTarget[] => [...list].sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name));
 
 // Apply initial theme on module load (browser only).
 if (typeof document !== 'undefined') applyTheme(useAppStore.getState().theme);

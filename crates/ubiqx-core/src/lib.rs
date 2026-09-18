@@ -9,7 +9,8 @@
 //! * Pure business logic that needs no I/O and is therefore fully unit-tested here:
 //!   [`segmenter`] (samples → blocks), [`rules`] (deterministic classification),
 //!   [`learning`] (turning corrections into rules and few-shot examples), [`insights`]
-//!   (focus score and nudges), [`scheduler`] (when daily reports are due) and
+//!   (focus score and nudges), [`focus`] (the focus guard: blocked targets, intervention
+//!   messages, the "a lot of windows" prompt), [`scheduler`] (when daily reports are due) and
 //!   [`normalize`] (title/domain normalisation and similarity) and [`redact`] (what may leave
 //!   the machine). [`lang`] names the UI language every generated text follows and
 //!   [`update`] decides when a published build is newer than the running one.
@@ -18,6 +19,7 @@
 
 pub mod clock;
 pub mod error;
+pub mod focus;
 pub mod insights;
 pub mod lang;
 pub mod learning;

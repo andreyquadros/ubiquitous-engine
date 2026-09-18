@@ -59,6 +59,9 @@ fn fixture() -> Fixture {
             secrets: Arc::new(MemorySecrets::default()),
             notifier: platform.notifier.clone(),
             update_feed: platform.update_feed.clone(),
+            apps: platform.apps.clone(),
+            enforcer: platform.enforcer.clone(),
+            presenter: Arc::new(ubiqx_engine::LogInterventionPresenter),
         },
         repos: Repos::from_store(store.clone()),
         ai: AiPorts {

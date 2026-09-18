@@ -490,6 +490,9 @@ pub enum NudgeKind {
     ReportReady,
     /// Something needs the user's attention (permission missing, API key invalid…).
     Attention,
+    /// UBI noticed a lot of window switching and asks which task to focus on (the
+    /// dashboard turns this one into a small form that starts a focus session).
+    FocusPrompt,
 }
 
 impl NudgeKind {
@@ -502,6 +505,7 @@ impl NudgeKind {
             NudgeKind::Idle => "idle",
             NudgeKind::ReportReady => "report_ready",
             NudgeKind::Attention => "attention",
+            NudgeKind::FocusPrompt => "focus_prompt",
         }
     }
 
@@ -514,6 +518,7 @@ impl NudgeKind {
             "idle" => Some(Self::Idle),
             "report_ready" => Some(Self::ReportReady),
             "attention" => Some(Self::Attention),
+            "focus_prompt" => Some(Self::FocusPrompt),
             _ => None,
         }
     }
@@ -818,6 +823,41 @@ impl Default for NudgeSettings {
     }
 }
 
+/// The focus guard: blocked apps/sites, focus sessions and what happens when one starts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FocusSettings {
+    /// Whether the guard loop enforces the list of blocked apps and sites at all.
+    pub guard_enabled: bool,
+    /// During a focus session, also hold anything the user's rules map to `Distraction`.
+    pub block_distraction_in_session: bool,
+    /// Hide every other application's windows when a focus session starts.
+    pub hide_others_on_start: bool,
+    /// Default length of a focus session, in minutes.
+    pub session_minutes: u32,
+    /// Seconds between two interventions on the same app/site.
+    pub intervention_cooldown_secs: u32,
+    /// Name of a macOS Shortcut to run when a session starts (e.g. one that turns on a
+    /// Focus mode). `None` = nothing.
+    pub macos_focus_shortcut_on: Option<String>,
+    /// Name of a macOS Shortcut to run when a session ends.
+    pub macos_focus_shortcut_off: Option<String>,
+}
+
+impl Default for FocusSettings {
+    fn default() -> Self {
+        Self {
+            guard_enabled: true,
+            block_distraction_in_session: true,
+            hide_others_on_start: true,
+            session_minutes: 45,
+            intervention_cooldown_secs: 20,
+            macos_focus_shortcut_on: None,
+            macos_focus_shortcut_off: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -881,6 +921,8 @@ pub struct Settings {
     /// every few hours). A manual check works regardless.
     #[serde(default = "default_true")]
     pub check_updates: bool,
+    /// Blocked apps/sites and focus sessions (see [`FocusSettings`]).
+    pub focus: FocusSettings,
 }
 
 fn default_true() -> bool {
@@ -927,6 +969,7 @@ impl Default for Settings {
             launch_at_login: true,
             onboarding_done: false,
             check_updates: true,
+            focus: FocusSettings::default(),
         }
     }
 }
@@ -999,6 +1042,14 @@ pub enum EngineEvent {
     UpdateAvailable {
         release: crate::update::ReleaseInfo,
     },
+    /// The focus guard held a blocked app or site (already persisted).
+    Intervention {
+        intervention: Intervention,
+    },
+    /// A focus session started, ended (`ended_at` set) or counted one more intervention.
+    FocusSession {
+        session: Option<FocusSession>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1027,6 +1078,158 @@ pub enum AiHealth {
     Paused {
         reason: String,
     },
+}
+
+// ---------------------------------------------------------------------------------------------
+// Focus guard
+// ---------------------------------------------------------------------------------------------
+
+/// What a focus target names: an installed application or a web site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FocusTargetKind {
+    App,
+    Site,
+}
+
+impl FocusTargetKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FocusTargetKind::App => "app",
+            FocusTargetKind::Site => "site",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "app" => Some(Self::App),
+            "site" => Some(Self::Site),
+            _ => None,
+        }
+    }
+}
+
+/// An app or site the user asked UBI to hold. `key` is the bundle id for apps
+/// (`com.tinyspeck.slackmacgap`) and the lower-case registrable domain for sites
+/// (`youtube.com`, which also covers every subdomain).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FocusTarget {
+    pub id: Id,
+    pub kind: FocusTargetKind,
+    pub name: String,
+    pub key: String,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub last_blocked_at: Option<DateTime<Utc>>,
+    pub blocked_count: u32,
+}
+
+/// An application found on this machine, offered when the user types a name to block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstalledApp {
+    pub name: String,
+    pub bundle_id: String,
+    pub path: String,
+}
+
+/// What the guard managed to do about a hit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InterventionAction {
+    /// The application was asked to quit and agreed.
+    AppQuit,
+    /// The browser closed the active tab.
+    TabClosed,
+    /// Closing failed; the tab was sent to `about:blank` instead.
+    TabBlanked,
+    /// Nothing could be enforced; the user was only told.
+    Notified,
+}
+
+impl InterventionAction {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            InterventionAction::AppQuit => "app_quit",
+            InterventionAction::TabClosed => "tab_closed",
+            InterventionAction::TabBlanked => "tab_blanked",
+            InterventionAction::Notified => "notified",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "app_quit" => Some(Self::AppQuit),
+            "tab_closed" => Some(Self::TabClosed),
+            "tab_blanked" => Some(Self::TabBlanked),
+            "notified" => Some(Self::Notified),
+            _ => None,
+        }
+    }
+}
+
+/// One time the guard held a distraction. `target_id` is `None` when the hit came from a
+/// classification rule (distraction category during a session) rather than from the list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Intervention {
+    pub id: Id,
+    pub at: DateTime<Utc>,
+    pub target_id: Option<Id>,
+    pub kind: FocusTargetKind,
+    pub name: String,
+    pub key: String,
+    pub action: InterventionAction,
+    pub session_id: Option<Id>,
+    /// What UBI said, in the UI language of the moment.
+    pub message: String,
+}
+
+/// A timed stretch of work on one task, during which the guard is stricter.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FocusSession {
+    pub id: Id,
+    pub task: String,
+    pub started_at: DateTime<Utc>,
+    pub ends_at: DateTime<Utc>,
+    pub ended_at: Option<DateTime<Utc>>,
+    /// Interventions counted while the session ran.
+    pub interventions: u32,
+    /// Other windows were hidden when it started.
+    pub hid_windows: bool,
+    /// The configured macOS Shortcut ran when it started.
+    pub ran_shortcut: bool,
+}
+
+impl FocusSession {
+    pub fn is_active(&self) -> bool {
+        self.ended_at.is_none()
+    }
+
+    /// Seconds left until `ends_at` (never negative).
+    pub fn remaining_secs(&self, now: DateTime<Utc>) -> i64 {
+        (self.ends_at - now).num_seconds().max(0)
+    }
+
+    /// Planned length in minutes.
+    pub fn planned_minutes(&self) -> i64 {
+        (self.ends_at - self.started_at).num_minutes().max(0)
+    }
+}
+
+/// The focus page's header numbers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FocusStatus {
+    pub session: Option<FocusSession>,
+    pub remaining_secs: Option<i64>,
+    pub targets_enabled: u32,
+    pub interventions_today: u32,
+    pub guard_enabled: bool,
+}
+
+/// A domain seen in the user's own activity, with the time spent there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnownDomain {
+    pub domain: String,
+    pub seconds: i64,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1110,6 +1313,7 @@ mod tests {
             NudgeKind::Idle,
             NudgeKind::ReportReady,
             NudgeKind::Attention,
+            NudgeKind::FocusPrompt,
         ] {
             assert_eq!(NudgeKind::parse(k.as_str()), Some(k));
         }

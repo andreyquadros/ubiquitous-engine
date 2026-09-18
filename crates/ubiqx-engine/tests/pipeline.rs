@@ -169,6 +169,9 @@ async fn harness_with(opts: HarnessOptions) -> Harness {
             secrets,
             notifier: platform.notifier.clone(),
             update_feed: platform.update_feed.clone(),
+            apps: platform.apps.clone(),
+            enforcer: platform.enforcer.clone(),
+            presenter: Arc::new(ubiqx_engine::LogInterventionPresenter),
         },
         repos: Repos::from_store(store.clone()),
         ai: opts.ai,
@@ -185,6 +188,7 @@ async fn harness_with(opts: HarnessOptions) -> Harness {
         retention_every: Duration::from_secs(3600),
         update_initial_delay: Duration::from_secs(3600),
         update_every: Duration::from_secs(3600),
+        focus_every: Duration::from_secs(3600),
         without_sampler: true,
     };
     let (handle, tx) = Engine::start_with(deps, cfg).unwrap();

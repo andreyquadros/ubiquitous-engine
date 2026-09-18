@@ -10,6 +10,7 @@ use ubiqx_core::segmenter::{Segmenter, SegmenterConfig};
 use ubiqx_core::*;
 
 use crate::deps::EngineDeps;
+use crate::focus::FocusRuntime;
 use crate::update::UpdateChecker;
 
 pub struct EngineState {
@@ -33,6 +34,9 @@ pub struct EngineState {
     pub tracker_stopped_cv: Condvar,
     /// Looks for newer builds in the update feed and remembers what was announced.
     pub update: UpdateChecker,
+    /// The focus guard's in-memory state: the active session, per-key cooldowns and the
+    /// message rotation.
+    pub focus: Mutex<FocusRuntime>,
 }
 
 impl EngineState {
@@ -48,6 +52,9 @@ impl EngineState {
         let mut cfg = SegmenterConfig::from(&settings);
         cfg.private_mode = settings.is_private(deps.clock.now());
         let health = key_health(&deps, &settings);
+        // A session left behind by the previous run continues (or is closed by the guard's
+        // first pass when its end already passed).
+        let focus = FocusRuntime::restore(deps.repos.focus.as_ref());
         let update = UpdateChecker::new(
             deps.build.clone(),
             deps.update_feed_url.clone(),
@@ -71,6 +78,7 @@ impl EngineState {
             tracker_stopped: Mutex::new(false),
             tracker_stopped_cv: Condvar::new(),
             update,
+            focus: Mutex::new(focus),
         })
     }
 

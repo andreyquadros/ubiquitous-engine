@@ -4,9 +4,11 @@
 //!
 //! * [`macos`] (only compiled on macOS): foreground application and window via AppKit and
 //!   CoreGraphics, idle time, per-window screenshots, browser URL through AppleScript,
-//!   permission checks and the Keychain-backed secret store.
-//! * [`mock`]: a scripted platform that replays a scenario. It is what the CLI and the engine
-//!   tests use on Linux/CI, and what the desktop app falls back to on unsupported systems.
+//!   permission checks, the Keychain-backed secret store, the installed-app catalogue and
+//!   the focus guard's enforcer (quit apps, close tabs, hide windows, run Shortcuts).
+//! * [`mock`]: a scripted platform that replays a scenario, plus a fixed app catalogue and a
+//!   recording enforcer. It is what the CLI and the engine tests use on Linux/CI, and what
+//!   the desktop app falls back to on unsupported systems.
 //! * Portable helpers: [`image_util`] (downscale + JPEG encode), [`browser`] (AppleScript
 //!   snippets and URL parsing), [`secrets`] (in-memory / environment stores),
 //!   [`notify`] (logging notifier), [`update_feed`] (the update feed over HTTP).
@@ -39,6 +41,10 @@ pub struct PlatformServices {
     pub secrets: Arc<dyn SecretStore>,
     pub notifier: Arc<dyn Notifier>,
     pub update_feed: Arc<dyn UpdateFeedSource>,
+    /// Installed applications, for the focus page's search.
+    pub apps: Arc<dyn AppCatalog>,
+    /// What the focus guard may do to a distraction.
+    pub enforcer: Arc<dyn Enforcer>,
 }
 
 impl PlatformServices {
@@ -72,6 +78,8 @@ impl PlatformServices {
             secrets: Arc::new(secrets::EnvOrMemorySecretStore::default()),
             notifier: Arc::new(notify::LogNotifier),
             update_feed: Arc::new(mock::StaticUpdateFeed::new(None)),
+            apps: Arc::new(mock::MockAppCatalog),
+            enforcer: Arc::new(mock::MockEnforcer::default()),
         };
         (services, scripted)
     }

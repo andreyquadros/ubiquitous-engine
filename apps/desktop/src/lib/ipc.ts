@@ -12,7 +12,14 @@ import type {
   DailyReport,
   DashboardData,
   EngineEvent,
+  FocusSession,
+  FocusStatus,
+  FocusTarget,
+  FocusTargetKind,
   Id,
+  InstalledApp,
+  Intervention,
+  KnownDomain,
   IsoDate,
   IsoDateTime,
   Nudge,
@@ -110,6 +117,26 @@ export const ipc = {
   dismissUpdate: (epoch: number) => call<UpdateStatus>('dismiss_update', { epoch }),
   /** Opens the DMG download of the available release in the browser. */
   openUpdate: () => call<void>('open_update'),
+
+  // Focus guard (blocked apps and sites) and focus sessions
+  /** Apps found on this Mac, sorted by name (cached for 60 s on the Rust side). */
+  listInstalledApps: () => call<InstalledApp[]>('list_installed_apps'),
+  /** Domains seen in the user's own blocks, most time first. */
+  listKnownDomains: (limit = 30) => call<KnownDomain[]>('list_known_domains', { limit }),
+  /** Enabled first, then by name. */
+  listFocusTargets: () => call<FocusTarget[]>('list_focus_targets'),
+  /** kind+key is unique: adding an existing target re-enables and returns it. Domains are normalised on the Rust side. */
+  addFocusTarget: (kind: FocusTargetKind, name: string, key: string) => call<FocusTarget>('add_focus_target', { kind, name, key }),
+  setFocusTargetEnabled: (id: Id, enabled: boolean) => call<FocusTarget>('set_focus_target_enabled', { id, enabled }),
+  removeFocusTarget: (id: Id) => call<void>('remove_focus_target', { id }),
+  /** Newest first. */
+  listInterventions: (limit = 30) => call<Intervention[]>('list_interventions', { limit }),
+  getFocusStatus: () => call<FocusStatus>('get_focus_status'),
+  /** IpcError "invalid" when `task` is blank or `minutes` is outside 5..=240; a running session is ended first. */
+  startFocusSession: (task: string, minutes: number) => call<FocusSession>('start_focus_session', { task, minutes }),
+  stopFocusSession: () => call<FocusSession | null>('stop_focus_session'),
+  /** Shows the intervention window with a sample message; records nothing. */
+  testIntervention: () => call<void>('test_intervention'),
 };
 
 /** Subscribes to engine events. Returns an unsubscribe function. */

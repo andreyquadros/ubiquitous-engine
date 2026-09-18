@@ -231,7 +231,7 @@ fn migrations_are_idempotent_on_reopen() {
 
     {
         let db = Db::open(&path).expect("first open creates parent dirs");
-        assert_eq!(db.schema_version().expect("version"), 1);
+        assert_eq!(db.schema_version().expect("version"), 2);
         let s = SqliteStore::new(db);
         KvRepo::set(&s, "last_report_check", "2026-09-17").expect("set");
         // A user category must survive alongside the seed on reopen.
@@ -239,7 +239,7 @@ fn migrations_are_idempotent_on_reopen() {
     }
 
     let db = Db::open(&path).expect("second open");
-    assert_eq!(db.schema_version().expect("version"), 1);
+    assert_eq!(db.schema_version().expect("version"), 2);
     let mode: String = db
         .with(|c| Ok(c.query_row("PRAGMA journal_mode", [], |r| r.get(0))?))
         .expect("pragma");

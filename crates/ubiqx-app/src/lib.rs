@@ -15,9 +15,11 @@ use ubiqx_ai::client::{
 };
 use ubiqx_ai::openai::{OpenAiCompatClient, OpenAiCompatConfig};
 use ubiqx_ai::router::{ProviderSource, RoutingLlmClient};
-use ubiqx_core::ports::{EventSink, SecretStore, SettingsRepo};
+use ubiqx_core::ports::{EventSink, InterventionPresenter, SecretStore, SettingsRepo};
 use ubiqx_core::{AiModels, AiProvider, BuildInfo, CoreError, CoreResult, SystemClock, UiLanguage};
-use ubiqx_engine::{AiPorts, Engine, EngineDeps, EngineHandle, PlatformPorts, Repos};
+use ubiqx_engine::{
+    AiPorts, Engine, EngineDeps, EngineHandle, LogInterventionPresenter, PlatformPorts, Repos,
+};
 use ubiqx_platform::PlatformServices;
 use ubiqx_storage::{Db, SqliteStore};
 
@@ -53,6 +55,9 @@ pub struct AppConfig {
     pub ai: AiBackend,
     /// Notifier provided by the shell (desktop notifications). Defaults to logging.
     pub notifier: Option<Arc<dyn ubiqx_core::ports::Notifier>>,
+    /// Shows the focus guard's intervention window (the desktop shell). Defaults to logging,
+    /// in which case interventions fall back to notifications.
+    pub presenter: Option<Arc<dyn InterventionPresenter>>,
     /// Identity of the running build, stamped by the shell at compile time. The default is
     /// a development build, which never checks for updates automatically.
     pub build: BuildInfo,
@@ -69,6 +74,7 @@ impl Default for AppConfig {
             scripted_platform: None,
             ai: AiBackend::Remote,
             notifier: None,
+            presenter: None,
             build: BuildInfo::dev(),
             update_feed_url: None,
         }
@@ -256,6 +262,9 @@ impl App {
         }
 
         let (ai, remote) = build_ai(config.ai, &platform, store.clone());
+        let presenter: Arc<dyn InterventionPresenter> = config
+            .presenter
+            .unwrap_or_else(|| Arc::new(LogInterventionPresenter));
 
         let deps = EngineDeps {
             platform: PlatformPorts {
@@ -267,6 +276,9 @@ impl App {
                 secrets: platform.secrets.clone(),
                 notifier: platform.notifier.clone(),
                 update_feed: platform.update_feed.clone(),
+                apps: platform.apps.clone(),
+                enforcer: platform.enforcer.clone(),
+                presenter,
             },
             repos: Repos::from_store(store.clone()),
             ai,

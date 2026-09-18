@@ -117,7 +117,7 @@ export const MOODS: readonly Mood[] = ['sleeping', 'calm', 'focused', 'excited',
 export const TRACKER_STATES: readonly TrackerState[] = ['running', 'paused', 'private', 'idle', 'blocked'];
 export const SOURCES: readonly ClassificationSource[] = ['rule', 'memory', 'llm', 'vision', 'user'];
 export const KINDS = ['desenvolvimento', 'reuniao', 'comunicacao', 'documentacao', 'ensino', 'pesquisa', 'extensao', 'gestao', 'outro'] as const;
-export const NUDGE_KINDS = ['unproductive', 'distracted', 'break_suggested', 'praise', 'idle', 'report_ready', 'attention'] as const;
+export const NUDGE_KINDS = ['unproductive', 'distracted', 'break_suggested', 'praise', 'idle', 'report_ready', 'attention', 'focus_prompt'] as const;
 
 /** Live (locale-following) label maps: keys → t('common.mood.*') etc. */
 export const MOOD_LABEL: Record<Mood, string> = liveLabels('common.mood', MOODS);
@@ -138,6 +138,36 @@ export const focusColor = (score: number): string => {
   if (score >= 50) return 'var(--volt)';
   if (score >= 30) return 'var(--amber)';
   return 'var(--rose)';
+};
+
+/** Seconds → "mm:ss" (hours fold into the minutes: 5400 → "90:00"); used by the focus session countdown. */
+export const fmtCountdown = (secs: number): string => {
+  const s = Math.max(0, Math.round(secs));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+};
+
+/** Case- and diacritic-insensitive form of a string, for "contains" searches ("Calendário" → "calendario"). */
+export const foldText = (s: string): string =>
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+/** True when the text reads as a domain: has a dot, no spaces, no scheme junk left after trimming ("youtube.com", "https://www.x.com/y"). */
+export const looksLikeDomain = (s: string): boolean => {
+  const d = normalizeDomain(s);
+  return d.length > 3 && d.includes('.') && !d.includes(' ') && /^[a-z0-9.-]+$/.test(d) && !d.startsWith('.') && !d.endsWith('.');
+};
+
+/** Lower-case domain with the scheme, path, query, port and a leading "www." stripped (mirrors the Rust normalisation of a site key). */
+export const normalizeDomain = (s: string): string => {
+  let d = s.trim().toLowerCase();
+  d = d.replace(/^[a-z][a-z0-9+.-]*:\/\//, '');
+  d = d.split(/[/?#]/)[0] ?? '';
+  d = d.replace(/:\d+$/, '');
+  d = d.replace(/^www\./, '');
+  return d;
 };
 
 /** Initial letter used for app avatars. */

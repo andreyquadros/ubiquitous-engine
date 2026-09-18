@@ -12,7 +12,7 @@ use ubiqx_core::*;
 use crate::deps::EngineDeps;
 use crate::handle::EngineHandle;
 use crate::state::EngineState;
-use crate::{classify, nudges, reports, sampler, screenshots, tracker};
+use crate::{classify, focus, nudges, reports, sampler, screenshots, tracker};
 
 pub struct Engine;
 
@@ -26,6 +26,8 @@ pub struct LoopConfig {
     /// Wait before the first automatic update check, so start-up stays quiet.
     pub update_initial_delay: Duration,
     pub update_every: Duration,
+    /// How often the focus guard looks at the foreground window.
+    pub focus_every: Duration,
     /// Skip the sampler thread (the caller feeds samples itself).
     pub without_sampler: bool,
 }
@@ -39,6 +41,7 @@ impl Default for LoopConfig {
             retention_every: Duration::from_secs(3600),
             update_initial_delay: Duration::from_secs(45),
             update_every: Duration::from_secs(6 * 3600),
+            focus_every: Duration::from_secs(2),
             without_sampler: false,
         }
     }
@@ -89,6 +92,7 @@ impl Engine {
             cfg.update_initial_delay,
             cfg.update_every,
         ));
+        tokio::spawn(focus_loop(state.clone(), cancel.clone(), cfg.focus_every));
 
         state.refresh_tracker_state();
         state.deps.sink.emit(EngineEvent::AiHealth {
@@ -186,6 +190,27 @@ async fn retention_loop(state: Arc<EngineState>, cancel: CancellationToken, ever
                 let st = state.clone();
                 if let Err(e) = tokio::task::spawn_blocking(move || screenshots::cleanup(&st)).await.unwrap_or_else(|e| Err(CoreError::Other(e.to_string()))) {
                     tracing::warn!(error = %e, "retention failed");
+                }
+            }
+        }
+    }
+}
+
+/// The focus guard: every `every`, looks at the foreground window, holds blocked apps and
+/// sites and ends a focus session at its planned end. Platform calls are blocking, so each
+/// pass runs on the blocking pool.
+async fn focus_loop(state: Arc<EngineState>, cancel: CancellationToken, every: Duration) {
+    let mut tick = interval(every);
+    // The first pass waits one period (like the nudges): an immediate pass at start-up would
+    // race the guard passes and session calls made through the handle meanwhile.
+    tick.tick().await;
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => break,
+            _ = tick.tick() => {
+                let st = state.clone();
+                if let Err(e) = tokio::task::spawn_blocking(move || focus::guard_once(&st)).await.unwrap_or_else(|e| Err(CoreError::Other(e.to_string()))) {
+                    tracing::warn!(error = %e, "focus guard pass failed");
                 }
             }
         }

@@ -764,6 +764,104 @@ pub async fn show_window(app: AppHandle) -> IpcResult<()> {
 }
 
 // ------------------------------------------------------------------------------------------
+// Focus guard
+// ------------------------------------------------------------------------------------------
+
+/// Installed applications (sorted by name, cached a minute on the platform side).
+#[tauri::command]
+pub async fn list_installed_apps(state: State<'_, AppState>) -> IpcResult<Vec<InstalledApp>> {
+    blocking(engine(&state), |e| e.installed_apps()).await
+}
+
+/// Domains from the user's own blocks, most time first.
+#[tauri::command]
+pub async fn list_known_domains(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+) -> IpcResult<Vec<KnownDomain>> {
+    let limit = limit.unwrap_or(30);
+    blocking(engine(&state), move |e| e.known_domains(limit)).await
+}
+
+#[tauri::command]
+pub async fn list_focus_targets(state: State<'_, AppState>) -> IpcResult<Vec<FocusTarget>> {
+    blocking(engine(&state), |e| e.focus_targets()).await
+}
+
+/// Adds a blocked app or site; one that exists (same kind and key) is re-enabled and
+/// returned. Keys are normalised (`invalid` when nothing is left after that).
+#[tauri::command]
+pub async fn add_focus_target(
+    state: State<'_, AppState>,
+    kind: FocusTargetKind,
+    name: String,
+    key: String,
+) -> IpcResult<FocusTarget> {
+    blocking(engine(&state), move |e| {
+        e.add_focus_target(kind, &name, &key)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn set_focus_target_enabled(
+    state: State<'_, AppState>,
+    id: String,
+    enabled: bool,
+) -> IpcResult<FocusTarget> {
+    blocking(engine(&state), move |e| {
+        e.set_focus_target_enabled(&id, enabled)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn remove_focus_target(state: State<'_, AppState>, id: String) -> IpcResult<()> {
+    blocking(engine(&state), move |e| e.remove_focus_target(&id)).await
+}
+
+/// Interventions, newest first.
+#[tauri::command]
+pub async fn list_interventions(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+) -> IpcResult<Vec<Intervention>> {
+    let limit = limit.unwrap_or(30);
+    blocking(engine(&state), move |e| e.interventions(limit)).await
+}
+
+#[tauri::command]
+pub async fn get_focus_status(state: State<'_, AppState>) -> IpcResult<FocusStatus> {
+    blocking(engine(&state), |e| e.focus_status()).await
+}
+
+/// Starts a focus session (`invalid` for a blank task or minutes outside 5..=240); a running
+/// session is ended first.
+#[tauri::command]
+pub async fn start_focus_session(
+    state: State<'_, AppState>,
+    task: String,
+    minutes: u32,
+) -> IpcResult<FocusSession> {
+    blocking(engine(&state), move |e| {
+        e.start_focus_session(&task, minutes)
+    })
+    .await
+}
+
+/// Ends the running session early; `null` when none runs.
+#[tauri::command]
+pub async fn stop_focus_session(state: State<'_, AppState>) -> IpcResult<Option<FocusSession>> {
+    blocking(engine(&state), |e| e.stop_focus_session()).await
+}
+
+/// Shows the intervention window with a sample message; records nothing.
+#[tauri::command]
+pub async fn test_intervention(state: State<'_, AppState>) -> IpcResult<()> {
+    blocking(engine(&state), |e| e.test_intervention()).await
+}
+
+// ------------------------------------------------------------------------------------------
 // Updates
 // ------------------------------------------------------------------------------------------
 
@@ -842,5 +940,16 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         check_for_updates,
         dismiss_update,
         open_update,
+        list_installed_apps,
+        list_known_domains,
+        list_focus_targets,
+        add_focus_target,
+        set_focus_target_enabled,
+        remove_focus_target,
+        list_interventions,
+        get_focus_status,
+        start_focus_session,
+        stop_focus_session,
+        test_intervention,
     ]
 }

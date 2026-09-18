@@ -163,6 +163,27 @@ Class vocabulary for pages: `.panel`, `.panel-raised`, `.glass`, `.display`, `.n
 `border-line|line-2`, `text-volt|ember|signal|rose|violet|amber`, `bg-volt-soft|ember-soft`, `rounded-shell|card|control|pill`,
 `shadow-float|glow`, `font-display`.
 
+Focus: `focus/SessionCard({ status, defaultMinutes, onStart, onStop, onElapsed? })`, `focus/DurationChips({ value, onChange, extra?, size?, label })`,
+`focus/TargetSearch({ installedApps, knownDomains, targets, onAdd })` (combobox + glass listbox; Enter picks the highlighted result),
+`focus/TargetList({ targets, onToggle, onRemove })`, `focus/DisableWarnings({ pending, onClose, onConfirm })` (one confirmation, or the
+three warnings when the target was held in the last 15 min), `focus/InterventionsList({ interventions, limit? })`,
+`focus/FocusOptions({ focus, onPatch, onTest })`, `focus/useCountdown(session, remainingSecs?, onDone?)`;
+`ubi/FocusPrompt({ nudge, mood, size?, defaultMinutes })` (UBI's bubble as a mini form).
+
+### The intervention panel and the prompt bubble
+
+The intervention window (`#/intervention`, 460×188, no decorations, always on top) is a single `panel` with a 16 px
+radius, a hairline `line-2` border, `shadow-float` and the hero glow behind it; the whole panel is the drag region.
+UBI (worried, 120 px) sits on the left; what he said is a `glass` bubble with the arrow pointing at him, the same
+bubble as on Hoje, just anchored to the side so it fits the height. Below it, the target as a rose `Badge` and one
+primary button ("Ok, foco!"). Nothing else: no title bar, no close icon, no page chrome. It closes by itself after 7 s.
+
+The focus prompt keeps the bubble's glass, size and arrow but becomes a form: the message, one input, the 25 / 45 / 90
+chips and a primary "Me ajude a focar" (a quiet "Agora não" on the left). Only the `focus_prompt` nudge does this;
+every other nudge stays a sentence. The three "don't give up" warnings reuse the same bubble on a flat 96 px UBI
+inside a small `Dialog`; the primary action is always "Manter o bloqueio", so giving up takes three deliberate ghost
+clicks.
+
 ## 9. Review against generic defaults
 
 - **Rejected the SaaS-card kit** (identical rounded cards, one radius, grey shadow under each): cards are hairline

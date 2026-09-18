@@ -1,12 +1,12 @@
 //! A scripted platform: replays a scenario of foreground windows so the whole engine can run
 //! on Linux/CI and in tests without any OS integration.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use ubiqx_core::ports::*;
-use ubiqx_core::{CoreError, CoreResult, ForegroundWindow, UpdateFeed};
+use ubiqx_core::{CoreError, CoreResult, ForegroundWindow, InstalledApp, UpdateFeed};
 
 /// One step of a scenario: what is in the foreground for `samples` consecutive samples.
 #[derive(Debug, Clone, PartialEq)]
@@ -310,6 +310,108 @@ impl ScreenCapturer for DeniedCapturer {
     }
 }
 
+/// A fixed catalogue of six applications, the ones the focus page's search offers in demos
+/// and tests.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MockAppCatalog;
+
+impl MockAppCatalog {
+    /// `(name, bundle id)` of every mock application, in name order.
+    pub const APPS: [(&'static str, &'static str); 6] = [
+        ("Discord", "com.hnc.Discord"),
+        ("Google Chrome", "com.google.Chrome"),
+        ("Slack", "com.tinyspeck.slackmacgap"),
+        ("Steam", "com.valvesoftware.steam"),
+        ("WhatsApp", "net.whatsapp.WhatsApp"),
+        ("Xcode", "com.apple.dt.Xcode"),
+    ];
+}
+
+impl AppCatalog for MockAppCatalog {
+    fn installed_apps(&self) -> CoreResult<Vec<InstalledApp>> {
+        Ok(Self::APPS
+            .iter()
+            .map(|(name, bundle_id)| InstalledApp {
+                name: (*name).into(),
+                bundle_id: (*bundle_id).into(),
+                path: format!("/Applications/{name}.app"),
+            })
+            .collect())
+    }
+}
+
+/// One call made to the [`MockEnforcer`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnforcerCall {
+    QuitApp(String),
+    CloseActiveTab(String),
+    BlankActiveTab(String),
+    HideOthers(String),
+    RunShortcut(String),
+}
+
+/// An enforcer that records every call and answers `true`, unless a flag below makes one of
+/// the actions fail (to exercise the engine's fallbacks).
+#[derive(Debug, Default)]
+pub struct MockEnforcer {
+    pub calls: Mutex<Vec<EnforcerCall>>,
+    /// `quit_app` answers `false` (the app refused to quit).
+    pub refuse_quit: AtomicBool,
+    /// `close_active_tab` answers `false` (the engine then blanks the tab).
+    pub refuse_close_tab: AtomicBool,
+    /// `blank_active_tab` answers `false` too (the engine only notifies).
+    pub refuse_blank_tab: AtomicBool,
+}
+
+impl MockEnforcer {
+    pub fn calls(&self) -> Vec<EnforcerCall> {
+        self.calls.lock().clone()
+    }
+
+    pub fn clear(&self) {
+        self.calls.lock().clear();
+    }
+
+    fn record(&self, call: EnforcerCall, refused: &AtomicBool) -> CoreResult<bool> {
+        self.calls.lock().push(call);
+        Ok(!refused.load(Ordering::SeqCst))
+    }
+}
+
+impl Enforcer for MockEnforcer {
+    fn quit_app(&self, bundle_id: &str) -> CoreResult<bool> {
+        self.record(EnforcerCall::QuitApp(bundle_id.into()), &self.refuse_quit)
+    }
+
+    fn close_active_tab(&self, browser_bundle_id: &str) -> CoreResult<bool> {
+        self.record(
+            EnforcerCall::CloseActiveTab(browser_bundle_id.into()),
+            &self.refuse_close_tab,
+        )
+    }
+
+    fn blank_active_tab(&self, browser_bundle_id: &str) -> CoreResult<bool> {
+        self.record(
+            EnforcerCall::BlankActiveTab(browser_bundle_id.into()),
+            &self.refuse_blank_tab,
+        )
+    }
+
+    fn hide_others(&self, keep_bundle_id: &str) -> CoreResult<bool> {
+        self.calls
+            .lock()
+            .push(EnforcerCall::HideOthers(keep_bundle_id.into()));
+        Ok(true)
+    }
+
+    fn run_shortcut(&self, name: &str) -> CoreResult<bool> {
+        self.calls
+            .lock()
+            .push(EnforcerCall::RunShortcut(name.into()));
+        Ok(true)
+    }
+}
+
 /// An update feed served from memory: `Some(feed)` is returned for any URL, `None` fails
 /// like an unreachable feed would. Tests and scripted runs use it instead of the network.
 #[derive(Debug, Default)]
@@ -408,6 +510,29 @@ mod tests {
         .unwrap();
         feed.set(Some(parsed.clone()));
         assert_eq!(feed.fetch("any").await.unwrap(), parsed);
+    }
+
+    #[test]
+    fn mock_catalog_and_enforcer() {
+        let apps = MockAppCatalog.installed_apps().unwrap();
+        assert_eq!(apps.len(), 6);
+        assert!(apps.windows(2).all(|w| w[0].name < w[1].name));
+        assert!(apps.iter().any(|a| a.name == "Google Chrome"));
+        let e = MockEnforcer::default();
+        assert!(e.quit_app("a").unwrap());
+        e.refuse_close_tab.store(true, Ordering::SeqCst);
+        assert!(!e.close_active_tab("b").unwrap());
+        assert!(e.run_shortcut("Foco").unwrap());
+        assert_eq!(
+            e.calls(),
+            vec![
+                EnforcerCall::QuitApp("a".into()),
+                EnforcerCall::CloseActiveTab("b".into()),
+                EnforcerCall::RunShortcut("Foco".into()),
+            ]
+        );
+        e.clear();
+        assert!(e.calls().is_empty());
     }
 
     #[test]

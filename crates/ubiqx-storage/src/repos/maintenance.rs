@@ -7,7 +7,8 @@ use crate::store::SqliteStore;
 
 /// Screenshots go first so their `block_id` reference never dangles mid-transaction.
 /// `blocks` is cleared without an `is_open` filter, which also removes any orphaned open row.
-const WIPE: [&str; 7] = [
+/// Focus targets are configuration, not activity, and stay.
+const WIPE: [&str; 9] = [
     "DELETE FROM screenshots",
     "DELETE FROM blocks",
     "DELETE FROM corrections",
@@ -15,6 +16,8 @@ const WIPE: [&str; 7] = [
     "DELETE FROM nudges",
     "DELETE FROM ai_usage",
     "DELETE FROM kv",
+    "DELETE FROM interventions",
+    "DELETE FROM focus_sessions",
 ];
 
 const DELETE_LEARNED_RULES: &str = "DELETE FROM rules WHERE origin = ?1";

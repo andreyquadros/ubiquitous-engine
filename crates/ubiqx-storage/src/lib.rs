@@ -6,8 +6,8 @@
 //! * [`Db`] — cheap-to-clone connection handle. Opens the file, applies the connection pragmas
 //!   and runs the embedded migrations.
 //! * [`SqliteStore`] — implements `BlockRepo`, `CategoryRepo`, `RuleRepo`, `CorrectionRepo`,
-//!   `ScreenshotRepo`, `ReportRepo`, `NudgeRepo`, `SettingsRepo`, `UsageRepo`, `KvRepo` and
-//!   `MaintenanceRepo`.
+//!   `ScreenshotRepo`, `ReportRepo`, `NudgeRepo`, `SettingsRepo`, `UsageRepo`, `KvRepo`,
+//!   `FocusRepo` and `MaintenanceRepo`.
 //! * [`StorageError`] — the adapter's error type, convertible into [`ubiqx_core::CoreError`].
 //!
 //! ## Storage conventions

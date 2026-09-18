@@ -145,6 +145,7 @@ const messages = {
     'nudge_kind.idle': 'Ocioso',
     'nudge_kind.report_ready': 'Relatório pronto',
     'nudge_kind.attention': 'Atenção',
+    'nudge_kind.focus_prompt': 'Convite ao foco',
 
     'matcher.app': 'app',
     'matcher.domain': 'domínio',
@@ -294,6 +295,7 @@ const messages = {
     'nudge_kind.idle': 'Idle',
     'nudge_kind.report_ready': 'Report ready',
     'nudge_kind.attention': 'Attention',
+    'nudge_kind.focus_prompt': 'Focus prompt',
 
     'matcher.app': 'app',
     'matcher.domain': 'domain',

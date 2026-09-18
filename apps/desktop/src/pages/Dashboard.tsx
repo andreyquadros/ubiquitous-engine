@@ -1,12 +1,15 @@
-import { ChevronRight, Sparkles } from 'lucide-react';
+import { ChevronRight, Shield, Sparkles } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CategoryDonut } from '../components/charts/CategoryDonut';
 import { DayBar } from '../components/charts/DayBar';
 import { FocusDial } from '../components/charts/FocusRing';
 import { HourlyFocus } from '../components/charts/HourlyFocus';
+import { FocusPrompt } from '../components/ubi/FocusPrompt';
+import { useCountdown } from '../components/focus/useCountdown';
 import { Ubi } from '../components/ubi/Ubi';
 import { UbiCard } from '../components/ubi/UbiCard';
+import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
 import { DayNav } from '../components/ui/DayNav';
 import { AppAvatar } from '../components/ui/BlockBits';
@@ -14,9 +17,10 @@ import { Skeleton } from '../components/ui/misc';
 import { PageHeader } from '../components/ui/PageHeader';
 import { useT, type Vars } from '../i18n';
 import { categoryLabel } from '../lib/categories';
-import { fmtDateLong, fmtDuration, fmtNumber, isToday } from '../lib/format';
+import { fmtCountdown, fmtDateLong, fmtDuration, fmtNumber, isToday } from '../lib/format';
 import { useAppStore } from '../lib/store';
-import type { DashboardData, IsoDate } from '../lib/types';
+import { useToast } from '../lib/toast';
+import type { DashboardData, FocusStatus, IsoDate } from '../lib/types';
 
 type Translate = (key: string, vars?: Vars) => string;
 
@@ -49,6 +53,35 @@ function headline(t: Translate, data: DashboardData, date: IsoDate): string {
   return t('dashboard.headline.sentence', { first, second });
 }
 
+/** One line under the headline while a focus session runs: the task, mm:ss and "Encerrar". */
+function SessionLine({ status }: { status: FocusStatus }) {
+  const t = useT();
+  const toast = useToast();
+  const stopFocusSession = useAppStore((s) => s.stopFocusSession);
+  const loadFocusStatus = useAppStore((s) => s.loadFocusStatus);
+  const remaining = useCountdown(status.session, status.remaining_secs, () => void loadFocusStatus());
+  if (!status.session) return null;
+  const stop = async () => {
+    try {
+      await stopFocusSession();
+    } catch (e) {
+      toast.error(t('focus.session.stop_failed'), e instanceof Error ? e.message : String(e));
+    }
+  };
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-3 rounded-control border border-volt/30 bg-volt-soft px-3 py-2 text-sm" data-testid="dashboard-session-line">
+      <Shield className="size-4 shrink-0 text-volt" strokeWidth={1.75} aria-hidden />
+      <span className="min-w-0 flex-1 truncate font-medium text-ink">{status.session.task}</span>
+      <span className="num text-volt" data-testid="dashboard-countdown">
+        {fmtCountdown(remaining ?? status.remaining_secs ?? 0)}
+      </span>
+      <Button size="sm" variant="ghost" onClick={() => void stop()}>
+        {t('focus.session.stop')}
+      </Button>
+    </div>
+  );
+}
+
 function HeroStat({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div className="min-w-0">
@@ -69,14 +102,24 @@ export function Dashboard() {
   const dataVersion = useAppStore((s) => s.dataVersion);
   const latestNudge = useAppStore((s) => s.latestNudge);
   const ubiSpeech = useAppStore((s) => s.ubiSpeech);
+  const focusStatus = useAppStore((s) => s.focusStatus);
+  const loadFocusStatus = useAppStore((s) => s.loadFocusStatus);
+  const sessionMinutes = useAppStore((s) => s.settingsView?.settings.focus.session_minutes ?? 45);
   const navigate = useNavigate();
 
   useEffect(() => {
     void loadDashboard(date);
   }, [date, dataVersion, loadDashboard]);
 
+  useEffect(() => {
+    void loadFocusStatus();
+  }, [loadFocusStatus]);
+
   const title = isToday(date) ? t('common.today') : t('dashboard.title_day');
   const nudge = data ? (data.unseen_nudges[0] ?? latestNudge) : null;
+  const session = focusStatus?.session && !focusStatus.session.ended_at ? focusStatus.session : null;
+  // "A lot of windows": the bubble becomes a mini form until the user answers it, dismisses it or a session runs.
+  const prompt = nudge?.kind === 'focus_prompt' && !nudge.seen && !session && !ubiSpeech ? nudge : null;
 
   return (
     <div data-testid="page-dashboard">
@@ -122,6 +165,7 @@ export function Dashboard() {
                     <span className="num text-xs text-ink-3">{t('dashboard.uncategorized_time', { duration: fmtDuration(data.stats.uncategorized_secs, { compact: true }) })}</span>
                   )}
                 </div>
+                {session && focusStatus && <SessionLine status={focusStatus} />}
                 <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 min-[720px]:grid-cols-4">
                   <HeroStat label={t('dashboard.stat.productive')} value={fmtDuration(data.stats.productive_secs, { compact: true })} color="var(--signal)" />
                   <HeroStat label={t('dashboard.stat.distractions')} value={fmtDuration(data.stats.distraction_secs, { compact: true })} color={data.stats.distraction_secs > 0 ? 'var(--rose)' : undefined} />
@@ -131,7 +175,7 @@ export function Dashboard() {
               </div>
 
               <div className="justify-self-center min-[1000px]:justify-self-end">
-                <Ubi mood={data.stats.mood} size={200} speaking={ubiSpeech ?? nudge?.message ?? t(`ubi.tip.${data.stats.mood}`)} />
+                {prompt ? <FocusPrompt nudge={prompt} mood={data.stats.mood} size={200} defaultMinutes={sessionMinutes} /> : <Ubi mood={data.stats.mood} size={200} speaking={ubiSpeech ?? nudge?.message ?? t(`ubi.tip.${data.stats.mood}`)} />}
               </div>
             </div>
           </section>

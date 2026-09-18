@@ -4,6 +4,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::{Duration, Local};
+use ubiqx_core::focus::{
+    count_app_switches, focus_prompt_due, focus_prompt_text, PROMPT_WINDOW_MINS,
+};
 use ubiqx_core::insights::{NudgeInput, NudgePolicy};
 use ubiqx_core::*;
 
@@ -134,6 +137,26 @@ pub fn run_once(state: &Arc<EngineState>) -> CoreResult<Vec<Nudge>> {
             n.kind != NudgeKind::Praise,
         );
         out.push(n);
+    }
+
+    // "A lot of windows": outside a focus session, many app switches in the last minutes
+    // earn UBI's offer to help focus (the dashboard turns it into a form).
+    if !quiet {
+        let switches = count_app_switches(&recent, now - Duration::minutes(PROMPT_WINDOW_MINS));
+        let session_active = state.focus.lock().session.is_some();
+        let last = repos.nudges.last_of_kind(NudgeKind::FocusPrompt)?;
+        if focus_prompt_due(switches, session_active, last, now) {
+            let (title, message) = focus_prompt_text(settings.ui_language());
+            emit(state, NudgeKind::FocusPrompt, title, message, true);
+            out.push(Nudge {
+                id: new_id(),
+                at: now,
+                kind: NudgeKind::FocusPrompt,
+                title: title.into(),
+                message: message.into(),
+                seen: false,
+            });
+        }
     }
     Ok(out)
 }
