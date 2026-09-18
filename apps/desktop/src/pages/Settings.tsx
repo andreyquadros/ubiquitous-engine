@@ -745,7 +745,7 @@ export function PermissionRows({ view, onChanged }: { view: SettingsView; onChan
   const toast = useToast();
   const rows: { kind: PermissionKind; label: string; hint: string }[] = [
     { kind: 'screen_recording', label: 'Gravação de tela', hint: 'Necessária para ler títulos de janela e tirar screenshots. Sem ela, os blocos ficam sem título.' },
-    { kind: 'automation', label: 'Automação nos navegadores', hint: 'Lê a URL da aba ativa do Chrome, Safari ou Arc via AppleScript. O macOS pergunta uma vez por navegador.' },
+    { kind: 'automation', label: 'Automação nos navegadores', hint: 'Lê a URL da aba ativa via AppleScript. Abra o navegador que você usa (Safari, Chrome, Arc, Brave, Edge, Vivaldi ou Opera) antes de clicar em Solicitar: o macOS pergunta uma vez por navegador aberto.' },
     { kind: 'accessibility', label: 'Acessibilidade', hint: 'Opcional. Melhora a detecção de ociosidade e do app ativo em alguns apps.' },
   ];
   const request = async (kind: PermissionKind) => {

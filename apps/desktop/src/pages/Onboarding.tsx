@@ -390,7 +390,7 @@ function PermsStep({ view }: { view: SettingsView }) {
           <div className="mt-4 flex gap-3 rounded-control border border-amber/40 bg-amber/10 p-3 text-xs leading-5 text-ink-2">
             <Info className="mt-0.5 size-3.5 shrink-0 text-amber" strokeWidth={1.75} aria-hidden />
             <span>
-              <strong className="text-ink">A Gravação de tela só vale depois de reiniciar o ubiqX.</strong> Se os títulos das janelas aparecerem vazios na Timeline, use “Reiniciar o ubiqX” em Configurações. A Automação é pedida pelo macOS para cada navegador (Chrome, Safari, Arc…) na primeira vez que a URL for lida.
+              <strong className="text-ink">A Gravação de tela só vale depois de reiniciar o ubiqX.</strong> Se os títulos das janelas aparecerem vazios na Timeline, use “Reiniciar o ubiqX” em Configurações. Para a Automação, abra o navegador que você usa antes de clicar em Solicitar: o macOS pergunta uma vez por navegador aberto, e o status vira “Concedida” quando você permite.
             </span>
           </div>
         </>

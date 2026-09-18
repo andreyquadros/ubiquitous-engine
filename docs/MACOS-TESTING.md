@@ -121,6 +121,7 @@ exatamente o texto enviado à IA por bloco e permite apagar tudo.
 |---|---|---|
 | Títulos vazios, prints falham | Gravação de Tela não concedida ou app não reiniciado | Conceder e reiniciar o ubiqX |
 | Permissão pedida de novo a cada build | Binário sem assinatura estável | `scripts/codesign-dev.sh` |
+| "Solicitar" da Automação avisa que nenhum navegador está aberto | O alerta do macOS só existe para navegadores em execução | Abra o Safari/Chrome/Arc… e clique de novo; o status vira "Concedida" ao permitir |
 | URL do navegador não aparece | Automação negada (`-1743`) | Ajustes → Privacidade → Automação → ubiqX → marcar o navegador |
 | "IA não configurada" | Chave ausente/inválida | Configurações → IA → validar chave |
 | "IA indisponível: cobrança…" | Conta sem créditos ou chave desativada | Adicionar créditos no console da Anthropic e salvar a chave de novo |
