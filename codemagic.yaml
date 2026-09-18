@@ -1,0 +1,70 @@
+# Codemagic: compila o ubiqX.app num Mac mini na nuvem, sem toolchain local.
+# Conecte o repositório em https://codemagic.io (Add application → GitHub → este repo → codemagic.yaml),
+# inicie o workflow "ubiqX macOS app" no branch desejado e baixe o .app (zipado) ou o .dmg em Artifacts.
+# Passo a passo, quarentena e assinatura: docs/MACOS-TESTING.md § 3.1.
+workflows:
+  macos-app:
+    name: ubiqX macOS app
+    # mac_mini_m2 entra nos 500 minutos gratuitos por mês; mac_mini_m4 exige plano com cobrança.
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      xcode: latest
+      node: 22.18.0
+      vars:
+        CARGO_TERM_COLOR: always
+        CARGO_INCREMENTAL: "0"
+      # Assinatura opcional. Crie um grupo de variáveis chamado "ubiqx_apple" com
+      #   APPLE_CERTIFICATE           (o .p12 em base64: `base64 -i ubiqx-dev.p12`)
+      #   APPLE_CERTIFICATE_PASSWORD
+      #   APPLE_SIGNING_IDENTITY      ("ubiqX Dev" ou "Developer ID Application: Nome (TEAMID)")
+      # e, para notarizar com Developer ID, APPLE_ID, APPLE_PASSWORD e APPLE_TEAM_ID. Depois descomente:
+      # groups:
+      #   - ubiqx_apple
+      # Sem o grupo o bundle sai com assinatura ad hoc ("-") e abre depois de remover a quarentena.
+    cache:
+      cache_paths:
+        - $HOME/.cargo/registry
+        - $HOME/.cargo/git
+        - $CM_BUILD_DIR/target   # acelera muito; remova se o cache ficar pesado demais
+    triggering:
+      events:
+        - push
+        - pull_request
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+        - pattern: "claude/*"
+          include: true
+          source: true
+      cancel_previous_builds: true
+    scripts:
+      - name: Rust estável (rustup)
+        script: |
+          set -e
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+          echo "PATH=$HOME/.cargo/bin:$PATH" >> "$CM_ENV"
+          "$HOME/.cargo/bin/cargo" --version
+      - name: Dependências do frontend (pnpm 10)
+        script: |
+          set -e
+          npm install -g pnpm@10
+          cd apps/desktop
+          pnpm install --frozen-lockfile
+      - name: Compilar ubiqX.app
+        script: |
+          set -e
+          cd apps/desktop
+          export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
+          pnpm tauri build --bundles app
+      - name: Gerar DMG (opcional)
+        ignore_failure: true
+        script: |
+          set -e
+          cd apps/desktop
+          export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
+          pnpm tauri build --bundles dmg
+    artifacts:
+      - target/release/bundle/macos/*.app
+      - target/release/bundle/dmg/*.dmg

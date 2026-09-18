@@ -73,8 +73,14 @@ jobs:
       - name: Build app bundle
         run: pnpm tauri build --bundles app
         working-directory: apps/desktop
+        env:
+          # Ad-hoc seal: without an identity Tauri never runs codesign and a downloaded bundle reads as "damaged".
+          APPLE_SIGNING_IDENTITY: "-"
+      - name: Zip the .app with ditto
+        # upload-artifact drops file modes and symlinks; ditto keeps them, so the downloaded app launches.
+        run: ditto -c -k --sequesterRsrc --keepParent target/release/bundle/macos/ubiqX.app target/release/bundle/macos/ubiqX.app.zip
       - uses: actions/upload-artifact@v4
         with:
           name: ubiqX-macos-app
-          path: target/release/bundle/macos/*.app
+          path: target/release/bundle/macos/ubiqX.app.zip
           if-no-files-found: error

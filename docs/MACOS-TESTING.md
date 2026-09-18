@@ -39,6 +39,45 @@ Teste **sempre pelo `.app` empacotado**. `pnpm tauri dev` funciona para iterar n
 o binário de desenvolvimento não carrega o `Info.plist` (sem `LSUIElement`, sem descrição de
 uso de Apple Events) e as notificações não aparecem.
 
+## 3.1 Sem compilar no Mac: GitHub Actions ou Codemagic
+
+Se não quiser instalar Rust e Xcode, baixe o `.app` pronto. Os dois caminhos geram o mesmo bundle; a
+diferença é só onde ele é compilado.
+
+**GitHub Actions (já configurado).** Cada push compila o app num runner macOS. Em *Actions → CI → o run do
+seu branch → Artifacts*, baixe `ubiqX-macos-app`: é um zip com `ubiqX.app.zip` dentro (o zip interno é
+gerado com `ditto`, que preserva permissões e symlinks). Repositório público: minutos ilimitados.
+
+**Codemagic.** O `codemagic.yaml` na raiz define o workflow *ubiqX macOS app* (Mac mini M2, dentro dos
+500 minutos gratuitos por mês; um build leva ~10–15 min sem cache e bem menos com cache).
+
+1. Entre em https://codemagic.io com a conta do GitHub, *Add application* → este repositório → *codemagic.yaml*.
+2. *Start new build* → workflow *ubiqX macOS app* → escolha o branch (`main` ou `claude/...`).
+3. No fim, baixe o `.app` (zipado) ou o `.dmg` em *Artifacts*. Pushes em `main` e `claude/*` também disparam
+   builds sozinhos (ajuste `triggering` no yaml para mudar isso).
+
+**Abrir um app baixado.** O bundle sai com assinatura ad hoc e o macOS põe downloads em quarentena, então
+aparece "está danificado" ou "desenvolvedor não identificado". Remova a quarentena e assine com a sua
+identidade local do passo 2 (assim as permissões sobrevivem a novos downloads):
+
+```bash
+cd ~/Downloads && ditto -x -k ubiqX.app.zip .        # ou duplo clique no zip
+xattr -dr com.apple.quarantine ubiqX.app
+codesign --force --deep --options runtime --sign "ubiqX Dev" ubiqX.app   # = scripts/codesign-dev.sh ~/Downloads/ubiqX.app
+open ubiqX.app
+```
+
+Depois siga o passo 4 normalmente. Para o app já sair assinado da nuvem, exporte o certificado `ubiqX Dev`
+como `.p12` (Acesso às Chaves → Meus Certificados → botão direito → Exportar) e cadastre no Codemagic um grupo
+de variáveis `ubiqx_apple` com `APPLE_CERTIFICATE` (`base64 -i ubiqx-dev.p12 | pbcopy`),
+`APPLE_CERTIFICATE_PASSWORD` e `APPLE_SIGNING_IDENTITY=ubiqX Dev`, descomentando `groups` no yaml. Com um
+certificado *Developer ID* (Apple Developer Program) mais `APPLE_ID`, `APPLE_PASSWORD` e `APPLE_TEAM_ID` o
+Tauri também notariza, e o app abre em qualquer Mac sem os comandos acima.
+
+**Arte do UBI.** Os builds na nuvem só incluem o mascote se `apps/desktop/public/ubi/ubi.png` estiver no
+repositório: envie o PNG pelo GitHub (*Add file → Upload files* dentro da pasta, nome exatamente `ubi.png`)
+ou rode `scripts/install-ubi-model.sh` e faça commit do arquivo. O `Ubi.glb` continua fora do git.
+
 ## 4. Primeira execução (onboarding)
 
 1. **Escolha a IA e cole a chave** — Anthropic Claude (https://console.anthropic.com), OpenAI
@@ -78,6 +117,7 @@ exatamente o texto enviado à IA por bloco e permite apagar tudo.
 | URL do navegador não aparece | Automação negada (`-1743`) | Ajustes → Privacidade → Automação → ubiqX → marcar o navegador |
 | "IA não configurada" | Chave ausente/inválida | Configurações → IA → validar chave |
 | "IA indisponível: cobrança…" | Conta sem créditos ou chave desativada | Adicionar créditos no console da Anthropic e salvar a chave de novo |
+| "ubiqX está danificado" / "desenvolvedor não identificado" ao abrir um app baixado | Quarentena do Gatekeeper num bundle com assinatura ad hoc | `xattr -dr com.apple.quarantine ubiqX.app` e assinar (§ 3.1) |
 | Cmd+Q "não fecha" o app | Esperado: Cmd+Q só esconde a janela | Para encerrar de verdade: tray → **Sair** |
 | Log sem linhas do rastreador | Nível de log baixo | `UBIQX_LOG=debug` antes de abrir o app; o arquivo fica em `~/Library/Logs/ai.ubiqx.app/` |
 | macOS 15 mostra aviso periódico de captura de tela | Comportamento do sistema para apps que usam captura | Esperado; clique em *Continuar a permitir* |

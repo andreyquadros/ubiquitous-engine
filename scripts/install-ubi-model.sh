@@ -7,7 +7,8 @@
 #   scripts/install-ubi-model.sh                       # looks in ~/Downloads for Ubi.glb and the newest ubi*.png (else the newest .png)
 #   scripts/install-ubi-model.sh ~/Downloads/ubi.png   # any number of .png / .glb paths
 #
-# Both files are ignored by git; each machine installs its own. Without them the UI draws UBI as SVG.
+# ubi.png is meant to be committed (cloud builds on GitHub Actions/Codemagic bundle it); Ubi.glb stays
+# git-ignored and each machine installs its own. Without them the UI draws UBI as SVG.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -72,3 +73,6 @@ if [[ $installed -eq 0 ]]; then
   exit 1
 fi
 echo "Done: $installed asset(s). Restart 'pnpm dev' or rebuild the app to see UBI."
+if [[ -f "$DEST_DIR/ubi.png" ]]; then
+  echo "Commit apps/desktop/public/ubi/ubi.png so cloud builds (GitHub Actions, Codemagic) include the art."
+fi

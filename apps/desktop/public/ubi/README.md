@@ -15,7 +15,8 @@ scripts/install-ubi-model.sh                 # procura ~/Downloads/Ubi.glb e o u
 scripts/install-ubi-model.sh ~/Downloads/ubi.png ~/Downloads/Ubi.glb
 ```
 
-Os dois arquivos são ignorados pelo git; cada máquina instala os seus. Depois de instalar, reinicie o
+O `ubi.png` deve ser commitado: é ele que os builds na nuvem (GitHub Actions e Codemagic) empacotam no
+`.app`. O `Ubi.glb` continua ignorado pelo git (cada máquina instala o seu). Depois de instalar, reinicie o
 `pnpm dev` (ou gere o app de novo). `pnpm hero` regenera `docs/ubi-hero.png` a partir da arte instalada.
 
 Dicas para o modelo: exporte com o personagem centralizado na origem, olhando para +Z, tamanho ~2 unidades,

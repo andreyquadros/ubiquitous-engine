@@ -88,6 +88,10 @@ cd ../.. && scripts/codesign-dev.sh                # identidade "ubiqX Dev" — 
 open target/release/bundle/macos/ubiqX.app
 ```
 
+Sem toolchain local: baixe o `.app` pronto do GitHub Actions (artifact `ubiqX-macos-app`) ou compile no
+[Codemagic](https://codemagic.io) com o `codemagic.yaml` da raiz; quarentena e assinatura em
+[`docs/MACOS-TESTING.md`](docs/MACOS-TESTING.md) § 3.1.
+
 Na primeira execução o onboarding pede para **escolher a IA** e colar a chave correspondente, a permissão de
 **Gravação de Tela** (reinicie o app depois de conceder) e a **Automação** para o navegador; depois você cria as
 categorias e escolhe o horário dos relatórios.
