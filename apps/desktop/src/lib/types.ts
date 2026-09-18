@@ -230,6 +230,8 @@ export interface Settings {
   nudges: NudgeSettings;
   launch_at_login: boolean;
   onboarding_done: boolean;
+  /** Automatic update checks (45 s after start, then every 6 h). Defaults to true on the Rust side. */
+  check_updates: boolean;
 }
 
 export type TrackerState = 'running' | 'paused' | 'private' | 'idle' | 'blocked';
@@ -355,6 +357,45 @@ export interface Advice {
   model: string;
 }
 
+/** Identity of a build, stamped into the binary at compile time (crates: BuildInfo). `epoch` 0 = development build. */
+export interface BuildInfo {
+  version: string;
+  /** Unix seconds of the built commit; 0 in development builds. */
+  epoch: number;
+  /** `git rev-list --count HEAD`; 0 in development builds. */
+  number: number;
+  /** Short 7-char sha, or "dev". */
+  sha: string;
+  /** Branch name, "" when unknown. */
+  branch: string;
+}
+
+/** A release entry of the update feed (latest.json of the rolling "continuous" GitHub release). */
+export interface ReleaseInfo {
+  version: string;
+  build: BuildInfo;
+  published_at: IsoDateTime | null;
+  notes: string;
+  download_url: string;
+  app_zip_url: string | null;
+  release_url: string | null;
+  kind: 'dmg';
+}
+
+/** What the engine knows about updates right now (`get_update_status`). */
+export interface UpdateStatus {
+  current: BuildInfo;
+  feed_url: string;
+  /** False on development builds: no automatic checks (a manual check still runs). */
+  enabled: boolean;
+  available: ReleaseInfo | null;
+  /** True when the user dismissed exactly this `available` build. */
+  dismissed: boolean;
+  last_check: IsoDateTime | null;
+  last_error: string | null;
+  checking: boolean;
+}
+
 /** Events pushed by the engine on the `engine` channel. */
 export type EngineEvent =
   | { type: 'block_opened'; block: ActivityBlock }
@@ -365,4 +406,5 @@ export type EngineEvent =
   | { type: 'tracker_state'; state: TrackerState }
   | { type: 'ai_health'; health: AiHealth }
   | { type: 'permission_required'; permission: string }
-  | { type: 'screenshot_taken'; screenshot_id: Id; block_id: Id | null };
+  | { type: 'screenshot_taken'; screenshot_id: Id; block_id: Id | null }
+  | { type: 'update_available'; release: ReleaseInfo };

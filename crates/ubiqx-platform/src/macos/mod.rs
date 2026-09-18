@@ -28,5 +28,6 @@ pub fn services() -> PlatformServices {
         permissions: Arc::new(permissions::MacPermissions),
         secrets: Arc::new(keychain::KeychainSecretStore::default()),
         notifier: Arc::new(crate::notify::LogNotifier),
+        update_feed: Arc::new(crate::update_feed::HttpUpdateFeed::new()),
     }
 }

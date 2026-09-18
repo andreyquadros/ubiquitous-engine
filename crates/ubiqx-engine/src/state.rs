@@ -10,6 +10,7 @@ use ubiqx_core::segmenter::{Segmenter, SegmenterConfig};
 use ubiqx_core::*;
 
 use crate::deps::EngineDeps;
+use crate::update::UpdateChecker;
 
 pub struct EngineState {
     pub deps: EngineDeps,
@@ -30,6 +31,8 @@ pub struct EngineState {
     /// `EngineHandle::shutdown` can wait for it.
     pub tracker_stopped: Mutex<bool>,
     pub tracker_stopped_cv: Condvar,
+    /// Looks for newer builds in the update feed and remembers what was announced.
+    pub update: UpdateChecker,
 }
 
 impl EngineState {
@@ -45,6 +48,16 @@ impl EngineState {
         let mut cfg = SegmenterConfig::from(&settings);
         cfg.private_mode = settings.is_private(deps.clock.now());
         let health = key_health(&deps, &settings);
+        let update = UpdateChecker::new(
+            deps.build.clone(),
+            deps.update_feed_url.clone(),
+            deps.platform.update_feed.clone(),
+            deps.repos.kv.clone(),
+            deps.repos.settings.clone(),
+            deps.platform.notifier.clone(),
+            deps.sink.clone(),
+            deps.clock.clone(),
+        );
         Arc::new(Self {
             deps,
             settings: RwLock::new(settings),
@@ -57,6 +70,7 @@ impl EngineState {
             budget_paused: AtomicBool::new(false),
             tracker_stopped: Mutex::new(false),
             tracker_stopped_cv: Condvar::new(),
+            update,
         })
     }
 

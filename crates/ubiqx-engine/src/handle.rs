@@ -319,6 +319,23 @@ impl EngineHandle {
         self.state.deps.platform.permissions.status()
     }
 
+    /// The update checker's state (running build, feed, available build, last check).
+    pub fn update_status(&self) -> UpdateStatus {
+        self.state.update.status()
+    }
+
+    /// Downloads the feed and compares it with the running build now, regardless of
+    /// `settings.check_updates` (a development build compares too). A feed that cannot be
+    /// fetched is reported in `UpdateStatus::last_error`, not as an `Err`.
+    pub async fn check_for_updates(&self) -> CoreResult<UpdateStatus> {
+        self.state.update.check_now().await
+    }
+
+    /// Hides the banner for the build with this commit epoch until a newer one appears.
+    pub fn dismiss_update(&self, epoch: i64) -> CoreResult<UpdateStatus> {
+        self.state.update.dismiss(epoch)
+    }
+
     pub fn request_permission(&self, kind: PermissionKind) -> CoreResult<()> {
         self.state.deps.platform.permissions.request(kind)
     }

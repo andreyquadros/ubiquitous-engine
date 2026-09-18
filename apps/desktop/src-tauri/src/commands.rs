@@ -763,6 +763,41 @@ pub async fn show_window(app: AppHandle) -> IpcResult<()> {
     Ok(())
 }
 
+// ------------------------------------------------------------------------------------------
+// Updates
+// ------------------------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn get_update_status(state: State<'_, AppState>) -> IpcResult<UpdateStatus> {
+    Ok(engine(&state).update_status())
+}
+
+/// Downloads the feed and compares it now, whatever `settings.check_updates` says. A feed
+/// that could not be fetched comes back in `last_error`.
+#[tauri::command]
+pub async fn check_for_updates(state: State<'_, AppState>) -> IpcResult<UpdateStatus> {
+    engine(&state)
+        .check_for_updates()
+        .await
+        .map_err(IpcError::from)
+}
+
+#[tauri::command]
+pub async fn dismiss_update(state: State<'_, AppState>, epoch: i64) -> IpcResult<UpdateStatus> {
+    blocking(engine(&state), move |e| e.dismiss_update(epoch)).await
+}
+
+/// Opens the DMG of the available build in the browser (the download starts there).
+#[tauri::command]
+pub async fn open_update(state: State<'_, AppState>) -> IpcResult<()> {
+    let url = engine(&state)
+        .update_status()
+        .available
+        .map(|r| r.download_url)
+        .ok_or_else(|| CoreError::NotFound("no update available".into()))?;
+    crate::open_download(&url).map_err(IpcError::from)
+}
+
 pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         get_dashboard,
@@ -803,5 +838,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         export_data,
         open_external,
         show_window,
+        get_update_status,
+        check_for_updates,
+        dismiss_update,
+        open_update,
     ]
 }

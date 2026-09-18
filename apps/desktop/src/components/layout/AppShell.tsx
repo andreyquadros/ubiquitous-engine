@@ -6,6 +6,7 @@ import { useAppStore } from '../../lib/store';
 import { Toaster } from '../../lib/toast';
 import { Spinner } from '../ui/misc';
 import { Sidebar } from './Sidebar';
+import { UpdateBanner } from './UpdateBanner';
 
 /** Loads settings once and redirects to the onboarding while it is not done. */
 export function Gate() {
@@ -49,6 +50,7 @@ export function AppShell() {
   const loadDashboard = useAppStore((s) => s.loadDashboard);
   const dataVersion = useAppStore((s) => s.dataVersion);
   const loadCategories = useAppStore((s) => s.loadCategories);
+  const loadUpdateStatus = useAppStore((s) => s.loadUpdateStatus);
 
   useEffect(() => {
     void loadDashboard(date);
@@ -58,6 +60,11 @@ export function AppShell() {
     void loadCategories();
   }, [loadCategories]);
 
+  // Once per shell mount; afterwards the `update_available` event keeps it fresh.
+  useEffect(() => {
+    void loadUpdateStatus();
+  }, [loadUpdateStatus]);
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-canvas">
       <Sidebar needsReview={needsReview} />
@@ -65,6 +72,7 @@ export function AppShell() {
         <div data-tauri-drag-region className="h-[38px] shrink-0" />
         <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-6 pb-10">
           <div className="mx-auto w-full max-w-[1280px]">
+            <UpdateBanner />
             <Outlet />
           </div>
         </div>

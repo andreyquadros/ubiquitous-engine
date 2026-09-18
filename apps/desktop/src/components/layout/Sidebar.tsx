@@ -5,12 +5,15 @@ import { useAppStore } from '../../lib/store';
 import { useT } from '../../i18n';
 import { IconButton } from '../ui/Button';
 import { TrackerPill } from './TrackerPill';
+import { hasPendingUpdate } from './UpdateBanner';
 
 interface Item {
   to: string;
   label: string;
   Icon: LucideIcon;
   badge?: number;
+  /** A quiet volt dot (an update is waiting in Settings). */
+  dot?: boolean;
 }
 
 /** UBI's head as a mark: white shell, black visor, two volt crescents. */
@@ -38,6 +41,7 @@ export function BrandMark({ className }: { className?: string }) {
 export function Sidebar({ needsReview }: { needsReview: number }) {
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
+  const updatePending = useAppStore((s) => hasPendingUpdate(s.updateStatus));
   const t = useT();
 
   const items: Item[] = [
@@ -47,7 +51,7 @@ export function Sidebar({ needsReview }: { needsReview: number }) {
     { to: '/reports', label: t('nav.reports'), Icon: FileText },
     { to: '/categories', label: t('nav.categories'), Icon: Tags },
     { to: '/insights', label: t('nav.insights'), Icon: Sparkles },
-    { to: '/settings', label: t('nav.settings'), Icon: Settings },
+    { to: '/settings', label: t('nav.settings'), Icon: Settings, dot: updatePending },
   ];
 
   return (
@@ -65,7 +69,7 @@ export function Sidebar({ needsReview }: { needsReview: number }) {
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 px-3">
-        {items.map(({ to, label, Icon, badge }) => (
+        {items.map(({ to, label, Icon, badge, dot }) => (
           <NavLink
             key={to}
             to={to}
@@ -89,6 +93,11 @@ export function Sidebar({ needsReview }: { needsReview: number }) {
                     aria-label={t('nav.to_review', { count: badge })}
                   >
                     {badge}
+                  </span>
+                ) : null}
+                {dot && !badge ? (
+                  <span className="absolute top-2.5 right-2.5 size-1.5 rounded-full bg-volt min-[1180px]:static min-[1180px]:ml-auto" data-testid="nav-update-dot">
+                    <span className="sr-only">{t('updates.banner.badge')}</span>
                   </span>
                 ) : null}
               </>

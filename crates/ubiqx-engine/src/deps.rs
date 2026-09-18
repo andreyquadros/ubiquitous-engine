@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ubiqx_core::ports::*;
-use ubiqx_core::Clock;
+use ubiqx_core::{BuildInfo, Clock};
 
 #[derive(Clone)]
 pub struct PlatformPorts {
@@ -15,6 +15,8 @@ pub struct PlatformPorts {
     pub permissions: Arc<dyn PermissionChecker>,
     pub secrets: Arc<dyn SecretStore>,
     pub notifier: Arc<dyn Notifier>,
+    /// Where `latest.json` comes from (HTTP in production, a static feed in tests).
+    pub update_feed: Arc<dyn UpdateFeedSource>,
 }
 
 #[derive(Clone)]
@@ -98,4 +100,8 @@ pub struct EngineDeps {
     pub clock: Arc<dyn Clock>,
     /// Directory for screenshots and other engine-owned files.
     pub data_dir: PathBuf,
+    /// Identity of the running build (stamped by the shell; [`BuildInfo::dev`] otherwise).
+    pub build: BuildInfo,
+    /// URL of the update feed (`latest.json`) checked against `build`.
+    pub update_feed_url: String,
 }

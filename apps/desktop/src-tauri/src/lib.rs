@@ -11,7 +11,7 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_notification::NotificationExt;
 use ubiqx_app::{App, AppConfig};
 use ubiqx_core::ports::{EventSink, Notifier};
-use ubiqx_core::{CoreResult, EngineEvent, UiLanguage};
+use ubiqx_core::{BuildInfo, CoreError, CoreResult, EngineEvent, ReleaseInfo, UiLanguage};
 use ubiqx_engine::PrivateModeDuration;
 
 /// Shared state handed to every command.
@@ -31,6 +31,10 @@ struct MenuText {
     private_indefinite: &'static str,
     private_off: &'static str,
     snooze: &'static str,
+    /// The update item while no newer build is known.
+    check_updates: &'static str,
+    /// The update item once a build is available: `(date, sha)` of that build.
+    download_update: fn(&str, &str) -> String,
     report_today: &'static str,
     quit: &'static str,
     hide_window: &'static str,
@@ -50,6 +54,8 @@ impl MenuText {
                 private_indefinite: "Até eu desligar",
                 private_off: "Desligar modo privado",
                 snooze: "Silenciar o UBI por 2 h",
+                check_updates: "Verificar atualizações…",
+                download_update: |date, sha| format!("Baixar a nova versão ({date} {sha})…"),
                 report_today: "Gerar relatórios de hoje",
                 quit: "Sair do ubiqX",
                 hide_window: "Fechar janela",
@@ -65,6 +71,8 @@ impl MenuText {
                 private_indefinite: "Until I turn it off",
                 private_off: "Turn off private mode",
                 snooze: "Mute UBI for 2 h",
+                check_updates: "Check for updates…",
+                download_update: |date, sha| format!("Download the new version ({date} {sha})…"),
                 report_today: "Generate today's reports",
                 quit: "Quit ubiqX",
                 hide_window: "Close Window",
@@ -86,15 +94,17 @@ pub struct Menus {
     private_indefinite: MenuItem<tauri::Wry>,
     private_off: MenuItem<tauri::Wry>,
     snooze: MenuItem<tauri::Wry>,
+    update: MenuItem<tauri::Wry>,
     report_today: MenuItem<tauri::Wry>,
     quit: MenuItem<tauri::Wry>,
     hide_window: MenuItem<tauri::Wry>,
 }
 
 impl Menus {
-    /// Rewrites every label in `lang`.
-    pub fn relabel(&self, lang: UiLanguage) -> tauri::Result<()> {
+    /// Rewrites every label in `lang`; the update item names the build in `available`.
+    pub fn relabel(&self, lang: UiLanguage, available: Option<&ReleaseInfo>) -> tauri::Result<()> {
         let t = MenuText::for_language(lang);
+        self.update.set_text(update_label(&t, lang, available))?;
         self.open.set_text(t.open)?;
         self.pause.set_text(t.pause)?;
         self.resume.set_text(t.resume)?;
@@ -112,25 +122,74 @@ impl Menus {
     }
 }
 
-/// Relabels the tray and application menus after a settings write (called by the
-/// `update_settings` command; a no-op before the menus exist).
-pub fn relabel_menus(app: &AppHandle, lang: UiLanguage) {
-    if let Some(menus) = app.try_state::<Menus>() {
-        if let Err(e) = menus.relabel(lang) {
-            tracing::warn!(error = %e, "could not relabel the menus");
-        }
+/// The label of the tray's update item: an invitation to check, or the build to download.
+fn update_label(t: &MenuText, lang: UiLanguage, available: Option<&ReleaseInfo>) -> String {
+    match available {
+        Some(r) => (t.download_update)(
+            &ubiqx_core::update::format_build_date(r.build.epoch, lang),
+            &r.build.sha,
+        ),
+        None => t.check_updates.to_string(),
     }
 }
 
-/// Forwards engine events to the webview.
+/// Relabels the tray and application menus after a settings write (called by the
+/// `update_settings` command) or once a newer build is known; a no-op before the menus
+/// exist.
+pub fn relabel_menus(app: &AppHandle, lang: UiLanguage) {
+    let Some(menus) = app.try_state::<Menus>() else {
+        return;
+    };
+    let available = app
+        .try_state::<AppState>()
+        .and_then(|s| s.app.engine.update_status().available);
+    if let Err(e) = menus.relabel(lang, available.as_ref()) {
+        tracing::warn!(error = %e, "could not relabel the menus");
+    }
+}
+
+/// Forwards engine events to the webview. A newer build also renames the tray item, so the
+/// menubar offers the download without opening the dashboard.
 struct TauriSink(AppHandle);
 
 impl EventSink for TauriSink {
     fn emit(&self, event: EngineEvent) {
+        if let EngineEvent::UpdateAvailable { .. } = &event {
+            if let Some(state) = self.0.try_state::<AppState>() {
+                let lang = state.app.engine.settings().ui_language();
+                relabel_menus(&self.0, lang);
+            }
+        }
         if let Err(e) = self.0.emit("engine", &event) {
             tracing::debug!(error = %e, "could not emit engine event");
         }
     }
+}
+
+/// Opens the download of a build in the browser. Only web links, for the same reason as
+/// `open_external`: the URL came from a JSON feed, never from the user.
+pub fn open_download(url: &str) -> CoreResult<()> {
+    let parsed = url::Url::parse(url.trim())
+        .map_err(|_| CoreError::Invalid(format!("download url: {url}")))?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return Err(CoreError::Invalid(format!(
+            "download url: only http(s) links are opened ({url})"
+        )));
+    }
+    tauri_plugin_opener::open_url(parsed.as_str(), None::<&str>)
+        .map_err(|e| CoreError::Platform(format!("open download: {e}")))
+}
+
+/// The build identity stamped by `build.rs` (`UBIQX_BUILD_*`), a development build when the
+/// stamp is empty.
+fn build_info() -> BuildInfo {
+    BuildInfo::from_stamp(
+        env!("CARGO_PKG_VERSION"),
+        env!("UBIQX_BUILD_EPOCH"),
+        env!("UBIQX_BUILD_NUMBER"),
+        env!("UBIQX_BUILD_SHA"),
+        env!("UBIQX_BUILD_BRANCH"),
+    )
 }
 
 /// Desktop notifications through the notification plugin.
@@ -198,6 +257,7 @@ fn build_tray(
         ],
     )?;
     let snooze = MenuItem::with_id(app, "snooze", t.snooze, true, None::<&str>)?;
+    let update = MenuItem::with_id(app, "update", t.check_updates, true, None::<&str>)?;
     let report = MenuItem::with_id(app, "report_today", t.report_today, true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", t.quit, true, None::<&str>)?;
     let menu = Menu::with_items(
@@ -210,6 +270,7 @@ fn build_tray(
             &private,
             &snooze,
             &PredefinedMenuItem::separator(app)?,
+            &update,
             &report,
             &PredefinedMenuItem::separator(app)?,
             &quit,
@@ -243,6 +304,26 @@ fn build_tray(
                 }
                 "private_off" => log_err(engine.set_private_mode(PrivateModeDuration::Off)),
                 "snooze" => log_err(engine.snooze_nudges(120)),
+                "update" => {
+                    // A known build downloads right away; otherwise check now and, when
+                    // that finds one, download it, or else show the dashboard (its update
+                    // section says when the check ran and what it found).
+                    let engine = engine.clone();
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let mut available = engine.update_status().available;
+                        if available.is_none() {
+                            match engine.check_for_updates().await {
+                                Ok(status) => available = status.available,
+                                Err(e) => tracing::warn!(error = %e, "update check failed"),
+                            }
+                        }
+                        match available {
+                            Some(release) => log_err(open_download(&release.download_url)),
+                            None => show_main_window(&app),
+                        }
+                    });
+                }
                 "report_today" => {
                     let engine = engine.clone();
                     tauri::async_runtime::spawn(async move {
@@ -280,6 +361,7 @@ fn build_tray(
         private_indefinite: pind,
         private_off: poff,
         snooze,
+        update,
         report_today: report,
         quit,
         hide_window,
@@ -344,12 +426,23 @@ pub fn run() {
             } else {
                 ubiqx_app::AiBackend::Remote
             };
+            let build = build_info();
+            tracing::info!(
+                version = %build.version,
+                epoch = build.epoch,
+                number = build.number,
+                sha = %build.sha,
+                branch = %build.branch,
+                "ubiqX build"
+            );
             let config = AppConfig {
                 data_dir: Some(data_dir),
                 in_memory_db: false,
                 scripted_platform: scripted,
                 ai,
                 notifier: Some(notifier),
+                build,
+                update_feed_url: Some(env!("UBIQX_UPDATE_FEED_URL").to_string()),
             };
             let ubiqx = tauri::async_runtime::block_on(async { App::start(config, sink) })
                 .map_err(|e| format!("engine start: {e}"))?;

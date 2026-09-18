@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getLocale, setLocale } from '../i18n';
 import { __mock } from '../lib/mock';
@@ -96,5 +96,76 @@ describe('Settings · language', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Português (Brasil)' }));
     expect(await screen.findByRole('heading', { name: 'Configurações' })).toBeInTheDocument();
     await waitFor(() => expect(useAppStore.getState().settingsView?.settings.language).toBe('pt-BR'));
+  });
+});
+
+describe('Settings · updates section (mock backend)', () => {
+  beforeEach(async () => {
+    __mock.reset();
+    useAppStore.setState({ settingsView: null, updateStatus: null });
+    await useAppStore.getState().loadSettings();
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('shows the running build, the install commands and saves check_updates from the toggle', async () => {
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'Atualizações' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Atualizações' })).toBeInTheDocument(); // rail entry
+    // "ubiqX 0.1.0" also shows in About: assert on the build rows this section adds
+    expect(await screen.findByText('14c6e7f (main)')).toBeInTheDocument();
+    expect(screen.getAllByText('ubiqX 0.1.0', { selector: 'dd' })).toHaveLength(2);
+    expect(screen.getByText('Última verificação: nunca')).toBeInTheDocument();
+    expect(screen.getByTestId('install-commands')).toHaveTextContent('xattr -dr com.apple.quarantine /Applications/ubiqX.app');
+    expect(screen.getByTestId('install-commands')).toHaveTextContent('codesign --force --deep --options runtime --sign "ubiqX Dev" /Applications/ubiqX.app');
+    expect(screen.queryByTestId('update-release')).not.toBeInTheDocument();
+
+    const toggle = screen.getByRole('switch', { name: 'Verificar automaticamente' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await waitFor(() => expect(useAppStore.getState().settingsView?.settings.check_updates).toBe(false), { timeout: 3000 });
+    expect(__mock.state().settings.check_updates).toBe(false);
+  });
+
+  it('"Verificar agora" reports the latest version, then shows the release served by __mock.setUpdate', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    renderPage();
+    const button = await screen.findByRole('button', { name: 'Verificar agora' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    expect(await screen.findByText('Você já está na versão mais recente.')).toBeInTheDocument();
+    expect(screen.getByText(/Última verificação: \d\d\/\d\d \d\d:\d\d/)).toBeInTheDocument();
+
+    act(() => __mock.setUpdate(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Verificar agora' }));
+    const panel = await screen.findByTestId('update-release');
+    expect(panel).toHaveTextContent('Nova versão disponível');
+    expect(panel).toHaveTextContent('(a1b2c3d, nº 27)');
+    expect(screen.getByTestId('release-notes')).toHaveTextContent('Faixa no topo e seção Atualizações em Configurações');
+    expect(screen.queryByText('Você já está na versão mais recente.')).not.toBeInTheDocument();
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Baixar (.dmg)' }));
+    await waitFor(() => expect(open).toHaveBeenCalledWith(expect.stringMatching(/ubiqX-macos-aarch64\.dmg$/), '_blank', 'noopener'));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Página do release' }));
+    await waitFor(() => expect(open).toHaveBeenCalledWith('https://github.com/andreyquadros/ubiquitous-engine/releases/tag/continuous', '_blank', 'noopener'));
+  });
+
+  it('scrolls to the updates section when opened from the banner and copies the install commands', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const scroll = Element.prototype.scrollIntoView as unknown as ReturnType<typeof vi.fn>;
+    scroll.mockClear();
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/settings', state: { section: 'atualizacoes' } }]}>
+        <SettingsPage />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('heading', { name: 'Atualizações' });
+    await waitFor(() => expect(scroll).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'Atualizações' })).toHaveAttribute('aria-current', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar comandos' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('xattr -dr com.apple.quarantine /Applications/ubiqX.app\ncodesign --force --deep --options runtime --sign "ubiqX Dev" /Applications/ubiqX.app'));
+    expect(await screen.findByRole('button', { name: 'Copiado' })).toBeInTheDocument();
   });
 });

@@ -168,18 +168,23 @@ async fn harness_with(opts: HarnessOptions) -> Harness {
             permissions: platform.permissions.clone(),
             secrets,
             notifier: platform.notifier.clone(),
+            update_feed: platform.update_feed.clone(),
         },
         repos: Repos::from_store(store.clone()),
         ai: opts.ai,
         sink: sink.clone(),
         clock: Arc::new(clock.clone()),
         data_dir: tmp.path().to_path_buf(),
+        build: ubiqx_core::BuildInfo::dev(),
+        update_feed_url: String::new(),
     };
     let cfg = LoopConfig {
         classify_every: Duration::from_millis(200),
         reports_every: Duration::from_secs(3600),
         nudges_every: Duration::from_secs(3600),
         retention_every: Duration::from_secs(3600),
+        update_initial_delay: Duration::from_secs(3600),
+        update_every: Duration::from_secs(3600),
         without_sampler: true,
     };
     let (handle, tx) = Engine::start_with(deps, cfg).unwrap();

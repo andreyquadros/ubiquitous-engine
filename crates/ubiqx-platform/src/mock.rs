@@ -3,9 +3,10 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use async_trait::async_trait;
 use parking_lot::Mutex;
 use ubiqx_core::ports::*;
-use ubiqx_core::{CoreError, CoreResult, ForegroundWindow};
+use ubiqx_core::{CoreError, CoreResult, ForegroundWindow, UpdateFeed};
 
 /// One step of a scenario: what is in the foreground for `samples` consecutive samples.
 #[derive(Debug, Clone, PartialEq)]
@@ -309,6 +310,32 @@ impl ScreenCapturer for DeniedCapturer {
     }
 }
 
+/// An update feed served from memory: `Some(feed)` is returned for any URL, `None` fails
+/// like an unreachable feed would. Tests and scripted runs use it instead of the network.
+#[derive(Debug, Default)]
+pub struct StaticUpdateFeed(Mutex<Option<UpdateFeed>>);
+
+impl StaticUpdateFeed {
+    pub fn new(feed: Option<UpdateFeed>) -> Self {
+        Self(Mutex::new(feed))
+    }
+
+    /// Replaces what the next `fetch` returns.
+    pub fn set(&self, feed: Option<UpdateFeed>) {
+        *self.0.lock() = feed;
+    }
+}
+
+#[async_trait]
+impl UpdateFeedSource for StaticUpdateFeed {
+    async fn fetch(&self, url: &str) -> CoreResult<UpdateFeed> {
+        self.0
+            .lock()
+            .clone()
+            .ok_or_else(|| CoreError::NotFound(format!("no update feed at {url} (scripted)")))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -366,6 +393,21 @@ mod tests {
             .unwrap();
         assert_eq!(img.mime, "image/jpeg");
         assert_eq!(img.width, 640);
+    }
+
+    #[tokio::test]
+    async fn static_feed_serves_or_fails() {
+        let feed = StaticUpdateFeed::new(None);
+        assert!(matches!(
+            feed.fetch("https://x/latest.json").await,
+            Err(CoreError::NotFound(_))
+        ));
+        let parsed: UpdateFeed = serde_json::from_str(
+            r#"{"version":"0.1.0","build":{"epoch":7},"platforms":{"darwin-aarch64":{"url":"u"}}}"#,
+        )
+        .unwrap();
+        feed.set(Some(parsed.clone()));
+        assert_eq!(feed.fetch("any").await.unwrap(), parsed);
     }
 
     #[test]

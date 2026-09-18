@@ -25,6 +25,7 @@ import type {
   Settings,
   SettingsView,
   AiProvider,
+  UpdateStatus,
 } from './types';
 
 export const isTauri = (): boolean =>
@@ -100,6 +101,15 @@ export const ipc = {
   deleteAllData: () => call<void>('delete_all_data'),
   exportData: () => call<string>('export_data'),
   openExternal: (url: string) => call<void>('open_external', { url }),
+
+  // Updates (rolling "continuous" GitHub release)
+  getUpdateStatus: () => call<UpdateStatus>('get_update_status'),
+  /** Runs a check now, regardless of Settings.check_updates, and returns the fresh status. */
+  checkForUpdates: () => call<UpdateStatus>('check_for_updates'),
+  /** Hides the banner for this build epoch until a newer build shows up. */
+  dismissUpdate: (epoch: number) => call<UpdateStatus>('dismiss_update', { epoch }),
+  /** Opens the DMG download of the available release in the browser. */
+  openUpdate: () => call<void>('open_update'),
 };
 
 /** Subscribes to engine events. Returns an unsubscribe function. */

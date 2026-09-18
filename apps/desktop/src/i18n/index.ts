@@ -18,6 +18,7 @@ import categories from './messages/categories';
 import insights from './messages/insights';
 import settings from './messages/settings';
 import onboarding from './messages/onboarding';
+import updates from './messages/updates';
 
 export type { Locale, Messages, NamespaceMessages, Vars } from './types';
 export { LOCALES, STORAGE_KEY, getLocale, setLocale, useLocale, useLocaleStore, isLocale, normaliseLocale, hasUrlLocaleOverride, initialLocale } from './locale';
@@ -38,6 +39,7 @@ export const NAMESPACES: Record<string, NamespaceMessages> = {
   insights,
   settings,
   onboarding,
+  updates,
 };
 
 const REGISTRY: Record<Locale, Messages> = { 'pt-BR': {}, en: {} };

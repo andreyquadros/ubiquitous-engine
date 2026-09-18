@@ -58,6 +58,7 @@ fn fixture() -> Fixture {
             permissions: platform.permissions.clone(),
             secrets: Arc::new(MemorySecrets::default()),
             notifier: platform.notifier.clone(),
+            update_feed: platform.update_feed.clone(),
         },
         repos: Repos::from_store(store.clone()),
         ai: AiPorts {
@@ -72,6 +73,8 @@ fn fixture() -> Fixture {
             Utc.with_ymd_and_hms(2026, 9, 17, 15, 0, 0).unwrap(),
         )),
         data_dir: tmp.path().to_path_buf(),
+        build: ubiqx_core::BuildInfo::dev(),
+        update_feed_url: String::new(),
     };
     let state = EngineState::new(deps, Settings::default(), None);
     Fixture {

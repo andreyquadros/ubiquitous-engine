@@ -877,6 +877,14 @@ pub struct Settings {
     pub launch_at_login: bool,
     /// Onboarding finished (permissions granted, key stored, categories created).
     pub onboarding_done: bool,
+    /// Look for a newer build in the update feed automatically (shortly after start, then
+    /// every few hours). A manual check works regardless.
+    #[serde(default = "default_true")]
+    pub check_updates: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -918,6 +926,7 @@ impl Default for Settings {
             nudges: NudgeSettings::default(),
             launch_at_login: true,
             onboarding_done: false,
+            check_updates: true,
         }
     }
 }
@@ -984,6 +993,11 @@ pub enum EngineEvent {
     ScreenshotTaken {
         screenshot_id: Id,
         block_id: Option<Id>,
+    },
+    /// A newer build was found in the update feed (once per build, and on every manual
+    /// check that finds one).
+    UpdateAvailable {
+        release: crate::update::ReleaseInfo,
     },
 }
 

@@ -86,6 +86,70 @@ Tauri também notariza, e o app abre em qualquer Mac sem os comandos acima.
 pelo GitHub (*Add file → Upload files* dentro da pasta, nomes exatamente `Ubi.glb` e `ubi.png`) ou rode
 `scripts/install-ubi-model.sh` e faça commit dos dois arquivos — o `Ubi.glb` deve ser commitado como o PNG.
 
+## 3.2 Atualizações: como o app avisa e como instalar
+
+Cada commit que a nuvem compila vira uma atualização para quem já usa o ubiqX. Não há auto-instalação:
+o app avisa, você baixa o `.dmg` com um clique e instala como no § 3.1.
+
+**Como funciona.** A CI publica cada build na release rolante **`continuous`** do repositório
+(`https://github.com/andreyquadros/ubiquitous-engine/releases/tag/continuous`). A release recebe sempre os
+mesmos três arquivos, com nomes estáveis: `ubiqX-macos-aarch64.dmg`, `ubiqX-macos-aarch64.app.zip` e
+`latest.json`, o "feed" com versão, data do commit (`build.epoch`), número do build, sha e as notas do commit.
+Cada binário sai da compilação com esses mesmos números gravados (`scripts/build-info.sh` os calcula e o
+`build.rs` os grava). O app baixa o `latest.json` 45 s depois de abrir e depois a cada 6 h; se a versão for
+maior, ou igual com um commit mais novo, há atualização. Builds de desenvolvimento (`pnpm tauri dev`, sem
+git) não verificam sozinhos; a verificação manual em Configurações continua funcionando para testar.
+
+**Onde aparece.** Um banner no topo do app com a data e o sha do build e os botões **Como instalar**,
+**Depois** e **Baixar (.dmg)**; a seção **Atualizações** em Configurações (build atual, última verificação,
+**Verificar agora**, interruptor da verificação automática e, quando há build novo, as notas do commit com
+**Baixar** e **Página do release**); uma notificação do macOS uma vez por build ("Nova versão do ubiqX. Build
+18/09 15:04 (a1b2c3d) já está disponível"); e um item no menu da barra de menus, **Verificar atualizações…**
+enquanto nenhum build novo é conhecido e **Baixar a nova versão (18/09 15:04 a1b2c3d)…** depois que um
+aparece. **Depois** esconde o banner só daquele build; o próximo avisa de novo.
+
+**GitHub Actions (automático).** Já está configurado: todo push compila o app e o DMG e roda a publicação com o
+`GITHUB_TOKEN` que o próprio Actions fornece (o job tem `permissions: contents: write`). Pull requests só
+compilam. Um push novo cancela o build anterior do mesmo branch, e a publicação recusa sobrescrever um build
+mais novo do que o dela, então a release nunca "volta no tempo".
+
+**Codemagic (opcional, precisa de um token).** O Codemagic não recebe token do GitHub sozinho. Para ele
+também publicar:
+
+1. No GitHub: *Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new
+   token*. Repositório: só `ubiquitous-engine`. Permissão: **Contents: Read and write**. Copie o token.
+2. No Codemagic: *Teams → Global variables and secrets* (ou na aplicação, *Environment variables*): variável
+   `GITHUB_TOKEN`, valor = o token, grupo **`ubiqx_github`**, marque *Secure*.
+3. No `codemagic.yaml`, descomente as linhas
+   ```yaml
+   groups:
+     - ubiqx_github
+   ```
+   (e `- ubiqx_apple` se também tiver o grupo de assinatura). Faça commit.
+
+Sem o grupo a etapa *Publicar atualização (GitHub Releases)* escreve "Publicação pulada: GITHUB_TOKEN não
+definido" e o build continua disponível em Artifacts. Os dois caminhos publicam na mesma release; quem
+terminar por último com o commit mais novo vence, o outro pula.
+
+**Instalar a atualização.** O botão **Baixar** abre o `.dmg` no navegador. O bundle continua com assinatura
+ad hoc e em quarentena, então repita a sequência do § 3.1:
+
+```bash
+open ~/Downloads/ubiqX-macos-aarch64.dmg          # arraste o ubiqX para Aplicativos (substitua) e ejete
+xattr -dr com.apple.quarantine /Applications/ubiqX.app
+codesign --force --deep --options runtime --sign "ubiqX Dev" /Applications/ubiqX.app   # = scripts/codesign-dev.sh /Applications/ubiqX.app
+open /Applications/ubiqX.app
+```
+
+Assinar com a **mesma** identidade `ubiqX Dev` a cada atualização é o que mantém Gravação de Tela, Automação e
+o Keychain: o macOS liga essas permissões à assinatura, e um binário reassinado com a mesma identidade é, para
+ele, o mesmo app. Se pular o `codesign`, o novo build volta a pedir tudo.
+
+**Outro feed.** Para apontar o app a um fork ou a um servidor próprio, compile com
+`UBIQX_UPDATE_FEED_URL=https://.../latest.json pnpm tauri build` (o valor fica gravado no binário; o padrão é o
+`latest.json` da release `continuous` deste repositório). O `scripts/publish-release.mjs` aceita `--repo`,
+`--tag` e `--dmg` para publicar em outro lugar; `node scripts/publish-release.mjs --help` lista tudo.
+
 ## 4. Primeira execução (onboarding)
 
 1. **Escolha a IA e cole a chave** — Anthropic Claude (https://console.anthropic.com), OpenAI
@@ -127,6 +191,9 @@ exatamente o texto enviado à IA por bloco e permite apagar tudo.
 | "IA não configurada" | Chave ausente/inválida | Configurações → IA → validar chave |
 | "IA indisponível: cobrança…" | Conta sem créditos ou chave desativada | Adicionar créditos no console da Anthropic e salvar a chave de novo |
 | "ubiqX está danificado" / "desenvolvedor não identificado" ao abrir um app baixado | Quarentena do Gatekeeper num bundle com assinatura ad hoc | `xattr -dr com.apple.quarantine ubiqX.app` e assinar (§ 3.1) |
+| Banner de atualização não aparece mesmo com commit novo | Build de desenvolvimento (epoch 0) não verifica sozinho, verificação automática desligada, ou a CI ainda não publicou | Configurações → Atualizações → **Verificar agora**; confira a release `continuous` no GitHub e o log do job *Publish continuous release* (§ 3.2) |
+| "Publicação pulada: GITHUB_TOKEN não definido" no log do Codemagic | Grupo `ubiqx_github` não criado ou `groups` ainda comentado no yaml | Criar o token fine-grained e o grupo, descomentar `groups` (§ 3.2); enquanto isso o GitHub Actions publica sozinho |
+| Atualização instalada pede Gravação de Tela de novo | Novo bundle sem a assinatura `ubiqX Dev` | `xattr -dr com.apple.quarantine` e `codesign` com a mesma identidade (§ 3.2) |
 | Cmd+Q "não fecha" o app | Esperado: Cmd+Q só esconde a janela | Para encerrar de verdade: tray → **Sair** |
 | Log sem linhas do rastreador | Nível de log baixo | `UBIQX_LOG=debug` antes de abrir o app; o arquivo fica em `~/Library/Logs/ai.ubiqx.app/` |
 | macOS 15 mostra aviso periódico de captura de tela | Comportamento do sistema para apps que usam captura | Esperado; clique em *Continuar a permitir* |

@@ -10,9 +10,14 @@ authors.workspace = true
 
 [dependencies]
 ubiqx-core.workspace = true
+async-trait.workspace = true
 chrono.workspace = true
 image.workspace = true
 parking_lot.workspace = true
+# No TLS backend on purpose: every binary that ships this crate also ships `ubiqx-ai`, whose
+# `rustls-tls` feature is unified in, and a standalone `--target aarch64-apple-darwin` check
+# of this crate then needs no C toolchain for the crypto backend.
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -29,3 +34,4 @@ keyring = { version = "3.6", features = ["apple-native"] }
 
 [dev-dependencies]
 tempfile.workspace = true
+tokio.workspace = true

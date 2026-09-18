@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::CoreResult;
 use crate::model::*;
+use crate::update::UpdateFeed;
 
 // ---------------------------------------------------------------------------------------------
 // Platform
@@ -102,6 +103,12 @@ pub trait PermissionChecker: Send + Sync {
 /// Desktop notifications.
 pub trait Notifier: Send + Sync {
     fn notify(&self, title: &str, body: &str) -> CoreResult<()>;
+}
+
+/// Fetches the update feed (`latest.json`) the CI publishes next to every build.
+#[async_trait]
+pub trait UpdateFeedSource: Send + Sync {
+    async fn fetch(&self, url: &str) -> CoreResult<UpdateFeed>;
 }
 
 /// Secret storage (macOS Keychain, etc.). Used for API keys.

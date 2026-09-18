@@ -126,6 +126,10 @@ impl EventSink for PrintSink {
             EngineEvent::PermissionRequired { permission } => {
                 println!("⚠ permissão necessária: {permission}")
             }
+            EngineEvent::UpdateAvailable { release } => println!(
+                "⬆ nova versão disponível: {} ({}) {}",
+                release.version, release.build.sha, release.download_url
+            ),
             EngineEvent::BlockOpened { .. } | EngineEvent::ScreenshotTaken { .. } => {}
         }
     }
@@ -193,7 +197,7 @@ async fn main() -> Result<()> {
         in_memory_db: cli.ephemeral,
         scripted_platform: None,
         ai: ai_backend(&cli),
-        notifier: None,
+        ..AppConfig::default()
     };
 
     match &cli.cmd {

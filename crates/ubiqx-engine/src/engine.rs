@@ -23,6 +23,9 @@ pub struct LoopConfig {
     pub reports_every: Duration,
     pub nudges_every: Duration,
     pub retention_every: Duration,
+    /// Wait before the first automatic update check, so start-up stays quiet.
+    pub update_initial_delay: Duration,
+    pub update_every: Duration,
     /// Skip the sampler thread (the caller feeds samples itself).
     pub without_sampler: bool,
 }
@@ -34,6 +37,8 @@ impl Default for LoopConfig {
             reports_every: Duration::from_secs(30),
             nudges_every: Duration::from_secs(60),
             retention_every: Duration::from_secs(3600),
+            update_initial_delay: Duration::from_secs(45),
+            update_every: Duration::from_secs(6 * 3600),
             without_sampler: false,
         }
     }
@@ -77,6 +82,12 @@ impl Engine {
             state.clone(),
             cancel.clone(),
             cfg.retention_every,
+        ));
+        tokio::spawn(update_loop(
+            state.clone(),
+            cancel.clone(),
+            cfg.update_initial_delay,
+            cfg.update_every,
         ));
 
         state.refresh_tracker_state();
@@ -175,6 +186,33 @@ async fn retention_loop(state: Arc<EngineState>, cancel: CancellationToken, ever
                 let st = state.clone();
                 if let Err(e) = tokio::task::spawn_blocking(move || screenshots::cleanup(&st)).await.unwrap_or_else(|e| Err(CoreError::Other(e.to_string()))) {
                     tracing::warn!(error = %e, "retention failed");
+                }
+            }
+        }
+    }
+}
+
+/// Automatic update checks: one shortly after start, then every `every`, each only while
+/// the user wants them (`settings.check_updates`) and the build is a published one (a
+/// development build has nothing to compare against). A manual check from the UI is
+/// independent of this loop.
+async fn update_loop(
+    state: Arc<EngineState>,
+    cancel: CancellationToken,
+    initial_delay: Duration,
+    every: Duration,
+) {
+    let mut delay = initial_delay;
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => break,
+            _ = tokio::time::sleep(delay) => {
+                delay = every;
+                if !state.update.enabled() || !state.settings().check_updates {
+                    continue;
+                }
+                if let Err(e) = state.update.check_scheduled().await {
+                    tracing::warn!(error = %e, "update check failed");
                 }
             }
         }

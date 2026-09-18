@@ -1,6 +1,7 @@
 import clsx from 'clsx';
-import { AlertTriangle, Bell, BrainCircuit, Camera, Check, Download, ExternalLink, EyeOff, Info, KeyRound, ListRestart, Loader2, RefreshCw, Shield, ShieldCheck, SlidersHorizontal, Trash2, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ArrowDownToLine, Bell, BrainCircuit, Camera, Check, Copy, Download, ExternalLink, EyeOff, Info, KeyRound, ListRestart, Loader2, RefreshCw, Shield, ShieldCheck, SlidersHorizontal, Trash2, type LucideIcon } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Badge, StatusPill } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -11,6 +12,7 @@ import { EmptyState } from '../components/ui/misc';
 import { PageHeader } from '../components/ui/PageHeader';
 import { TagInput } from '../components/ui/TagInput';
 import { Toggle } from '../components/ui/Toggle';
+import { UPDATES_SECTION_ID, fmtBuildDate } from '../components/layout/UpdateBanner';
 import { useLocale, useT, type Locale } from '../i18n';
 import { fmtDateNumeric, fmtDateTime, fmtTime, hhmmToInput, inputToHhmm } from '../lib/format';
 import { ipc } from '../lib/ipc';
@@ -30,6 +32,7 @@ const SECTIONS: { id: string; key: string; Icon: LucideIcon }[] = [
   { id: 'privacidade', key: 'privacy', Icon: Shield },
   { id: 'relatorios', key: 'reports', Icon: Info },
   { id: 'ubi', key: 'ubi', Icon: Bell },
+  { id: UPDATES_SECTION_ID, key: 'updates', Icon: ArrowDownToLine },
   { id: 'permissoes', key: 'permissions', Icon: ShieldCheck },
   { id: 'sobre', key: 'about', Icon: Info },
 ];
@@ -108,13 +111,21 @@ export function SettingsPage() {
   const sections = useMemo(() => SECTIONS.filter((s) => s.id !== 'permissoes' || settingsView?.platform === 'macos'), [settingsView?.platform]);
   const ids = useMemo(() => sections.map((s) => s.id), [sections]);
   useScrollSpy(ids, setActive);
+  const ready = !!draft && !!settingsView;
 
-  if (!draft || !settingsView) return null;
-
-  const go = (id: string) => {
+  const go = useCallback((id: string) => {
     setActive(id);
     document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  }, []);
+
+  // Deep link from elsewhere (the update banner): navigate('/settings', { state: { section } }).
+  const location = useLocation();
+  const wanted = (location.state as { section?: string } | null)?.section;
+  useEffect(() => {
+    if (ready && wanted && ids.includes(wanted)) go(wanted);
+  }, [ready, wanted, ids, go]);
+
+  if (!draft || !settingsView) return null;
 
   return (
     <div data-testid="page-settings">
@@ -173,6 +184,7 @@ export function SettingsPage() {
           <PrivacySection draft={draft} patch={patch} view={settingsView} />
           <ReportsSection draft={draft} patch={patch} />
           <UbiSection draft={draft} patch={patch} />
+          <UpdatesSection draft={draft} patch={patch} />
           {settingsView.platform === 'macos' && <PermissionsSection view={settingsView} />}
           <AboutSection view={settingsView} />
         </div>
@@ -757,6 +769,190 @@ function UbiSection({ draft, patch }: SectionProps) {
             {t(`settings.ubi.snooze.${p.key}`)}
           </Button>
         ))}
+      </div>
+    </Section>
+  );
+}
+
+const INSTALL_COMMANDS = ['xattr -dr com.apple.quarantine /Applications/ubiqX.app', 'codesign --force --deep --options runtime --sign "ubiqX Dev" /Applications/ubiqX.app'];
+const NOTES_PREVIEW_LINES = 6;
+
+/** Release notes: the first lines, then "show all". Whitespace is kept as the commit message had it. */
+function ReleaseNotes({ notes }: { notes: string }) {
+  const t = useT();
+  const [all, setAll] = useState(false);
+  const lines = notes.replace(/\r\n/g, '\n').trimEnd().split('\n');
+  if (lines.length === 0 || (lines.length === 1 && !lines[0]?.trim())) return <p className="text-xs text-ink-3">{t('settings.updates.notes_empty')}</p>;
+  const long = lines.length > NOTES_PREVIEW_LINES;
+  const shown = all || !long ? lines : lines.slice(0, NOTES_PREVIEW_LINES);
+  return (
+    <div>
+      <pre className="whitespace-pre-wrap font-sans text-[13px] leading-5 text-ink-2" data-testid="release-notes">
+        {shown.join('\n')}
+        {long && !all ? '\n…' : ''}
+      </pre>
+      {long && (
+        <button type="button" onClick={() => setAll((v) => !v)} className="mt-1 text-xs font-medium text-volt underline-offset-4 hover:underline">
+          {all ? t('settings.updates.show_less') : t('settings.updates.show_all')}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function UpdatesSection({ draft, patch }: SectionProps) {
+  const t = useT();
+  const toast = useToast();
+  const status = useAppStore((s) => s.updateStatus);
+  const checking = useAppStore((s) => s.updateChecking);
+  const loadUpdateStatus = useAppStore((s) => s.loadUpdateStatus);
+  const checkForUpdates = useAppStore((s) => s.checkForUpdates);
+  const openUpdate = useAppStore((s) => s.openUpdate);
+  const [result, setResult] = useState<'idle' | 'up_to_date' | 'failed'>('idle');
+  const [failure, setFailure] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!status) void loadUpdateStatus();
+  }, [status, loadUpdateStatus]);
+
+  const check = async () => {
+    setResult('idle');
+    try {
+      const next = await checkForUpdates();
+      setResult(next.available ? 'idle' : 'up_to_date');
+    } catch (e) {
+      setFailure(errorMessage(e));
+      setResult('failed');
+    }
+  };
+
+  const openFailed = (e: unknown) => toast.error(t('settings.toast.update_open_failed'), errorMessage(e));
+
+  const copyCommands = async () => {
+    try {
+      await navigator.clipboard.writeText(INSTALL_COMMANDS.join('\n'));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+      toast.success(t('settings.updates.copied'));
+    } catch (e) {
+      toast.error(t('settings.updates.copy_failed'), errorMessage(e));
+    }
+  };
+
+  const devLabel = t('updates.dev_build');
+  const current = status?.current;
+  const release = status?.available ?? null;
+
+  return (
+    <Section id={UPDATES_SECTION_ID} title={t('settings.section.updates')} description={t('settings.updates.description')}>
+      {current ? (
+        <dl className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-2.5 text-sm">
+          <dt className="text-ink-3">{t('settings.updates.version')}</dt>
+          <dd className="num font-medium">ubiqX {current.version}</dd>
+          <dt className="text-ink-3">{t('settings.updates.build')}</dt>
+          <dd className="num">{fmtBuildDate(current.epoch, devLabel)}</dd>
+          <dt className="text-ink-3">{t('settings.updates.build_number')}</dt>
+          <dd className="num">{current.number}</dd>
+          <dt className="text-ink-3">{t('settings.updates.commit')}</dt>
+          <dd className="font-mono text-xs leading-5">
+            {current.sha}
+            {current.branch ? ` (${current.branch})` : ''}
+          </dd>
+          <dt className="text-ink-3">{t('settings.updates.feed')}</dt>
+          <dd className="truncate font-mono text-xs leading-5" title={status?.feed_url}>
+            {status?.feed_url}
+          </dd>
+        </dl>
+      ) : (
+        <p className="flex items-center gap-2 text-xs text-ink-3">
+          <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} aria-hidden /> {t('common.loading')}
+        </p>
+      )}
+
+      <div className="flex flex-col gap-1 text-xs text-ink-3">
+        <span>{status?.last_check ? t('settings.updates.last_check', { time: fmtDateTime(status.last_check) }) : t('settings.updates.last_check_never')}</span>
+        {status?.last_error && <span>{t('settings.updates.last_error', { error: status.last_error })}</span>}
+      </div>
+
+      <Divider />
+
+      {status && !status.enabled && (
+        <p className="flex items-center gap-2 rounded-control border border-line bg-panel-2 px-3 py-2 text-xs leading-5 text-ink-2">
+          <Info className="size-4 shrink-0 text-ink-3" strokeWidth={1.75} aria-hidden />
+          {t('settings.updates.dev_build')}
+        </p>
+      )}
+      <Field label={t('settings.updates.auto.label')} hint={t('settings.updates.auto.hint')} inline>
+        {(id) => <Toggle id={id} checked={draft.check_updates} disabled={status ? !status.enabled : false} onChange={(v) => patch({ check_updates: v })} />}
+      </Field>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button icon={<RefreshCw className="size-4" strokeWidth={1.75} />} onClick={() => void check()} loading={checking || !!status?.checking} disabled={!status}>
+          {t('settings.updates.check_now')}
+        </Button>
+        <span className="text-xs text-ink-2" aria-live="polite">
+          {result === 'up_to_date' && (
+            <span className="flex items-center gap-1.5">
+              <Check className="size-3.5 text-signal" strokeWidth={2} aria-hidden /> {t('settings.updates.up_to_date')}
+            </span>
+          )}
+          {result === 'failed' && failure && t('settings.updates.check_failed', { error: failure })}
+        </span>
+      </div>
+
+      {release && (
+        <div className="flex flex-col gap-3 rounded-card border border-volt/30 bg-volt-soft p-4" data-testid="update-release">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 text-sm font-semibold text-ink">
+                <ArrowDownToLine className="size-4 text-volt" strokeWidth={1.75} aria-hidden />
+                {t('settings.updates.available_title')}
+              </p>
+              <p className="num mt-1 text-xs text-ink-2">
+                {t('settings.updates.available_build', { version: release.version, date: fmtBuildDate(release.build.epoch, devLabel), sha: release.build.sha, number: release.build.number })}
+                {release.published_at ? `. ${t('settings.updates.published_at', { time: fmtDateTime(release.published_at) })}` : ''}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {release.release_url && (
+                <Button
+                  size="sm"
+                  icon={<ExternalLink className="size-4" strokeWidth={1.75} />}
+                  onClick={() => {
+                    ipc.openExternal(release.release_url!).catch(openFailed);
+                  }}
+                >
+                  {t('updates.release_page')}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="primary"
+                icon={<ArrowDownToLine className="size-4" strokeWidth={2} />}
+                onClick={() => {
+                  openUpdate().catch(openFailed);
+                }}
+              >
+                {t('updates.download')}
+              </Button>
+            </div>
+          </div>
+          <ReleaseNotes notes={release.notes} />
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2 border-t border-line pt-4">
+        <p className="text-sm font-medium">{t('settings.updates.install.title')}</p>
+        <p className="text-xs leading-5 text-ink-2">{t('settings.updates.install.hint')}</p>
+        <div className="relative">
+          <pre className="scroll-thin overflow-x-auto rounded-control bg-panel-2 p-3 pr-28 font-mono text-[12px] leading-5 text-ink" data-testid="install-commands">
+            {INSTALL_COMMANDS.join('\n')}
+          </pre>
+          <Button size="sm" className="absolute top-2 right-2" icon={copied ? <Check className="size-3.5 text-signal" strokeWidth={2} /> : <Copy className="size-3.5" strokeWidth={1.75} />} onClick={() => void copyCommands()}>
+            {copied ? t('settings.updates.copied') : t('settings.updates.copy')}
+          </Button>
+        </div>
+        <p className="text-xs leading-5 text-ink-3">{t('settings.updates.install.note')}</p>
       </div>
     </Section>
   );

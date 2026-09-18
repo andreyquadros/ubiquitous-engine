@@ -13,6 +13,7 @@ import type {
   Settings,
   SettingsView,
   TrackerState,
+  UpdateStatus,
 } from './types';
 
 interface AppState {
@@ -59,6 +60,17 @@ interface AppState {
   // UBI speech (what the mascot is currently saying)
   ubiSpeech: string | null;
   setUbiSpeech: (s: string | null) => void;
+
+  // updates (rolling "continuous" release)
+  updateStatus: UpdateStatus | null;
+  updateChecking: boolean;
+  loadUpdateStatus: () => Promise<UpdateStatus | null>;
+  /** Runs a check now (regardless of Settings.check_updates) and returns the fresh status. */
+  checkForUpdates: () => Promise<UpdateStatus>;
+  /** Hides the banner for the currently available build. */
+  dismissUpdate: () => Promise<UpdateStatus | null>;
+  /** Opens the DMG download of the available release. */
+  openUpdate: () => Promise<void>;
 }
 
 const inflight = new Map<string, Promise<DashboardData>>();
@@ -164,6 +176,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       case 'ai_health':
         set({ aiHealth: e.health });
         break;
+      case 'update_available':
+        // The engine updates its status before emitting, and that status is the only place
+        // that knows whether the user already dismissed this build (the event is re-sent once
+        // per process and on every manual check). Reloading it, instead of showing the release
+        // optimistically, keeps a dismissed banner from flashing back in.
+        void get().loadUpdateStatus();
+        break;
       default:
         break;
     }
@@ -171,6 +190,39 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   ubiSpeech: null,
   setUbiSpeech: (s) => set({ ubiSpeech: s }),
+
+  updateStatus: null,
+  updateChecking: false,
+  loadUpdateStatus: async () => {
+    try {
+      const status = await ipc.getUpdateStatus();
+      set({ updateStatus: status });
+      return status;
+    } catch {
+      // An old engine without the command, or a transient IPC error: the UI simply shows nothing.
+      return null;
+    }
+  },
+  checkForUpdates: async () => {
+    set({ updateChecking: true });
+    try {
+      const status = await ipc.checkForUpdates();
+      set({ updateStatus: status });
+      return status;
+    } finally {
+      set({ updateChecking: false });
+    }
+  },
+  dismissUpdate: async () => {
+    const rel = get().updateStatus?.available;
+    if (!rel) return get().updateStatus;
+    // optimistic
+    set((s) => (s.updateStatus ? { updateStatus: { ...s.updateStatus, dismissed: true } } : {}));
+    const status = await ipc.dismissUpdate(rel.build.epoch);
+    set({ updateStatus: status });
+    return status;
+  },
+  openUpdate: () => ipc.openUpdate(),
 }));
 
 // Apply initial theme on module load (browser only).

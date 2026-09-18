@@ -37,6 +37,9 @@ import {
   type AiProvider,
   type ApiKeyStatus,
   type ProviderInfo,
+  type BuildInfo,
+  type ReleaseInfo,
+  type UpdateStatus,
 } from './types';
 import { PROVIDER_IDS, reconcileModels } from './providers';
 
@@ -539,6 +542,60 @@ const defaultSettings = (): Settings => ({
   },
   launch_at_login: true,
   onboarding_done: true,
+  check_updates: true,
+});
+
+/* ------------------------------------------------------------------ */
+/* updates (rolling "continuous" GitHub release)                       */
+/* ------------------------------------------------------------------ */
+
+const RELEASE_BASE = 'https://github.com/andreyquadros/ubiquitous-engine/releases';
+const UPDATE_FEED_URL = `${RELEASE_BASE}/download/continuous/latest.json`;
+
+/** The build this mock pretends to be running (a CI build, so automatic checks are on). */
+const CURRENT_BUILD: BuildInfo = { version: '0.1.0', epoch: 1758200000, number: 26, sha: '14c6e7f', branch: 'main' };
+
+/** A plausible newer build of the same version, served after `?update=available` or `__mock.setUpdate()`. */
+const sampleRelease = (): ReleaseInfo => ({
+  version: '0.1.0',
+  build: { version: '0.1.0', epoch: 1758221040, number: 27, sha: 'a1b2c3d', branch: 'main' },
+  published_at: new Date().toISOString(),
+  notes: pick(
+    'Aviso de nova versão dentro do app\n\n- Faixa no topo e seção Atualizações em Configurações\n- Notificação do macOS uma vez por build',
+    'In-app new version notice\n\n- Top banner and an Updates section in Settings\n- One macOS notification per build',
+  ),
+  download_url: `${RELEASE_BASE}/download/continuous/ubiqX-macos-aarch64.dmg`,
+  app_zip_url: `${RELEASE_BASE}/download/continuous/ubiqX-macos-aarch64.app.zip`,
+  release_url: `${RELEASE_BASE}/tag/continuous`,
+  kind: 'dmg',
+});
+
+/** `?update=available` is read once at module load (like `?lang=`), so a reset keeps the flag. */
+const UPDATE_FROM_QUERY: boolean = (() => {
+  try {
+    return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('update') === 'available';
+  } catch {
+    return false;
+  }
+})();
+
+interface UpdateState {
+  available: ReleaseInfo | null;
+  dismissedEpoch: number | null;
+  lastCheck: IsoDateTime | null;
+  lastError: string | null;
+  checking: boolean;
+  /** Epoch already pushed as an `update_available` event (the engine emits once per build). */
+  announcedEpoch: number | null;
+}
+
+const freshUpdateState = (): UpdateState => ({
+  available: UPDATE_FROM_QUERY ? sampleRelease() : null,
+  dismissedEpoch: null,
+  lastCheck: UPDATE_FROM_QUERY ? new Date().toISOString() : null,
+  lastError: null,
+  checking: false,
+  announcedEpoch: null,
 });
 
 /* ------------------------------------------------------------------ */
@@ -559,6 +616,7 @@ interface State {
   trackerState: TrackerState;
   usage: AiUsageTotals;
   advices: number;
+  update: UpdateState;
 }
 
 const onboardingFromQuery = (): boolean => {
@@ -587,6 +645,7 @@ function freshState(): State {
     trackerState: 'running',
     usage: { calls: 412, input_tokens: 1_234_567, output_tokens: 98_765, cost_usd: 1.37 },
     advices: 0,
+    update: freshUpdateState(),
   };
 }
 
@@ -999,6 +1058,28 @@ function settingsView(): SettingsView {
   };
 }
 
+function updateStatus(): UpdateStatus {
+  const u = S.update;
+  return {
+    current: { ...CURRENT_BUILD },
+    feed_url: UPDATE_FEED_URL,
+    enabled: CURRENT_BUILD.epoch !== 0,
+    available: u.available ? structuredClone(u.available) : null,
+    dismissed: u.available !== null && u.dismissedEpoch === u.available.build.epoch,
+    last_check: u.lastCheck,
+    last_error: u.lastError,
+    checking: u.checking,
+  };
+}
+
+/** Pushes `update_available` for the current release once per build epoch, like the engine does. */
+function announceUpdate(): void {
+  const rel = S.update.available;
+  if (!rel || S.update.announcedEpoch === rel.build.epoch) return;
+  S.update.announcedEpoch = rel.build.epoch;
+  emit({ type: 'update_available', release: structuredClone(rel) });
+}
+
 function refreshAiHealth(): void {
   if (!keyConfigured()) S.aiHealth = { state: 'not_configured' };
   else if (S.settings.local_only) S.aiHealth = { state: 'paused', reason: 'Modo somente local ativado' };
@@ -1063,6 +1144,8 @@ function fakeTick(): void {
 export function subscribe(handler: Handler): () => void {
   subscribers.add(handler);
   if (!ticker && import.meta.env.MODE !== 'test') ticker = setInterval(fakeTick, 20_000);
+  // An update set before the UI subscribed (?update=available, __mock.setUpdate) is announced shortly after, once.
+  if (S.update.available && S.update.announcedEpoch !== S.update.available.build.epoch) setTimeout(announceUpdate, LATENCY_MS ? 800 : 20);
   return () => {
     subscribers.delete(handler);
     if (subscribers.size === 0 && ticker) {
@@ -1427,6 +1510,30 @@ const commands: Record<string, Cmd> = {
   open_external: (a) => {
     if (typeof window !== 'undefined') window.open(str(a.url, 'url'), '_blank', 'noopener');
   },
+
+  get_update_status: () => updateStatus(),
+  check_for_updates: async () => {
+    S.update.checking = true;
+    await sleep(LATENCY_MS ? 900 : 0);
+    S.update.checking = false;
+    S.update.lastCheck = new Date().toISOString();
+    S.update.lastError = null;
+    // Every manual check that finds an update re-emits the event, as the engine does.
+    if (S.update.available) {
+      S.update.announcedEpoch = null;
+      setTimeout(announceUpdate, 10);
+    }
+    return updateStatus();
+  },
+  dismiss_update: (a) => {
+    S.update.dismissedEpoch = num(a.epoch, S.update.available?.build.epoch ?? 0);
+    return updateStatus();
+  },
+  open_update: () => {
+    const rel = S.update.available;
+    if (!rel) throw new Error('not_found: nenhuma atualização disponível');
+    if (typeof window !== 'undefined') window.open(rel.download_url, '_blank', 'noopener');
+  },
 };
 
 export async function handle<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
@@ -1450,6 +1557,17 @@ export const __mock = {
   setOnboardingDone(done: boolean): void {
     S.settings.onboarding_done = done;
   },
+  /** Serves `release` as the available update (`true` = the sample newer build) or clears it with `null`. Subscribers get one `update_available` event. */
+  setUpdate(release: ReleaseInfo | true | null): void {
+    S.update.available = release === true ? sampleRelease() : release ? structuredClone(release) : null;
+    S.update.dismissedEpoch = null;
+    S.update.announcedEpoch = null;
+    S.update.lastCheck = new Date().toISOString();
+    S.update.lastError = null;
+    if (S.update.available && subscribers.size > 0) setTimeout(announceUpdate, LATENCY_MS ? 300 : 10);
+  },
+  /** The newer build `setUpdate(true)` serves, for assertions. */
+  sampleRelease,
   state(): State {
     return S;
   },
@@ -1457,10 +1575,10 @@ export const __mock = {
 
 declare global {
   interface Window {
-    __ubiqxMock?: { reset: () => void; setOnboardingDone: (done: boolean) => void };
+    __ubiqxMock?: { reset: () => void; setOnboardingDone: (done: boolean) => void; setUpdate: (release: ReleaseInfo | true | null) => void };
   }
 }
 
 if (typeof window !== 'undefined') {
-  window.__ubiqxMock = { reset: __mock.reset, setOnboardingDone: __mock.setOnboardingDone };
+  window.__ubiqxMock = { reset: __mock.reset, setOnboardingDone: __mock.setOnboardingDone, setUpdate: __mock.setUpdate };
 }

@@ -92,6 +92,12 @@ Sem toolchain local: baixe o `.app` pronto do GitHub Actions (artifact `ubiqX-ma
 [Codemagic](https://codemagic.io) com o `codemagic.yaml` da raiz; quarentena e assinatura em
 [`docs/MACOS-TESTING.md`](docs/MACOS-TESTING.md) § 3.1.
 
+**Atualizações.** Cada push vira a release rolante [`continuous`](https://github.com/andreyquadros/ubiquitous-engine/releases/tag/continuous)
+(`.dmg`, `.app.zip` e `latest.json`), publicada pelo GitHub Actions e, com um token, também pelo Codemagic. O app
+instalado consulta o `latest.json` ao abrir e a cada 6 h e avisa com banner, notificação e item no menu da barra
+quando há um build mais novo; **Baixar** abre o `.dmg`. Instalação, token do Codemagic e `UBIQX_UPDATE_FEED_URL`
+em [`docs/MACOS-TESTING.md`](docs/MACOS-TESTING.md) § 3.2.
+
 Na primeira execução o onboarding pede para **escolher a IA** e colar a chave correspondente, a permissão de
 **Gravação de Tela** (reinicie o app depois de conceder) e a **Automação** para o navegador; depois você cria as
 categorias e escolhe o horário dos relatórios.

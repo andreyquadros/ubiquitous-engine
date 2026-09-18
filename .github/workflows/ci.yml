@@ -5,6 +5,12 @@ on:
     branches: ["**"]
   pull_request:
 
+# A newer push on the same branch cancels the run still going, so the continuous release
+# always lands on the latest commit instead of racing an older build.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
@@ -49,13 +55,22 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test -- --run
       - run: pnpm build
+      - name: Release script tests (publish-release.mjs against a mock GitHub API)
+        run: node --test scripts/publish-release.test.mjs
+        working-directory: ${{ github.workspace }}
 
   macos-app:
     name: macOS app build
     runs-on: macos-latest
     needs: [rust-linux, frontend]
+    permissions:
+      # The publish step moves the "continuous" tag and rewrites its release assets.
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: the build number is the commit count and the epoch is the commit date.
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: pnpm/action-setup@v4
@@ -68,19 +83,39 @@ jobs:
           cache-dependency-path: apps/desktop/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: apps/desktop
+      - name: Build identity (epoch, number, sha, branch)
+        # build.rs stamps these into the binary; publish-release.mjs writes the same values to latest.json.
+        run: |
+          eval "$(bash scripts/build-info.sh)"
+          for name in UBIQX_BUILD_EPOCH UBIQX_BUILD_NUMBER UBIQX_BUILD_SHA UBIQX_BUILD_BRANCH; do
+            echo "$name=${!name}" >> "$GITHUB_ENV"
+          done
+          arch="$(uname -m)"; [ "$arch" = "arm64" ] && arch=aarch64
+          echo "UBIQX_ARCH=$arch" >> "$GITHUB_ENV"
+          echo "build $UBIQX_BUILD_NUMBER ($UBIQX_BUILD_SHA, $UBIQX_BUILD_BRANCH, epoch $UBIQX_BUILD_EPOCH), arch $arch"
       - name: Rust tests (all crates, macOS)
         run: cargo test --workspace
-      - name: Build app bundle
-        run: pnpm tauri build --bundles app
+      - name: Build app bundle and DMG
+        run: pnpm tauri build --bundles app,dmg
         working-directory: apps/desktop
         env:
           # Ad-hoc seal: without an identity Tauri never runs codesign and a downloaded bundle reads as "damaged".
           APPLE_SIGNING_IDENTITY: "-"
       - name: Zip the .app with ditto
         # upload-artifact drops file modes and symlinks; ditto keeps them, so the downloaded app launches.
-        run: ditto -c -k --sequesterRsrc --keepParent target/release/bundle/macos/ubiqX.app target/release/bundle/macos/ubiqX.app.zip
+        # The stable name (ubiqX-macos-<arch>.app.zip) is the one the update feed points at.
+        run: ditto -c -k --sequesterRsrc --keepParent target/release/bundle/macos/ubiqX.app "target/release/bundle/macos/ubiqX-macos-${UBIQX_ARCH}.app.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: ubiqX-macos-app
-          path: target/release/bundle/macos/ubiqX.app.zip
+          path: |
+            target/release/bundle/macos/ubiqX-macos-*.app.zip
+            target/release/bundle/dmg/*.dmg
           if-no-files-found: error
+      - name: Publish continuous release
+        # Every pushed commit becomes the rolling "continuous" release (DMG, app zip and latest.json),
+        # which installed apps poll to announce the update. Pull requests only build.
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/publish-release.mjs --dmg 'target/release/bundle/dmg/*.dmg' --app-zip "target/release/bundle/macos/ubiqX-macos-${UBIQX_ARCH}.app.zip"

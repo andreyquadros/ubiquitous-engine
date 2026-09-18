@@ -16,7 +16,7 @@ use ubiqx_ai::client::{
 use ubiqx_ai::openai::{OpenAiCompatClient, OpenAiCompatConfig};
 use ubiqx_ai::router::{ProviderSource, RoutingLlmClient};
 use ubiqx_core::ports::{EventSink, SecretStore, SettingsRepo};
-use ubiqx_core::{AiModels, AiProvider, CoreError, CoreResult, SystemClock, UiLanguage};
+use ubiqx_core::{AiModels, AiProvider, BuildInfo, CoreError, CoreResult, SystemClock, UiLanguage};
 use ubiqx_engine::{AiPorts, Engine, EngineDeps, EngineHandle, PlatformPorts, Repos};
 use ubiqx_platform::PlatformServices;
 use ubiqx_storage::{Db, SqliteStore};
@@ -53,6 +53,12 @@ pub struct AppConfig {
     pub ai: AiBackend,
     /// Notifier provided by the shell (desktop notifications). Defaults to logging.
     pub notifier: Option<Arc<dyn ubiqx_core::ports::Notifier>>,
+    /// Identity of the running build, stamped by the shell at compile time. The default is
+    /// a development build, which never checks for updates automatically.
+    pub build: BuildInfo,
+    /// Where `latest.json` is fetched from; `None` = the product's rolling GitHub release
+    /// ([`ubiqx_core::update::DEFAULT_FEED_URL`]).
+    pub update_feed_url: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -63,6 +69,8 @@ impl Default for AppConfig {
             scripted_platform: None,
             ai: AiBackend::Remote,
             notifier: None,
+            build: BuildInfo::dev(),
+            update_feed_url: None,
         }
     }
 }
@@ -258,12 +266,18 @@ impl App {
                 permissions: platform.permissions.clone(),
                 secrets: platform.secrets.clone(),
                 notifier: platform.notifier.clone(),
+                update_feed: platform.update_feed.clone(),
             },
             repos: Repos::from_store(store.clone()),
             ai,
             sink,
             clock: Arc::new(SystemClock),
             data_dir: data_dir.clone(),
+            build: config.build,
+            update_feed_url: config
+                .update_feed_url
+                .filter(|u| !u.trim().is_empty())
+                .unwrap_or_else(|| ubiqx_core::update::DEFAULT_FEED_URL.to_string()),
         };
         let engine = Engine::start(deps)?;
         Ok(App {
