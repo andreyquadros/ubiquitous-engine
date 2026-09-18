@@ -50,8 +50,10 @@ import {
   type Intervention,
   type InterventionAction,
   type KnownDomain,
+  type LicenseStatus,
+  type Plan,
 } from './types';
-import { PROVIDER_IDS, reconcileModels } from './providers';
+import { PROVIDER_IDS, SITE_URL, UBI_MODELS, licenseAllowsManaged, reconcileModels } from './providers';
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                             */
@@ -490,11 +492,19 @@ const PROVIDERS: ProviderInfo[] = [
     key_prefix: 'xai-',
     default_models: { classify: 'grok-4-1-fast-non-reasoning', vision: 'grok-4-1-fast-non-reasoning', report: 'grok-4-1-fast-reasoning' },
   },
+  {
+    id: 'ubi',
+    label: 'IA do Ubi',
+    console_url: SITE_URL,
+    key_prefix: 'UBIQX-',
+    default_models: { ...UBI_MODELS },
+  },
 ];
 
 /** What `GET /models` of each account would return (chat-capable ids only), sorted. */
 const ACCOUNT_MODELS: Record<AiProvider, string[]> = {
   anthropic: ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5'],
+  ubi: [UBI_MODELS.classify, UBI_MODELS.report],
   openai: ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5.1', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-4.1-mini', 'gpt-4o-mini', 'o4-mini'],
   xai: ['grok-4', 'grok-4-1-fast-reasoning', 'grok-4-1-fast-non-reasoning', 'grok-4-fast-reasoning', 'grok-4-fast-non-reasoning', 'grok-3-mini', 'grok-4.6'],
 };
@@ -763,6 +773,167 @@ const freshUpdateState = (platform: Platform): UpdateState => ({
   announcedEpoch: null,
 });
 
+
+/* ------------------------------------------------------------------ */
+/* license (ubiqX Anual / Mensal)                                      */
+/* ------------------------------------------------------------------ */
+
+/** Where the mock pretends the Ubi proxy lives (`UBIQX_API_BASE` of the real build). */
+const UBI_API_BASE = 'https://api.ubiqx.ai';
+/** Monthly AI budget of a managed subscriber, as the proxy would report it. */
+const MANAGED_BUDGET_USD = 6;
+const MANAGED_SPENT_USD = 2.35;
+
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+/** RFC 4648 base32, upper-case, no padding (the license key's segments). */
+function base32Encode(bytes: Uint8Array): string {
+  let bits = 0;
+  let value = 0;
+  let out = '';
+  for (const byte of bytes) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      out += B32[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) out += B32[(value << (5 - bits)) & 31];
+  return out;
+}
+
+function base32Decode(text: string): Uint8Array | null {
+  let bits = 0;
+  let value = 0;
+  const out: number[] = [];
+  for (const ch of text.toUpperCase()) {
+    const idx = B32.indexOf(ch);
+    if (idx < 0) return null;
+    value = (value << 5) | idx;
+    bits += 5;
+    if (bits >= 8) {
+      out.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  return Uint8Array.from(out);
+}
+
+interface MockClaims {
+  v: number;
+  plan: Plan;
+  sub: string;
+  email_hash: string;
+  issued_at: number;
+  expires_at: number;
+  seats: number;
+}
+
+/** A deterministic 64-byte stand-in for the Ed25519 signature (the mock cannot verify a real one). */
+const fakeSignature = (seed: string): Uint8Array => {
+  const out = new Uint8Array(64);
+  let h = 2166136261;
+  for (let i = 0; i < out.length; i++) {
+    h ^= seed.charCodeAt(i % seed.length);
+    h = Math.imul(h, 16777619) >>> 0;
+    out[i] = h & 255;
+  }
+  return out;
+};
+
+/** Builds a key in the real format: `UBIQX-<base32 claims json>-<base32 signature>`. */
+function buildLicenseKey(claims: MockClaims): string {
+  const json = JSON.stringify(claims);
+  const payload = new TextEncoder().encode(json);
+  return `UBIQX-${base32Encode(payload)}-${base32Encode(fakeSignature(json))}`;
+}
+
+const DAY = 86_400;
+/** Claims expiring `daysLeft` days from module load, plus half a day so `days_left` (floored, like the engine) reads `daysLeft` all session long. */
+const sampleClaims = (plan: Plan, daysLeft: number): MockClaims => {
+  const now = Math.floor(Date.now() / 1000);
+  return { v: 1, plan, sub: `sub_${plan === 'monthly_managed' ? 'm' : 'a'}_7f3c21`, email_hash: '4c2b1e9a0d7f6e5c3b2a19080706050403020100ffeeddccbbaa99887766554433', issued_at: now - 30 * DAY, expires_at: now + daysLeft * DAY + DAY / 2, seats: 1 };
+};
+
+/** Keys the mock accepts as signed (`__mock.setLicense('annual' | 'managed' | 'expired')`, `?license=`). Any other `UBIQX-…` string is `invalid`. */
+export const SAMPLE_LICENSE_KEYS = {
+  /** ubiqX Anual, com a sua IA: 335 days left. */
+  annual: buildLicenseKey(sampleClaims('annual_own_key', 335)),
+  /** ubiqX Mensal, com a IA do Ubi: 22 days left. */
+  managed: buildLicenseKey(sampleClaims('monthly_managed', 22)),
+  /** An annual key that ran out 3 days ago. */
+  expired: buildLicenseKey(sampleClaims('annual_own_key', -3)),
+} as const;
+
+export type SampleLicense = keyof typeof SAMPLE_LICENSE_KEYS;
+
+const isPlan = (v: unknown): v is Plan => v === 'annual_own_key' || v === 'monthly_managed';
+
+/** Parses a key the way the real verifier does, minus the signature check (a 64-byte signature segment is enough here). */
+function parseLicenseKey(raw: string): MockClaims | null {
+  const key = raw.trim();
+  if (!key.startsWith('UBIQX-')) return null;
+  const parts = key.slice('UBIQX-'.length).split('-');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  const payload = base32Decode(parts[0]);
+  const signature = base32Decode(parts[1]);
+  if (!payload || !signature || signature.length !== 64) return null;
+  try {
+    const claims = JSON.parse(new TextDecoder().decode(payload)) as Partial<MockClaims>;
+    if (claims.v !== 1 || !isPlan(claims.plan) || typeof claims.sub !== 'string' || typeof claims.expires_at !== 'number' || typeof claims.issued_at !== 'number') return null;
+    return { v: 1, plan: claims.plan, sub: claims.sub, email_hash: String(claims.email_hash ?? ''), issued_at: claims.issued_at, expires_at: claims.expires_at, seats: Number(claims.seats ?? 1) };
+  } catch {
+    return null;
+  }
+}
+
+/** `?license=annual|managed|expired` is read once at module load (like `?lang=`), so a reset keeps it. */
+const LICENSE_FROM_QUERY: SampleLicense | null = (() => {
+  try {
+    if (typeof window === 'undefined') return null;
+    const v = new URLSearchParams(window.location.search).get('license');
+    return v && v in SAMPLE_LICENSE_KEYS ? (v as SampleLicense) : null;
+  } catch {
+    return null;
+  }
+})();
+
+interface LicenseState {
+  /** The stored key (secret store), or null. Kept even when invalid, like the engine does. */
+  key: string | null;
+  /** Whether the proxy answers (`false` = network failure: the local verdict stays, usage is null). */
+  proxyReachable: boolean;
+}
+
+const freshLicenseState = (): LicenseState => ({ key: LICENSE_FROM_QUERY ? SAMPLE_LICENSE_KEYS[LICENSE_FROM_QUERY] : null, proxyReachable: true });
+
+const unlicensed = (): LicenseStatus => ({ state: 'unlicensed', plan: null, expires_at: null, days_left: null, key_hint: null, enforcement: 'soft', managed_usage: null });
+
+/** The local verdict on the stored key at `now` (mirrors `LicenseStatus::evaluate`). */
+function evaluateLicense(key: string | null, now = new Date()): LicenseStatus {
+  const raw = key?.trim();
+  if (!raw) return unlicensed();
+  const key_hint = raw.slice(-4);
+  const claims = parseLicenseKey(raw);
+  if (!claims) return { ...unlicensed(), state: 'invalid', key_hint };
+  const secsLeft = claims.expires_at - Math.floor(now.getTime() / 1000);
+  return {
+    state: secsLeft <= 0 ? 'expired' : 'valid',
+    plan: claims.plan,
+    expires_at: new Date(claims.expires_at * 1000).toISOString(),
+    days_left: Math.max(0, Math.floor(secsLeft / DAY)),
+    key_hint,
+    enforcement: 'soft',
+    managed_usage: null,
+  };
+}
+
+const currentMonth = (): string => {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`;
+};
+
 /* ------------------------------------------------------------------ */
 /* state                                                               */
 /* ------------------------------------------------------------------ */
@@ -785,6 +956,7 @@ interface State {
   focus: FocusState;
   /** OS the mock pretends to run on (`?platform=` or `__mock.setPlatform`). */
   platform: Platform;
+  license: LicenseState;
 }
 
 const onboardingFromQuery = (): boolean => {
@@ -807,7 +979,7 @@ function freshState(): State {
     reports: seedReports(t),
     nudges: FOCUS_FROM_QUERY.nudge ? [focusPromptNudge(), ...seedNudges(t)] : seedNudges(t),
     settings,
-    keyHints: { anthropic: 'f3a9', openai: null, xai: null },
+    keyHints: { anthropic: 'f3a9', openai: null, xai: null, ubi: null },
     permissions: platformFacts(PLATFORM_FROM_QUERY).permissions,
     aiHealth: { state: 'ok' },
     trackerState: 'running',
@@ -816,6 +988,7 @@ function freshState(): State {
     update: freshUpdateState(PLATFORM_FROM_QUERY),
     focus: freshFocusState(),
     platform: PLATFORM_FROM_QUERY,
+    license: freshLicenseState(),
   };
 }
 
@@ -1206,8 +1379,17 @@ function monthlyReport(categoryId: Id, year: number, month: number): string {
   );
 }
 
-const keyConfigured = (p: AiProvider = S.settings.ai_provider): boolean => S.keyHints[p] !== null;
-const keyStatus = (p: AiProvider): ApiKeyStatus => ({ provider: p, configured: keyConfigured(p), hint: S.keyHints[p] ? `…${S.keyHints[p]}` : null });
+/** Last 4 chars of the stored key of `p`; for the managed provider that is the license key itself (`ubiqx.license`). */
+const keyHint = (p: AiProvider): string | null => (p === 'ubi' ? (S.license.key ? S.license.key.trim().slice(-4) : null) : S.keyHints[p]);
+const keyConfigured = (p: AiProvider = S.settings.ai_provider): boolean => keyHint(p) !== null;
+const keyStatus = (p: AiProvider): ApiKeyStatus => ({ provider: p, configured: keyConfigured(p), hint: keyHint(p) ? `…${keyHint(p)}` : null });
+
+/** The license as `get_license_status` reports it: the local verdict plus, for a valid managed key, the proxy's usage. */
+function licenseStatus(): LicenseStatus {
+  const status = evaluateLicense(S.license.key);
+  if (licenseAllowsManaged(status) && S.license.proxyReachable) status.managed_usage = { month: currentMonth(), spent_usd: MANAGED_SPENT_USD, budget_usd: MANAGED_BUDGET_USD };
+  return status;
+}
 /** Provider + model that would answer a remote call right now, for user-facing strings. */
 const activeModel = (slot: keyof AiModels): string => `${providerInfo(S.settings.ai_provider).label} · ${S.settings.models[slot]}`;
 
@@ -1222,6 +1404,8 @@ function settingsView(): SettingsView {
     permissions: { ...S.permissions },
     ai_health: S.aiHealth,
     tracker_state: S.trackerState,
+    license: licenseStatus(),
+    ubi_api_base: UBI_API_BASE,
     data_dir: platformFacts(S.platform).data_dir,
     platform: S.platform,
     version: '0.1.0',
@@ -1251,7 +1435,9 @@ function announceUpdate(): void {
 }
 
 function refreshAiHealth(): void {
-  if (!keyConfigured()) S.aiHealth = { state: 'not_configured' };
+  // EngineState::key_health: the managed provider without a valid monthly license is "not configured" (no fallback).
+  if (S.settings.ai_provider === 'ubi' && !licenseAllowsManaged(licenseStatus())) S.aiHealth = { state: 'not_configured' };
+  else if (!keyConfigured()) S.aiHealth = { state: 'not_configured' };
   else if (S.settings.local_only) S.aiHealth = { state: 'paused', reason: 'Modo somente local ativado' };
   else if (S.usage.cost_usd >= S.settings.ai_monthly_budget_usd) S.aiHealth = { state: 'paused', reason: 'Orçamento mensal atingido' };
   else S.aiHealth = { state: 'ok' };
@@ -1701,6 +1887,8 @@ const commands: Record<string, Cmd> = {
   update_settings: (a) => {
     const incoming = a.settings as Settings;
     const provider = isProvider(incoming.ai_provider) ? incoming.ai_provider : S.settings.ai_provider;
+    // EngineState::apply_settings: the managed provider needs a valid monthly_managed license; nothing is saved otherwise.
+    if (provider === 'ubi' && !licenseAllowsManaged(licenseStatus())) throw new Error(pick('license_required: a IA do Ubi precisa de uma licença mensal válida', 'license_required: the Ubi AI needs a valid monthly license'));
     S.settings = { ...S.settings, ...incoming, ai_provider: provider };
     // Settings::reconcile_models(): ids of another vendor make no sense for the selected provider.
     S.settings.models = reconcileModels(S.settings.models, providerInfo(provider));
@@ -1712,6 +1900,7 @@ const commands: Record<string, Cmd> = {
   set_api_key: async (a): Promise<ApiKeyResult> => {
     await sleep(LATENCY_MS ? 700 : 0);
     const provider = isProvider(a.provider) ? a.provider : S.settings.ai_provider;
+    if (provider === 'ubi') throw new Error(pick('invalid: a IA do Ubi usa a chave de licença (set_license_key)', 'invalid: the Ubi AI uses the license key (set_license_key)'));
     const info = providerInfo(provider);
     const key = typeof a.key === 'string' ? a.key.trim() : null;
     if (key === null || key === '') {
@@ -1739,6 +1928,15 @@ const commands: Record<string, Cmd> = {
     const provider = isProvider(a.provider) ? a.provider : S.settings.ai_provider;
     if (!keyConfigured(provider)) throw new Error(`chave não configurada para ${providerInfo(provider).label}`);
     return [...ACCOUNT_MODELS[provider]];
+  },
+  get_license_status: () => licenseStatus(),
+  set_license_key: async (a): Promise<LicenseStatus> => {
+    await sleep(LATENCY_MS ? 600 : 0);
+    const key = typeof a.key === 'string' ? a.key.trim() : '';
+    S.license.key = key || null;
+    // Like the engine (`license::set_key`): the managed provider stays selected; its health follows the verdict.
+    refreshAiHealth();
+    return licenseStatus();
   },
   set_tracking: (a) => {
     const enabled = a.enabled === true;
@@ -1931,6 +2129,19 @@ export const __mock = {
   },
   /** The session `setFocus({ session: 'active' })` serves, for assertions. */
   sampleSession,
+  /**
+   * License for tests and screenshots: a sample name (`'annual' | 'managed' | 'expired'`), a raw key (`'UBIQX-…'`, anything the
+   * mock cannot parse reads as `invalid`) or `null` (no key). `proxyReachable: false` simulates the Ubi proxy being offline
+   * (the local verdict stays, `managed_usage` is null).
+   */
+  setLicense(license: SampleLicense | string | null, opts: { proxyReachable?: boolean } = {}): LicenseStatus {
+    S.license.key = license === null ? null : license in SAMPLE_LICENSE_KEYS ? SAMPLE_LICENSE_KEYS[license as SampleLicense] : license;
+    if (opts.proxyReachable !== undefined) S.license.proxyReachable = opts.proxyReachable;
+    refreshAiHealth();
+    return licenseStatus();
+  },
+  /** The keys `setLicense('annual' | 'managed' | 'expired')` store, for assertions. */
+  sampleLicenseKeys: SAMPLE_LICENSE_KEYS,
   state(): State {
     return S;
   },
@@ -1945,10 +2156,11 @@ declare global {
       setUpdate: (release: ReleaseInfo | true | null) => void;
       setFocus: (typeof __mock)['setFocus'];
       intervene: (typeof __mock)['intervene'];
+      setLicense: (typeof __mock)['setLicense'];
     };
   }
 }
 
 if (typeof window !== 'undefined') {
-  window.__ubiqxMock = { reset: __mock.reset, setOnboardingDone: __mock.setOnboardingDone, setPlatform: __mock.setPlatform, setUpdate: __mock.setUpdate, setFocus: __mock.setFocus, intervene: __mock.intervene };
+  window.__ubiqxMock = { reset: __mock.reset, setOnboardingDone: __mock.setOnboardingDone, setPlatform: __mock.setPlatform, setUpdate: __mock.setUpdate, setFocus: __mock.setFocus, intervene: __mock.intervene, setLicense: __mock.setLicense };
 }

@@ -34,6 +34,13 @@ pub enum CoreError {
     #[error("rate limited by AI provider; retry after {retry_after_secs}s")]
     RateLimited { retry_after_secs: u64 },
 
+    /// The action needs a license the app does not have: selecting the managed AI provider
+    /// without a valid `monthly_managed` license, or any AI feature under
+    /// [`crate::license::LicenseEnforcement::Hard`] while unlicensed. Tracking, the
+    /// timeline and manual categorisation never produce it.
+    #[error("a valid ubiqX license is required for this action")]
+    LicenseRequired,
+
     #[error("invalid input: {0}")]
     Invalid(String),
 

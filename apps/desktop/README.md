@@ -55,6 +55,44 @@ no Hoje; `#/intervention?id=test` renderiza a janela de intervenção (460×188)
 `__ubiqxMock.setFocus({ session: 'active' | null, nudge: true })` e `__ubiqxMock.intervene()` (registra uma
 intervenção no primeiro alvo ativo e abre o painel em um popup). "Testar aviso" abre o mesmo popup.
 
+## Licença e IA do Ubi
+
+Dois planos, vendidos no site (`SITE_URL` em `src/lib/providers.ts`, a seção *Planos* da landing):
+
+- **ubiqX Anual, com a sua IA** (R$ 197/ano ou 10x de R$ 25): você usa a sua própria chave de API (Anthropic, OpenAI ou xAI).
+- **ubiqX Mensal, com a IA do Ubi** (R$ 49/mês): sem chave de API; as chamadas passam pelo servidor do Ubi
+  (`UBIQX_API_BASE`, exposto em `SettingsView.ubi_api_base`) autenticadas pela chave de licença, com um limite mensal
+  de uso que o servidor informa (`managed_usage`).
+
+A chave de licença (`UBIQX-<claims>-<assinatura>`) chega por e-mail depois da assinatura e fica só no Keychain
+(`ubiqx.license`); a UI nunca vê a chave, só o veredito (`LicenseStatus`: `unlicensed | valid | expired | invalid`, plano,
+validade, `key_hint`, `enforcement`, `managed_usage`). Comandos: `get_license_status` e `set_license_key(key | null)`
+(`ipc.getLicenseStatus` / `ipc.setLicenseKey`); o `get_settings` já traz `license` e `ubi_api_base`. O store guarda o
+status em `license` (`loadLicense`, `setLicenseKey`).
+
+Onde aparece:
+
+- **Onboarding › Escolha sua IA**: dois cartões, "Deixar o Ubi cuidar da IA" (chave de licença mensal + "Assinar" +
+  "Validar"; ao validar, o provedor vira `ubi`) e "Usar minha própria chave" (os três provedores de sempre e um campo de
+  licença anual opcional). Com a aplicação *soft* (padrão), "Continuar sem licença por enquanto" segue sem chave.
+- **Configurações › Licença** (`#sec-licenca`, entre Geral e IA): chip de status, plano, campo da chave com "Validar" e
+  "Remover", e, no plano mensal, a barra de uso do mês (`UsageBar`) e a nota sobre a IA do Ubi. Na seção IA, o
+  `ProviderPicker` ganha "IA do Ubi" (desabilitado, com dica, sem licença mensal válida); com ele selecionado os
+  modelos são os apelidos fixos `ubi-fast` / `ubi-smart`, somente leitura, e o campo de chave de API dá lugar a uma
+  nota. Sobre mostra o plano.
+- **Faixa de lembrete** (`components/layout/LicenseBanner.tsx`, abaixo da faixa de atualização): sem licença válida,
+  uma linha com os planos, "Ver planos" (abre o site) e "Já tenho uma chave" (vai para Configurações › Licença),
+  dispensável por 7 dias (`localStorage` `ubiqx.license_nag` = instante da dispensa). A aplicação *hard*
+  (`LICENSE_ENFORCEMENT` no Rust, hoje `Soft`) chega à UI em `LicenseStatus.enforcement`: a faixa vira persistente,
+  o onboarding perde o atalho e `useLicenseGate()` troca uma ação de IA pelo diálogo "Licença necessária"
+  (`LicenseRequiredDialog`). Rastreamento, timeline e categorização manual nunca são bloqueados.
+
+No mock: `?license=annual|managed|expired` (lido ao carregar o módulo, como `?lang=`) abre com aquela chave de exemplo;
+no console, `__ubiqxMock.setLicense('annual' | 'managed' | 'expired' | 'UBIQX-…' | null, { proxyReachable })` troca o
+estado (`proxyReachable: false` simula o servidor do Ubi fora do ar: veredito local mantido, uso do mês `null`). O mock
+decodifica as claims da chave (base32) e aceita qualquer assinatura de 64 bytes; `__mock.sampleLicenseKeys` traz as três
+chaves para os testes. Selecionar `ubi` sem licença mensal válida falha com `license_required`, como o motor.
+
 ## Mascote (UBI)
 
 Ordem de preferência: **`public/ubi/Ubi.glb`** (o modelo 3D, carregado direto com o `GLTFLoader` num canvas

@@ -225,3 +225,137 @@ describe('Settings · updates section (mock backend)', () => {
     expect(await screen.findByRole('button', { name: 'Copiado' })).toBeInTheDocument();
   });
 });
+
+describe('Settings · Licença section (mock backend)', () => {
+  beforeEach(async () => {
+    __mock.reset();
+    useAppStore.setState({ settingsView: null, license: null });
+    await useAppStore.getState().loadSettings();
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  const section = () => screen.getByRole('heading', { name: 'Licença' }).closest('[id="sec-licenca"]') as HTMLElement;
+
+  it('sits between Geral and IA, starts unlicensed and disables "IA do Ubi" in the provider picker', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Licença' });
+    const rail = screen.getByRole('navigation', { name: 'Seções' });
+    expect(within(rail).getAllByRole('button').map((b) => b.textContent)).toEqual(['Geral', 'Licença', 'IA', 'Rastreamento', 'Privacidade', 'Relatórios', 'UBI e notificações', 'Atualizações', 'Permissões do macOS', 'Sobre']);
+    const sec = section();
+    expect(within(sec).getByText('Sem licença')).toBeInTheDocument();
+    expect(within(sec).getByTestId('license-plan')).toHaveTextContent('Nenhum');
+    expect(sec).toHaveTextContent('Anual, com a sua IA: R$ 197/ano ou 10x de R$ 25. Mensal, com a IA do Ubi: R$ 49/mês.');
+    expect(within(sec).getByLabelText('Chave de licença')).toHaveAttribute('placeholder', 'UBIQX-…');
+    expect(within(sec).getByRole('button', { name: 'Validar' })).toBeDisabled();
+    expect(within(sec).queryByRole('button', { name: 'Remover' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usage-bar')).not.toBeInTheDocument();
+
+    const picker = screen.getByRole('radiogroup', { name: 'Provedor de IA' });
+    const ubi = within(picker).getByRole('radio', { name: /IA do Ubi/ });
+    expect(ubi).toBeDisabled();
+    expect(ubi).toHaveAttribute('title', 'Precisa de uma licença mensal válida (seção Licença)');
+    expect(screen.getByTestId('about-plan')).toHaveTextContent('Sem licença');
+  });
+
+  it('validates a managed key: chip, plan, usage bar, "IA do Ubi" selectable with read-only aliases, plan in About', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Licença' });
+    const sec = section();
+    fireEvent.change(within(sec).getByLabelText('Chave de licença'), { target: { value: __mock.sampleLicenseKeys.managed } });
+    fireEvent.click(within(sec).getByRole('button', { name: 'Validar' }));
+    expect(await within(sec).findByText(/^Licença válida: ubiqX Mensal, com a IA do Ubi, até \d\d\/\d\d\/\d{4}\.$/)).toBeInTheDocument();
+    await waitFor(() => expect(useAppStore.getState().license?.state).toBe('valid'));
+    expect(within(sec).getByText(/^Válida até \d\d\/\d\d\/\d{4}$/)).toBeInTheDocument();
+    expect(within(sec).getByTestId('license-plan')).toHaveTextContent('ubiqX Mensal, com a IA do Ubi');
+    expect(within(sec).getByTestId('license-plan')).toHaveTextContent('R$ 49/mês');
+    expect(within(sec).getByTestId('license-plan')).toHaveTextContent(/Validade\d\d\/\d\d\/\d{4} \(22 dias restantes\)/);
+    expect(within(sec).getByText('Chave carregada')).toBeInTheDocument();
+    expect(within(sec).getByText(`…${__mock.sampleLicenseKeys.managed.slice(-4)}`)).toBeInTheDocument();
+    const bar = within(sec).getByTestId('usage-bar');
+    expect(bar).toHaveTextContent('Uso da IA do Ubi neste mês');
+    expect(bar).toHaveTextContent('US$ 2,35 de US$ 6,00');
+    expect(within(bar).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '39');
+    expect(within(sec).getByTestId('license-managed-note')).toHaveTextContent('servidor do Ubi (api.ubiqx.ai)');
+    expect(within(sec).getByTestId('license-managed-note')).toHaveTextContent('Selecione “IA do Ubi” na seção IA para usá-la.');
+    expect(screen.getByTestId('about-plan')).toHaveTextContent('ubiqX Mensal, com a IA do Ubi');
+
+    // the AI section: "IA do Ubi" is now selectable; the license key stands in for the API key; aliases are read-only
+    const picker = screen.getByRole('radiogroup', { name: 'Provedor de IA' });
+    const ubi = within(picker).getByRole('radio', { name: /IA do Ubi/ });
+    expect(ubi).toBeEnabled();
+    fireEvent.click(ubi);
+    expect(ubi).toHaveAttribute('aria-checked', 'true');
+    expect(await screen.findByTestId('api-key-form-ubi')).toHaveTextContent('A IA do Ubi não usa chave de provedor');
+    expect(screen.getByTestId('model-fields-managed')).toHaveTextContent('Escolhidos pelo servidor do Ubi');
+    const classify = screen.getByLabelText('Modelo de classificação') as HTMLInputElement;
+    expect(classify.value).toBe('ubi-fast');
+    expect(classify).toHaveAttribute('readonly');
+    expect((screen.getByLabelText('Modelo de relatórios') as HTMLInputElement).value).toBe('ubi-smart');
+    expect(screen.queryByRole('button', { name: /Listar modelos da conta/ })).not.toBeInTheDocument();
+    await waitFor(() => expect(useAppStore.getState().settingsView?.settings.ai_provider).toBe('ubi'), { timeout: 3000 });
+    expect(useAppStore.getState().settingsView?.ai_health).toEqual({ state: 'ok' });
+    expect(within(sec).queryByText('Selecione “IA do Ubi” na seção IA para usá-la.')).not.toBeInTheDocument();
+
+    // removing the key drops the status back; the managed provider stays selected but is no longer configured
+    fireEvent.click(within(sec).getByRole('button', { name: 'Remover' }));
+    expect(await within(sec).findByText('Chave de licença removida.')).toBeInTheDocument();
+    await waitFor(() => expect(useAppStore.getState().license?.state).toBe('unlicensed'));
+    await waitFor(() => expect(useAppStore.getState().settingsView?.ai_health).toEqual({ state: 'not_configured' }));
+    expect(useAppStore.getState().settingsView?.settings.ai_provider).toBe('ubi');
+    expect(within(picker).getByRole('radio', { name: /IA do Ubi/ })).toBeDisabled();
+  });
+
+  it('reports an expired key and an invalid key without losing the hint', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Licença' });
+    const sec = section();
+    fireEvent.change(within(sec).getByLabelText('Chave de licença'), { target: { value: __mock.sampleLicenseKeys.expired } });
+    fireEvent.click(within(sec).getByRole('button', { name: 'Validar' }));
+    expect(await within(sec).findByText(/^Esta chave expirou em \d\d\/\d\d\/\d{4}\. Renove o plano para receber uma nova\.$/)).toBeInTheDocument();
+    expect(within(sec).getByText('Expirada')).toBeInTheDocument();
+    expect(within(sec).getByTestId('license-plan')).toHaveTextContent('ubiqX Anual, com a sua IA');
+    expect(within(sec).getByTestId('license-plan')).toHaveTextContent(/Expirou em \d\d\/\d\d\/\d{4}/);
+    expect(screen.getByTestId('about-plan')).toHaveTextContent('ubiqX Anual, com a sua IA (Expirada)');
+
+    fireEvent.change(within(sec).getByLabelText('Trocar a chave de licença'), { target: { value: 'UBIQX-NOTAKEY-NOPE' } });
+    fireEvent.click(within(sec).getByRole('button', { name: 'Validar' }));
+    expect(await within(sec).findByText(/A chave não foi reconhecida/)).toBeInTheDocument();
+    expect(within(sec).getByText('Inválida')).toBeInTheDocument();
+    expect(within(sec).getByText('…NOPE')).toBeInTheDocument();
+  });
+
+  it('"Assinar" opens the plans page and the section is reachable from the banner deep link', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const scroll = Element.prototype.scrollIntoView as unknown as ReturnType<typeof vi.fn>;
+    scroll.mockClear();
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/settings', state: { section: 'licenca' } }]}>
+        <SettingsPage />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('heading', { name: 'Licença' });
+    await waitFor(() => expect(scroll).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'Licença' })).toHaveAttribute('aria-current', 'true');
+    fireEvent.click(within(section()).getByRole('button', { name: 'Assinar' }));
+    await waitFor(() => expect(open).toHaveBeenCalledWith('https://andreyquadros.github.io/ubiquitous-engine/#planos', '_blank', 'noopener'));
+  });
+
+  it('renders the license section in English', async () => {
+    act(() => {
+      __mock.setLicense('annual');
+    });
+    await act(async () => {
+      await useAppStore.getState().loadSettings();
+    });
+    // after the load: Settings.language (pt-BR) is applied by the store on every get_settings
+    setLocale('en');
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'License' })).toBeInTheDocument();
+    expect(screen.getByText(/^Valid until \d\d\/\d\d\/\d{4}$/)).toBeInTheDocument();
+    expect(screen.getByTestId('license-plan')).toHaveTextContent('ubiqX Yearly, with your AI');
+    expect(screen.getByTestId('license-plan')).toHaveTextContent('R$ 197/year or 10x R$ 25');
+    expect(screen.getByRole('button', { name: 'Subscribe' })).toBeInTheDocument();
+    expect(screen.getByTestId('about-plan')).toHaveTextContent('ubiqX Yearly, with your AI');
+    expect(within(screen.getByRole('radiogroup', { name: 'AI provider' })).getByRole('radio', { name: /Ubi AI/ })).toBeDisabled();
+  });
+});

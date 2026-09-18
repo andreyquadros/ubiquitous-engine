@@ -25,4 +25,6 @@ tracing.workspace = true
 ubiqx-storage.workspace = true
 ubiqx-platform.workspace = true
 ubiqx-ai.workspace = true
+# Tests sign license keys with their own pair.
+ed25519-dalek.workspace = true
 tempfile.workspace = true

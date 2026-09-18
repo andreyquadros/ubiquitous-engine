@@ -31,6 +31,7 @@ fn config(server: &MockServer) -> AnthropicConfig {
         max_attempts: 4,
         backoff_base: Duration::from_millis(10),
         backoff_cap: Duration::from_secs(30),
+        ..AnthropicConfig::default()
     }
 }
 

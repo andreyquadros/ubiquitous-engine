@@ -2,9 +2,11 @@
 //!
 //! Everything concrete is chosen here: SQLite for persistence, the native platform adapters
 //! (or the scripted mock), and the hosted AI components (or fakes). With
-//! [`AiBackend::Remote`] one HTTP client per vendor (Anthropic, OpenAI, xAI) is built and the
-//! port implementations talk to a [`RoutingLlmClient`] that forwards each call to the vendor
-//! selected in settings, so the user can switch providers without restarting.
+//! [`AiBackend::Remote`] one HTTP client per vendor (Anthropic, OpenAI, xAI) plus one for the
+//! Ubi proxy (the managed "IA do Ubi" option, authenticated with the license key) is built
+//! and the port implementations talk to a [`RoutingLlmClient`] that forwards each call to the
+//! provider selected in settings, so the user can switch providers without restarting. The
+//! proxy's license endpoint is wired as the engine's [`LicenseServer`].
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -15,10 +17,15 @@ use ubiqx_ai::client::{
 };
 use ubiqx_ai::openai::{OpenAiCompatClient, OpenAiCompatConfig};
 use ubiqx_ai::router::{ProviderSource, RoutingLlmClient};
+use ubiqx_ai::ubi::UbiLicenseClient;
+use ubiqx_core::license::UBIQX_API_BASE_DEFAULT;
 use ubiqx_core::ports::{EventSink, InterventionPresenter, SecretStore, SettingsRepo};
-use ubiqx_core::{AiModels, AiProvider, BuildInfo, CoreError, CoreResult, SystemClock, UiLanguage};
+use ubiqx_core::{
+    AiModels, AiProvider, BuildInfo, CoreError, CoreResult, ManagedUsage, SystemClock, UiLanguage,
+};
 use ubiqx_engine::{
-    AiPorts, Engine, EngineDeps, EngineHandle, LogInterventionPresenter, PlatformPorts, Repos,
+    AiPorts, Engine, EngineDeps, EngineHandle, LicenseDeps, LicenseServer,
+    LogInterventionPresenter, PlatformPorts, Repos,
 };
 use ubiqx_platform::PlatformServices;
 use ubiqx_storage::{Db, SqliteStore};
@@ -28,6 +35,26 @@ pub use ubiqx_core;
 pub use ubiqx_engine;
 pub use ubiqx_platform;
 pub use ubiqx_storage;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ubi_api_base_defaults_and_trims() {
+        assert_eq!(AppConfig::default().ubi_api_base(), UBIQX_API_BASE_DEFAULT);
+        let cfg = AppConfig {
+            ubi_api_base: Some(" http://127.0.0.1:8080/ ".into()),
+            ..AppConfig::default()
+        };
+        assert_eq!(cfg.ubi_api_base(), "http://127.0.0.1:8080");
+        let cfg = AppConfig {
+            ubi_api_base: Some("  ".into()),
+            ..AppConfig::default()
+        };
+        assert_eq!(cfg.ubi_api_base(), UBIQX_API_BASE_DEFAULT);
+    }
+}
 
 /// Application identifier used for data directories and the Keychain.
 pub const APP_ID: &str = "ai.ubiqx.app";
@@ -64,6 +91,13 @@ pub struct AppConfig {
     /// Where `latest.json` is fetched from; `None` = the product's rolling GitHub release
     /// ([`ubiqx_core::update::DEFAULT_FEED_URL`]).
     pub update_feed_url: Option<String>,
+    /// Base URL of the Ubi proxy (the managed provider and the license endpoint). The
+    /// desktop shell compiles it in from `UBIQX_API_BASE`; `None`/blank =
+    /// [`UBIQX_API_BASE_DEFAULT`].
+    pub ubi_api_base: Option<String>,
+    /// Hex Ed25519 public key license keys are verified against; `None` = the key embedded
+    /// in `ubiqx_core::license` (tests inject their own pair).
+    pub license_pubkey_hex: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -77,7 +111,22 @@ impl Default for AppConfig {
             presenter: None,
             build: BuildInfo::dev(),
             update_feed_url: None,
+            ubi_api_base: None,
+            license_pubkey_hex: None,
         }
+    }
+}
+
+impl AppConfig {
+    /// The proxy base URL in effect: the configured one or the default, without a trailing
+    /// slash.
+    pub fn ubi_api_base(&self) -> String {
+        self.ubi_api_base
+            .as_deref()
+            .map(|b| b.trim().trim_end_matches('/'))
+            .filter(|b| !b.is_empty())
+            .unwrap_or(UBIQX_API_BASE_DEFAULT)
+            .to_string()
     }
 }
 
@@ -156,17 +205,33 @@ impl LanguageSource for StoredLanguage {
     }
 }
 
+/// The engine's [`LicenseServer`] over the proxy's `GET /v1/license/status`.
+struct HttpLicenseServer(UbiLicenseClient);
+
+#[async_trait::async_trait]
+impl LicenseServer for HttpLicenseServer {
+    async fn managed_usage(&self, key: &str) -> CoreResult<ManagedUsage> {
+        self.0.status(key).await.map(|s| s.managed_usage())
+    }
+}
+
 /// The vendor clients behind [`AiBackend::Remote`], all reading their key from the secret
 /// store on every call and the UI language from the settings row when they word a rejection.
+/// `ubi` talks to the proxy with the license key as its credential.
 #[derive(Clone)]
 pub struct RemoteClients {
     pub anthropic: Arc<AnthropicClient>,
     pub openai: Arc<OpenAiCompatClient>,
     pub xai: Arc<OpenAiCompatClient>,
+    pub ubi: Arc<AnthropicClient>,
 }
 
 impl RemoteClients {
-    fn build(secrets: &Arc<dyn SecretStore>, store: Arc<SqliteStore>) -> CoreResult<Self> {
+    fn build(
+        secrets: &Arc<dyn SecretStore>,
+        store: Arc<SqliteStore>,
+        ubi_api_base: &str,
+    ) -> CoreResult<Self> {
         let key = |p: AiProvider| -> Arc<dyn ApiKeySource> {
             Arc::new(SecretStoreKey(secrets.clone(), p))
         };
@@ -176,6 +241,14 @@ impl RemoteClients {
                 AnthropicClient::new(
                     AnthropicConfig::default(),
                     key(AiProvider::Anthropic),
+                    store.clone(),
+                )?
+                .with_language_source(language.clone()),
+            ),
+            ubi: Arc::new(
+                AnthropicClient::new(
+                    AnthropicConfig::for_ubi(ubi_api_base),
+                    key(AiProvider::Ubi),
                     store.clone(),
                 )?
                 .with_language_source(language.clone()),
@@ -205,15 +278,18 @@ impl RemoteClients {
             AiProvider::Anthropic => self.anthropic.clone(),
             AiProvider::OpenAi => self.openai.clone(),
             AiProvider::Xai => self.xai.clone(),
+            AiProvider::Ubi => self.ubi.clone(),
         }
     }
 
-    /// Chat-capable model ids the stored key of `provider` can use.
+    /// Chat-capable model ids the stored key of `provider` can use (for Ubi: the proxy's two
+    /// aliases, without a request).
     pub async fn list_models(&self, provider: AiProvider) -> CoreResult<Vec<String>> {
         match provider {
             AiProvider::Anthropic => self.anthropic.list_models().await,
             AiProvider::OpenAi => self.openai.list_models().await,
             AiProvider::Xai => self.xai.list_models().await,
+            AiProvider::Ubi => self.ubi.list_models().await,
         }
     }
 }
@@ -234,12 +310,15 @@ pub struct App {
     pub remote: Option<RemoteClients>,
     pub data_dir: PathBuf,
     pub scripted: Option<Arc<ubiqx_platform::mock::ScriptedPlatform>>,
+    /// The Ubi proxy's base URL in effect (shown in Settings).
+    pub ubi_api_base: String,
 }
 
 impl App {
     /// Builds and starts the engine. Must be called inside a tokio runtime.
     pub fn start(config: AppConfig, sink: Arc<dyn EventSink>) -> CoreResult<App> {
         let data_dir = config.data_dir.clone().unwrap_or_else(default_data_dir);
+        let ubi_api_base = config.ubi_api_base();
         std::fs::create_dir_all(&data_dir)
             .map_err(|e| CoreError::Platform(format!("data dir {}: {e}", data_dir.display())))?;
 
@@ -263,10 +342,20 @@ impl App {
             platform.notifier = n;
         }
 
-        let (ai, remote) = build_ai(config.ai, &platform, store.clone());
+        let (ai, remote) = build_ai(config.ai, &platform, store.clone(), &ubi_api_base);
         let presenter: Arc<dyn InterventionPresenter> = config
             .presenter
             .unwrap_or_else(|| Arc::new(LogInterventionPresenter));
+        let license = LicenseDeps {
+            pubkey_hex: config
+                .license_pubkey_hex
+                .filter(|k| !k.trim().is_empty())
+                .unwrap_or_else(|| LicenseDeps::default().pubkey_hex),
+            api_base: ubi_api_base.clone(),
+            server: Arc::new(HttpLicenseServer(UbiLicenseClient::new(
+                ubi_api_base.clone(),
+            )?)),
+        };
 
         let deps = EngineDeps {
             platform: PlatformPorts {
@@ -292,6 +381,7 @@ impl App {
                 .update_feed_url
                 .filter(|u| !u.trim().is_empty())
                 .unwrap_or_else(|| ubiqx_core::update::DEFAULT_FEED_URL.to_string()),
+            license,
         };
         let engine = Engine::start(deps)?;
         Ok(App {
@@ -301,17 +391,22 @@ impl App {
             remote,
             data_dir,
             scripted,
+            ubi_api_base,
         })
     }
 
     /// Validates a candidate API key of `provider` against that vendor without storing it.
     /// The billing probe uses the engine's current classification model when it belongs to
     /// `provider`, otherwise the vendor's recommended one, so a key is judged with the model
-    /// that will actually be billed.
+    /// that will actually be billed. The managed provider has no API key
+    /// ([`CoreError::Invalid`]): its license goes through `EngineHandle::set_license_key`.
     pub async fn validate_api_key(&self, provider: AiProvider, key: &str) -> CoreResult<()> {
         let source: Arc<dyn ApiKeySource> = Arc::new(StaticApiKey(key.trim().to_string()));
         let language: Arc<dyn LanguageSource> = Arc::new(self.engine.settings().ui_language());
         match provider {
+            AiProvider::Ubi => Err(CoreError::Invalid(
+                "the managed provider is validated through the license key".into(),
+            )),
             AiProvider::Anthropic => {
                 AnthropicClient::new(AnthropicConfig::default(), source, self.store.clone())?
                     .with_language_source(language)
@@ -344,9 +439,13 @@ impl App {
         match &self.remote {
             Some(remote) => remote.list_models(provider).await,
             None => {
-                RemoteClients::build(&self.platform.secrets, self.store.clone())?
-                    .list_models(provider)
-                    .await
+                RemoteClients::build(
+                    &self.platform.secrets,
+                    self.store.clone(),
+                    &self.ubi_api_base,
+                )?
+                .list_models(provider)
+                .await
             }
         }
     }
@@ -356,6 +455,7 @@ fn build_ai(
     backend: AiBackend,
     platform: &PlatformServices,
     store: Arc<SqliteStore>,
+    ubi_api_base: &str,
 ) -> (AiPorts, Option<RemoteClients>) {
     match backend {
         AiBackend::None => (AiPorts::default(), None),
@@ -373,7 +473,8 @@ fn build_ai(
             None,
         ),
         AiBackend::Remote => {
-            let remote = match RemoteClients::build(&platform.secrets, store.clone()) {
+            let remote = match RemoteClients::build(&platform.secrets, store.clone(), ubi_api_base)
+            {
                 Ok(r) => r,
                 Err(e) => {
                     tracing::error!(error = %e, "could not build the AI clients; running without remote AI");

@@ -3,9 +3,35 @@
 // backend as `ProviderInfo`; this file only holds UI copy and pure model-id arithmetic.
 
 import { hasKey, t } from '../i18n';
-import type { AiModels, AiProvider, ApiKeyStatus, ProviderInfo, SettingsView } from './types';
+import type { AiModels, AiProvider, ApiKeyStatus, LicenseStatus, Plan, ProviderInfo, SettingsView } from './types';
 
-export const PROVIDER_IDS: AiProvider[] = ['anthropic', 'openai', 'xai'];
+/** Every provider, in the backend's order: the three "bring your own key" vendors, then the managed "IA do Ubi". */
+export const PROVIDER_IDS: AiProvider[] = ['anthropic', 'openai', 'xai', 'ubi'];
+
+/** The vendors that take the user's own API key (the annual plan); the managed provider is `ubi`. */
+export const OWN_KEY_PROVIDER_IDS: AiProvider[] = ['anthropic', 'openai', 'xai'];
+
+/** The managed provider: calls go through the Ubi proxy, paid by the monthly plan, no vendor key. */
+export const MANAGED_PROVIDER: AiProvider = 'ubi';
+export const isManagedProvider = (id: AiProvider): boolean => id === MANAGED_PROVIDER;
+
+/** Fixed server-side model aliases of the managed provider (mirrors `UBI_MODEL_FAST` / `UBI_MODEL_SMART`). */
+export const UBI_MODELS: AiModels = { classify: 'ubi-fast', vision: 'ubi-fast', report: 'ubi-smart' };
+
+/** Where the plans are sold (the landing page's pricing section). Also the "console" of the managed provider. */
+export const SITE_URL = 'https://andreyquadros.github.io/ubiquitous-engine/#planos';
+
+/** Typical prefix of a license key (`UBIQX-<claims>-<signature>`). */
+export const LICENSE_KEY_PREFIX = 'UBIQX-';
+
+/** Both plans, in the order the UI lists them. */
+export const PLAN_IDS: Plan[] = ['annual_own_key', 'monthly_managed'];
+
+/** Whether the managed provider may be selected: a valid `monthly_managed` license. */
+export const licenseAllowsManaged = (license: LicenseStatus | null | undefined): boolean => !!license && license.state === 'valid' && license.plan === 'monthly_managed';
+
+/** Whether the license policy blocks AI features right now (only ever true under hard enforcement). */
+export const licenseBlocksAi = (license: LicenseStatus | null | undefined): boolean => !!license && license.enforcement === 'hard' && license.state !== 'valid';
 
 /** Which vendor a model id belongs to, judged by its family prefix (null = unknown/custom). */
 export function vendorOfModel(id: string): AiProvider | null {
@@ -13,6 +39,7 @@ export function vendorOfModel(id: string): AiProvider | null {
   if (m.startsWith('claude')) return 'anthropic';
   if (m.startsWith('gpt-') || m.startsWith('chatgpt') || /^o\d/.test(m)) return 'openai';
   if (m.startsWith('grok')) return 'xai';
+  if (m.startsWith('ubi-')) return 'ubi';
   return null;
 }
 
@@ -24,6 +51,8 @@ export const sameModels = (a: AiModels, b: AiModels): boolean => a.classify === 
  * Mirrors `AiModels::reconciled_with` in ubiqx-core.
  */
 export function reconcileModels(models: AiModels, provider: ProviderInfo): AiModels {
+  // The managed provider has no custom ids: its aliases are fixed.
+  if (isManagedProvider(provider.id)) return { ...provider.default_models };
   const pick = (slot: keyof AiModels): string => {
     const current = models[slot];
     const vendor = vendorOfModel(current);
@@ -33,6 +62,12 @@ export function reconcileModels(models: AiModels, provider: ProviderInfo): AiMod
 }
 
 export const providerInfo = (view: SettingsView, id: AiProvider): ProviderInfo | undefined => view.providers.find((p) => p.id === id);
+
+/**
+ * The provider's display name. Vendor labels are brand names and come from the backend as they are; the managed
+ * provider's label follows the UI language (`settings.provider.ubi.short`: "IA do Ubi" / "Ubi AI").
+ */
+export const providerLabel = (info: Pick<ProviderInfo, 'id' | 'label'>, tr: Translate = t): string => (isManagedProvider(info.id) ? tr('settings.provider.ubi.short') : info.label);
 
 export const keyStatus = (view: SettingsView, id: AiProvider): ApiKeyStatus => view.api_keys.find((k) => k.provider === id) ?? { provider: id, configured: false, hint: null };
 
@@ -77,4 +112,5 @@ export const PROVIDER_PITCH: Record<AiProvider, ProviderPitch> = {
   anthropic: livePitch('anthropic'),
   openai: livePitch('openai'),
   xai: livePitch('xai'),
+  ubi: livePitch('ubi'),
 };

@@ -7,6 +7,11 @@
 //! implementations ([`crate::classifier`], [`crate::vision`], [`crate::report`],
 //! [`crate::advisor`]).
 //!
+//! The same client serves the managed provider ([`ubiqx_core::AiProvider::Ubi`]): the Ubi
+//! proxy speaks the Messages API, so [`AnthropicConfig::for_ubi`] only changes the base URL,
+//! sends the license key as `x-api-key` plus the plan header, and the cost recorded per call
+//! comes from the proxy's `x-ubiqx-cost-usd` response header instead of the price table.
+//!
 //! The request/response types are private to this crate on purpose: `ubiqx-core` must not know
 //! how a vendor API looks.
 
@@ -19,12 +24,15 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::{debug, info, trace, warn};
+use ubiqx_core::license::{
+    HEADER_UBIQX_COST_USD, HEADER_UBIQX_PLAN, UBI_MODEL_FAST, UBI_MODEL_SMART,
+};
 use ubiqx_core::ports::{AiUsage, AiUsageKind, UsageRepo};
-use ubiqx_core::{CoreError, CoreResult, UiLanguage};
+use ubiqx_core::{AiProvider, CoreError, CoreResult, Plan, UiLanguage};
 
 use crate::pricing;
 pub use crate::retry::backoff_delay;
-use crate::retry::{self, Outcome, RetryPolicy, RetryableError};
+use crate::retry::{self, Outcome, Reply, RetryPolicy, RetryableError};
 
 /// Production endpoint.
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
@@ -99,6 +107,11 @@ pub struct AnthropicConfig {
     pub backoff_base: Duration,
     /// Upper bound of any single wait. A `retry-after` above it aborts the call instead.
     pub backoff_cap: Duration,
+    /// Who answers: [`AiProvider::Anthropic`] (the vendor API) or [`AiProvider::Ubi`] (the
+    /// proxy). Decides the wording of rejections, the model listing and the cost source.
+    pub provider: AiProvider,
+    /// Headers added to every request (the plan header for the proxy).
+    pub extra_headers: Vec<(String, String)>,
 }
 
 impl Default for AnthropicConfig {
@@ -109,6 +122,8 @@ impl Default for AnthropicConfig {
             max_attempts: DEFAULT_MAX_ATTEMPTS,
             backoff_base: DEFAULT_BACKOFF_BASE,
             backoff_cap: DEFAULT_BACKOFF_CAP,
+            provider: AiProvider::Anthropic,
+            extra_headers: Vec::new(),
         }
     }
 }
@@ -121,6 +136,42 @@ impl AnthropicConfig {
             ..Self::default()
         }
     }
+
+    /// Configuration for the Ubi proxy at `api_base` (the app's `UBIQX_API_BASE`): the key
+    /// source must yield the license key, which travels as `x-api-key` next to
+    /// `x-ubiqx-plan: monthly_managed`.
+    pub fn for_ubi(api_base: impl Into<String>) -> Self {
+        Self {
+            base_url: api_base.into(),
+            provider: AiProvider::Ubi,
+            extra_headers: vec![(
+                HEADER_UBIQX_PLAN.to_string(),
+                Plan::MonthlyManaged.id().to_string(),
+            )],
+            ..Self::default()
+        }
+    }
+
+    /// Whether this configuration talks to the Ubi proxy.
+    pub fn is_ubi(&self) -> bool {
+        self.provider.is_managed()
+    }
+}
+
+/// The proxy's model aliases, in the order the UI lists them (fast first).
+pub const UBI_MODEL_ALIASES: [&str; 2] = [UBI_MODEL_FAST, UBI_MODEL_SMART];
+
+/// The cost the Ubi proxy reports for a call (`x-ubiqx-cost-usd`), when present and a
+/// finite, non-negative number.
+pub fn cost_from_headers(headers: &reqwest::header::HeaderMap) -> Option<f64> {
+    let value: f64 = headers
+        .get(HEADER_UBIQX_COST_USD)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    (value.is_finite() && value >= 0.0).then_some(value)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -406,12 +457,23 @@ struct ErrorBody {
     message: Option<String>,
 }
 
-/// `(type, message)` of an API error envelope, when the body is one.
+/// `(type, message)` of an API error envelope, when the body is one. A bare
+/// `{"type": …, "message": …}` (how the Ubi proxy may word its own errors) counts too.
 fn parse_error(body: &str) -> Option<(String, String)> {
     let env = serde_json::from_str::<ErrorEnvelope>(body).ok()?;
-    let err = env.error?;
-    let kind = err.kind.unwrap_or_default();
-    let msg = err.message.unwrap_or_default();
+    let (kind, msg) = match env.error {
+        Some(err) => (
+            err.kind.unwrap_or_default(),
+            err.message.unwrap_or_default(),
+        ),
+        None => {
+            let bare = serde_json::from_str::<ErrorBody>(body).ok()?;
+            (
+                bare.kind.unwrap_or_default(),
+                bare.message.unwrap_or_default(),
+            )
+        }
+    };
     (!kind.is_empty() || !msg.is_empty()).then_some((kind, msg))
 }
 
@@ -429,9 +491,36 @@ fn error_message(body: &str) -> String {
 /// Provider-side rejections that are neither transient nor the request's fault: a billing
 /// problem (no credits) or a model the account cannot use. The user has to act, so the
 /// message is written for them in the UI language, keeping the provider's own text.
-fn rejection(code: u16, body: &str, lang: UiLanguage) -> Option<CoreError> {
+///
+/// For the Ubi proxy the rejections are the plan's monthly budget (`402` with
+/// `budget_exhausted`) and a model id that is not one of the aliases (`400`).
+fn rejection(provider: AiProvider, code: u16, body: &str, lang: UiLanguage) -> Option<CoreError> {
     let (kind, msg) = parse_error(body)?;
     let lower = msg.to_ascii_lowercase();
+    if provider.is_managed() {
+        if code == 402 || kind == "budget_exhausted" {
+            return Some(CoreError::AiRejected(match lang {
+                UiLanguage::PtBr => {
+                    "orçamento mensal da IA do Ubi esgotado; a IA volta no próximo mês.".to_string()
+                }
+                UiLanguage::En => {
+                    "the monthly budget of Ubi's AI is used up; the AI resumes next month."
+                        .to_string()
+                }
+            }));
+        }
+        if code == 400 && lower.contains("model") {
+            return Some(CoreError::AiRejected(match lang {
+                UiLanguage::PtBr => format!(
+                    "modelo recusado pela IA do Ubi ({msg}). Use os modelos padrão em Configurações → IA."
+                ),
+                UiLanguage::En => format!(
+                    "model rejected by Ubi's AI ({msg}). Use the default models under Settings → AI."
+                ),
+            }));
+        }
+        return None;
+    }
     let billing = (code == 400
         && kind == "invalid_request_error"
         && (lower.contains("credit balance") || lower.contains("plans & billing")))
@@ -501,6 +590,7 @@ fn model_ids(models_body: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------------------------
 
 fn classify_response(
+    provider: AiProvider,
     lang: UiLanguage,
     status: reqwest::StatusCode,
     retry_after: Option<u64>,
@@ -509,12 +599,17 @@ fn classify_response(
     let code = status.as_u16();
     match code {
         200..=299 => Outcome::Ok(body),
+        // The engine recognises a rejected credential by the "api key" wording / the code.
+        401 | 403 if provider.is_managed() => Outcome::Fatal(CoreError::Ai(format!(
+            "license rejected as api key by the Ubi proxy (HTTP {code}): {}",
+            error_message(&body)
+        ))),
         401 | 403 => Outcome::Fatal(CoreError::Ai(format!(
             "invalid api key (HTTP {code}): {}",
             error_message(&body)
         ))),
-        400 | 402 | 404 if rejection(code, &body, lang).is_some() => {
-            Outcome::Fatal(rejection(code, &body, lang).expect("checked above"))
+        400 | 402 | 404 if rejection(provider, code, &body, lang).is_some() => {
+            Outcome::Fatal(rejection(provider, code, &body, lang).expect("checked above"))
         }
         400 | 404 | 413 | 422 => Outcome::Fatal(CoreError::Invalid(format!(
             "HTTP {code}: {}",
@@ -589,12 +684,35 @@ impl AnthropicClient {
         &self.config
     }
 
+    /// The provider this client answers for (Anthropic or the Ubi proxy).
+    pub fn provider(&self) -> AiProvider {
+        self.config.provider
+    }
+
+    fn vendor(&self) -> &'static str {
+        self.config.provider.id()
+    }
+
     fn url(&self, path: &str) -> String {
         format!("{}{}", self.config.base_url.trim_end_matches('/'), path)
     }
 
     fn key(&self) -> CoreResult<String> {
         self.keys.api_key().ok_or(CoreError::AiNotConfigured)
+    }
+
+    /// A request with the vendor headers (`x-api-key`, `anthropic-version`) and the
+    /// configured extra headers.
+    fn with_headers(&self, req: reqwest::RequestBuilder, key: &str) -> reqwest::RequestBuilder {
+        let req = req
+            .header("x-api-key", key)
+            .header("anthropic-version", API_VERSION);
+        self.config
+            .extra_headers
+            .iter()
+            .fold(req, |req, (name, value)| {
+                req.header(name.as_str(), value.as_str())
+            })
     }
 
     /// Sends one Messages API call, retrying transient failures, and records its usage.
@@ -613,29 +731,31 @@ impl AnthropicClient {
         let url = self.url("/v1/messages");
         let timeout = req.timeout.unwrap_or(self.config.timeout);
         let kind = req.usage_kind.as_str();
+        let vendor = self.vendor();
 
         debug!(
+            vendor,
             model = %req.model,
             kind,
             max_tokens = req.max_tokens,
             messages = req.messages.len(),
             structured = req.json_schema.is_some(),
-            "anthropic: sending messages request"
+            "sending messages request"
         );
-        trace!(body = %body, "anthropic: request body");
+        trace!(vendor, body = %body, "request body");
 
         let started = Instant::now();
-        let text = self
+        let reply = self
             .send_with_retry("messages", || {
-                self.http
-                    .post(&url)
-                    .header("x-api-key", &key)
-                    .header("anthropic-version", API_VERSION)
+                self.with_headers(self.http.post(&url), &key)
                     .header("content-type", "application/json")
                     .timeout(timeout)
                     .json(&body)
             })
             .await?;
+        // The proxy bills the plan and tells the exact cost; the price table is a fallback.
+        let reported_cost = cost_from_headers(&reply.headers);
+        let text = reply.body;
 
         let parsed: MessagesResponse = serde_json::from_str(&text)
             .map_err(|e| CoreError::Ai(format!("unparseable messages response: {e}")))?;
@@ -650,13 +770,16 @@ impl AnthropicClient {
             .unwrap_or_default();
         let cache_read = parsed.usage.cache_read_input_tokens.unwrap_or(0);
         let cache_write = parsed.usage.cache_creation_input_tokens.unwrap_or(0);
-        let cost_usd = pricing::estimate_cost_usd(
-            &req.model,
-            parsed.usage.input_tokens,
-            parsed.usage.output_tokens,
-            cache_read,
-            cache_write,
-        );
+        let cost_usd = reported_cost.unwrap_or_else(|| {
+            pricing::estimate_cost_usd_for_provider(
+                self.config.provider,
+                &req.model,
+                parsed.usage.input_tokens,
+                parsed.usage.output_tokens,
+                cache_read,
+                cache_write,
+            )
+        });
 
         let usage = AiUsage {
             at: Utc::now(),
@@ -669,9 +792,10 @@ impl AnthropicClient {
             cost_usd,
         };
         if let Err(e) = self.usage.record(&usage) {
-            warn!(error = %e, "anthropic: could not record usage");
+            warn!(vendor, error = %e, "could not record usage");
         }
         info!(
+            vendor,
             model = %req.model,
             kind,
             input_tokens = usage.input_tokens,
@@ -679,11 +803,12 @@ impl AnthropicClient {
             cache_read_tokens = cache_read,
             cache_write_tokens = cache_write,
             cost_usd,
+            cost_reported = reported_cost.is_some(),
             stop_reason = stop_reason.as_str(),
             elapsed_ms = started.elapsed().as_millis() as u64,
-            "anthropic: call completed"
+            "call completed"
         );
-        trace!(answer = %answer, "anthropic: response text");
+        trace!(vendor, answer = %answer, "response text");
 
         if stop_reason == StopReason::Refusal {
             // A per-content decision by the model, not an outage: the caller must not retry
@@ -691,7 +816,7 @@ impl AnthropicClient {
             return Err(CoreError::AiRefused);
         }
         if stop_reason == StopReason::MaxTokens {
-            warn!(model = %req.model, kind, max_tokens = req.max_tokens, "anthropic: output truncated");
+            warn!(vendor, model = %req.model, kind, max_tokens = req.max_tokens, "output truncated");
         }
 
         Ok(LlmResponse {
@@ -719,19 +844,26 @@ impl AnthropicClient {
     /// [`CoreError::AiNotConfigured`] without any request. Any other outcome of the probe
     /// (the probe model not being available to the account, rate limits, outages) is not
     /// held against the key.
+    ///
+    /// The Ubi proxy has no models listing and its credential is the license key, which is
+    /// verified offline by the engine: for a Ubi configuration this returns
+    /// [`CoreError::Invalid`] without any request.
     pub async fn validate_key(&self) -> CoreResult<()> {
+        if self.config.is_ubi() {
+            return Err(CoreError::Invalid(
+                "the Ubi provider is validated through the license key, not an API key".into(),
+            ));
+        }
         let key = self.key()?;
         let url = self.url("/v1/models");
         let timeout = self.config.timeout;
         let listing = self
             .send_with_retry("models", || {
-                self.http
-                    .get(&url)
-                    .header("x-api-key", &key)
-                    .header("anthropic-version", API_VERSION)
+                self.with_headers(self.http.get(&url), &key)
                     .timeout(timeout)
             })
-            .await?;
+            .await?
+            .body;
 
         // Probe with a model the listing says this account can use, so a "model not found"
         // answer cannot be mistaken for a bad key; the preferred one is the cheapest.
@@ -747,10 +879,7 @@ impl AnthropicClient {
         });
         match self
             .send_with_retry("key probe", || {
-                self.http
-                    .post(&url)
-                    .header("x-api-key", &key)
-                    .header("anthropic-version", API_VERSION)
+                self.with_headers(self.http.post(&url), &key)
                     .header("content-type", "application/json")
                     .timeout(timeout)
                     .json(&body)
@@ -769,21 +898,25 @@ impl AnthropicClient {
     /// Model ids the key can use, from the first page of `GET /v1/models` (requested with
     /// `limit=1000`, which covers the whole catalogue today), sorted and de-duplicated.
     /// Errors map exactly like [`AnthropicClient::validate_key`]'s listing step.
+    ///
+    /// The Ubi proxy has a fixed catalogue: its two aliases ([`UBI_MODEL_ALIASES`]) are
+    /// returned without a request (and without needing a key).
     pub async fn list_models(&self) -> CoreResult<Vec<String>> {
+        if self.config.is_ubi() {
+            return Ok(UBI_MODEL_ALIASES.iter().map(|m| m.to_string()).collect());
+        }
         let key = self.key()?;
         let url = self.url("/v1/models?limit=1000");
         let timeout = self.config.timeout;
         let listing = self
             .send_with_retry("models", || {
-                self.http
-                    .get(&url)
-                    .header("x-api-key", &key)
-                    .header("anthropic-version", API_VERSION)
+                self.with_headers(self.http.get(&url), &key)
                     .timeout(timeout)
             })
-            .await?;
+            .await?
+            .body;
         let ids = model_ids(&listing);
-        debug!(count = ids.len(), "anthropic: listed models");
+        debug!(vendor = self.vendor(), count = ids.len(), "listed models");
         Ok(ids)
     }
 
@@ -795,17 +928,20 @@ impl AnthropicClient {
         }
     }
 
-    async fn send_with_retry<F>(&self, what: &'static str, build: F) -> CoreResult<String>
+    async fn send_with_retry<F>(&self, what: &'static str, build: F) -> CoreResult<Reply>
     where
         F: Fn() -> reqwest::RequestBuilder,
     {
         let lang = self.language.language();
+        let provider = self.config.provider;
         retry::send_with_retry(
             self.retry_policy(),
-            "anthropic",
+            self.vendor(),
             what,
             build,
-            move |status, retry_after, body| classify_response(lang, status, retry_after, body),
+            move |status, retry_after, body| {
+                classify_response(provider, lang, status, retry_after, body)
+            },
         )
         .await
     }
@@ -898,10 +1034,18 @@ mod tests {
     fn status_classification() {
         use reqwest::StatusCode;
         assert!(matches!(
-            classify_response(UiLanguage::PtBr, StatusCode::OK, None, "{}".into()),
+            classify_response(
+                AiProvider::Anthropic,
+                UiLanguage::PtBr,
+                StatusCode::OK,
+                None,
+                "{}".into()
+            ),
             Outcome::Ok(_)
         ));
-        match classify_response(UiLanguage::PtBr,
+        match classify_response(
+            AiProvider::Anthropic,
+            UiLanguage::PtBr,
             StatusCode::UNAUTHORIZED,
             None,
             r#"{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"#.into(),
@@ -914,6 +1058,7 @@ mod tests {
         }
         assert!(matches!(
             classify_response(
+                AiProvider::Anthropic,
                 UiLanguage::PtBr,
                 StatusCode::BAD_REQUEST,
                 None,
@@ -923,6 +1068,7 @@ mod tests {
         ));
         assert!(matches!(
             classify_response(
+                AiProvider::Anthropic,
                 UiLanguage::PtBr,
                 StatusCode::PAYLOAD_TOO_LARGE,
                 None,
@@ -931,6 +1077,7 @@ mod tests {
             Outcome::Fatal(CoreError::Invalid(_))
         ));
         match classify_response(
+            AiProvider::Anthropic,
             UiLanguage::PtBr,
             StatusCode::TOO_MANY_REQUESTS,
             Some(7),
@@ -949,7 +1096,13 @@ mod tests {
             let status = StatusCode::from_u16(code).unwrap();
             assert!(
                 matches!(
-                    classify_response(UiLanguage::PtBr, status, None, "".into()),
+                    classify_response(
+                        AiProvider::Anthropic,
+                        UiLanguage::PtBr,
+                        status,
+                        None,
+                        "".into()
+                    ),
                     Outcome::Retry {
                         error: RetryableError::Transient(_),
                         wait: None
@@ -960,6 +1113,7 @@ mod tests {
         }
         assert!(matches!(
             classify_response(
+                AiProvider::Anthropic,
                 UiLanguage::PtBr,
                 StatusCode::PAYMENT_REQUIRED,
                 None,
@@ -974,6 +1128,7 @@ mod tests {
         use reqwest::StatusCode;
         let credit = r#"{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}"#;
         match classify_response(
+            AiProvider::Anthropic,
             UiLanguage::PtBr,
             StatusCode::BAD_REQUEST,
             None,
@@ -988,11 +1143,19 @@ mod tests {
         let billing =
             r#"{"type":"error","error":{"type":"billing_error","message":"Billing problem."}}"#;
         assert!(matches!(
-            classify_response(UiLanguage::PtBr, StatusCode::PAYMENT_REQUIRED, None, billing.into()),
+            classify_response(
+                AiProvider::Anthropic,
+                UiLanguage::PtBr, StatusCode::PAYMENT_REQUIRED, None, billing.into()),
             Outcome::Fatal(CoreError::AiRejected(m)) if m.starts_with("cobrança:")
         ));
         let model = r#"{"type":"error","error":{"type":"not_found_error","message":"model: claude-haiku-9"}}"#;
-        match classify_response(UiLanguage::PtBr, StatusCode::NOT_FOUND, None, model.into()) {
+        match classify_response(
+            AiProvider::Anthropic,
+            UiLanguage::PtBr,
+            StatusCode::NOT_FOUND,
+            None,
+            model.into(),
+        ) {
             Outcome::Fatal(CoreError::AiRejected(msg)) => {
                 assert!(msg.starts_with("modelo não encontrado"), "{msg}");
                 assert!(msg.contains("claude-haiku-9"), "{msg}");
@@ -1000,14 +1163,26 @@ mod tests {
             other => panic!("unexpected {other:?}"),
         }
         // The same rejections, worded in English.
-        match classify_response(UiLanguage::En, StatusCode::BAD_REQUEST, None, credit.into()) {
+        match classify_response(
+            AiProvider::Anthropic,
+            UiLanguage::En,
+            StatusCode::BAD_REQUEST,
+            None,
+            credit.into(),
+        ) {
             Outcome::Fatal(CoreError::AiRejected(msg)) => {
                 assert!(msg.starts_with("billing: your Anthropic account"), "{msg}");
                 assert!(msg.contains("credit balance is too low"), "{msg}");
             }
             other => panic!("unexpected {other:?}"),
         }
-        match classify_response(UiLanguage::En, StatusCode::NOT_FOUND, None, model.into()) {
+        match classify_response(
+            AiProvider::Anthropic,
+            UiLanguage::En,
+            StatusCode::NOT_FOUND,
+            None,
+            model.into(),
+        ) {
             Outcome::Fatal(CoreError::AiRejected(msg)) => {
                 assert!(msg.starts_with("model not found"), "{msg}");
                 assert!(
@@ -1021,6 +1196,7 @@ mod tests {
         let other400 = r#"{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: too large"}}"#;
         assert!(matches!(
             classify_response(
+                AiProvider::Anthropic,
                 UiLanguage::PtBr,
                 StatusCode::BAD_REQUEST,
                 None,
@@ -1032,6 +1208,7 @@ mod tests {
             r#"{"type":"error","error":{"type":"not_found_error","message":"Not Found"}}"#;
         assert!(matches!(
             classify_response(
+                AiProvider::Anthropic,
                 UiLanguage::PtBr,
                 StatusCode::NOT_FOUND,
                 None,
@@ -1039,6 +1216,98 @@ mod tests {
             ),
             Outcome::Fatal(CoreError::Invalid(_))
         ));
+    }
+
+    #[test]
+    fn ubi_config_and_rejections() {
+        use reqwest::StatusCode;
+        let cfg = AnthropicConfig::for_ubi("https://api.example.test/");
+        assert!(cfg.is_ubi());
+        assert_eq!(cfg.provider, AiProvider::Ubi);
+        assert_eq!(
+            cfg.extra_headers,
+            vec![("x-ubiqx-plan".to_string(), "monthly_managed".to_string())]
+        );
+        assert!(!AnthropicConfig::default().is_ubi());
+        assert_eq!(UBI_MODEL_ALIASES, ["ubi-fast", "ubi-smart"]);
+
+        // Budget exhausted: enveloped or bare, 402 or the type alone.
+        let enveloped = r#"{"type":"error","error":{"type":"budget_exhausted","message":"monthly budget reached"}}"#;
+        match classify_response(
+            AiProvider::Ubi,
+            UiLanguage::PtBr,
+            StatusCode::PAYMENT_REQUIRED,
+            None,
+            enveloped.into(),
+        ) {
+            Outcome::Fatal(CoreError::AiRejected(msg)) => {
+                assert!(msg.starts_with("orçamento mensal da IA do Ubi"), "{msg}")
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        let bare = r#"{"type":"budget_exhausted","message":"monthly budget reached"}"#;
+        match classify_response(
+            AiProvider::Ubi,
+            UiLanguage::En,
+            StatusCode::PAYMENT_REQUIRED,
+            None,
+            bare.into(),
+        ) {
+            Outcome::Fatal(CoreError::AiRejected(msg)) => {
+                assert!(msg.starts_with("the monthly budget"), "{msg}")
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        // An alias the proxy does not know.
+        let model = r#"{"type":"error","error":{"type":"invalid_request_error","message":"unknown model: claude-x"}}"#;
+        assert!(matches!(
+            classify_response(
+                AiProvider::Ubi,
+                UiLanguage::PtBr,
+                StatusCode::BAD_REQUEST,
+                None,
+                model.into()
+            ),
+            Outcome::Fatal(CoreError::AiRejected(m)) if m.starts_with("modelo recusado")
+        ));
+        // A rejected license reads as a rejected credential to the engine.
+        match classify_response(
+            AiProvider::Ubi,
+            UiLanguage::PtBr,
+            StatusCode::UNAUTHORIZED,
+            None,
+            r#"{"type":"error","error":{"type":"authentication_error","message":"license revoked"}}"#.into(),
+        ) {
+            Outcome::Fatal(CoreError::Ai(msg)) => {
+                assert!(msg.contains("api key"), "{msg}");
+                assert!(msg.contains("license revoked"), "{msg}");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        // Anthropic's own billing wording is not reinterpreted for the proxy.
+        assert!(matches!(
+            classify_response(
+                AiProvider::Ubi,
+                UiLanguage::PtBr,
+                StatusCode::BAD_REQUEST,
+                None,
+                r#"{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: too large"}}"#.into()
+            ),
+            Outcome::Fatal(CoreError::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn cost_header_parsing() {
+        use reqwest::header::{HeaderMap, HeaderValue};
+        let mut h = HeaderMap::new();
+        assert_eq!(cost_from_headers(&h), None);
+        h.insert("x-ubiqx-cost-usd", HeaderValue::from_static(" 0.0125 "));
+        assert_eq!(cost_from_headers(&h), Some(0.0125));
+        h.insert("x-ubiqx-cost-usd", HeaderValue::from_static("nope"));
+        assert_eq!(cost_from_headers(&h), None);
+        h.insert("x-ubiqx-cost-usd", HeaderValue::from_static("-1"));
+        assert_eq!(cost_from_headers(&h), None);
     }
 
     #[test]

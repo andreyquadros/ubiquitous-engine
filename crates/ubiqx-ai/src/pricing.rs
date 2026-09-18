@@ -6,7 +6,9 @@
 //! conservative side for cheaper models.
 //!
 //! The vendor of a model id is inferred with [`AiProvider::for_model`] (`claude-*` →
-//! Anthropic, `gpt-*`/`o*` → OpenAI, `grok-*` → xAI); ids that belong to nobody are priced as
+//! Anthropic, `gpt-*`/`o*` → OpenAI, `grok-*` → xAI, `ubi-*` → the Ubi proxy, whose aliases
+//! are priced like the Anthropic models behind them and only used as a fallback when the
+//! proxy's `x-ubiqx-cost-usd` header is missing); ids that belong to nobody are priced as
 //! Anthropic models, which keeps the historical behaviour of [`price_for`]. Within a vendor the
 //! price is resolved by family substring, most specific family first (`gpt-5-mini` before
 //! `gpt-5`, `grok-4-1-fast` before `grok-4`), so dated snapshots such as
@@ -115,6 +117,15 @@ fn openai_price(m: &str) -> ModelPrice {
         .unwrap_or(OPENAI_UNKNOWN)
 }
 
+/// The proxy's aliases: `ubi-fast` runs on the Haiku tier, `ubi-smart` on the Sonnet tier.
+fn ubi_price(m: &str) -> ModelPrice {
+    if m == ubiqx_core::license::UBI_MODEL_FAST || m.contains("fast") {
+        HAIKU_4_5
+    } else {
+        SONNET_5
+    }
+}
+
 fn xai_price(m: &str) -> ModelPrice {
     XAI_PRICES
         .iter()
@@ -131,6 +142,7 @@ pub fn price_for_provider(provider: AiProvider, model: &str) -> ModelPrice {
         AiProvider::Anthropic => anthropic_price(&m),
         AiProvider::OpenAi => openai_price(&m),
         AiProvider::Xai => xai_price(&m),
+        AiProvider::Ubi => ubi_price(&m),
     }
 }
 
@@ -279,6 +291,14 @@ mod tests {
             );
         }
         assert_eq!(price_for_provider(AiProvider::Xai, "custom"), XAI_UNKNOWN);
+    }
+
+    #[test]
+    fn ubi_aliases_are_priced_like_their_tiers() {
+        assert_eq!(price_for("ubi-fast"), HAIKU_4_5);
+        assert_eq!(price_for("ubi-smart"), SONNET_5);
+        assert_eq!(price_for_provider(AiProvider::Ubi, "anything"), SONNET_5);
+        assert_eq!(price_for_provider(AiProvider::Ubi, "UBI-FAST"), HAIKU_4_5);
     }
 
     #[test]

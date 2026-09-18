@@ -3,8 +3,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use async_trait::async_trait;
+use ubiqx_core::license::{UBIQX_API_BASE_DEFAULT, UBIQX_LICENSE_PUBKEY_HEX};
 use ubiqx_core::ports::*;
-use ubiqx_core::{BuildInfo, Clock, CoreResult, Intervention};
+use ubiqx_core::{BuildInfo, Clock, CoreError, CoreResult, Intervention, ManagedUsage};
 
 /// [`InterventionPresenter`] that only logs: the CLI, tests and any shell without a window.
 /// It answers `false`, so the engine falls back to an OS notification.
@@ -118,6 +120,59 @@ impl Default for AiPorts {
     }
 }
 
+/// The Ubi proxy's license endpoint, as far as the engine needs it: the month's usage of a
+/// `monthly_managed` subscription. Implemented over HTTP by the composition root; tests and
+/// the CLI use [`NoLicenseServer`].
+#[async_trait]
+pub trait LicenseServer: Send + Sync {
+    /// `GET /v1/license/status` with `key`. Any failure (offline, rejected key, outage) is an
+    /// error: the engine then shows the local verdict without usage numbers.
+    async fn managed_usage(&self, key: &str) -> CoreResult<ManagedUsage>;
+}
+
+/// A [`LicenseServer`] that is never reachable.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NoLicenseServer;
+
+#[async_trait]
+impl LicenseServer for NoLicenseServer {
+    async fn managed_usage(&self, _key: &str) -> CoreResult<ManagedUsage> {
+        Err(CoreError::Ai("no license server configured".into()))
+    }
+}
+
+/// Licensing inputs: the public key every stored license key is verified against, the
+/// proxy's base URL (shown in Settings, used by the managed provider's client) and the
+/// license endpoint. `Default` is the production key and proxy without a server.
+#[derive(Clone)]
+pub struct LicenseDeps {
+    /// Hex Ed25519 public key ([`UBIQX_LICENSE_PUBKEY_HEX`] in production; tests sign with
+    /// their own pair).
+    pub pubkey_hex: String,
+    /// The Ubi proxy's base URL (`UBIQX_API_BASE`).
+    pub api_base: String,
+    pub server: Arc<dyn LicenseServer>,
+}
+
+impl Default for LicenseDeps {
+    fn default() -> Self {
+        Self {
+            pubkey_hex: UBIQX_LICENSE_PUBKEY_HEX.to_string(),
+            api_base: UBIQX_API_BASE_DEFAULT.to_string(),
+            server: Arc::new(NoLicenseServer),
+        }
+    }
+}
+
+impl std::fmt::Debug for LicenseDeps {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LicenseDeps")
+            .field("pubkey_hex", &self.pubkey_hex)
+            .field("api_base", &self.api_base)
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Clone)]
 pub struct EngineDeps {
     pub platform: PlatformPorts,
@@ -131,4 +186,6 @@ pub struct EngineDeps {
     pub build: BuildInfo,
     /// URL of the update feed (`latest.json`) checked against `build`.
     pub update_feed_url: String,
+    /// License verification key, proxy URL and endpoint (see [`LicenseDeps`]).
+    pub license: LicenseDeps,
 }

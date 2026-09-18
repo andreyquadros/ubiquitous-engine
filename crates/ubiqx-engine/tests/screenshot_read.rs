@@ -78,6 +78,7 @@ fn fixture() -> Fixture {
         data_dir: tmp.path().to_path_buf(),
         build: ubiqx_core::BuildInfo::dev(),
         update_feed_url: String::new(),
+        license: LicenseDeps::default(),
     };
     let state = EngineState::new(deps, Settings::default(), None);
     Fixture {

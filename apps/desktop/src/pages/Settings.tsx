@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { AlertTriangle, ArrowDownToLine, Bell, BrainCircuit, Camera, Check, Copy, Download, ExternalLink, EyeOff, Info, KeyRound, ListRestart, Loader2, RefreshCw, Shield, ShieldCheck, SlidersHorizontal, Trash2, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ArrowDownToLine, BadgeCheck, Bell, BrainCircuit, Camera, Check, Copy, Download, ExternalLink, EyeOff, Info, KeyRound, ListRestart, Loader2, RefreshCw, Shield, ShieldCheck, SlidersHorizontal, Trash2, type LucideIcon } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Badge, StatusPill } from '../components/ui/Badge';
@@ -12,14 +12,16 @@ import { EmptyState } from '../components/ui/misc';
 import { PageHeader } from '../components/ui/PageHeader';
 import { TagInput } from '../components/ui/TagInput';
 import { Toggle } from '../components/ui/Toggle';
+import { UsageBar } from '../components/ui/UsageBar';
+import { LICENSE_SECTION_ID } from '../components/layout/LicenseBanner';
 import { UPDATES_SECTION_ID, downloadLabel, fmtBuildDate } from '../components/layout/UpdateBanner';
-import { useLocale, useT, type Locale } from '../i18n';
-import { fmtDateNumeric, fmtDateTime, fmtTime, hhmmToInput, inputToHhmm } from '../lib/format';
-import { ipc } from '../lib/ipc';
+import { useLocale, useT, type Locale, type Vars } from '../i18n';
+import { fmtDateNumeric, fmtDateTime, fmtTime, fmtUsd, hhmmToInput, inputToHhmm } from '../lib/format';
+import { ipc, ipcErrorMessage } from '../lib/ipc';
 import { useAppStore } from '../lib/store';
 import { useToast } from '../lib/toast';
-import { keyStatus, providerInfo, providerPitch, reconcileModels, sameModels } from '../lib/providers';
-import type { AiModels, AiProvider, PermissionKind, PermissionState, Platform, PrivateModeDuration, Settings, SettingsView, VisionPolicy } from '../lib/types';
+import { LICENSE_KEY_PREFIX, SITE_URL, isManagedProvider, keyStatus, licenseAllowsManaged, providerInfo, providerLabel, providerPitch, reconcileModels, sameModels } from '../lib/providers';
+import type { AiModels, AiProvider, LicenseStatus, PermissionKind, PermissionState, Platform, Plan, PrivateModeDuration, Settings, SettingsView, VisionPolicy } from '../lib/types';
 import { useAsync } from '../lib/useAsync';
 
 export const REPO_URL = 'https://github.com/andreyquadros/ubiquitous-engine';
@@ -29,10 +31,34 @@ export const PLATFORM_NAMES: Record<Platform, string> = { macos: 'macOS', window
 
 /** Where the API key is kept on each OS: t('settings.<key>'). */
 const keyStoreHintKey = (platform: Platform): string => (platform === 'macos' ? 'settings.key.keychain_hint' : `settings.key.store_hint.${platform}`);
+export { LICENSE_SECTION_ID };
+
+type Translate = (key: string, vars?: Vars) => string;
+
+/** "ubiqX Anual, com a sua IA" / "ubiqX Mensal, com a IA do Ubi". */
+export const planLabel = (t: Translate, plan: Plan): string => t(`settings.license.plan.${plan}`);
+
+/** pt "17/09/2027" / en "09/17/2027" for a license expiry (RFC 3339 UTC, shown as a local calendar day). */
+export const fmtLicenseDate = (iso: string): string => fmtDateNumeric(iso.slice(0, 10));
+
+/** The status chip's colour and text: "Sem licença" / "Válida até {date}" / "Expirada" / "Inválida". */
+export function licenseChip(t: Translate, license: LicenseStatus): { color: string; text: string } {
+  switch (license.state) {
+    case 'valid':
+      return { color: 'var(--signal)', text: t('settings.license.status.valid', { date: license.expires_at ? fmtLicenseDate(license.expires_at) : '' }).trim() };
+    case 'expired':
+      return { color: 'var(--amber)', text: t('settings.license.status.expired') };
+    case 'invalid':
+      return { color: 'var(--rose)', text: t('settings.license.status.invalid') };
+    default:
+      return { color: 'var(--ink-4)', text: t('settings.license.status.unlicensed') };
+  }
+}
 
 /** Section ids are stable (anchors, tests); labels come from t('settings.section.<key>'). */
 const SECTIONS: { id: string; key: string; Icon: LucideIcon }[] = [
   { id: 'geral', key: 'general', Icon: SlidersHorizontal },
+  { id: LICENSE_SECTION_ID, key: 'license', Icon: BadgeCheck },
   { id: 'ia', key: 'ai', Icon: BrainCircuit },
   { id: 'rastreamento', key: 'tracking', Icon: RefreshCw },
   { id: 'privacidade', key: 'privacy', Icon: Shield },
@@ -185,6 +211,7 @@ export function SettingsPage() {
         </nav>
         <div className="col-span-12 flex flex-col gap-5 min-[1100px]:col-span-9">
           <GeneralSection />
+          <LicenseSection view={settingsView} />
           <AiSection draft={draft} patch={patch} view={settingsView} />
           <TrackingSection draft={draft} patch={patch} />
           <PrivacySection draft={draft} patch={patch} view={settingsView} />
@@ -238,12 +265,12 @@ function Emphasis({ text }: { text: string }) {
   );
 }
 
-function NumberField({ label, hint, value, onChange, min, max, step, suffix }: { label: string; hint?: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; suffix?: string }) {
+function NumberField({ label, hint, value, onChange, min, max, step, suffix, disabled }: { label: string; hint?: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; suffix?: string; disabled?: boolean }) {
   return (
     <Field label={label} hint={hint}>
       {(id) => (
         <div className="flex items-center gap-2">
-          <Input id={id} type="number" value={value} min={min} max={max} step={step} onChange={(e) => onChange(Number(e.target.value))} className="num w-28" />
+          <Input id={id} type="number" value={value} min={min} max={max} step={step} onChange={(e) => onChange(Number(e.target.value))} className="num w-28" disabled={disabled} />
           {suffix && <span className="text-xs whitespace-nowrap text-ink-3">{suffix}</span>}
         </div>
       )}
@@ -270,6 +297,159 @@ function GeneralSection() {
   );
 }
 
+/**
+ * License key field with "Validar", the "Assinar" link to the plans and "Remover" when a key is loaded. Shared by
+ * Settings › Licença and the onboarding cards. `optional` marks the label so (the annual plan on the own-key card).
+ */
+export function LicenseKeyForm({ license, optional, compact, hint, onSaved }: { license: LicenseStatus; optional?: boolean; compact?: boolean; hint?: string; onSaved?: (status: LicenseStatus) => void }) {
+  const t = useT();
+  const [key, setKey] = useState('');
+  const [busy, setBusy] = useState<'validate' | 'remove' | null>(null);
+  const [result, setResult] = useState<{ status: LicenseStatus; removed: boolean } | null>(null);
+  const setLicenseKey = useAppStore((s) => s.setLicenseKey);
+  const toast = useToast();
+  const loaded = license.key_hint !== null;
+
+  const submit = async (value: string | null) => {
+    setBusy(value ? 'validate' : 'remove');
+    setResult(null);
+    try {
+      const status = await setLicenseKey(value);
+      setResult({ status, removed: value === null });
+      if (value === null) toast.success(t('settings.toast.license_removed'));
+      else if (status.state === 'valid') toast.success(t('settings.toast.license_saved'));
+      if (value === null || status.state === 'valid') setKey('');
+      onSaved?.(status);
+    } catch (e) {
+      toast.error(t('settings.toast.license_failed'), ipcErrorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openPlans = () => {
+    ipc.openExternal(SITE_URL).catch((e: unknown) => toast.error(t('settings.toast.open_failed'), ipcErrorMessage(e)));
+  };
+
+  const message = (() => {
+    if (!result) return null;
+    if (result.removed) return { ok: true, text: t('settings.license.result.removed') };
+    const s = result.status;
+    if (s.state === 'valid' && s.plan) return { ok: true, text: t('settings.license.result.valid', { plan: planLabel(t, s.plan), date: s.expires_at ? fmtLicenseDate(s.expires_at) : '' }) };
+    if (s.state === 'expired') return { ok: false, text: t('settings.license.result.expired', { date: s.expires_at ? fmtLicenseDate(s.expires_at) : '' }) };
+    return { ok: false, text: t('settings.license.result.invalid') };
+  })();
+
+  const label = loaded ? t('settings.license.key.replace_label') : optional ? `${t('settings.license.key.label')} (${t('common.optional')})` : t('settings.license.key.label');
+
+  return (
+    <div className="flex flex-col gap-3" data-testid="license-key-form">
+      {loaded && (
+        <div className="flex flex-wrap items-center gap-2 rounded-control border border-line bg-panel-2 px-3 py-2 text-sm">
+          <KeyRound className={clsx('size-4', license.state === 'valid' ? 'text-signal' : 'text-ink-3')} strokeWidth={1.75} aria-hidden />
+          <span>{t('settings.license.key.loaded')}</span>
+          <span className="num font-mono text-ink-2">…{license.key_hint}</span>
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void submit(null)} loading={busy === 'remove'} disabled={busy !== null}>
+            {t('common.remove')}
+          </Button>
+        </div>
+      )}
+      <Field
+        label={label}
+        hint={
+          <span className="inline-flex flex-wrap items-center gap-x-1">
+            {(hint ?? (compact ? null : t('settings.license.key.hint'))) && <span>{hint ?? t('settings.license.key.hint')}</span>}
+            <button type="button" onClick={openPlans} className="inline-flex items-center gap-1 text-volt underline underline-offset-2 transition-colors duration-120 hover:brightness-110">
+              {t('settings.license.subscribe')} <ExternalLink className="size-3" strokeWidth={1.75} aria-hidden />
+            </button>
+          </span>
+        }
+      >
+        {(id) => (
+          <div className="flex gap-2">
+            <Input id={id} type="password" autoComplete="off" spellCheck={false} value={key} onChange={(e) => setKey(e.target.value)} placeholder={`${LICENSE_KEY_PREFIX}…`} className="font-mono" />
+            <Button variant="primary" className="shrink-0" onClick={() => void submit(key.trim())} disabled={!key.trim() || busy !== null} loading={busy === 'validate'}>
+              {t('settings.license.key.validate')}
+            </Button>
+          </div>
+        )}
+      </Field>
+      {message && (
+        <p className={clsx('flex items-start gap-1.5 text-xs leading-5', message.ok ? 'text-signal' : 'text-rose')} role="status">
+          {message.ok ? <Check className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} aria-hidden /> : <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />}
+          {message.text}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Settings › Licença: status chip, plan, key form, the managed plan's monthly usage and what the license means for the AI section. */
+function LicenseSection({ view }: { view: SettingsView }) {
+  const t = useT();
+  const license = useAppStore((s) => s.license) ?? view.license;
+  const chip = licenseChip(t, license);
+  const managed = licenseAllowsManaged(license);
+  const usage = license.managed_usage;
+  const host = view.ubi_api_base.replace(/^https?:\/\//, '');
+
+  return (
+    <Section id={LICENSE_SECTION_ID} title={t('settings.section.license')} description={t('settings.license.description')} action={<StatusPill color={chip.color}>{chip.text}</StatusPill>}>
+      <dl className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-2.5 text-sm" data-testid="license-plan">
+        <dt className="text-ink-3">{t('settings.license.plan_label')}</dt>
+        <dd>
+          {license.plan ? (
+            <>
+              <span className="font-medium">{planLabel(t, license.plan)}</span>
+              <span className="num block text-xs text-ink-3">{t(`settings.license.price.${license.plan}`)}</span>
+            </>
+          ) : (
+            <>
+              <span className="text-ink-2">{t('common.none')}</span>
+              <span className="num block text-xs text-ink-3">{t('settings.license.plans_line')}</span>
+            </>
+          )}
+        </dd>
+        {license.state === 'valid' && license.expires_at && license.days_left !== null && (
+          <>
+            <dt className="text-ink-3">{t('settings.license.expiry_label')}</dt>
+            <dd className="num text-ink-2">{t('settings.license.valid_until', { date: fmtLicenseDate(license.expires_at), left: t('settings.license.days_left', { count: license.days_left }) })}</dd>
+          </>
+        )}
+        {license.state === 'expired' && license.expires_at && (
+          <>
+            <dt className="text-ink-3">{t('settings.license.expiry_label')}</dt>
+            <dd className="num text-amber">{t('settings.license.expired_on', { date: fmtLicenseDate(license.expires_at) })}</dd>
+          </>
+        )}
+      </dl>
+
+      <LicenseKeyForm license={license} />
+
+      {managed && (
+        <>
+          <Divider />
+          {usage ? (
+            <UsageBar label={t('settings.license.usage.title')} value={t('settings.license.usage.spent', { spent: fmtUsd(usage.spent_usd), budget: fmtUsd(usage.budget_usd) })} spent={usage.spent_usd} budget={usage.budget_usd} hint={t('settings.license.usage.hint')} />
+          ) : (
+            <p className="flex items-start gap-2 text-xs leading-5 text-ink-2" role="status">
+              <Info className="mt-0.5 size-3.5 shrink-0 text-ink-3" strokeWidth={1.75} aria-hidden /> {t('settings.license.usage.unavailable')}
+            </p>
+          )}
+          <div className="flex gap-3 rounded-control border border-volt/30 bg-volt-soft p-3 text-xs leading-5 text-ink-2" data-testid="license-managed-note">
+            <BrainCircuit className="mt-0.5 size-4 shrink-0 text-volt" strokeWidth={1.75} aria-hidden />
+            <span>
+              {t('settings.license.managed_note', { host })} {!isManagedProvider(view.settings.ai_provider) && t('settings.license.managed_select')}
+            </span>
+          </div>
+        </>
+      )}
+      {license.state === 'valid' && license.plan === 'annual_own_key' && <p className="text-xs leading-5 text-ink-3">{t('settings.license.own_key_note')}</p>}
+      {license.state !== 'valid' && <p className="text-xs leading-5 text-ink-3">{license.enforcement === 'hard' ? t('settings.license.hard_note') : t('settings.license.unlicensed_note')}</p>}
+    </Section>
+  );
+}
+
 export function ApiKeyForm({ view, provider, onSaved, compact }: { view: SettingsView; provider: AiProvider; onSaved?: () => void; compact?: boolean }) {
   const t = useT();
   const [key, setKey] = useState('');
@@ -279,7 +459,7 @@ export function ApiKeyForm({ view, provider, onSaved, compact }: { view: Setting
   const toast = useToast();
   const info = providerInfo(view, provider);
   const status = keyStatus(view, provider);
-  const label = info?.label ?? provider;
+  const label = info ? providerLabel(info, t) : provider;
 
   // a different provider = a different key: forget the draft and the last result
   useEffect(() => {
@@ -360,7 +540,10 @@ export function ProviderPicker({ view, value, onChange, size = 'md' }: { view: S
   return (
     <div role="radiogroup" aria-label={t('settings.provider.label')} className="inline-flex flex-wrap items-center gap-0.5 self-start rounded-control border border-line bg-panel-2 p-1">
       {view.providers.map((p) => {
-        const configured = keyStatus(view, p.id).configured;
+        const managed = isManagedProvider(p.id);
+        // The managed provider needs a valid monthly license; the key icon there means "license loaded".
+        const configured = managed ? licenseAllowsManaged(view.license) : keyStatus(view, p.id).configured;
+        const disabled = managed && !licenseAllowsManaged(view.license);
         const active = value === p.id;
         return (
           <button
@@ -368,14 +551,17 @@ export function ProviderPicker({ view, value, onChange, size = 'md' }: { view: S
             type="button"
             role="radio"
             aria-checked={active}
+            aria-disabled={disabled || undefined}
+            disabled={disabled}
+            title={disabled ? t('settings.provider.ubi_disabled') : undefined}
             onClick={() => onChange(p.id)}
             className={clsx(
-              'inline-flex items-center gap-1.5 rounded-[7px] px-3 font-medium transition-colors duration-150',
+              'inline-flex items-center gap-1.5 rounded-[7px] px-3 font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50',
               size === 'lg' ? 'h-9 text-sm' : 'h-8 text-sm',
               active ? 'bg-panel text-ink shadow-[inset_0_0_0_1px_var(--line-2)]' : 'text-ink-2 hover:text-ink',
             )}
           >
-            {p.label}
+            {providerLabel(p, t)}
             {configured && <KeyRound className="size-3.5 text-signal" strokeWidth={1.75} aria-label={t('settings.provider.key_configured')} />}
           </button>
         );
@@ -426,22 +612,26 @@ function ModelFields({ draft, patch, view }: SectionProps & { view: SettingsView
 
   const options = models?.provider === provider ? models.ids : [];
   const isDefault = info ? sameModels(draft.models, info.default_models) : true;
+  // The managed provider's ids are fixed server-side aliases: shown, never edited.
+  const managed = isManagedProvider(provider);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3" data-testid={managed ? 'model-fields-managed' : 'model-fields'}>
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0">
-          <span className="text-[13px] font-medium">{t('settings.models.title', { provider: info?.label ?? provider })}</span>
-          <p className="text-xs text-ink-3">{t('settings.models.hint')}</p>
+          <span className="text-[13px] font-medium">{t('settings.models.title', { provider: info ? providerLabel(info, t) : provider })}</span>
+          <p className="text-xs text-ink-3">{managed ? t('settings.models.managed_hint') : t('settings.models.hint')}</p>
         </div>
-        <div className="ml-auto flex items-center gap-1.5">
-          <Button size="sm" icon={<RefreshCw className="size-3.5" strokeWidth={1.75} />} onClick={() => void listModels()} loading={loading} disabled={!hasKey} title={hasKey ? undefined : t('settings.models.list_disabled')}>
-            {t('settings.models.list')}
-          </Button>
-          <Button size="sm" variant="ghost" icon={<ListRestart className="size-3.5" strokeWidth={1.75} />} disabled={!info || isDefault} onClick={() => info && patch({ models: { ...info.default_models } })}>
-            {t('settings.models.defaults')}
-          </Button>
-        </div>
+        {!managed && (
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button size="sm" icon={<RefreshCw className="size-3.5" strokeWidth={1.75} />} onClick={() => void listModels()} loading={loading} disabled={!hasKey} title={hasKey ? undefined : t('settings.models.list_disabled')}>
+              {t('settings.models.list')}
+            </Button>
+            <Button size="sm" variant="ghost" icon={<ListRestart className="size-3.5" strokeWidth={1.75} />} disabled={!info || isDefault} onClick={() => info && patch({ models: { ...info.default_models } })}>
+              {t('settings.models.defaults')}
+            </Button>
+          </div>
+        )}
       </div>
       {error && (
         <p className="flex items-center gap-1.5 text-xs text-rose" role="status">
@@ -461,7 +651,20 @@ function ModelFields({ draft, patch, view }: SectionProps & { view: SettingsView
       <div className="grid grid-cols-1 gap-4 min-[900px]:grid-cols-3">
         {MODEL_SLOTS.map((slot) => (
           <Field key={slot} label={t(`settings.models.${slot}.label`)} hint={t(`settings.models.${slot}.hint`)}>
-            {(id) => <Input id={id} list={listId} value={draft.models[slot]} spellCheck={false} autoComplete="off" placeholder={info?.default_models[slot]} onChange={(e) => patch({ models: { ...draft.models, [slot]: e.target.value } })} className="font-mono text-xs" />}
+            {(id) => (
+              <Input
+                id={id}
+                list={managed ? undefined : listId}
+                value={managed ? (info?.default_models[slot] ?? draft.models[slot]) : draft.models[slot]}
+                readOnly={managed}
+                aria-readonly={managed || undefined}
+                spellCheck={false}
+                autoComplete="off"
+                placeholder={info?.default_models[slot]}
+                onChange={(e) => !managed && patch({ models: { ...draft.models, [slot]: e.target.value } })}
+                className={clsx('font-mono text-xs', managed && 'text-ink-2')}
+              />
+            )}
           </Field>
         ))}
       </div>
@@ -481,24 +684,39 @@ function AiSection({ draft, patch, view }: SectionProps & { view: SettingsView }
           ? { color: 'var(--amber)', text: t('settings.ai.status.paused', { reason: health.reason }) }
           : { color: 'var(--rose)', text: t('settings.ai.status.degraded', { reason: health.reason, time: fmtTime(health.until) }) };
   const pitch = providerPitch(draft.ai_provider, t);
+  const managed = isManagedProvider(draft.ai_provider);
 
   return (
     <Section id="ia" title={t('settings.section.ai')} description={t('settings.ai.description')} action={<StatusPill color={pill.color}>{pill.text}</StatusPill>}>
-      <Field label={t('settings.provider.label')} hint={t('settings.provider.hint', { provider: pitch.short, cost: pitch.cost })}>
+      <Field label={t('settings.provider.label')} hint={managed ? t('settings.provider.hint_managed', { cost: pitch.cost }) : t('settings.provider.hint', { provider: pitch.short, cost: pitch.cost })}>
         {() => <ProviderPicker view={view} value={draft.ai_provider} onChange={(p) => patch(providerSwitchPatch(view, draft, p))} />}
       </Field>
-      <ApiKeyForm view={view} provider={draft.ai_provider} />
+      {managed ? <ManagedKeyNote /> : <ApiKeyForm view={view} provider={draft.ai_provider} />}
       <Divider />
       <ModelFields draft={draft} patch={patch} view={view} />
       <Divider />
       <div className="grid grid-cols-1 gap-4 min-[720px]:grid-cols-2">
-        <NumberField label={t('settings.budget.label')} hint={t('settings.budget.hint')} value={draft.ai_monthly_budget_usd} min={0} step={0.5} onChange={(v) => patch({ ai_monthly_budget_usd: v })} suffix={t('settings.budget.suffix')} />
+        <NumberField label={t('settings.budget.label')} hint={managed ? t('settings.license.usage.hint') : t('settings.budget.hint')} value={managed ? (view.license.managed_usage?.budget_usd ?? draft.ai_monthly_budget_usd) : draft.ai_monthly_budget_usd} min={0} step={0.5} onChange={(v) => patch({ ai_monthly_budget_usd: v })} suffix={t('settings.budget.suffix')} disabled={managed} />
         <NumberField label={t('settings.vision_per_hour.label')} hint={t('settings.vision_per_hour.hint')} value={draft.max_vision_per_hour} min={0} max={60} onChange={(v) => patch({ max_vision_per_hour: v })} suffix={t('settings.vision_per_hour.suffix')} />
       </div>
       <Field label={t('settings.local_only.label')} hint={t('settings.local_only.hint')} inline>
         {(id) => <Toggle id={id} checked={draft.local_only} onChange={(v) => patch({ local_only: v })} />}
       </Field>
     </Section>
+  );
+}
+
+/** In place of the API key form when "IA do Ubi" is selected: the license key is the credential. */
+function ManagedKeyNote() {
+  const t = useT();
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-control border border-line bg-panel-2 px-3 py-2 text-sm" data-testid="api-key-form-ubi">
+      <KeyRound className="size-4 shrink-0 text-signal" strokeWidth={1.75} aria-hidden />
+      <span className="min-w-0 flex-1 basis-60 text-xs leading-5 text-ink-2">{t('settings.key.managed')}</span>
+      <Button size="sm" variant="ghost" onClick={() => document.getElementById(`sec-${LICENSE_SECTION_ID}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+        {t('settings.key.managed_go')}
+      </Button>
+    </div>
   );
 }
 
@@ -1105,6 +1323,8 @@ function AboutSection({ view }: { view: SettingsView }) {
         <dd>{engine}</dd>
         <dt className="text-ink-3">{t('settings.about.ai')}</dt>
         <dd>{ai}</dd>
+        <dt className="text-ink-3">{t('settings.about.plan')}</dt>
+        <dd data-testid="about-plan">{view.license.plan && view.license.state === 'valid' ? planLabel(t, view.license.plan) : view.license.plan ? `${planLabel(t, view.license.plan)} (${licenseChip(t, view.license).text})` : t('settings.about.plan_none')}</dd>
       </dl>
       <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
         <Button icon={<Download className="size-4" strokeWidth={1.75} />} onClick={() => void exportData()} loading={busy === 'export'}>

@@ -152,8 +152,45 @@ export interface FocusStats {
   mood: Mood;
 }
 
-/** Hosted LLM vendor answering the remote calls. Ids match the Rust `AiProvider` enum. */
-export type AiProvider = 'anthropic' | 'openai' | 'xai';
+/**
+ * Hosted LLM vendor answering the remote calls. Ids match the Rust `AiProvider` enum. `ubi` is the managed option
+ * ("IA do Ubi"): the calls go through the Ubi proxy, paid by the monthly plan, authenticated with the license key.
+ */
+export type AiProvider = 'anthropic' | 'openai' | 'xai' | 'ubi';
+
+/* ------------------------------------------------------------------ */
+/* License (crates/ubiqx-core/src/license.rs)                          */
+/* ------------------------------------------------------------------ */
+
+/** `annual_own_key` = "ubiqX Anual, com a sua IA"; `monthly_managed` = "ubiqX Mensal, com a IA do Ubi". */
+export type Plan = 'annual_own_key' | 'monthly_managed';
+
+export type LicenseState = 'unlicensed' | 'valid' | 'expired' | 'invalid';
+
+/** `soft` = reminders only; `hard` = AI features blocked without a valid license (tracking, timeline and manual categorisation always work). A compile-time constant on the Rust side. */
+export type LicenseEnforcement = 'soft' | 'hard';
+
+/** The current month's spend of a `monthly_managed` subscriber, as reported by the proxy. */
+export interface ManagedUsage {
+  /** `YYYY-MM` (UTC). */
+  month: string;
+  spent_usd: number;
+  budget_usd: number;
+}
+
+/** The stored license key's verdict (the key itself never leaves the secret store). */
+export interface LicenseStatus {
+  state: LicenseState;
+  plan: Plan | null;
+  /** RFC 3339 (UTC). */
+  expires_at: IsoDateTime | null;
+  days_left: number | null;
+  /** Last 4 characters of the stored key. */
+  key_hint: string | null;
+  enforcement: LicenseEnforcement;
+  /** Only for a valid `monthly_managed` license, and only when the proxy answered. */
+  managed_usage: ManagedUsage | null;
+}
 
 export interface AiModels {
   classify: string;
@@ -365,6 +402,10 @@ export interface SettingsView {
   permissions: PermissionStatus;
   ai_health: AiHealth;
   tracker_state: TrackerState;
+  /** The stored license key's verdict (the key never sits in `settings`; it lives in the secret store). */
+  license: LicenseStatus;
+  /** Base URL of the Ubi proxy this build talks to (`UBIQX_API_BASE`). */
+  ubi_api_base: string;
   data_dir: string;
   platform: Platform;
   version: string;

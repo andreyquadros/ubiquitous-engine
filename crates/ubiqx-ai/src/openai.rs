@@ -115,13 +115,14 @@ pub struct OpenAiCompatConfig {
 }
 
 impl OpenAiCompatConfig {
-    /// Production base URL of an OpenAI-compatible vendor; `None` for Anthropic, which has
-    /// its own client.
+    /// Production base URL of an OpenAI-compatible vendor; `None` for Anthropic and for the
+    /// Ubi proxy, which speak the Messages API and are served by
+    /// [`crate::client::AnthropicClient`].
     pub fn default_base_url(provider: AiProvider) -> Option<&'static str> {
         match provider {
             AiProvider::OpenAi => Some(OPENAI_BASE_URL),
             AiProvider::Xai => Some(XAI_BASE_URL),
-            AiProvider::Anthropic => None,
+            AiProvider::Anthropic | AiProvider::Ubi => None,
         }
     }
 
@@ -656,6 +657,7 @@ impl OpenAiCompatClient {
             },
         )
         .await
+        .map(|reply| reply.body)
     }
 
     /// Sends one chat completion, retrying transient failures, and records its usage.

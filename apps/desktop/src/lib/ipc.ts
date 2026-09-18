@@ -22,6 +22,7 @@ import type {
   KnownDomain,
   IsoDate,
   IsoDateTime,
+  LicenseStatus,
   Nudge,
   PermissionKind,
   PrivateModeDuration,
@@ -37,6 +38,24 @@ import type {
 
 export const isTauri = (): boolean =>
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+/**
+ * Error code of a failed command. Tauri rejects with the serialised `IpcError { code, message }`; the mock throws
+ * an `Error` whose message starts with the code (`"license_required: …"`). Unknown shapes give `"other"`.
+ */
+export function ipcErrorCode(e: unknown): string {
+  if (e && typeof e === 'object' && 'code' in e && typeof (e as { code: unknown }).code === 'string') return (e as { code: string }).code;
+  const message = e instanceof Error ? e.message : typeof e === 'string' ? e : '';
+  const m = /^([a-z_]+):\s/.exec(message);
+  return m?.[1] ?? 'other';
+}
+
+/** Human message of a failed command, whatever its shape. */
+export function ipcErrorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === 'object' && 'message' in e && typeof (e as { message: unknown }).message === 'string') return (e as { message: string }).message;
+  return String(e);
+}
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (isTauri()) {
@@ -108,6 +127,15 @@ export const ipc = {
   deleteAllData: () => call<void>('delete_all_data'),
   exportData: () => call<string>('export_data'),
   openExternal: (url: string) => call<void>('open_external', { url }),
+
+  // License (ubiqX Anual / Mensal)
+  /** The stored license key's verdict, re-verified now. */
+  getLicenseStatus: () => call<LicenseStatus>('get_license_status'),
+  /**
+   * Stores the key (null removes it), verifies the signature and expiry locally and, for `monthly_managed`, asks the
+   * proxy for the month's usage (a proxy that cannot be reached keeps the local verdict with `managed_usage: null`).
+   */
+  setLicenseKey: (key: string | null) => call<LicenseStatus>('set_license_key', { key }),
 
   // Updates (rolling "continuous" GitHub release)
   getUpdateStatus: () => call<UpdateStatus>('get_update_status'),

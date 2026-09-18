@@ -32,6 +32,14 @@ pub fn backoff_delay(attempt: u32, base: Duration, cap: Duration, jitter: f64) -
     raw.mul_f64(factor).min(cap)
 }
 
+/// A successful reply: the body text and the response headers (the Ubi proxy reports the
+/// cost of a call in one of them).
+#[derive(Debug)]
+pub(crate) struct Reply {
+    pub body: String,
+    pub headers: reqwest::header::HeaderMap,
+}
+
 /// What to do with an HTTP outcome.
 #[derive(Debug)]
 pub(crate) enum Outcome {
@@ -83,7 +91,7 @@ pub(crate) async fn send_with_retry<F, C>(
     what: &'static str,
     build: F,
     classify: C,
-) -> CoreResult<String>
+) -> CoreResult<Reply>
 where
     F: Fn() -> reqwest::RequestBuilder,
     C: Fn(reqwest::StatusCode, Option<u64>, String) -> Outcome,
@@ -91,12 +99,13 @@ where
     let max_attempts = policy.max_attempts.max(1);
     let mut attempt: u32 = 1;
     loop {
-        let outcome = match build().send().await {
+        let (outcome, headers) = match build().send().await {
             Ok(resp) => {
                 let status = resp.status();
-                let retry_after = parse_retry_after(resp.headers().get("retry-after"));
+                let headers = resp.headers().clone();
+                let retry_after = parse_retry_after(headers.get("retry-after"));
                 let body = resp.text().await.unwrap_or_default();
-                classify(status, retry_after, body)
+                (classify(status, retry_after, body), headers)
             }
             Err(e) => {
                 let msg = if e.is_timeout() {
@@ -104,15 +113,18 @@ where
                 } else {
                     format!("network error: {e}")
                 };
-                Outcome::Retry {
-                    error: RetryableError::Transient(msg),
-                    wait: None,
-                }
+                (
+                    Outcome::Retry {
+                        error: RetryableError::Transient(msg),
+                        wait: None,
+                    },
+                    reqwest::header::HeaderMap::new(),
+                )
             }
         };
 
         match outcome {
-            Outcome::Ok(body) => return Ok(body),
+            Outcome::Ok(body) => return Ok(Reply { body, headers }),
             Outcome::Fatal(err) => {
                 warn!(vendor, what, attempt, error = %err, "request failed");
                 return Err(err);

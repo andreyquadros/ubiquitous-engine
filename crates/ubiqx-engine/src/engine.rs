@@ -28,6 +28,10 @@ pub struct LoopConfig {
     pub update_every: Duration,
     /// How often the focus guard looks at the foreground window.
     pub focus_every: Duration,
+    /// Wait before the first managed-usage fetch from the proxy (a valid `monthly_managed`
+    /// license only), then every `license_every`.
+    pub license_initial_delay: Duration,
+    pub license_every: Duration,
     /// Skip the sampler thread (the caller feeds samples itself).
     pub without_sampler: bool,
 }
@@ -42,6 +46,8 @@ impl Default for LoopConfig {
             update_initial_delay: Duration::from_secs(45),
             update_every: Duration::from_secs(6 * 3600),
             focus_every: Duration::from_secs(2),
+            license_initial_delay: Duration::from_secs(5),
+            license_every: Duration::from_secs(3600),
             without_sampler: false,
         }
     }
@@ -93,6 +99,12 @@ impl Engine {
             cfg.update_every,
         ));
         tokio::spawn(focus_loop(state.clone(), cancel.clone(), cfg.focus_every));
+        tokio::spawn(license_loop(
+            state.clone(),
+            cancel.clone(),
+            cfg.license_initial_delay,
+            cfg.license_every,
+        ));
 
         state.refresh_tracker_state();
         state.deps.sink.emit(EngineEvent::AiHealth {
@@ -216,6 +228,30 @@ async fn focus_loop(state: Arc<EngineState>, cancel: CancellationToken, every: D
                 if let Err(e) = tokio::task::spawn_blocking(move || focus::guard_once(&st)).await.unwrap_or_else(|e| Err(CoreError::Other(e.to_string()))) {
                     tracing::warn!(error = %e, "focus guard pass failed");
                 }
+            }
+        }
+    }
+}
+
+/// Managed-usage refreshes: the proxy is asked for the month's spend of a valid
+/// `monthly_managed` license shortly after start and then every `every` (a month rollover
+/// or a raised plan budget lifts a budget pause on the next classification pass). Other
+/// licenses make this a no-op; the stored key is re-verified each time, so an expiry that
+/// passed shows up without a restart.
+async fn license_loop(
+    state: Arc<EngineState>,
+    cancel: CancellationToken,
+    initial_delay: Duration,
+    every: Duration,
+) {
+    let mut delay = initial_delay;
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => break,
+            _ = tokio::time::sleep(delay) => {
+                delay = every;
+                crate::license::reevaluate(&state);
+                crate::license::refresh_managed_usage(&state).await;
             }
         }
     }

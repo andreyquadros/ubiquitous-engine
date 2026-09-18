@@ -17,6 +17,7 @@ import type {
   Intervention,
   IsoDate,
   KnownDomain,
+  LicenseStatus,
   Nudge,
   Settings,
   SettingsView,
@@ -42,6 +43,12 @@ interface AppState {
   applySettingsView: (v: SettingsView) => void;
   /** Switches the UI language now and persists it as Settings.language. */
   setLanguage: (locale: Locale) => Promise<SettingsView | null>;
+
+  // license (ubiqX Anual / Mensal). Mirrors settingsView.license, refreshed by get_license_status / set_license_key.
+  license: LicenseStatus | null;
+  loadLicense: () => Promise<LicenseStatus | null>;
+  /** Validates and stores the key (null removes it); the returned status is also the new `license`. */
+  setLicenseKey: (key: string | null) => Promise<LicenseStatus>;
 
   // categories
   categories: Category[];
@@ -135,13 +142,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     return v;
   },
   applySettingsView: (v) => {
-    set({ settingsView: v, trackerState: v.tracker_state, aiHealth: v.ai_health, settingsError: null });
+    set({ settingsView: v, trackerState: v.tracker_state, aiHealth: v.ai_health, license: v.license ?? null, settingsError: null });
     // Settings.language is the persisted source of truth, unless `?lang=` overrides it (dev / screenshots).
     if (!hasUrlLocaleOverride()) setLocale(normaliseLocale(v.settings.language));
   },
   setLanguage: async (locale) => {
     setLocale(locale);
     return get().saveSettings({ language: locale });
+  },
+
+  license: null,
+  loadLicense: async () => {
+    try {
+      const license = await ipc.getLicenseStatus();
+      set((s) => ({ license, settingsView: s.settingsView ? { ...s.settingsView, license } : s.settingsView }));
+      return license;
+    } catch {
+      // An old engine without the command: the UI keeps what get_settings said.
+      return null;
+    }
+  },
+  setLicenseKey: async (key) => {
+    const license = await ipc.setLicenseKey(key);
+    set((s) => ({ license, settingsView: s.settingsView ? { ...s.settingsView, license } : s.settingsView }));
+    // The provider, the key statuses and the AI health may all have moved with the license.
+    await get().loadSettings();
+    return license;
   },
 
   categories: [],

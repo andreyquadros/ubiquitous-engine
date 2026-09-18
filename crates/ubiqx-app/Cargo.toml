@@ -14,6 +14,7 @@ ubiqx-storage.workspace = true
 ubiqx-platform.workspace = true
 ubiqx-ai.workspace = true
 ubiqx-engine.workspace = true
+async-trait.workspace = true
 chrono.workspace = true
 directories.workspace = true
 parking_lot.workspace = true

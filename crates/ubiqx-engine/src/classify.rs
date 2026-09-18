@@ -98,8 +98,28 @@ fn clear_budget_pause(state: &EngineState) {
 /// Checks the monthly (local calendar) budget; updates health and returns whether remote
 /// calls may proceed. It is the single owner of budget pauses, so it must run before the
 /// health gate: a month rollover or a raised budget resumes the AI on the next call.
+///
+/// With the managed provider the plan's budget is the proxy's, not the user's setting: the
+/// usage last reported by the proxy decides (see [`crate::license::managed_budget_exhausted`]),
+/// and a `402` from the proxy refreshes it ([`run_once`]).
 pub fn budget_allows(state: &EngineState) -> CoreResult<bool> {
     let settings = state.settings();
+    if settings.ai_provider.is_managed() {
+        let usage = state.license.read().managed_usage.clone();
+        return Ok(match usage {
+            Some(u) if crate::license::managed_budget_exhausted(&u, state.now()) => {
+                state.budget_paused.store(true, Ordering::SeqCst);
+                state.set_ai_health(AiHealth::Paused {
+                    reason: crate::license::managed_budget_reached_text(&u, settings.ui_language()),
+                });
+                false
+            }
+            _ => {
+                clear_budget_pause(state);
+                true
+            }
+        });
+    }
     if settings.ai_monthly_budget_usd <= 0.0 {
         clear_budget_pause(state);
         return Ok(true);
@@ -184,6 +204,28 @@ impl FailureText {
             },
         }
     }
+
+    /// The same texts when the managed provider answers: its credential is the license.
+    fn for_managed(lang: UiLanguage) -> Self {
+        match lang {
+            UiLanguage::PtBr => Self {
+                key_rejected_reason: "Licença recusada pela IA do Ubi.",
+                key_rejected_body:
+                    "A IA do Ubi recusou a licença. Verifique em Configurações → Licença.",
+                account_rejected_body:
+                    "A IA do Ubi recusou a chamada. Verifique em Configurações → Licença.",
+                ..Self::for_language(lang)
+            },
+            UiLanguage::En => Self {
+                key_rejected_reason: "License rejected by Ubi's AI.",
+                key_rejected_body:
+                    "Ubi's AI rejected the license. Check it under Settings → License.",
+                account_rejected_body:
+                    "Ubi's AI rejected the call. Check it under Settings → License.",
+                ..Self::for_language(lang)
+            },
+        }
+    }
 }
 
 /// Maps a remote failure onto health state and per-block backoff.
@@ -194,7 +236,15 @@ impl FailureText {
 /// pushes blocks into the review queue.
 fn handle_remote_failure(state: &EngineState, blocks: &[ActivityBlock], err: &CoreError) {
     let now = state.now();
-    let text = FailureText::for_language(state.settings.read().ui_language());
+    let (lang, managed) = {
+        let s = state.settings.read();
+        (s.ui_language(), s.ai_provider.is_managed())
+    };
+    let text = if managed {
+        FailureText::for_managed(lang)
+    } else {
+        FailureText::for_language(lang)
+    };
     match err {
         CoreError::AiNotConfigured => state.set_ai_health(AiHealth::NotConfigured),
         CoreError::RateLimited { retry_after_secs } => state.set_ai_health(AiHealth::Degraded {
@@ -373,6 +423,13 @@ pub async fn run_once(state: &Arc<EngineState>, force: bool) -> CoreResult<Class
             }
             Err(e) => {
                 tracing::warn!(error = %e, "remote classification failed");
+                // The proxy refused for the plan's sake (budget spent, revoked key…): learn
+                // the month's usage now, so the budget check owns the pause and lifts it
+                // when the month rolls over instead of retrying against a closed door.
+                if settings.ai_provider.is_managed() && matches!(e, CoreError::AiRejected(_)) {
+                    crate::license::refresh_managed_usage(state).await;
+                    state.budget_paused.store(true, Ordering::SeqCst);
+                }
                 handle_remote_failure(state, chunk, &e);
                 if matches!(e, CoreError::AiRefused) {
                     // Only this batch is affected; the remaining chunks are still worth sending.

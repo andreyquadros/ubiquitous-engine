@@ -30,6 +30,7 @@ impl From<CoreError> for IpcError {
             CoreError::AiRejected(_) => "ai_rejected",
             CoreError::AiRefused => "ai_refused",
             CoreError::RateLimited { .. } => "rate_limited",
+            CoreError::LicenseRequired => "license_required",
             CoreError::Invalid(_) => "invalid",
             CoreError::NotFound(_) => "not_found",
             CoreError::Other(_) => "other",
@@ -551,6 +552,10 @@ pub struct SettingsView {
     pub permissions: PermissionStatus,
     pub ai_health: AiHealth,
     pub tracker_state: TrackerState,
+    /// The stored license key's verdict (the key itself never leaves the secret store).
+    pub license: LicenseStatus,
+    /// Base URL of the Ubi proxy this build talks to (`UBIQX_API_BASE`).
+    pub ubi_api_base: String,
     pub data_dir: String,
     pub platform: String,
     pub version: String,
@@ -558,6 +563,8 @@ pub struct SettingsView {
 
 fn settings_view(app: &AppHandle, e: &EngineHandle) -> CoreResult<SettingsView> {
     let settings = e.settings();
+    let license = e.license_status();
+    let ubi_api_base = e.state().deps.license.api_base.clone();
     let api_keys: Vec<ApiKeyStatus> = e
         .api_key_status()?
         .into_iter()
@@ -580,6 +587,8 @@ fn settings_view(app: &AppHandle, e: &EngineHandle) -> CoreResult<SettingsView> 
         permissions: e.permissions(),
         ai_health: e.ai_health(),
         tracker_state: e.tracker_state(),
+        license,
+        ubi_api_base,
         data_dir: e.state().deps.data_dir.to_string_lossy().to_string(),
         // `macos` | `windows` | `linux` (the frontend keys its OS-specific copy on it).
         platform: std::env::consts::OS.into(),
@@ -634,7 +643,8 @@ pub struct ApiKeyResult {
     pub message: String,
 }
 
-/// Validates and stores the API key of `provider` (or deletes it with `key: null`).
+/// Validates and stores the API key of `provider` (or deletes it with `key: null`). The
+/// managed provider has no API key (`invalid`): use `set_license_key`.
 #[tauri::command]
 pub async fn set_api_key(
     state: State<'_, AppState>,
@@ -642,6 +652,12 @@ pub async fn set_api_key(
     key: Option<String>,
 ) -> IpcResult<ApiKeyResult> {
     let e = engine(&state);
+    if provider.is_managed() {
+        return Err(CoreError::Invalid(
+            "the managed provider uses the license key (set_license_key)".into(),
+        )
+        .into());
+    }
     let t = Text::for_language(language(&e));
     let key = key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty());
     match key {
@@ -679,7 +695,31 @@ pub async fn set_api_key(
     }
 }
 
-/// Chat-capable model ids the stored key of `provider` can use (sorted).
+/// The stored license key's verdict, re-verified now (and the managed plan's usage as last
+/// reported by the proxy).
+#[tauri::command]
+pub async fn get_license_status(state: State<'_, AppState>) -> IpcResult<LicenseStatus> {
+    blocking(engine(&state), |e| Ok(e.license_status())).await
+}
+
+/// Stores the license key (or removes it with `key: null`), verifies it offline and, for a
+/// valid `monthly_managed` key, fetches the month's usage from the proxy (a proxy that
+/// cannot be reached keeps the local verdict, with `managed_usage: null`). The returned
+/// status says `valid` / `expired` / `invalid` / `unlicensed`; an invalid key is kept and
+/// reported so the section shows what is stored.
+#[tauri::command]
+pub async fn set_license_key(
+    state: State<'_, AppState>,
+    key: Option<String>,
+) -> IpcResult<LicenseStatus> {
+    engine(&state)
+        .set_license_key(key.as_deref())
+        .await
+        .map_err(IpcError::from)
+}
+
+/// Chat-capable model ids the stored key of `provider` can use (sorted). For the managed
+/// provider: its two fixed aliases.
 #[tauri::command]
 pub async fn list_models(
     state: State<'_, AppState>,
@@ -925,6 +965,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         update_settings,
         set_api_key,
         list_models,
+        get_license_status,
+        set_license_key,
         set_tracking,
         set_private_mode,
         request_permission,

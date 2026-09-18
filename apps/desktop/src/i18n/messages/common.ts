@@ -151,6 +151,17 @@ const messages = {
     'matcher.domain': 'domínio',
     'matcher.title_contains': 'título contém',
     'matcher.regex': 'regex',
+
+    // license reminder (components/layout/LicenseBanner.tsx) and the hard-enforcement dialog
+    'license.banner.unlicensed': 'O ubiqX está sem licença. Planos: anual R$ 197 (ou 10x de R$ 25) com a sua IA, ou R$ 49/mês com a IA do Ubi.',
+    'license.banner.expired': 'A licença do ubiqX expirou. Planos: anual R$ 197 (ou 10x de R$ 25) com a sua IA, ou R$ 49/mês com a IA do Ubi.',
+    'license.banner.blocked': 'A IA fica desligada até uma licença válida ser informada. Rastreamento, timeline e categorização manual continuam funcionando.',
+    'license.see_plans': 'Ver planos',
+    'license.have_key': 'Já tenho uma chave',
+    'license.dismiss': 'Dispensar por 7 dias',
+    'license.required_title': 'Licença necessária',
+    'license.required_body': 'Esta ação usa a IA e, nesta versão, precisa de uma licença válida. Planos: anual R$ 197 (ou 10x de R$ 25) com a sua IA, ou R$ 49/mês com a IA do Ubi.',
+    'license.toast.open_failed': 'Não foi possível abrir o site',
   },
   en: {
     // actions
@@ -301,6 +312,17 @@ const messages = {
     'matcher.domain': 'domain',
     'matcher.title_contains': 'title contains',
     'matcher.regex': 'regex',
+
+    // license reminder (components/layout/LicenseBanner.tsx) and the hard-enforcement dialog
+    'license.banner.unlicensed': 'ubiqX has no license. Plans: yearly R$ 197 (or 10x R$ 25) with your AI, or R$ 49/month with the Ubi AI.',
+    'license.banner.expired': 'The ubiqX license has expired. Plans: yearly R$ 197 (or 10x R$ 25) with your AI, or R$ 49/month with the Ubi AI.',
+    'license.banner.blocked': 'The AI stays off until a valid license is entered. Tracking, the timeline and manual categorisation keep working.',
+    'license.see_plans': 'See plans',
+    'license.have_key': 'I already have a key',
+    'license.dismiss': 'Dismiss for 7 days',
+    'license.required_title': 'License required',
+    'license.required_body': 'This action uses the AI and, in this build, needs a valid license. Plans: yearly R$ 197 (or 10x R$ 25) with your AI, or R$ 49/month with the Ubi AI.',
+    'license.toast.open_failed': "Couldn't open the site",
   },
 } satisfies NamespaceMessages;
 

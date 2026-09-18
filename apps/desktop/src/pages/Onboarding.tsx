@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { motion, useReducedMotion } from 'framer-motion';
-import { ArrowLeft, BrainCircuit, Check, Eye, Info, KeyRound, Lock, Plus, Rocket, Shield, ShieldCheck, Tags, Timer, Trash2 } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, BrainCircuit, Check, Eye, Info, KeyRound, Lock, Plus, Rocket, Shield, ShieldCheck, Sparkles, Tags, Timer, Trash2 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BrandMark } from '../components/layout/Sidebar';
@@ -13,12 +13,12 @@ import { Toggle } from '../components/ui/Toggle';
 import { useLocale, useT, type Locale } from '../i18n';
 import { COLOR_CHOICES, iconFor, newCategoryId } from '../lib/categories';
 import { hhmmToInput, inputToHhmm } from '../lib/format';
-import { ipc } from '../lib/ipc';
+import { ipc, ipcErrorCode, ipcErrorMessage } from '../lib/ipc';
 import { useAppStore } from '../lib/store';
 import { Toaster, useToast } from '../lib/toast';
-import { keyStatus, providerInfo, providerPitch } from '../lib/providers';
-import type { AiProvider, Category, Mood, Platform, Settings, SettingsView, VisionPolicy } from '../lib/types';
-import { ApiKeyForm, PermissionRows, providerSwitchPatch } from './Settings';
+import { MANAGED_PROVIDER, isManagedProvider, keyStatus, licenseAllowsManaged, licenseBlocksAi, providerInfo, providerLabel, providerPitch } from '../lib/providers';
+import type { AiProvider, Category, LicenseStatus, Mood, Platform, Settings, SettingsView, VisionPolicy } from '../lib/types';
+import { ApiKeyForm, LicenseKeyForm, PermissionRows, fmtLicenseDate, planLabel, providerSwitchPatch } from './Settings';
 
 type Translate = ReturnType<typeof useT>;
 
@@ -134,9 +134,15 @@ export function Onboarding() {
       const v = await saveSettings(p);
       if (v) patch({ ai_provider: v.settings.ai_provider, models: v.settings.models });
     } catch (e) {
-      toast.error(t('onboarding.provider_switch_failed'), e instanceof Error ? e.message : String(e));
+      // The managed provider without a valid monthly license: the engine refuses and keeps the previous provider.
+      if (ipcErrorCode(e) === 'license_required') {
+        patch({ ai_provider: draft.ai_provider, models: draft.models });
+        toast.error(t('settings.toast.license_required'), ipcErrorMessage(e));
+      } else toast.error(t('onboarding.provider_switch_failed'), ipcErrorMessage(e));
     }
   };
+
+  const license = useAppStore((s) => s.license);
 
   const mood: Mood = useMemo(() => (step === 0 ? 'calm' : step === STEPS.length - 1 ? 'excited' : 'focused'), [step, STEPS.length]);
 
@@ -288,8 +294,10 @@ export function Onboarding() {
           </Button>
           <div className="flex items-center gap-2">
             {current.id === 'ai' && (
-              <Button variant="ghost" onClick={() => setStep((s) => s + 1)}>
-                {t('onboarding.skip_for_now')}
+              // Soft enforcement: no key needed to go on. Under hard enforcement the AI stays off until a license is entered,
+              // and the step says so instead of offering the shortcut.
+              <Button variant="ghost" onClick={() => setStep((s) => s + 1)} disabled={licenseBlocksAi(license)}>
+                {license && license.state !== 'valid' ? t('onboarding.ai.continue_unlicensed') : t('onboarding.skip_for_now')}
               </Button>
             )}
             {current.id === 'finish' ? (
@@ -346,78 +354,182 @@ function IntroStep({ platform }: { platform: Platform }) {
   );
 }
 
+type AiChoice = 'managed' | 'own';
+
+/** One of the two decision cards: how the AI is paid for. */
+function ChoiceCard({ active, title, price, text, Icon, onPick, testId, children }: { active: boolean; title: string; price: string; text: string; Icon: typeof Shield; onPick: () => void; testId: string; children?: ReactNode }) {
+  return (
+    <div className={clsx('flex flex-col rounded-card border transition-[border-color,background-color,box-shadow] duration-150', active ? 'glow-volt border-volt bg-volt-soft' : 'border-line bg-panel hover:bg-panel-2')} data-testid={testId}>
+      <button type="button" role="radio" aria-checked={active} aria-label={title} onClick={onPick} className="flex flex-col items-start gap-2 p-4 text-left">
+        <span className="flex w-full items-start justify-between gap-2">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className={clsx('flex size-8 shrink-0 items-center justify-center rounded-control', active ? 'bg-volt text-on-volt' : 'bg-panel-2 text-ink-3')} aria-hidden>
+              <Icon className="size-4" strokeWidth={1.75} />
+            </span>
+            <span className="display block text-[18px] leading-6">{title}</span>
+          </span>
+          <span className={clsx('flex size-6 shrink-0 items-center justify-center rounded-full', active ? 'bg-volt text-on-volt' : 'border border-line-2 text-ink-4')} aria-hidden>
+            {active && <Check className="size-3.5" strokeWidth={2.25} />}
+          </span>
+        </span>
+        <span className="display num text-[18px] leading-6 whitespace-nowrap text-ink">{price}</span>
+        <span className="text-sm leading-5 text-ink-2">{text}</span>
+      </button>
+      {children && <div className="border-t border-line p-4">{children}</div>}
+    </div>
+  );
+}
+
 function AiStep({ view, draft, onSelect }: { view: SettingsView; draft: Settings; onSelect: (p: AiProvider) => void }) {
   const t = useT();
-  const selected = draft.ai_provider;
+  const license = useAppStore((s) => s.license) ?? view.license;
+  const managedAllowed = licenseAllowsManaged(license);
+  const managedSelected = isManagedProvider(draft.ai_provider);
+  const [choice, setChoice] = useState<AiChoice>(managedSelected ? 'managed' : 'own');
+  /** The own-key provider to come back to after the managed card (the last one picked, anthropic by default). */
+  const [ownProvider, setOwnProvider] = useState<AiProvider>(managedSelected ? 'anthropic' : draft.ai_provider);
+  useEffect(() => {
+    if (managedSelected) setChoice('managed');
+    else setOwnProvider(draft.ai_provider);
+  }, [managedSelected, draft.ai_provider]);
+
+  const ownProviders = view.providers.filter((p) => !isManagedProvider(p.id));
+  const selected = managedSelected ? ownProvider : draft.ai_provider;
   const info = providerInfo(view, selected);
+
+  const pickManaged = () => {
+    setChoice('managed');
+    if (managedAllowed && !managedSelected) onSelect(MANAGED_PROVIDER);
+  };
+  const pickOwn = () => {
+    setChoice('own');
+    if (managedSelected) onSelect(ownProvider);
+  };
+  /** A freshly validated monthly license switches to the managed provider right away. */
+  const onLicenseSaved = (status: LicenseStatus) => {
+    if (choice === 'managed' && licenseAllowsManaged(status) && !managedSelected) onSelect(MANAGED_PROVIDER);
+  };
+
+  const expires = license.expires_at ? fmtLicenseDate(license.expires_at) : '';
+  const ubi = providerInfo(view, MANAGED_PROVIDER);
+
   return (
     <>
-      <StepTitle title={t('onboarding.ai.title')}>{t(platformKey('onboarding.ai.lead', view.platform))}</StepTitle>
-      <div role="radiogroup" aria-label={t('onboarding.ai.provider_group')} className="grid grid-cols-1 gap-3 min-[900px]:grid-cols-3" data-testid="provider-cards">
-        {view.providers.map((p) => {
-          const pitch = providerPitch(p.id, t);
-          const status = keyStatus(view, p.id);
-          const active = selected === p.id;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              aria-label={p.label}
-              onClick={() => onSelect(p.id)}
-              className={clsx(
-                'flex h-full flex-col items-start gap-2 rounded-card border p-4 text-left transition-[border-color,background-color,box-shadow] duration-150',
-                active ? 'glow-volt border-volt bg-volt-soft' : 'border-line bg-panel hover:bg-panel-2',
-              )}
-            >
-              <span className="flex w-full items-start justify-between gap-2">
-                <span className="min-w-0">
-                  <span className="display block text-[20px] leading-7">{pitch.short}</span>
-                  <span className="block text-xs text-ink-3">{p.label}</span>
-                </span>
-                <span className={clsx('flex size-6 shrink-0 items-center justify-center rounded-full', active ? 'bg-volt text-on-volt' : status.configured ? 'bg-signal/15 text-signal' : 'border border-line-2 text-ink-4')} aria-hidden>
-                  {active ? <Check className="size-3.5" strokeWidth={2.25} /> : status.configured ? <KeyRound className="size-3" strokeWidth={1.75} /> : null}
-                </span>
-              </span>
-              <span className="text-sm leading-5 text-ink-2">{pitch.pitch}</span>
-              <span className="text-[11px] leading-4 text-ink-3">
-                {richText(t('onboarding.ai.recommended'), {
-                  classify: <span className="font-mono text-ink-2">{p.default_models.classify}</span>,
-                  report: <span className="font-mono text-ink-2">{p.default_models.report}</span>,
-                })}
-              </span>
-              <span className="mt-auto flex w-full flex-col border-t border-line pt-2.5">
-                <span className="display num text-[18px] leading-6 whitespace-nowrap text-ink">{pitch.cost}</span>
-                <span className="text-[11px] text-ink-3">{t('onboarding.ai.cost_basis')}</span>
-              </span>
-              {status.configured && (
-                <span className="flex items-center gap-1 text-[11px] text-signal">
-                  <KeyRound className="size-3" strokeWidth={1.75} aria-hidden /> {t('onboarding.ai.key_configured', { hint: status.hint ?? '' }).trim()}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-      {view.providers
-        .map((p) => ({ id: p.id, pitch: providerPitch(p.id, t) }))
-        .filter(({ pitch }) => pitch.note)
-        .map(({ id, pitch }) => (
-          <p key={id} className="mt-3 flex items-start gap-2 text-xs leading-5 text-ink-3">
-            <Info className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
-            <span>
-              <strong className="font-medium text-ink-2">{pitch.short}:</strong> {pitch.note}
-            </span>
-          </p>
-        ))}
-      <div className="panel mt-5 p-5">
-        <ApiKeyForm view={view} provider={selected} compact />
-        <p className="mt-3 text-xs leading-5 text-ink-3">
-          {info ? `${t('onboarding.ai.create_key_at', { host: info.console_url.replace(/^https?:\/\//, '') })} ` : ''}
-          {t(platformKey('onboarding.ai.key_storage', view.platform))}
+      <StepTitle title={t('onboarding.ai.title')}>{t('onboarding.ai.lead_plans')}</StepTitle>
+      {licenseBlocksAi(license) && (
+        <p className="mb-4 flex items-start gap-2 rounded-control border border-amber/40 bg-amber/10 p-3 text-xs leading-5 text-ink-2" role="status">
+          <Lock className="mt-0.5 size-3.5 shrink-0 text-amber" strokeWidth={1.75} aria-hidden /> {t('onboarding.ai.license_blocked')}
         </p>
+      )}
+      <div role="radiogroup" aria-label={t('onboarding.ai.choice_group')} className="grid grid-cols-1 gap-3 min-[900px]:grid-cols-2" data-testid="plan-cards">
+        <ChoiceCard active={choice === 'managed'} title={t('onboarding.ai.managed.title')} price={t('onboarding.ai.managed.price')} text={t('onboarding.ai.managed.text')} Icon={Sparkles} onPick={pickManaged} testId="plan-card-managed">
+          {choice === 'managed' && (
+            <div className="flex flex-col gap-3" data-testid="managed-panel">
+              {managedAllowed ? (
+                <>
+                  <p className="flex items-start gap-1.5 text-xs leading-5 text-signal" role="status">
+                    <BadgeCheck className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} aria-hidden /> {t('onboarding.ai.managed_active', { date: expires })}
+                  </p>
+                  {ubi && (
+                    <p className="text-[11px] leading-4 text-ink-3">
+                      {richText(t('onboarding.ai.managed_models'), {
+                        classify: <span className="font-mono text-ink-2">{ubi.default_models.classify}</span>,
+                        report: <span className="font-mono text-ink-2">{ubi.default_models.report}</span>,
+                      })}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-xs leading-5 text-ink-2">{license.state === 'valid' && license.plan === 'annual_own_key' ? t('onboarding.ai.managed_wrong_plan') : t('onboarding.ai.managed_needs_license')}</p>
+                  <LicenseKeyForm license={license} compact hint={t('onboarding.ai.license_hint_managed')} onSaved={onLicenseSaved} />
+                </>
+              )}
+            </div>
+          )}
+        </ChoiceCard>
+        <ChoiceCard active={choice === 'own'} title={t('onboarding.ai.own.title')} price={t('onboarding.ai.own.price')} text={t('onboarding.ai.own.text')} Icon={KeyRound} onPick={pickOwn} testId="plan-card-own" />
       </div>
+
+      {choice === 'own' && (
+        <div className="mt-5" data-testid="own-panel">
+          <div role="radiogroup" aria-label={t('onboarding.ai.provider_group')} className="grid grid-cols-1 gap-3 min-[900px]:grid-cols-3" data-testid="provider-cards">
+            {ownProviders.map((p) => {
+              const pitch = providerPitch(p.id, t);
+              const status = keyStatus(view, p.id);
+              const active = selected === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  aria-label={p.label}
+                  onClick={() => onSelect(p.id)}
+                  className={clsx(
+                    'flex h-full flex-col items-start gap-2 rounded-card border p-4 text-left transition-[border-color,background-color,box-shadow] duration-150',
+                    active ? 'border-volt bg-volt-soft' : 'border-line bg-panel hover:bg-panel-2',
+                  )}
+                >
+                  <span className="flex w-full items-start justify-between gap-2">
+                    <span className="min-w-0">
+                      <span className="display block text-[20px] leading-7">{pitch.short}</span>
+                      <span className="block text-xs text-ink-3">{p.label}</span>
+                    </span>
+                    <span className={clsx('flex size-6 shrink-0 items-center justify-center rounded-full', active ? 'bg-volt text-on-volt' : status.configured ? 'bg-signal/15 text-signal' : 'border border-line-2 text-ink-4')} aria-hidden>
+                      {active ? <Check className="size-3.5" strokeWidth={2.25} /> : status.configured ? <KeyRound className="size-3" strokeWidth={1.75} /> : null}
+                    </span>
+                  </span>
+                  <span className="text-sm leading-5 text-ink-2">{pitch.pitch}</span>
+                  <span className="text-[11px] leading-4 text-ink-3">
+                    {richText(t('onboarding.ai.recommended'), {
+                      classify: <span className="font-mono text-ink-2">{p.default_models.classify}</span>,
+                      report: <span className="font-mono text-ink-2">{p.default_models.report}</span>,
+                    })}
+                  </span>
+                  <span className="mt-auto flex w-full flex-col border-t border-line pt-2.5">
+                    <span className="display num text-[18px] leading-6 whitespace-nowrap text-ink">{pitch.cost}</span>
+                    <span className="text-[11px] text-ink-3">{t('onboarding.ai.cost_basis')}</span>
+                  </span>
+                  {status.configured && (
+                    <span className="flex items-center gap-1 text-[11px] text-signal">
+                      <KeyRound className="size-3" strokeWidth={1.75} aria-hidden /> {t('onboarding.ai.key_configured', { hint: status.hint ?? '' }).trim()}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {ownProviders
+            .map((p) => ({ id: p.id, pitch: providerPitch(p.id, t) }))
+            .filter(({ pitch }) => pitch.note)
+            .map(({ id, pitch }) => (
+              <p key={id} className="mt-3 flex items-start gap-2 text-xs leading-5 text-ink-3">
+                <Info className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+                <span>
+                  <strong className="font-medium text-ink-2">{pitch.short}:</strong> {pitch.note}
+                </span>
+              </p>
+            ))}
+          <div className="panel mt-5 p-5">
+            <ApiKeyForm view={view} provider={selected} compact />
+            <p className="mt-3 text-xs leading-5 text-ink-3">
+              {info ? `${t('onboarding.ai.create_key_at', { host: info.console_url.replace(/^https?:\/\//, '') })} ` : ''}
+              {t(platformKey('onboarding.ai.key_storage', view.platform))}
+            </p>
+          </div>
+          <div className="panel mt-3 p-5" data-testid="annual-license-panel">
+            {license.state === 'valid' ? (
+              <p className="flex items-start gap-1.5 text-xs leading-5 text-signal" role="status">
+                <BadgeCheck className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+                {license.plan ? `${planLabel(t, license.plan)}. ` : ''}
+                {t('onboarding.ai.license_valid', { date: expires })}
+              </p>
+            ) : null}
+            {license.state !== 'valid' || license.plan !== 'annual_own_key' ? <LicenseKeyForm license={license} optional compact hint={t('onboarding.ai.license_hint_own')} /> : null}
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -567,6 +679,8 @@ function FinishStep({ draft, patch, view }: { draft: Settings; patch: (p: Partia
   const t = useT();
   const info = providerInfo(view, draft.ai_provider);
   const key = keyStatus(view, draft.ai_provider);
+  const managed = isManagedProvider(draft.ai_provider);
+  const license = useAppStore((s) => s.license) ?? view.license;
   const places = [
     { title: t('onboarding.finish.today_title'), text: t('onboarding.finish.today_text') },
     { title: t('onboarding.finish.review_title'), text: t('onboarding.finish.review_text') },
@@ -578,14 +692,17 @@ function FinishStep({ draft, patch, view }: { draft: Settings; patch: (p: Partia
       <div className="panel-raised mb-4 flex items-start gap-3 px-4 py-3 text-sm" data-testid="finish-ai-summary">
         <BrainCircuit className="mt-0.5 size-4 shrink-0 text-volt" strokeWidth={1.75} aria-hidden />
         <div className="min-w-0 leading-6">
-          <span className="font-medium">{t('onboarding.finish.ai_label', { provider: info?.label ?? draft.ai_provider })}</span>
+          <span className="font-medium">{t('onboarding.finish.ai_label', { provider: info ? providerLabel(info, t) : draft.ai_provider })}</span>
           <span className="block text-xs leading-5 text-ink-3">
-            {richText(t('onboarding.finish.models'), {
-              classify: <span className="font-mono text-ink-2">{draft.models.classify}</span>,
-              report: <span className="font-mono text-ink-2">{draft.models.report}</span>,
-            })}
+            {managed
+              ? t('onboarding.finish.managed')
+              : richText(t('onboarding.finish.models'), {
+                  classify: <span className="font-mono text-ink-2">{draft.models.classify}</span>,
+                  report: <span className="font-mono text-ink-2">{draft.models.report}</span>,
+                })}
           </span>
-          {key.configured ? (
+          {license.state === 'valid' && license.plan && <span className="block text-xs leading-5 text-ink-3">{t('onboarding.finish.plan', { plan: planLabel(t, license.plan) })}</span>}
+          {managed ? null : key.configured ? (
             <span className="mt-1 flex items-center gap-1.5 text-xs text-signal">
               <KeyRound className="size-3" strokeWidth={1.75} aria-hidden />
               <span>{t('onboarding.finish.key_configured', { hint: key.hint ?? '' }).trim()}</span>

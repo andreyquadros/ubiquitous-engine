@@ -128,6 +128,10 @@ struct HarnessOptions {
     onboarding_done: bool,
     /// Keys stored before the engine starts, per provider.
     keys: Vec<(AiProvider, &'static str)>,
+    /// License key stored before the engine starts.
+    license_key: Option<String>,
+    /// Public key and proxy double the engine verifies licenses with.
+    license: LicenseDeps,
 }
 
 impl Default for HarnessOptions {
@@ -137,7 +141,86 @@ impl Default for HarnessOptions {
             seed: |_| {},
             onboarding_done: true,
             keys: vec![],
+            license_key: None,
+            license: LicenseDeps::default(),
         }
+    }
+}
+
+// --- License test doubles ----------------------------------------------------------------
+
+/// The signing key the tests issue licenses with; its public half goes into `LicenseDeps`.
+fn test_signing_key() -> ed25519_dalek::SigningKey {
+    ed25519_dalek::SigningKey::from_bytes(&[42u8; 32])
+}
+
+fn test_pubkey_hex() -> String {
+    test_signing_key()
+        .verifying_key()
+        .as_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// A license key signed by the test pair, valid for `days` days from the fixed clock
+/// (negative: already expired).
+fn issue_license(plan: Plan, days: i64) -> String {
+    use ed25519_dalek::Signer;
+    let now = fixed_now().timestamp();
+    let claims = ubiqx_core::license::LicenseClaims {
+        v: ubiqx_core::license::CLAIMS_VERSION,
+        plan,
+        sub: "sub_test".into(),
+        email_hash: ubiqx_core::license::email_hash("someone@example.com"),
+        issued_at: now - 60,
+        expires_at: now + days * 86_400,
+        seats: 1,
+    };
+    let payload = claims.canonical_json();
+    let signature = test_signing_key().sign(&payload).to_bytes();
+    ubiqx_core::license::encode_key(&payload, &signature)
+}
+
+/// A proxy double: answers the configured usage (or fails), counting the calls.
+struct FakeLicenseServer {
+    usage: Mutex<Option<ManagedUsage>>,
+    calls: Mutex<Vec<String>>,
+}
+
+impl FakeLicenseServer {
+    fn new(usage: Option<ManagedUsage>) -> Arc<Self> {
+        Arc::new(Self {
+            usage: Mutex::new(usage),
+            calls: Mutex::new(vec![]),
+        })
+    }
+}
+
+#[async_trait]
+impl LicenseServer for FakeLicenseServer {
+    async fn managed_usage(&self, key: &str) -> CoreResult<ManagedUsage> {
+        self.calls.lock().push(key.to_string());
+        self.usage
+            .lock()
+            .clone()
+            .ok_or_else(|| CoreError::Ai("proxy offline".into()))
+    }
+}
+
+fn usage(spent: f64) -> ManagedUsage {
+    ManagedUsage {
+        month: fixed_now().format("%Y-%m").to_string(),
+        spent_usd: spent,
+        budget_usd: 6.0,
+    }
+}
+
+fn license_deps(server: Arc<FakeLicenseServer>) -> LicenseDeps {
+    LicenseDeps {
+        pubkey_hex: test_pubkey_hex(),
+        api_base: "http://ubi.test".into(),
+        server,
     }
 }
 
@@ -156,6 +239,9 @@ async fn harness_with(opts: HarnessOptions) -> Harness {
     let secrets: Arc<dyn SecretStore> = Arc::new(MemorySecrets::default());
     for (provider, key) in &opts.keys {
         secrets.set(provider.secret_key(), key).unwrap();
+    }
+    if let Some(key) = &opts.license_key {
+        secrets.set(LICENSE_SECRET_KEY, key).unwrap();
     }
     let sink = Arc::new(CollectSink(Mutex::new(vec![])));
     let clock = FixedClock::new(fixed_now());
@@ -180,6 +266,7 @@ async fn harness_with(opts: HarnessOptions) -> Harness {
         data_dir: tmp.path().to_path_buf(),
         build: ubiqx_core::BuildInfo::dev(),
         update_feed_url: String::new(),
+        license: opts.license,
     };
     let cfg = LoopConfig {
         classify_every: Duration::from_millis(200),
@@ -189,6 +276,8 @@ async fn harness_with(opts: HarnessOptions) -> Harness {
         update_initial_delay: Duration::from_secs(3600),
         update_every: Duration::from_secs(3600),
         focus_every: Duration::from_secs(3600),
+        license_initial_delay: Duration::from_secs(3600),
+        license_every: Duration::from_secs(3600),
         without_sampler: true,
     };
     let (handle, tx) = Engine::start_with(deps, cfg).unwrap();
@@ -1235,8 +1324,14 @@ async fn key_of_a_non_selected_provider_never_changes_health() {
             (AiProvider::Anthropic, None),
             (AiProvider::OpenAi, None),
             (AiProvider::Xai, Some("…1234".into())),
+            (AiProvider::Ubi, None),
         ]
     );
+    // The managed provider has no API key: its credential is the license.
+    assert!(matches!(
+        h.handle.set_api_key(AiProvider::Ubi, Some("UBIQX-X-Y")),
+        Err(CoreError::Invalid(_))
+    ));
 
     // The selected provider's key arms and disarms the AI path.
     h.handle
@@ -1279,5 +1374,242 @@ async fn models_are_reconciled_when_the_provider_changes() {
     let s = h.handle.settings();
     assert_eq!(s.models.classify, "gpt-5-mini");
     assert_eq!(s.models.report, "my-custom-model");
+    h.handle.shutdown();
+}
+
+// --- License ------------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn license_key_round_trip_and_managed_provider_gate() {
+    let server = FakeLicenseServer::new(Some(usage(1.5)));
+    let h = harness_with(HarnessOptions {
+        ai: keyed_fake_ai(),
+        license: license_deps(server.clone()),
+        ..Default::default()
+    })
+    .await;
+    let status = h.handle.license_status();
+    assert_eq!(status.state, LicenseState::Unlicensed);
+    assert_eq!(status.enforcement, LICENSE_ENFORCEMENT);
+    assert!(status.plan.is_none() && status.key_hint.is_none());
+
+    // The managed provider needs a valid monthly_managed license: nothing is saved otherwise.
+    let mut s = h.handle.settings();
+    s.ai_provider = AiProvider::Ubi;
+    assert!(matches!(
+        h.handle.update_settings(s),
+        Err(CoreError::LicenseRequired)
+    ));
+    assert_eq!(h.handle.settings().ai_provider, AiProvider::Anthropic);
+
+    // An annual key: valid, but not enough for the managed provider.
+    let annual = issue_license(Plan::AnnualOwnKey, 300);
+    let status = h.handle.set_license_key(Some(&annual)).await.unwrap();
+    assert_eq!(status.state, LicenseState::Valid);
+    assert_eq!(status.plan, Some(Plan::AnnualOwnKey));
+    assert_eq!(status.days_left, Some(300));
+    assert_eq!(
+        status.key_hint.as_deref(),
+        Some(&annual[annual.len() - 4..])
+    );
+    assert!(status.expires_at.is_some());
+    assert!(status.managed_usage.is_none());
+    assert!(
+        server.calls.lock().is_empty(),
+        "annual keys never ask the proxy"
+    );
+    assert_eq!(
+        SecretStore::get(
+            h.handle.state().deps.platform.secrets.as_ref(),
+            LICENSE_SECRET_KEY
+        )
+        .unwrap()
+        .as_deref(),
+        Some(annual.as_str())
+    );
+    let mut s = h.handle.settings();
+    s.ai_provider = AiProvider::Ubi;
+    assert!(matches!(
+        h.handle.update_settings(s),
+        Err(CoreError::LicenseRequired)
+    ));
+
+    // A managed key: the proxy is asked for the month's usage and the provider opens up.
+    let managed = issue_license(Plan::MonthlyManaged, 30);
+    let status = h.handle.set_license_key(Some(&managed)).await.unwrap();
+    assert_eq!(status.state, LicenseState::Valid);
+    assert_eq!(status.plan, Some(Plan::MonthlyManaged));
+    assert_eq!(status.managed_usage, Some(usage(1.5)));
+    assert_eq!(
+        server.calls.lock().as_slice(),
+        std::slice::from_ref(&managed)
+    );
+    assert!(status.allows_managed_ai());
+
+    let mut s = h.handle.settings();
+    s.ai_provider = AiProvider::Ubi;
+    s.models.report = "claude-opus-5".into();
+    h.handle.update_settings(s).unwrap();
+    let s = h.handle.settings();
+    assert_eq!(s.ai_provider, AiProvider::Ubi);
+    assert_eq!(
+        s.models,
+        AiModels::for_provider(AiProvider::Ubi),
+        "aliases are fixed"
+    );
+    assert_eq!(
+        h.handle.ai_health(),
+        AiHealth::Ok,
+        "the license arms the managed provider"
+    );
+    assert_eq!(
+        h.handle.api_key_hint(AiProvider::Ubi).unwrap().as_deref(),
+        Some(format!("…{}", &managed[managed.len() - 4..]).as_str())
+    );
+
+    // Removing the key disarms the managed provider (its credential is gone).
+    let status = h.handle.set_license_key(None).await.unwrap();
+    assert_eq!(status.state, LicenseState::Unlicensed);
+    assert_eq!(h.handle.ai_health(), AiHealth::NotConfigured);
+    assert_eq!(
+        h.handle.settings().ai_provider,
+        AiProvider::Ubi,
+        "the choice is kept"
+    );
+    assert!(!h.handle.state().remote_allowed());
+
+    // A key that does not verify is kept and reported, so Settings shows what is stored.
+    let status = h
+        .handle
+        .set_license_key(Some("UBIQX-NOTREAL-NOTREAL"))
+        .await
+        .unwrap();
+    assert_eq!(status.state, LicenseState::Invalid);
+    assert_eq!(status.key_hint.as_deref(), Some("REAL"));
+    assert_eq!(h.handle.license_status().state, LicenseState::Invalid);
+    assert_eq!(h.handle.ai_health(), AiHealth::NotConfigured);
+
+    // Signed by the right key but expired.
+    let status = h
+        .handle
+        .set_license_key(Some(&issue_license(Plan::MonthlyManaged, -1)))
+        .await
+        .unwrap();
+    assert_eq!(status.state, LicenseState::Expired);
+    assert_eq!(status.plan, Some(Plan::MonthlyManaged));
+    assert_eq!(status.days_left, Some(0));
+    assert!(!status.allows_managed_ai());
+    assert_eq!(h.handle.ai_health(), AiHealth::NotConfigured);
+    h.handle.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stored_license_is_verified_at_start_and_survives_an_offline_proxy() {
+    let server = FakeLicenseServer::new(None);
+    let managed = issue_license(Plan::MonthlyManaged, 10);
+    let h = harness_with(HarnessOptions {
+        ai: keyed_fake_ai(),
+        license: license_deps(server.clone()),
+        license_key: Some(managed.clone()),
+        seed: |store| {
+            let mut s = SettingsRepo::load(store).unwrap();
+            s.ai_provider = AiProvider::Ubi;
+            SettingsRepo::save(store, &s).unwrap();
+        },
+        ..Default::default()
+    })
+    .await;
+    let status = h.handle.license_status();
+    assert_eq!(status.state, LicenseState::Valid);
+    assert_eq!(status.plan, Some(Plan::MonthlyManaged));
+    assert_eq!(status.days_left, Some(10));
+    assert_eq!(h.handle.settings().ai_provider, AiProvider::Ubi);
+    assert_eq!(h.handle.ai_health(), AiHealth::Ok);
+    assert!(h.handle.state().remote_allowed());
+
+    // The proxy is offline: the local verdict stands, without usage numbers.
+    let status = h.handle.refresh_license().await;
+    assert_eq!(status.state, LicenseState::Valid);
+    assert!(status.managed_usage.is_none());
+    assert_eq!(server.calls.lock().len(), 1);
+    assert!(ubiqx_engine::classify::budget_allows(h.handle.state()).unwrap());
+
+    // Back online: usage known; a spent budget pauses the AI, a month rollover lifts it.
+    *server.usage.lock() = Some(usage(2.0));
+    let status = h.handle.refresh_license().await;
+    assert_eq!(status.managed_usage, Some(usage(2.0)));
+    assert!(ubiqx_engine::classify::budget_allows(h.handle.state()).unwrap());
+    *server.usage.lock() = Some(usage(6.0));
+    h.handle.refresh_license().await;
+    assert!(!ubiqx_engine::classify::budget_allows(h.handle.state()).unwrap());
+    match h.handle.ai_health() {
+        AiHealth::Paused { reason } => assert!(reason.contains("IA do Ubi"), "{reason}"),
+        other => panic!("unexpected {other:?}"),
+    }
+    *server.usage.lock() = Some(ManagedUsage {
+        month: "1999-01".into(),
+        ..usage(6.0)
+    });
+    h.handle.refresh_license().await;
+    assert!(ubiqx_engine::classify::budget_allows(h.handle.state()).unwrap());
+    assert_eq!(h.handle.ai_health(), AiHealth::Ok);
+    h.handle.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hard_enforcement_blocks_ai_entry_points_but_not_tracking() {
+    let h = harness_with(HarnessOptions {
+        ai: keyed_fake_ai(),
+        keys: vec![(AiProvider::Anthropic, "sk-ant-1234")],
+        ..Default::default()
+    })
+    .await;
+    assert_eq!(h.handle.ai_health(), AiHealth::Ok);
+    assert!(h.handle.state().license_gate().is_ok(), "soft by default");
+
+    // The constant is Soft; the branch is exercised through the status it reads.
+    {
+        let mut st = h.handle.state().license.write();
+        st.enforcement = LicenseEnforcement::Hard;
+    }
+    assert!(h.handle.state().license.read().blocks_ai());
+    assert!(!h.handle.state().remote_allowed());
+    assert!(matches!(
+        h.handle.classify_now().await,
+        Err(CoreError::LicenseRequired)
+    ));
+    assert!(matches!(
+        h.handle
+            .generate_report(fixed_now().date_naive(), "cat-ifro")
+            .await,
+        Err(CoreError::LicenseRequired)
+    ));
+    assert!(matches!(
+        h.handle.advice(true).await,
+        Err(CoreError::LicenseRequired)
+    ));
+    // Manual work is never gated.
+    let block = h
+        .handle
+        .add_manual_entry(
+            fixed_now() - ChronoDuration::minutes(30),
+            fixed_now() - ChronoDuration::minutes(10),
+            "cat-ifro",
+            None,
+        )
+        .unwrap();
+    assert_eq!(block.category_id.as_deref(), Some("cat-ifro"));
+
+    // A valid key (any plan) lifts the block.
+    let mut st = LicenseStatus::evaluate_with(
+        Some(&issue_license(Plan::AnnualOwnKey, 30)),
+        &test_pubkey_hex(),
+        fixed_now(),
+    );
+    st.enforcement = LicenseEnforcement::Hard;
+    assert!(!st.blocks_ai());
+    *h.handle.state().license.write() = st;
+    assert!(h.handle.state().license_gate().is_ok());
+    assert!(h.handle.state().remote_allowed());
     h.handle.shutdown();
 }

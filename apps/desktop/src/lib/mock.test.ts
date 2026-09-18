@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { __mock, handle } from './mock';
-import type { CorrectionOutcome, DashboardData, BlockGroup, ApiKeyResult, DailyReport, Settings, SettingsView } from './types';
+import type { CorrectionOutcome, DashboardData, BlockGroup, ApiKeyResult, DailyReport, LicenseStatus, Settings, SettingsView } from './types';
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -50,13 +50,18 @@ describe('mock backend · AI providers', () => {
       { provider: 'anthropic', configured: true, hint: '…f3a9' },
       { provider: 'openai', configured: false, hint: null },
       { provider: 'xai', configured: false, hint: null },
+      { provider: 'ubi', configured: false, hint: null },
     ]);
     expect(v.providers.map((p) => [p.id, p.label, p.key_prefix])).toEqual([
       ['anthropic', 'Anthropic Claude', 'sk-ant-'],
       ['openai', 'OpenAI', 'sk-'],
       ['xai', 'xAI Grok', 'xai-'],
+      ['ubi', 'IA do Ubi', 'UBIQX-'],
     ]);
-    expect(v.providers.map((p) => p.console_url)).toEqual(['https://console.anthropic.com/settings/keys', 'https://platform.openai.com/api-keys', 'https://console.x.ai']);
+    expect(v.providers.map((p) => p.console_url)).toEqual(['https://console.anthropic.com/settings/keys', 'https://platform.openai.com/api-keys', 'https://console.x.ai', 'https://andreyquadros.github.io/ubiquitous-engine/#planos']);
+    expect(v.providers[3]?.default_models).toEqual({ classify: 'ubi-fast', vision: 'ubi-fast', report: 'ubi-smart' });
+    expect(v.license).toEqual({ state: 'unlicensed', plan: null, expires_at: null, days_left: null, key_hint: null, enforcement: 'soft', managed_usage: null });
+    expect(v.ubi_api_base).toBe('https://api.ubiqx.ai');
     expect(v.providers[1]?.default_models).toEqual({ classify: 'gpt-5-mini', vision: 'gpt-5-mini', report: 'gpt-5' });
     expect(v.providers[2]?.default_models).toEqual({ classify: 'grok-4-1-fast-non-reasoning', vision: 'grok-4-1-fast-non-reasoning', report: 'grok-4-1-fast-reasoning' });
     expect(v.ai_health).toEqual({ state: 'ok' });
@@ -135,5 +140,69 @@ describe('mock backend · AI providers', () => {
     expect(md).toContain('xAI Grok · grok-4-1-fast-reasoning');
     const report = await handle<DailyReport>('generate_report', { date: today, categoryId: 'cat-cidades' });
     expect(report.model).toBe('grok-4-1-fast-reasoning');
+  });
+});
+
+describe('mock backend · license', () => {
+  beforeEach(() => __mock.reset());
+
+  const status = () => handle<LicenseStatus>('get_license_status', {});
+  const setKey = (key: string | null) => handle<LicenseStatus>('set_license_key', { key });
+
+  it('round-trips the sample keys: annual, managed (with usage), expired, invalid, removed', async () => {
+    expect((await status()).state).toBe('unlicensed');
+
+    const annual = await setKey(__mock.sampleLicenseKeys.annual);
+    expect(annual.state).toBe('valid');
+    expect(annual.plan).toBe('annual_own_key');
+    expect(annual.days_left).toBeGreaterThanOrEqual(334);
+    expect(annual.key_hint).toBe(__mock.sampleLicenseKeys.annual.slice(-4));
+    expect(annual.managed_usage).toBeNull();
+    expect(annual.enforcement).toBe('soft');
+
+    const managed = await setKey(__mock.sampleLicenseKeys.managed);
+    expect(managed.state).toBe('valid');
+    expect(managed.plan).toBe('monthly_managed');
+    expect(managed.managed_usage).toEqual({ month: expect.stringMatching(/^\d{4}-\d{2}$/), spent_usd: 2.35, budget_usd: 6 });
+    // the license also shows up as the managed provider's "key"
+    const v = await view();
+    expect(v.license.state).toBe('valid');
+    expect(v.api_keys.find((k) => k.provider === 'ubi')).toEqual({ provider: 'ubi', configured: true, hint: `…${__mock.sampleLicenseKeys.managed.slice(-4)}` });
+
+    const expired = await setKey(__mock.sampleLicenseKeys.expired);
+    expect(expired.state).toBe('expired');
+    expect(expired.plan).toBe('annual_own_key');
+    expect(expired.days_left).toBe(0);
+
+    const invalid = await setKey('UBIQX-NOTAKEY-NOPE');
+    expect(invalid.state).toBe('invalid');
+    expect(invalid.plan).toBeNull();
+    expect(invalid.key_hint).toBe('NOPE');
+
+    expect((await setKey(null)).state).toBe('unlicensed');
+  });
+
+  it('gates the managed provider on a valid monthly license and falls back when it goes away', async () => {
+    await expect(update({ ai_provider: 'ubi' })).rejects.toThrow(/^license_required:/);
+    __mock.setLicense('annual');
+    await expect(update({ ai_provider: 'ubi' })).rejects.toThrow(/^license_required:/);
+
+    __mock.setLicense('managed');
+    const v = await update({ ai_provider: 'ubi', models: { classify: 'claude-haiku-4-5', vision: 'x', report: 'y' } });
+    expect(v.settings.ai_provider).toBe('ubi');
+    expect(v.settings.models).toEqual({ classify: 'ubi-fast', vision: 'ubi-fast', report: 'ubi-smart' });
+    expect(v.ai_health).toEqual({ state: 'ok' });
+    expect(await handle<string[]>('list_models', { provider: 'ubi' })).toEqual(['ubi-fast', 'ubi-smart']);
+    await expect(handle<ApiKeyResult>('set_api_key', { provider: 'ubi', key: 'UBIQX-x' })).rejects.toThrow(/^invalid:/);
+
+    // proxy offline: the local verdict stays, the usage is unknown
+    expect(__mock.setLicense('managed', { proxyReachable: false }).managed_usage).toBeNull();
+    expect((await view()).license.state).toBe('valid');
+
+    // removing the key keeps the managed provider selected but not configured (like the engine)
+    const after = await setKey(null);
+    expect(after.state).toBe('unlicensed');
+    expect((await view()).settings.ai_provider).toBe('ubi');
+    expect((await view()).ai_health).toEqual({ state: 'not_configured' });
   });
 });

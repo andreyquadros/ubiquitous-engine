@@ -226,6 +226,7 @@ async fn harness_with(presenter_shows: bool) -> Harness {
         data_dir: tmp.path().to_path_buf(),
         build: ubiqx_core::BuildInfo::dev(),
         update_feed_url: String::new(),
+        license: LicenseDeps::default(),
     };
     let cfg = LoopConfig {
         classify_every: Duration::from_secs(3600),
@@ -235,6 +236,8 @@ async fn harness_with(presenter_shows: bool) -> Harness {
         update_initial_delay: Duration::from_secs(3600),
         update_every: Duration::from_secs(3600),
         focus_every: Duration::from_secs(3600),
+        license_initial_delay: Duration::from_secs(3600),
+        license_every: Duration::from_secs(3600),
         without_sampler: true,
     };
     let (handle, _tx) = Engine::start_with(deps, cfg).unwrap();
@@ -790,6 +793,7 @@ async fn a_session_left_by_the_previous_run_is_restored() {
         data_dir: tmp.path().to_path_buf(),
         build: ubiqx_core::BuildInfo::dev(),
         update_feed_url: String::new(),
+        license: LicenseDeps::default(),
     };
     let state = EngineState::new(deps, Settings::default(), None);
     let status = ubiqx_engine::focus::status(&state).unwrap();

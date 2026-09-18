@@ -567,8 +567,17 @@ pub struct FocusStats {
 // Settings
 // ---------------------------------------------------------------------------------------------
 
+/// Secret-store key under which the ubiqX license key is stored. It never sits in the
+/// settings JSON row: the UI sees a [`crate::license::LicenseStatus`] instead.
+pub const LICENSE_SECRET_KEY: &str = "ubiqx.license";
+
+/// Where the plans are sold; the console link of the [`AiProvider::Ubi`] provider.
+pub const PLANS_URL: &str = "https://andreyquadros.github.io/ubiquitous-engine/#planos";
+
 /// Which hosted LLM vendor answers the remote calls. Every provider is reached through its
 /// own HTTP client; the user picks one in onboarding / settings and pastes that vendor's key.
+/// [`AiProvider::Ubi`] is the managed option: the calls go to the Ubi proxy, authenticated
+/// with the license key of a `monthly_managed` subscription instead of a vendor key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AiProvider {
@@ -577,10 +586,18 @@ pub enum AiProvider {
     #[serde(rename = "openai")]
     OpenAi,
     Xai,
+    /// "IA do Ubi": Anthropic-compatible calls through the Ubi proxy, paid by the monthly
+    /// plan. Needs a valid `monthly_managed` license (see [`crate::license`]).
+    Ubi,
 }
 
 impl AiProvider {
-    pub const ALL: [AiProvider; 3] = [AiProvider::Anthropic, AiProvider::OpenAi, AiProvider::Xai];
+    pub const ALL: [AiProvider; 4] = [
+        AiProvider::Anthropic,
+        AiProvider::OpenAi,
+        AiProvider::Xai,
+        AiProvider::Ubi,
+    ];
 
     /// Stable id used in settings, secrets and the IPC contract.
     pub fn id(self) -> &'static str {
@@ -588,6 +605,7 @@ impl AiProvider {
             AiProvider::Anthropic => "anthropic",
             AiProvider::OpenAi => "openai",
             AiProvider::Xai => "xai",
+            AiProvider::Ubi => "ubi",
         }
     }
 
@@ -596,6 +614,7 @@ impl AiProvider {
             "anthropic" => Some(AiProvider::Anthropic),
             "openai" => Some(AiProvider::OpenAi),
             "xai" | "grok" => Some(AiProvider::Xai),
+            "ubi" => Some(AiProvider::Ubi),
             _ => None,
         }
     }
@@ -606,15 +625,17 @@ impl AiProvider {
             AiProvider::Anthropic => "Anthropic Claude",
             AiProvider::OpenAi => "OpenAI",
             AiProvider::Xai => "xAI Grok",
+            AiProvider::Ubi => "IA do Ubi",
         }
     }
 
-    /// Where the user creates an API key.
+    /// Where the user creates an API key (for Ubi: where the plan is bought).
     pub fn console_url(self) -> &'static str {
         match self {
             AiProvider::Anthropic => "https://console.anthropic.com/settings/keys",
             AiProvider::OpenAi => "https://platform.openai.com/api-keys",
             AiProvider::Xai => "https://console.x.ai",
+            AiProvider::Ubi => PLANS_URL,
         }
     }
 
@@ -624,16 +645,25 @@ impl AiProvider {
             AiProvider::Anthropic => "sk-ant-",
             AiProvider::OpenAi => "sk-",
             AiProvider::Xai => "xai-",
+            AiProvider::Ubi => crate::license::KEY_PREFIX,
         }
     }
 
-    /// Secret-store key under which this provider's API key is stored.
+    /// Secret-store key under which this provider's API key is stored. For Ubi it is the
+    /// license key itself ([`LICENSE_SECRET_KEY`]): the proxy authenticates with it.
     pub fn secret_key(self) -> &'static str {
         match self {
             AiProvider::Anthropic => crate::ports::secret_keys::ANTHROPIC_API_KEY,
             AiProvider::OpenAi => crate::ports::secret_keys::OPENAI_API_KEY,
             AiProvider::Xai => crate::ports::secret_keys::XAI_API_KEY,
+            AiProvider::Ubi => LICENSE_SECRET_KEY,
         }
+    }
+
+    /// Whether the provider is the managed one (AI paid by the monthly plan, no vendor key,
+    /// fixed model aliases).
+    pub fn is_managed(self) -> bool {
+        matches!(self, AiProvider::Ubi)
     }
 
     /// Whether a model id belongs to this vendor's naming scheme. Unknown ids belong to
@@ -642,13 +672,16 @@ impl AiProvider {
         AiProvider::for_model(model) == Some(self)
     }
 
-    /// Vendor inferred from a model id (`claude-*`, `gpt-*`/`o*`/`chatgpt-*`/`ft:*`, `grok-*`).
+    /// Vendor inferred from a model id (`claude-*`, `gpt-*`/`o*`/`chatgpt-*`/`ft:*`, `grok-*`,
+    /// `ubi-*`).
     pub fn for_model(model: &str) -> Option<Self> {
         let m = model.trim().to_ascii_lowercase();
         if m.starts_with("claude") {
             Some(AiProvider::Anthropic)
         } else if m.starts_with("grok") {
             Some(AiProvider::Xai)
+        } else if m.starts_with("ubi-") {
+            Some(AiProvider::Ubi)
         } else if m.starts_with("gpt")
             || m.starts_with("chatgpt")
             || m.starts_with("ft:")
@@ -697,12 +730,23 @@ impl AiModels {
                 vision: "grok-4-1-fast-non-reasoning".into(),
                 report: "grok-4-1-fast-reasoning".into(),
             },
+            // The proxy only accepts its two aliases; the vendor models behind them are
+            // chosen server-side.
+            AiProvider::Ubi => Self {
+                classify: crate::license::UBI_MODEL_FAST.into(),
+                vision: crate::license::UBI_MODEL_FAST.into(),
+                report: crate::license::UBI_MODEL_SMART.into(),
+            },
         }
     }
 
     /// Replaces every model id that visibly belongs to another vendor (or is blank) with the
-    /// provider's recommendation, keeping custom/unknown ids untouched.
+    /// provider's recommendation, keeping custom/unknown ids untouched. The managed provider
+    /// has no custom ids: its aliases are fixed (`ubi-fast` / `ubi-smart`).
     pub fn reconciled_with(mut self, provider: AiProvider) -> Self {
+        if provider.is_managed() {
+            return Self::for_provider(provider);
+        }
         let defaults = Self::for_provider(provider);
         let fix = |current: &mut String, default: String| {
             let foreign = AiProvider::for_model(current).is_some_and(|p| p != provider);
@@ -1373,5 +1417,58 @@ mod tests {
     fn settings_default_serialises_with_missing_fields() {
         let s: Settings = serde_json::from_str("{}").unwrap();
         assert_eq!(s, Settings::default());
+    }
+
+    #[test]
+    fn ubi_provider_ids_keys_and_models() {
+        assert_eq!(serde_json::to_value(AiProvider::Ubi).unwrap(), "ubi");
+        assert_eq!(
+            serde_json::from_str::<AiProvider>("\"ubi\"").unwrap(),
+            AiProvider::Ubi
+        );
+        assert_eq!(AiProvider::parse("UBI"), Some(AiProvider::Ubi));
+        assert_eq!(AiProvider::Ubi.id(), "ubi");
+        assert_eq!(AiProvider::Ubi.secret_key(), LICENSE_SECRET_KEY);
+        assert_eq!(AiProvider::Ubi.key_prefix(), "UBIQX-");
+        assert_eq!(AiProvider::Ubi.console_url(), PLANS_URL);
+        assert!(AiProvider::Ubi.is_managed());
+        assert!(!AiProvider::Anthropic.is_managed());
+        assert_eq!(AiProvider::ALL.last(), Some(&AiProvider::Ubi));
+        for p in AiProvider::ALL {
+            assert_eq!(AiProvider::parse(p.id()), Some(p));
+        }
+
+        assert_eq!(AiProvider::for_model("ubi-fast"), Some(AiProvider::Ubi));
+        assert_eq!(AiProvider::for_model("ubi-smart"), Some(AiProvider::Ubi));
+        assert_eq!(AiProvider::for_model("ubiquitous"), None);
+        assert!(AiProvider::Ubi.owns_model("ubi-smart"));
+
+        let models = AiModels::for_provider(AiProvider::Ubi);
+        assert_eq!(models.classify, "ubi-fast");
+        assert_eq!(models.vision, "ubi-fast");
+        assert_eq!(models.report, "ubi-smart");
+    }
+
+    #[test]
+    fn ubi_models_are_fixed_aliases_and_replaced_on_switch() {
+        // Custom ids do not survive a switch to the managed provider…
+        let custom = AiModels {
+            classify: "my-custom".into(),
+            vision: "claude-haiku-4-5".into(),
+            report: "gpt-5".into(),
+        };
+        assert_eq!(
+            custom.reconciled_with(AiProvider::Ubi),
+            AiModels::for_provider(AiProvider::Ubi)
+        );
+        // …and the aliases never survive a switch away from it.
+        let back = AiModels::for_provider(AiProvider::Ubi).reconciled_with(AiProvider::OpenAi);
+        assert_eq!(back, AiModels::for_provider(AiProvider::OpenAi));
+        let mut s = Settings {
+            ai_provider: AiProvider::Ubi,
+            ..Settings::default()
+        };
+        s.sanitize();
+        assert_eq!(s.models, AiModels::for_provider(AiProvider::Ubi));
     }
 }

@@ -186,6 +186,17 @@ pub fn open_download(url: &str) -> CoreResult<()> {
         .map_err(|e| CoreError::Platform(format!("open download: {e}")))
 }
 
+/// Base URL of the Ubi proxy compiled into this build: `UBIQX_API_BASE` at build time, the
+/// product's default otherwise (`ubiqx_core::license::UBIQX_API_BASE_DEFAULT`). A local proxy
+/// (`cargo run --manifest-path services/ubi-api/Cargo.toml`) is reached with
+/// `UBIQX_API_BASE=http://127.0.0.1:8080`.
+fn ubi_api_base() -> Option<String> {
+    option_env!("UBIQX_API_BASE")
+        .map(str::trim)
+        .filter(|b| !b.is_empty())
+        .map(str::to_string)
+}
+
 /// The build identity stamped by `build.rs` (`UBIQX_BUILD_*`), a development build when the
 /// stamp is empty.
 fn build_info() -> BuildInfo {
@@ -554,6 +565,8 @@ pub fn run() {
                 presenter: Some(presenter),
                 build,
                 update_feed_url: Some(env!("UBIQX_UPDATE_FEED_URL").to_string()),
+                ubi_api_base: ubi_api_base(),
+                license_pubkey_hex: None,
             };
             let ubiqx = tauri::async_runtime::block_on(async { App::start(config, sink) })
                 .map_err(|e| format!("engine start: {e}"))?;

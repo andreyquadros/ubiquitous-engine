@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@react-three/fiber', () => ({ Canvas: () => null, useFrame: () => undefined }));
 
@@ -29,7 +29,11 @@ describe('Onboarding (mock backend)', () => {
     fireEvent.click(screen.getByRole('button', { name: /Continuar/ }));
     await screen.findByRole('heading', { name: 'Escolha sua IA' });
 
-    const cards = screen.getAllByRole('radio');
+    // the two-card decision comes first; the own-key card is open by default and lists the three vendors
+    const plans = screen.getByRole('radiogroup', { name: 'Como a IA será paga' });
+    expect(within(plans).getAllByRole('radio').map((c) => c.getAttribute('aria-label'))).toEqual(['Deixar o Ubi cuidar da IA', 'Usar minha própria chave']);
+    expect(within(plans).getByRole('radio', { name: 'Usar minha própria chave' })).toHaveAttribute('aria-checked', 'true');
+    const cards = within(screen.getByRole('radiogroup', { name: 'Provedor de IA' })).getAllByRole('radio');
     expect(cards.map((c) => c.getAttribute('aria-label'))).toEqual(['Anthropic Claude', 'OpenAI', 'xAI Grok']);
     expect(screen.getByRole('radio', { name: 'Anthropic Claude' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getAllByText(/estimativa/).length).toBe(3);
@@ -149,5 +153,103 @@ describe('Onboarding (mock backend)', () => {
     expect(first.querySelector('[role="radio"][aria-label="Coffee"]')).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByRole('button', { name: 'Remove IFRO' })).toBeInTheDocument();
     window.history.replaceState({}, '', '/');
+  });
+});
+
+describe('Onboarding · plans (mock backend)', () => {
+  beforeEach(async () => {
+    __mock.reset();
+    __mock.setOnboardingDone(false);
+    useAppStore.setState({ settingsView: null, license: null });
+    await useAppStore.getState().loadSettings();
+    window.history.replaceState({}, '', '/?onboarding=1&step=2');
+  });
+  afterEach(() => window.history.replaceState({}, '', '/'));
+
+  const renderStep2 = async () => {
+    render(
+      <MemoryRouter>
+        <Onboarding />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('heading', { name: 'Escolha sua IA' });
+  };
+
+  it('shows both cards with the prices, the optional annual key field and "Continuar sem licença por enquanto"', async () => {
+    await renderStep2();
+    expect(screen.getByTestId('plan-card-managed')).toHaveTextContent('R$ 49/mês');
+    expect(screen.getByTestId('plan-card-own')).toHaveTextContent('R$ 197/ano ou 10x de R$ 25');
+    expect(screen.getByTestId('own-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('managed-panel')).not.toBeInTheDocument();
+    // the annual license is optional on the own-key side
+    const annual = screen.getByTestId('annual-license-panel');
+    expect(within(annual).getByLabelText('Chave de licença (opcional)')).toBeInTheDocument();
+    expect(within(annual).getByText('Assinar')).toBeInTheDocument();
+    // soft enforcement: the shortcut is offered and no trial/discount copy shows up
+    expect(screen.getByRole('button', { name: 'Continuar sem licença por enquanto' })).toBeEnabled();
+    expect(screen.getByTestId('page-onboarding')).not.toHaveTextContent(/desconto|trial|teste grátis/i);
+  });
+
+  it('the managed card asks for a monthly key and switches to "IA do Ubi" once it validates', async () => {
+    await renderStep2();
+    fireEvent.click(screen.getByRole('radio', { name: 'Deixar o Ubi cuidar da IA' }));
+    const panel = await screen.findByTestId('managed-panel');
+    expect(panel).toHaveTextContent('Para usar a IA do Ubi, valide uma licença mensal.');
+    expect(screen.queryByTestId('own-panel')).not.toBeInTheDocument();
+    // nothing was persisted yet: the mock refuses the managed provider without a license
+    expect(useAppStore.getState().settingsView?.settings.ai_provider).toBe('anthropic');
+
+    fireEvent.change(within(panel).getByLabelText('Chave de licença'), { target: { value: __mock.sampleLicenseKeys.managed } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Validar' }));
+    await waitFor(() => expect(useAppStore.getState().license?.state).toBe('valid'), { timeout: 3000 });
+    await waitFor(() => expect(useAppStore.getState().settingsView?.settings.ai_provider).toBe('ubi'), { timeout: 3000 });
+    expect(useAppStore.getState().settingsView?.settings.models).toEqual({ classify: 'ubi-fast', vision: 'ubi-fast', report: 'ubi-smart' });
+    expect(await screen.findByText(/IA do Ubi ativa: licença mensal válida até/)).toBeInTheDocument();
+    expect(screen.getByTestId('managed-panel')).toHaveTextContent('ubi-fast');
+    expect(screen.getByTestId('managed-panel')).toHaveTextContent('ubi-smart');
+    expect(screen.getByRole('button', { name: 'Pular por enquanto' })).toBeInTheDocument();
+
+    // back to the own-key card restores a vendor provider
+    fireEvent.click(screen.getByRole('radio', { name: 'Usar minha própria chave' }));
+    await screen.findByTestId('own-panel');
+    await waitFor(() => expect(useAppStore.getState().settingsView?.settings.ai_provider).toBe('anthropic'), { timeout: 3000 });
+  });
+
+  it('an annual key on the managed card explains the plan mismatch; the finish step names the plan', async () => {
+    act(() => {
+      __mock.setLicense('annual');
+    });
+    await act(async () => {
+      await useAppStore.getState().loadSettings();
+    });
+    await renderStep2();
+    expect(screen.getByTestId('annual-license-panel')).toHaveTextContent('ubiqX Anual, com a sua IA.');
+    expect(screen.getByTestId('annual-license-panel')).toHaveTextContent(/Licença válida até \d\d\/\d\d\/\d{4}\./);
+    expect(screen.queryByRole('button', { name: 'Continuar sem licença por enquanto' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Deixar o Ubi cuidar da IA' }));
+    expect(await screen.findByTestId('managed-panel')).toHaveTextContent('Esta chave é do plano anual.');
+    expect(useAppStore.getState().settingsView?.settings.ai_provider).toBe('anthropic');
+  });
+
+  it('the finish summary shows the managed plan without a vendor key', async () => {
+    act(() => {
+      __mock.setLicense('managed');
+    });
+    await act(async () => {
+      await useAppStore.getState().saveSettings({ ai_provider: 'ubi' });
+    });
+    window.history.replaceState({}, '', '/?onboarding=1&step=7');
+    render(
+      <MemoryRouter>
+        <Onboarding />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('heading', { name: 'Quase lá' });
+    const summary = screen.getByTestId('finish-ai-summary');
+    expect(summary).toHaveTextContent('IA: IA do Ubi');
+    expect(summary).toHaveTextContent('IA do Ubi pelo plano mensal; sem chave de API.');
+    expect(summary).toHaveTextContent('Plano: ubiqX Mensal, com a IA do Ubi');
+    expect(summary).not.toHaveTextContent('sem chave: só regras');
   });
 });

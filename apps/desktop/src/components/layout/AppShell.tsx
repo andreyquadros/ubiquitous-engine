@@ -6,6 +6,7 @@ import { useAppStore } from '../../lib/store';
 import { Toaster } from '../../lib/toast';
 import { Spinner } from '../ui/misc';
 import { Sidebar } from './Sidebar';
+import { LicenseBanner } from './LicenseBanner';
 import { UpdateBanner } from './UpdateBanner';
 
 /** Loads settings once and redirects to the onboarding while it is not done. */
@@ -73,6 +74,7 @@ export function AppShell() {
         <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-6 pb-10">
           <div className="mx-auto w-full max-w-[1280px]">
             <UpdateBanner />
+            <LicenseBanner />
             <Outlet />
           </div>
         </div>

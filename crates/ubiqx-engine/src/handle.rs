@@ -60,6 +60,27 @@ impl EngineHandle {
         self.state.ai_health()
     }
 
+    /// The stored license key's verdict (verified at start and when set), with the managed
+    /// plan's usage when the proxy answered. Re-evaluated here so an expiry that passed
+    /// since the last check shows at once.
+    pub fn license_status(&self) -> LicenseStatus {
+        crate::license::current(&self.state)
+    }
+
+    /// Stores (or, with `None`/blank, removes) the license key, verifies it offline and, for
+    /// a valid `monthly_managed` key, fetches the month's usage from the proxy (a proxy that
+    /// cannot be reached keeps the local verdict, without usage). See
+    /// [`crate::license::set_key`].
+    pub async fn set_license_key(&self, key: Option<&str>) -> CoreResult<LicenseStatus> {
+        crate::license::set_key(&self.state, key).await
+    }
+
+    /// Asks the proxy for the managed plan's usage again (no-op for other licenses).
+    pub async fn refresh_license(&self) -> LicenseStatus {
+        crate::license::reevaluate(&self.state);
+        crate::license::refresh_managed_usage(&self.state).await
+    }
+
     pub fn pause(&self) {
         *self.state.paused.write() = true;
         let now = self.state.now();
@@ -121,8 +142,14 @@ impl EngineHandle {
     /// Stores (or, with `None`/blank, deletes) the API key of `provider` under
     /// [`AiProvider::secret_key`]. When `provider` is the one selected in settings the AI path
     /// is re-armed (`Ok`) or disarmed (`NotConfigured`); keys of the other vendors are kept
-    /// for a later switch and never touch health.
+    /// for a later switch and never touch health. The managed provider has no API key: its
+    /// credential is the license ([`Self::set_license_key`]), so it is refused here.
     pub fn set_api_key(&self, provider: AiProvider, key: Option<&str>) -> CoreResult<()> {
+        if provider.is_managed() {
+            return Err(CoreError::Invalid(
+                "the managed provider uses the license key (set_license_key)".into(),
+            ));
+        }
         let secrets = &self.state.deps.platform.secrets;
         let selected = self.state.settings.read().ai_provider == provider;
         match key.map(str::trim).filter(|k| !k.is_empty()) {
@@ -191,21 +218,29 @@ impl EngineHandle {
         crate::learning::split_block(&self.state, block_id, at)
     }
 
+    /// One classification pass now, ignoring the batching thresholds.
+    /// [`CoreError::LicenseRequired`] under hard license enforcement while unlicensed.
     pub async fn classify_now(&self) -> CoreResult<ClassifyReport> {
+        self.state.license_gate()?;
         crate::classify::run_once(&self.state, true).await
     }
 
+    /// Generates (or regenerates) one report. [`CoreError::LicenseRequired`] under hard
+    /// license enforcement while unlicensed.
     pub async fn generate_report(
         &self,
         date: NaiveDate,
         category_id: &str,
     ) -> CoreResult<DailyReport> {
+        self.state.license_gate()?;
         crate::reports::generate(&self.state, date, category_id, true).await
     }
 
     /// Productivity recommendations from the advisor, cached per local day.
+    /// [`CoreError::LicenseRequired`] under hard license enforcement while unlicensed.
     pub async fn advice(&self, force: bool) -> CoreResult<Advice> {
         let state = self.state.clone();
+        state.license_gate()?;
         let today = crate::service::today(&state);
         let key = format!("advice_{today}");
         if !force {
@@ -404,7 +439,7 @@ impl EngineHandle {
     /// (rows and files), reports, corrections, learned rules, nudges, the AI usage ledger, the
     /// key/value cache (advice, report scheduling) and the JSON exports folder. Categories,
     /// user rules, settings and the API key are kept, as the confirmation dialog promises.
-    /// Irreversible.
+    /// Irreversible. The license key is kept too.
     pub fn delete_all_data(&self) -> CoreResult<()> {
         let repos = &self.state.deps.repos;
         let now = self.state.now();

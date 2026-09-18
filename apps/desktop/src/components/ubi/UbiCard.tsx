@@ -1,5 +1,6 @@
 import { AlertTriangle, Bell, BrainCircuit, Coffee, Eye, FileText, Hourglass, Shield, ThumbsUp, type LucideIcon } from 'lucide-react';
 import { fmtRelative, fmtTime, fmtUsd, intlLocale } from '../../lib/format';
+import { providerLabel } from '../../lib/providers';
 import { useAppStore } from '../../lib/store';
 import type { AiHealth, DashboardData, Nudge, NudgeKind } from '../../lib/types';
 import { useT, type Vars } from '../../i18n';
@@ -36,12 +37,13 @@ function aiStatus(h: AiHealth, t: (key: string, vars?: Vars) => string): { label
 export function UbiCard({ data, nudge }: { data: DashboardData; nudge: Nudge | null }) {
   const t = useT();
   const aiHealth = useAppStore((s) => s.aiHealth);
-  const providerLabel = useAppStore((s) => {
+  const providerName = useAppStore((s) => {
     const v = s.settingsView;
-    return v ? (v.providers.find((p) => p.id === v.settings.ai_provider)?.label ?? null) : null;
+    const info = v ? v.providers.find((p) => p.id === v.settings.ai_provider) : undefined;
+    return info ? providerLabel(info, t) : null;
   });
   const status = aiStatus(aiHealth, t);
-  const detail = status.detail ?? (aiHealth.state === 'ok' && providerLabel ? providerLabel : undefined);
+  const detail = status.detail ?? (aiHealth.state === 'ok' && providerName ? providerName : undefined);
   const NudgeIcon = nudge ? NUDGE_ICON[nudge.kind] : Bell;
   const usagePct = data.budget_usd > 0 ? data.usage_month.cost_usd / data.budget_usd : 0;
   const usageColor = usagePct > 0.9 ? 'var(--rose)' : usagePct > 0.7 ? 'var(--amber)' : 'var(--volt)';
