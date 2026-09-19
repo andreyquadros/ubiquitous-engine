@@ -11,6 +11,11 @@
 # uma publicação que ninguém pediu; num disparo manual, ele falha, porque aí o pedido foi
 # explícito. Antes da primeira execução, aponte o DNS: registro A de ubi.mvk1.cloud para
 # o IP da VPS.
+#
+# Só por disparo manual. Rodava também a cada push, mas a VPS está parada e a página é
+# servida por outro caminho, então o que a publicação fazia era um `ssh: connection timed
+# out` de 30 s pintando o ramo de vermelho a cada commit em site/. Nada foi apagado: quando
+# a VPS voltar a ser o destino, basta devolver o gatilho `push` (main + paths site/infra).
 name: Site · publicar na VPS
 run-name: "Site: publicar em ${{ inputs.host || 'ubi.mvk1.cloud' }}"
 
@@ -22,16 +27,6 @@ on:
         required: false
         default: ubi.mvk1.cloud
         type: string
-  push:
-    branches:
-      - main
-      # Temporário: publica também a partir do ramo de desenvolvimento, para a página
-      # ficar de pé antes do merge do PR #1. Remova esta linha depois de mesclar.
-      - claude/sharp-bardeen-sk27ae
-    paths:
-      - "site/**"
-      - "infra/**"
-      - ".github/workflows/deploy-site.yml"
 
 concurrency:
   group: vps
