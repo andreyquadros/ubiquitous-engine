@@ -341,8 +341,18 @@ export interface DashboardData {
   ai_health: AiHealth;
   usage_month: AiUsageTotals;
   budget_usd: number;
+  /** Blocks flagged for review *on this day* -- the same day the rest of this payload describes. */
   needs_review: number;
+  /** What is still flagged on other days, so a clean day does not hide it. */
+  review_backlog: ReviewBacklog | null;
   hourly_focus: (number | null)[];
+}
+
+/** Blocks still waiting for review outside the day on screen (every review surface is day-scoped). */
+export interface ReviewBacklog {
+  count: number;
+  /** The most recent day holding one, so the UI can send the user straight there. */
+  date: IsoDate;
 }
 
 /** A stored screenshot, inlined for the UI (`get_screenshot`). `null` from the command means it is gone or was never taken. */

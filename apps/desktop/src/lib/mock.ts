@@ -28,6 +28,7 @@ import {
   type PermissionStatus,
   type Platform,
   type ReportItem,
+  type ReviewBacklog,
   type Rule,
   type RuleSuggestion,
   type ScreenshotData,
@@ -1199,8 +1200,20 @@ function dashboard(date: IsoDate): DashboardData {
     usage_month: S.usage,
     budget_usd: S.settings.ai_monthly_budget_usd,
     needs_review: blocks.filter((b) => b.needs_review).length,
+    review_backlog: reviewBacklog(date),
     hourly_focus: hourlyFocus(date, blocks),
   };
+}
+
+/** What is still flagged on the other days the mock has materialised, newest day first. */
+function reviewBacklog(date: IsoDate): ReviewBacklog | null {
+  const days = [...S.blocks.entries()]
+    .filter(([d]) => d !== date)
+    .map(([d, list]) => [d, list.filter((b) => b.needs_review).length] as const)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[0].localeCompare(a[0]));
+  if (!days.length) return null;
+  return { count: days.reduce((n, [, c]) => n + c, 0), date: days[0]![0] };
 }
 
 function reviewGroups(date: IsoDate): BlockGroup[] {

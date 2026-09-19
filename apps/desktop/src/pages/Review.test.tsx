@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ActivityBlock, BlockGroup, Category, Id, LicenseStatus } from '../lib/types';
+import type { ActivityBlock, BlockGroup, Category, DashboardData, Id, LicenseStatus } from '../lib/types';
 
 const categories: Category[] = [
   { id: 'cat-ifro', name: 'IFRO', color: '#2563EB', icon: 'graduation-cap', description: '', keywords: [], report_time: null, report_template: null, is_productive: true, is_system: false, archived: false, sort_order: 0, created_at: '2026-01-01T00:00:00Z' },
@@ -100,7 +100,7 @@ describe('Review page', () => {
     reclassifyGroup.mockClear();
     getScreenshot.mockClear();
     __clearScreenshotCache();
-    useAppStore.setState({ categories, date: '2026-09-17', dataVersion: 0, license: null });
+    useAppStore.setState({ categories, date: '2026-09-17', dataVersion: 0, license: null, dashboards: {} });
   });
 
   it('lists the pending groups (unsettled first) and assigns the nth category with the keyboard', async () => {
@@ -165,6 +165,35 @@ describe('Review page', () => {
     expect(screen.getByText(/a fila está vazia/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mostrar os grupos revisados' })).toHaveTextContent('Revisados neste dia (3)');
     expect(pendingRows()).toHaveLength(0);
+  });
+
+  // Every review surface is scoped to one day. A day that is clean still has to say so when other
+  // days are not, or the flagged blocks there are reachable only by guessing the date.
+  it('points a cleared day at the most recent day that still has flagged blocks', async () => {
+    overrides = {
+      'net.whatsapp.WhatsApp|whatsapp': { source: 'user' },
+      'com.google.Chrome|mail.google.com': { source: 'user' },
+      'com.apple.iCal|calendario': { source: 'user' },
+    };
+    useAppStore.setState({ dashboards: { '2026-09-17': { review_backlog: { count: 2, date: '2026-09-15' } } as DashboardData } });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('review-done')).toBeInTheDocument());
+    const jump = screen.getByTestId('review-backlog');
+    expect(jump).toHaveTextContent('Ver 2 blocos sinalizados em 15 set');
+    fireEvent.click(jump);
+    expect(useAppStore.getState().date).toBe('2026-09-15');
+  });
+
+  it('offers no jump when every other day is clean', async () => {
+    overrides = {
+      'net.whatsapp.WhatsApp|whatsapp': { source: 'user' },
+      'com.google.Chrome|mail.google.com': { source: 'user' },
+      'com.apple.iCal|calendario': { source: 'user' },
+    };
+    useAppStore.setState({ dashboards: { '2026-09-17': { review_backlog: null } as DashboardData } });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('review-done')).toBeInTheDocument());
+    expect(screen.queryByTestId('review-backlog')).not.toBeInTheDocument();
   });
 
   it('opens a group to show its blocks, the AI payload and the stored screenshot', async () => {

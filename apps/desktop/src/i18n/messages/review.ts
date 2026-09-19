@@ -20,6 +20,11 @@ const messages = {
     'empty.body': 'Todos os blocos do dia estão classificados com boa confiança. Quando algo ficar em dúvida, aparece aqui.',
     'empty.cta': 'Ver a Timeline',
 
+    // Shown under an empty queue: every review surface is scoped to one day, so what is flagged
+    // on another day would have no way of being found.
+    'backlog.cta_one': 'Ver {count} bloco sinalizado em {day}',
+    'backlog.cta_other': 'Ver {count} blocos sinalizados em {day}',
+
     // Queue rows
     list_label: 'Grupos para revisão',
     blocks_in_group: 'Blocos no grupo',
@@ -106,6 +111,11 @@ const messages = {
     'empty.title': 'Nothing to review',
     'empty.body': 'Every block from this day is classified with good confidence. Anything uncertain will show up here.',
     'empty.cta': 'Go to Timeline',
+
+    // Shown under an empty queue: every review surface is scoped to one day, so what is flagged
+    // on another day would have no way of being found.
+    'backlog.cta_one': 'See {count} flagged block from {day}',
+    'backlog.cta_other': 'See {count} flagged blocks from {day}',
 
     // Queue rows
     list_label: 'Groups to review',

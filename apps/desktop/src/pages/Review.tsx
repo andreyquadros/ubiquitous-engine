@@ -14,11 +14,11 @@ import { Kbd, Skeleton } from '../components/ui/misc';
 import { PageHeader } from '../components/ui/PageHeader';
 import { useLocale, useT } from '../i18n';
 import { assignableCategories, categoryById, categoryLabel, iconFor, isUncategorized, UNCATEGORIZED_COLOR } from '../lib/categories';
-import { fmtDateLong, fmtDuration, fmtMinutes, fmtPercent, fmtTime } from '../lib/format';
+import { fmtDateLong, fmtDateShort, fmtDuration, fmtMinutes, fmtPercent, fmtTime } from '../lib/format';
 import { ipc } from '../lib/ipc';
 import { useAppStore } from '../lib/store';
 import { useToast } from '../lib/toast';
-import type { ActivityBlock, BlockGroup, Category, Id, RuleSuggestion } from '../lib/types';
+import type { ActivityBlock, BlockGroup, Category, Id, ReviewBacklog, RuleSuggestion } from '../lib/types';
 import { useAsync } from '../lib/useAsync';
 
 type Translate = ReturnType<typeof useT>;
@@ -121,6 +121,30 @@ function subtitle(t: Translate, date: string, pending: BlockGroup[] | null, unca
   const first = t('review.subtitle.groups', { count: pending.length });
   const second = uncategorizedSecs > 0 ? t('review.subtitle.uncategorized', { duration: fmtMinutes(uncategorizedSecs) }) : t('review.subtitle.nothing_uncategorized');
   return t('review.subtitle.sentence', { day, first, second });
+}
+
+/**
+ * What both empty states offer: the Timeline, and — when other days still hold flagged blocks —
+ * a jump to the most recent one. Every review surface is scoped to a single day, so without this
+ * the backlog is reachable only by walking the DayNav backwards on a hunch.
+ */
+function EmptyActions({ backlog, onGoTo }: { backlog: ReviewBacklog | null; onGoTo: (date: string) => void }) {
+  const t = useT();
+  const cls =
+    'inline-flex h-9 items-center gap-2 rounded-control border border-line-2 bg-panel px-3.5 text-sm font-medium text-ink transition-colors duration-150 hover:bg-panel-2';
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-2">
+      <Link to="/timeline" className={cls}>
+        {t('review.empty.cta')}
+      </Link>
+      {backlog && (
+        <button type="button" onClick={() => onGoTo(backlog.date)} className={cls} data-testid="review-backlog">
+          <span className="size-1.5 shrink-0 rounded-full bg-ember shadow-[0_0_8px_rgb(255_122_31/.6)]" aria-hidden />
+          {t('review.backlog.cta', { count: backlog.count, day: fmtDateShort(backlog.date) })}
+        </button>
+      )}
+    </div>
+  );
 }
 
 /** Renders a translated sentence whose '{k<digit>}' placeholders stand for keyboard keys (e.g. '{k1}' → <Kbd>1</Kbd>). */
@@ -229,6 +253,7 @@ export function Review() {
   const loadCategories = useAppStore((s) => s.loadCategories);
   const dataVersion = useAppStore((s) => s.dataVersion);
   const bumpData = useAppStore((s) => s.bumpData);
+  const backlog = useAppStore((s) => s.dashboards[date]?.review_backlog ?? null);
   const toast = useToast();
   const reduce = useReducedMotion();
 
@@ -439,9 +464,7 @@ export function Review() {
             <p className="display text-lg text-ink">{t('review.empty.title')}</p>
             <p className="mx-auto mt-1 max-w-sm text-sm leading-5 text-ink-2">{t('review.empty.body')}</p>
           </div>
-          <Link to="/timeline" className="inline-flex h-9 items-center rounded-control border border-line-2 bg-panel px-3.5 text-sm font-medium text-ink transition-colors duration-150 hover:bg-panel-2">
-            {t('review.empty.cta')}
-          </Link>
+          <EmptyActions backlog={backlog} onGoTo={setDate} />
         </Card>
       ) : (
         <div className="grid grid-cols-12 items-start gap-5">
@@ -471,9 +494,7 @@ export function Review() {
                     <p className="display text-lg text-ink">{t('review.done.title')}</p>
                     <p className="mx-auto mt-1 max-w-sm text-sm leading-5 text-ink-2">{t('review.done.body', { count: reviewed.length })}</p>
                   </div>
-                  <Link to="/timeline" className="inline-flex h-9 items-center rounded-control border border-line-2 bg-panel px-3.5 text-sm font-medium text-ink transition-colors duration-150 hover:bg-panel-2">
-                    {t('review.empty.cta')}
-                  </Link>
+                  <EmptyActions backlog={backlog} onGoTo={setDate} />
                 </div>
               )}
 

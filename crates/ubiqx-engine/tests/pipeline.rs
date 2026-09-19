@@ -1248,6 +1248,58 @@ async fn stale_open_block_from_an_abrupt_exit_is_closed_at_start() {
     h.handle.shutdown();
 }
 
+/// The dashboard describes one day. `needs_review` used to ignore that and count every flagged
+/// block in the database, so the sidebar badge insisted there was work left while the review
+/// page for that day — which reads the same range as `timeline` — was legitimately empty.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn needs_review_counts_the_day_and_the_backlog_names_the_other_one() {
+    let h = harness_with(HarnessOptions {
+        seed: |store| {
+            for (id, mins_ago) in [("today-flagged", 30), ("older-flagged", 3 * 24 * 60)] {
+                let mut b = pending_block(id, mins_ago);
+                b.needs_review = true;
+                BlockRepo::insert(store, &b).unwrap();
+            }
+        },
+        ..Default::default()
+    })
+    .await;
+    let today = fixed_now().with_timezone(&Local).date_naive();
+    let older = today - ChronoDuration::days(3);
+
+    let d = dashboard(h.handle.state(), today).unwrap();
+    assert_eq!(d.needs_review, 1, "only the block started on {today}");
+    assert_eq!(
+        d.review_backlog,
+        Some(ReviewBacklog {
+            count: 1,
+            date: older
+        }),
+        "the other flagged block is still reachable"
+    );
+
+    // Symmetric from the older day: the counts follow the day on screen, not the calendar.
+    let d = dashboard(h.handle.state(), older).unwrap();
+    assert_eq!(d.needs_review, 1);
+    assert_eq!(
+        d.review_backlog,
+        Some(ReviewBacklog {
+            count: 1,
+            date: today
+        }),
+    );
+
+    // Nothing flagged on the day in between, and both others still show up as the backlog.
+    let d = dashboard(h.handle.state(), today - ChronoDuration::days(1)).unwrap();
+    assert_eq!(d.needs_review, 0);
+    assert_eq!(
+        d.review_backlog.map(|b| (b.count, b.date)),
+        Some((2, today)),
+        "newest flagged day first"
+    );
+    h.handle.shutdown();
+}
+
 /// Fake AI that still requires a key, so health follows the secret store like in production.
 fn keyed_fake_ai() -> AiPorts {
     AiPorts {

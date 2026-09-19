@@ -12,6 +12,7 @@ use ubiqx_core::ports::*;
 use ubiqx_core::scheduler::{day_range, month_range};
 use ubiqx_core::*;
 
+use crate::deps::Repos;
 use crate::screenshots::screenshots_dir;
 use crate::state::EngineState;
 
@@ -29,9 +30,23 @@ pub struct DashboardData {
     pub ai_health: AiHealth,
     pub usage_month: AiUsageTotals,
     pub budget_usd: f64,
+    /// Blocks flagged for review *on this day*, the same set the review queue shows. Every
+    /// surface that renders it is scoped to `date`, so counting the whole database here made
+    /// the sidebar badge disagree with a review page that was legitimately empty.
     pub needs_review: usize,
+    /// What is still flagged on other days, so a clean day does not hide it.
+    pub review_backlog: Option<ReviewBacklog>,
     /// Focus score per local hour of the day (0..24), `None` when no activity.
     pub hourly_focus: Vec<Option<u8>>,
+}
+
+/// Blocks still waiting for review outside the day on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewBacklog {
+    /// How many, capped by [`BACKLOG_SCAN`].
+    pub count: usize,
+    /// The most recent day holding one, so the UI can send the user straight there.
+    pub date: NaiveDate,
 }
 
 /// A group of blocks sharing app + domain/title, the unit of the review screen.
@@ -172,7 +187,11 @@ pub fn dashboard(state: &EngineState, date: NaiveDate) -> CoreResult<DashboardDa
         .collect();
     let usage_month = repos.usage.totals(month_range(now))?;
     let settings = state.settings();
-    let needs_review = repos.blocks.list_needs_review(500)?.len();
+    let needs_review = timeline
+        .iter()
+        .filter(|b| !b.is_open && b.needs_review)
+        .count();
+    let review_backlog = review_backlog(repos, range)?;
     let hourly_focus = hourly_focus(&closed_for_stats, &categories, date);
     Ok(DashboardData {
         date,
@@ -188,8 +207,27 @@ pub fn dashboard(state: &EngineState, date: NaiveDate) -> CoreResult<DashboardDa
         usage_month,
         budget_usd: settings.ai_monthly_budget_usd,
         needs_review,
+        review_backlog,
         hourly_focus,
     })
+}
+
+/// How far back the backlog scan reads. The count saturates beyond this; the date does not,
+/// because the newest flagged block is always inside the first page.
+const BACKLOG_SCAN: usize = 500;
+
+/// Blocks flagged for review on any day but `day`, newest first.
+fn review_backlog(repos: &Repos, day: TimeRange) -> CoreResult<Option<ReviewBacklog>> {
+    let elsewhere: Vec<ActivityBlock> = repos
+        .blocks
+        .list_needs_review(BACKLOG_SCAN)?
+        .into_iter()
+        .filter(|b| !day.contains(b.started_at))
+        .collect();
+    Ok(elsewhere.first().map(|newest| ReviewBacklog {
+        count: elsewhere.len(),
+        date: newest.started_at.with_timezone(&Local).date_naive(),
+    }))
 }
 
 /// Gaps between blocks inside the range count as idle (the sampler drops idle samples).
