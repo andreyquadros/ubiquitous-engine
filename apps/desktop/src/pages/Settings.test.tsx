@@ -6,6 +6,7 @@ import { getLocale, setLocale } from '../i18n';
 import { __mock } from '../lib/mock';
 import { providerPitch } from '../lib/providers';
 import { useAppStore } from '../lib/store';
+import { IDLE_INSTALL } from '../lib/updater';
 import { SettingsPage } from './Settings';
 
 const renderPage = () =>
@@ -102,7 +103,7 @@ describe('Settings · language', () => {
 describe('Settings · Windows and Linux (platform from the settings view)', () => {
   beforeEach(() => {
     __mock.reset();
-    useAppStore.setState({ settingsView: null, updateStatus: null });
+    useAppStore.setState({ settingsView: null, updateStatus: null, updateInstall: IDLE_INSTALL });
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -158,7 +159,7 @@ describe('Settings · Windows and Linux (platform from the settings view)', () =
 describe('Settings · updates section (mock backend)', () => {
   beforeEach(async () => {
     __mock.reset();
-    useAppStore.setState({ settingsView: null, updateStatus: null });
+    useAppStore.setState({ settingsView: null, updateStatus: null, updateInstall: IDLE_INSTALL });
     await useAppStore.getState().loadSettings();
   });
   afterEach(() => vi.restoreAllMocks());
@@ -204,6 +205,26 @@ describe('Settings · updates section (mock backend)', () => {
     await waitFor(() => expect(open).toHaveBeenCalledWith(expect.stringMatching(/ubiqX-macos-aarch64\.dmg$/), '_blank', 'noopener'));
     fireEvent.click(within(panel).getByRole('button', { name: 'Página do release' }));
     await waitFor(() => expect(open).toHaveBeenCalledWith('https://github.com/andreyquadros/ubiquitous-engine/releases/tag/continuous', '_blank', 'noopener'));
+  });
+
+  it('offers the in-app update in the release panel and keeps the manual install as the fallback', async () => {
+    __mock.setUpdate(true);
+    __mock.setUpdateInstall({ totalBytes: 12_000_000 });
+    renderPage();
+    const panel = await screen.findByTestId('update-release');
+    // The manual route is still documented, now named as the fallback it is.
+    const notes = screen.getByTestId('install-notes');
+    expect(notes).toHaveTextContent('Instalação manual (reserva)');
+    expect(notes).toHaveTextContent('Use este caminho só se a atualização automática falhar');
+    expect(within(panel).getByRole('button', { name: 'Baixar (.dmg)' })).toBeInTheDocument();
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Atualizar agora' }));
+    // macOS: the honest warning comes before anything is downloaded.
+    expect(await within(panel).findByTestId('update-macos-warning')).toHaveTextContent('Gravação de Tela e Automação');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Atualizar mesmo assim' }));
+    expect(await within(panel).findByRole('progressbar', { name: 'Progresso da atualização' })).toBeInTheDocument();
+    await waitFor(() => expect(__mock.state().update.install.installed).toBe(1));
+    await waitFor(() => expect(__mock.state().update.install.relaunched).toBe(1));
   });
 
   it('scrolls to the updates section when opened from the banner and copies the install commands', async () => {

@@ -121,11 +121,16 @@ Sem toolchain local: baixe o `.app` pronto do GitHub Actions (artifact `ubiqX-ma
 [`docs/MACOS-TESTING.md`](docs/MACOS-TESTING.md) § 3.1.
 
 **Atualizações.** Cada push vira a release rolante [`continuous`](https://github.com/andreyquadros/ubiquitous-engine/releases/tag/continuous)
-(`.dmg` + `.app.zip`, `-setup.exe` + `.msi`, `.AppImage` + `.deb` e um `latest.json` com as três plataformas),
-publicada de uma vez pelo GitHub Actions e, com um token, também pelo Codemagic (só macOS; as plataformas do feed
-são mescladas). O app instalado consulta o `latest.json` ao abrir e a cada 6 h e avisa com banner, notificação e
-item no menu da bandeja quando há um build mais novo; **Baixar** abre o instalador do sistema em uso. Instalação,
-token do Codemagic e `UBIQX_UPDATE_FEED_URL` em [`docs/MACOS-TESTING.md`](docs/MACOS-TESTING.md) § 3.2.
+(`.dmg` + `.app.zip`, `-setup.exe` + `.msi`, `.AppImage` + `.deb`, os artefatos de atualização assinados e dois
+feeds: `latest.json` com as três plataformas e `updater.json` no formato do `tauri-plugin-updater`), publicada de
+uma vez pelo GitHub Actions e, com um token, também pelo Codemagic (só macOS; as plataformas dos feeds são
+mescladas). O app instalado consulta o `latest.json` ao abrir e a cada 6 h e avisa com banner, notificação e item
+no menu da bandeja quando há um build mais novo; **Atualizar agora** baixa com barra de progresso, instala e
+reabre o app sozinho, e **Baixar** continua abrindo o instalador do sistema em uso como reserva. A versão de cada
+build é `0.1.<número do build>` (`scripts/app-version.mjs`), que é o que o updater compara. No macOS a CI assina
+ad hoc, então a atualização automática custa reconceder Gravação de Tela e Automação — o app avisa antes.
+Assinatura, secrets, instalação, token do Codemagic e `UBIQX_UPDATE_FEED_URL` em
+[`docs/MACOS-TESTING.md`](docs/MACOS-TESTING.md) § 3.2.
 
 Na primeira execução o onboarding pede para **escolher a IA** e colar a chave correspondente, a permissão de
 **Gravação de Tela** (reinicie o app depois de conceder) e a **Automação** para o navegador; depois você cria as

@@ -37,6 +37,7 @@
       "appimage",
       "deb"
     ],
+    "createUpdaterArtifacts": "v1Compatible",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -80,6 +81,17 @@
       },
       "appimage": {
         "bundleMediaFramework": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1QzEwQUM3QTczQzY3MzcKUldRM1p6eW54d3JCNVVJckxQUlEvY1gzS2FaN1VNamlrQkFtZGdMdmM1cXJYbHNWTmQ5YnNHSk4K",
+      "endpoints": [
+        "https://github.com/andreyquadros/ubiquitous-engine/releases/download/continuous/updater.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

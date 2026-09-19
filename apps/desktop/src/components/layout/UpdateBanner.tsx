@@ -6,7 +6,9 @@ import { fmtDateTime } from '../../lib/format';
 import { useAppStore } from '../../lib/store';
 import { useToast } from '../../lib/toast';
 import type { AssetKind, UpdateStatus } from '../../lib/types';
+import { losesMacPermissions } from '../../lib/updater';
 import { Button } from '../ui/Button';
+import { InstallUpdateButton, UpdateInstallStatus } from './UpdateInstall';
 
 /** Settings section the "how to install" link jumps to (`id="sec-atualizacoes"` in pages/Settings.tsx). */
 export const UPDATES_SECTION_ID = 'atualizacoes';
@@ -22,9 +24,10 @@ export const hasPendingUpdate = (status: UpdateStatus | null): status is UpdateS
   !!status && status.enabled && status.available !== null && !status.dismissed;
 
 /**
- * Compact strip above every page: "new build available", download the installer of this OS (the button names its
- * extension), dismiss, or jump to the install notes. Hidden when there is no update, when the user dismissed this
- * build, or on development builds.
+ * Compact strip above every page: "new build available", update in place (download, install and reopen, with a
+ * progress bar), or take the manual route — download the installer of this OS (the button names its extension),
+ * dismiss, or jump to the install notes. Hidden when there is no update, when the user dismissed this build, or
+ * on development builds.
  */
 export function UpdateBanner() {
   const t = useT();
@@ -67,10 +70,12 @@ export function UpdateBanner() {
             <Button size="sm" variant="ghost" icon={<X className="size-3.5" strokeWidth={1.75} aria-hidden />} onClick={() => void dismissUpdate()}>
               {t('updates.later')}
             </Button>
-            <Button size="sm" variant="primary" icon={<ArrowDownToLine className="size-3.5" strokeWidth={2} aria-hidden />} onClick={download}>
+            <Button size="sm" icon={<ArrowDownToLine className="size-3.5" strokeWidth={2} aria-hidden />} onClick={download}>
               {downloadLabel(t, release.kind)}
             </Button>
+            <InstallUpdateButton size="sm" macWarning={losesMacPermissions(release.kind)} />
           </div>
+          <UpdateInstallStatus className="basis-full" />
         </motion.div>
       )}
     </AnimatePresence>

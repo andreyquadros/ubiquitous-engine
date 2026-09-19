@@ -54,6 +54,7 @@ import {
   type Plan,
 } from './types';
 import { PROVIDER_IDS, SITE_URL, UBI_MODELS, licenseAllowsManaged, reconcileModels } from './providers';
+import type { InAppUpdate, UpdateProgress } from './updater';
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                             */
@@ -780,6 +781,8 @@ interface UpdateState {
   checking: boolean;
   /** Epoch already pushed as an `update_available` event (the engine emits once per build). */
   announcedEpoch: number | null;
+  /** In-app install (lib/updater.ts): what the fake tauri-plugin-updater does when asked. */
+  install: { failure: string | null; supported: boolean; totalBytes: number | null; installed: number; relaunched: number };
 }
 
 const freshUpdateState = (platform: Platform): UpdateState => ({
@@ -789,7 +792,43 @@ const freshUpdateState = (platform: Platform): UpdateState => ({
   lastError: null,
   checking: false,
   announcedEpoch: null,
+  install: { failure: null, supported: true, totalBytes: 24_000_000, installed: 0, relaunched: 0 },
 });
+
+/**
+ * The fake `tauri-plugin-updater` + `tauri-plugin-process` behind `lib/updater.ts` outside Tauri: it offers
+ * the build `__mock.setUpdate` serves, streams a handful of progress events and counts the installs and the
+ * relaunches. `__mock.setUpdateInstall` turns it into "nothing to install" or into a failure.
+ */
+export const mockUpdater = {
+  async check(): Promise<InAppUpdate | null> {
+    await sleep(LATENCY_MS);
+    const release = S.update.available;
+    if (!release || !S.update.install.supported) return null;
+    return {
+      version: release.version,
+      notes: release.notes,
+      async downloadAndInstall(onProgress: (p: UpdateProgress) => void): Promise<void> {
+        const total = S.update.install.totalBytes;
+        onProgress({ downloaded: 0, total });
+        const steps = 4;
+        for (let i = 1; i <= steps; i += 1) {
+          await sleep(LATENCY_MS);
+          onProgress({ downloaded: Math.round(((total ?? 1_000_000) * i) / steps), total });
+        }
+        if (S.update.install.failure) throw new Error(S.update.install.failure);
+        S.update.install.installed += 1;
+      },
+      async close(): Promise<void> {
+        /* nothing to free in the mock */
+      },
+    };
+  },
+  async relaunch(): Promise<void> {
+    await sleep(LATENCY_MS);
+    S.update.install.relaunched += 1;
+  },
+};
 
 
 /* ------------------------------------------------------------------ */
@@ -2118,6 +2157,16 @@ export const __mock = {
   },
   /** The newer build `setUpdate(true)` serves, for assertions. */
   sampleRelease,
+  /**
+   * How the fake in-app updater behaves (`lib/updater.ts` outside Tauri): `supported: false` = the plugin
+   * finds nothing to install (the UI falls back to the manual installer), `failure` = the install throws
+   * that message, `totalBytes: null` = a download without a known size (indeterminate progress bar).
+   */
+  setUpdateInstall(patch: { failure?: string | null; supported?: boolean; totalBytes?: number | null }): void {
+    if (patch.failure !== undefined) S.update.install.failure = patch.failure;
+    if (patch.supported !== undefined) S.update.install.supported = patch.supported;
+    if (patch.totalBytes !== undefined) S.update.install.totalBytes = patch.totalBytes;
+  },
   /**
    * Focus guard state for tests and screenshots: `session: 'active'` = the 45-min sample started 12 min ago, `null` ends any
    * session silently; `nudge: true` stores an unseen `focus_prompt` nudge (and pushes it to subscribers); `targets`/`interventions`

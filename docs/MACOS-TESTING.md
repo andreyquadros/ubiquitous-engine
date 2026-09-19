@@ -86,63 +86,116 @@ Tauri também notariza, e o app abre em qualquer Mac sem os comandos acima.
 pelo GitHub (*Add file → Upload files* dentro da pasta, nomes exatamente `Ubi.glb` e `ubi.png`) ou rode
 `scripts/install-ubi-model.sh` e faça commit dos dois arquivos — o `Ubi.glb` deve ser commitado como o PNG.
 
-## 3.2 Atualizações: como o app avisa e como instalar
+## 3.2 Atualizações: o ubiqX se atualiza sozinho
 
-Cada commit que a nuvem compila vira uma atualização para quem já usa o ubiqX. Não há auto-instalação:
-o app avisa, você baixa o `.dmg` com um clique e instala como no § 3.1.
+Cada commit que a nuvem compila vira uma atualização para quem já usa o ubiqX, e a instalação agora é
+automática: aparece uma barra de progresso, o ubiqX baixa a nova versão, instala e se reabre sozinho. Não é
+preciso baixar nada à mão. O caminho manual (o `.dmg`) continua ali como reserva, para quando a instalação
+automática falhar ou você preferir fazer você mesmo.
 
 **Como funciona.** A CI publica cada build na release rolante **`continuous`** do repositório
-(`https://github.com/andreyquadros/ubiquitous-engine/releases/tag/continuous`). A release recebe sempre os
-mesmos arquivos, com nomes estáveis, para as três plataformas: `ubiqX-macos-aarch64.dmg` e
-`ubiqX-macos-aarch64.app.zip` (macOS), `ubiqX-windows-x86_64-setup.exe` e `ubiqX-windows-x86_64.msi`
-(Windows), `ubiqX-linux-x86_64.AppImage` e `ubiqX-linux-x86_64.deb` (Linux), mais o `latest.json`, o "feed"
-com versão, data do commit (`build.epoch`), número do build, sha, as notas do commit e uma entrada por
-plataforma em `platforms` (`darwin-aarch64`, `windows-x86_64`, `linux-x86_64`, cada uma com `url`, `kind`,
-`size` e, no macOS, `app_zip_url`). O app escolhe a entrada do sistema e da arquitetura em que roda (com
-`…-universal` e depois qualquer chave do mesmo sistema como reserva). Cada binário sai da compilação com
-esses mesmos números gravados (`scripts/build-info.sh` os calcula e o `build.rs` os grava). O app baixa o
-`latest.json` 45 s depois de abrir e depois a cada 6 h; se a versão for maior, ou igual com um commit mais
-novo, há atualização. Builds de desenvolvimento (`pnpm tauri dev`, sem git) não verificam sozinhos; a
-verificação manual em Configurações continua funcionando para testar. Instalação no Windows e no Linux:
-[`WINDOWS-LINUX.md`](WINDOWS-LINUX.md) § 1.
+(`https://github.com/andreyquadros/ubiquitous-engine/releases/tag/continuous`), sempre com os mesmos nomes de
+arquivo, e escreve ali **dois feeds**:
+
+- **`latest.json`** — o aviso. Traz versão, data do commit (`build.epoch`), número do build, sha, as notas do
+  commit e uma entrada por plataforma em `platforms` (`darwin-aarch64`, `windows-x86_64`, `linux-x86_64`, cada
+  uma com `url`, `kind`, `size` e, no macOS, `app_zip_url`) apontando para os instaladores
+  `ubiqX-macos-aarch64.dmg`, `ubiqX-macos-aarch64.app.zip`, `ubiqX-windows-x86_64-setup.exe`,
+  `ubiqX-windows-x86_64.msi`, `ubiqX-linux-x86_64.AppImage` e `ubiqX-linux-x86_64.deb`. É o que o app lê 45 s
+  depois de abrir e a cada 6 h para dizer "tem build novo" no banner, no menu da barra de menus e na
+  notificação. Esse feed não mudou.
+- **`updater.json`** — a instalação. É o formato do `tauri-plugin-updater`
+  (`{version, notes, pub_date, platforms: {"darwin-aarch64": {signature, url}, …}}`) e aponta para os
+  **artefatos de atualização**: `ubiqX-macos-aarch64.app.tar.gz` (macOS), `ubiqX-windows-x86_64-setup.nsis.zip`
+  (Windows) e `ubiqX-linux-x86_64.AppImage.tar.gz` (Linux). Cada um vem com a assinatura `.sig` ao lado, e o
+  ubiqX só instala um pacote cuja assinatura confere com a chave pública gravada em
+  `apps/desktop/src-tauri/tauri.conf.json` (`plugins > updater > pubkey`).
+
+**Versão por build.** O updater compara versões (semver), então a versão precisa crescer a cada build. A CI
+grava `0.1.<número do build>` em `tauri.conf.json` antes de compilar (`scripts/app-version.mjs`, chamado por
+`scripts/ci-app-version.sh`); o número do build é a contagem de commits, a mesma que aparece em
+*Configurações → Atualizações → Número*. Assim o número que você vê no app, o número dos dois feeds e o número
+que o updater compara são sempre o mesmo. Data, sha e branch continuam vindo do `scripts/build-info.sh`.
+Compilando na sua máquina, sem esse passo, a versão continua a base (`0.1.0`).
 
 **Onde aparece.** Um banner no topo do app com a data e o sha do build e os botões **Como instalar**,
-**Depois** e **Baixar (.dmg)**; a seção **Atualizações** em Configurações (build atual, última verificação,
-**Verificar agora**, interruptor da verificação automática e, quando há build novo, as notas do commit com
-**Baixar** e **Página do release**); uma notificação do macOS uma vez por build ("Nova versão do ubiqX. Build
-18/09 15:04 (a1b2c3d) já está disponível"); e um item no menu da barra de menus, **Verificar atualizações…**
-enquanto nenhum build novo é conhecido e **Baixar a nova versão (18/09 15:04 a1b2c3d)…** depois que um
-aparece. **Depois** esconde o banner só daquele build; o próximo avisa de novo.
+**Depois**, **Baixar (.dmg)** e **Atualizar agora**; a seção **Atualizações** em Configurações (build atual,
+última verificação, **Verificar agora**, interruptor da verificação automática e, quando há build novo, as
+notas do commit com **Atualizar agora**, **Baixar (.dmg)** e **Página do release**); uma notificação do macOS
+uma vez por build; e um item no menu da barra de menus. **Depois** esconde o banner só daquele build.
 
-**GitHub Actions (automático).** Já está configurado: todo push compila os três sistemas (jobs `macos-app`,
-`windows-app` e `linux-app`) e o job `publish-continuous` publica os seis instaladores e o `latest.json` de
-uma vez, com o `GITHUB_TOKEN` que o próprio Actions fornece (o job tem `permissions: contents: write`), então o
-feed nunca mostra um build pela metade. Pull requests só compilam. Um push novo cancela o build anterior do
-mesmo branch, e a publicação recusa sobrescrever um build mais novo do que o dela, então a release nunca
-"volta no tempo". Quando o `latest.json` já publicado é do **mesmo** commit (Codemagic e Actions a publicar o
-mesmo push), as plataformas são mescladas: cada publicador troca só as suas.
+**Atualizar com um clique.** Clique em **Atualizar agora** (no banner ou em Configurações). No macOS aparece
+antes um aviso curto — leia o parágrafo seguinte — com **Atualizar mesmo assim** e **Cancelar**. Depois disso
+a barra mostra quantos MB de quantos já vieram, o pacote é instalado e o ubiqX fecha e abre de novo na versão
+nova. Se algo der errado, a mensagem do erro aparece ali mesmo, com **Tentar de novo** e o **Baixar (.dmg)**
+do lado para o caminho manual.
 
-**Codemagic (opcional, precisa de um token).** O Codemagic não recebe token do GitHub sozinho. Para ele
-também publicar:
+**O preço no macOS: você vai reconceder as permissões.** Isto não está resolvido, e o app avisa antes de
+instalar. O macOS amarra Gravação de Tela, Automação e os itens do Keychain à **assinatura de código** do
+bundle. A CI assina o `ubiqX.app` *ad hoc* (`APPLE_SIGNING_IDENTITY="-"`), ou seja, sem certificado: a
+identidade do app é o hash do próprio binário e muda a cada build. Quando o updater troca o bundle, o sistema
+vê um app diferente do que tinha autorizado, então **Gravação de Tela e Automação voltam a ser pedidas** e o
+Keychain pode perguntar de novo pela chave de IA. Não há como contornar isso pelo lado do app: é o
+funcionamento do TCC (o banco de permissões do macOS).
+
+**O que resolveria.** Uma **identidade de assinatura estável** usada pela própria CI, de modo que todo build
+saia com o mesmo certificado e, para o macOS, continue sendo o mesmo app:
+
+1. **Certificado Developer ID Application** (Apple Developer Program, US$ 99/ano). É o caminho completo:
+   exporte o certificado como `.p12`, cadastre no GitHub Actions os secrets `APPLE_CERTIFICATE` (o `.p12` em
+   base64), `APPLE_CERTIFICATE_PASSWORD` e `APPLE_SIGNING_IDENTITY`, e o Tauri assina no lugar do `-` ad hoc.
+   Com `APPLE_ID`, `APPLE_PASSWORD` e `APPLE_TEAM_ID` ele ainda notariza, e aí o `.dmg` também abre em
+   qualquer Mac sem o `xattr`. Este é o único caminho que a Apple documenta e suporta.
+2. **Certificado autoassinado `ubiqX Dev` exportado para a CI** (grátis). Em tese resolve o mesmo problema —
+   o requisito de designação passa a apontar para o certificado, não para o hash do binário — mas é um
+   comportamento que a Apple não documenta, não ajuda com o Gatekeeper (o `.dmg` baixado continua pedindo
+   `xattr -dr com.apple.quarantine`) e **não foi testado aqui**. Se quiser tentar, é o mesmo grupo de
+   variáveis do item 1, com o `.p12` do certificado que você criou no § 2.
+
+Enquanto nenhum dos dois estiver configurado, a atualização automática funciona e é rápida, mas custa
+reconceder as permissões em *Ajustes do Sistema → Privacidade e Segurança*. Se você não quiser pagar esse
+preço a cada build, continue no caminho manual do § 3.1, que reassina com a sua identidade local `ubiqX Dev`.
+No Windows e no Linux nada disso se aplica: a atualização automática não custa nada.
+
+**Segredos da CI (quem mantém o repositório precisa cadastrar).** Em *Settings → Secrets and variables →
+Actions → New repository secret*:
+
+| Secret | O que é |
+|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | conteúdo do arquivo de chave privada gerado por `pnpm tauri signer generate` |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | a senha dessa chave |
+
+A metade pública dessa chave já está em `apps/desktop/src-tauri/tauri.conf.json`. Os três jobs de build
+(`macos-app`, `windows-app`, `linux-app`) começam com a etapa **Updater signing key**: sem os dois secrets ela
+para o job com a mensagem dizendo exatamente o que falta, em vez de gerar um pacote sem assinatura que o app
+recusaria depois. A chave privada nunca entra no repositório. Para trocar a chave, gere outro par
+(`pnpm tauri signer generate -w ubiqx-updater.key`), troque o `pubkey` no `tauri.conf.json` e atualize os dois
+secrets — quem estiver numa versão antiga terá de atualizar à mão uma última vez.
+
+**GitHub Actions (automático).** Todo push compila os três sistemas (jobs `macos-app`, `windows-app` e
+`linux-app`) e o job `publish-continuous` publica os instaladores, os artefatos de atualização assinados, o
+`latest.json` e o `updater.json` de uma vez, com o `GITHUB_TOKEN` que o próprio Actions fornece. Pull requests
+só compilam. Um push novo cancela o build anterior do mesmo branch, e a publicação recusa sobrescrever um
+build mais novo do que o dela. Quando o `latest.json` já publicado é do **mesmo** commit (Codemagic e Actions
+a publicar o mesmo push), as plataformas são mescladas nos dois feeds: cada publicador troca só as suas.
+
+**Codemagic (opcional, precisa de tokens).** O Codemagic não recebe token do GitHub sozinho, e agora também
+precisa da chave de assinatura para compilar. Para ele publicar:
 
 1. No GitHub: *Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new
    token*. Repositório: só `ubiquitous-engine`. Permissão: **Contents: Read and write**. Copie o token.
-2. No Codemagic: *Teams → Global variables and secrets* (ou na aplicação, *Environment variables*): variável
-   `GITHUB_TOKEN`, valor = o token, grupo **`ubiqx_github`**, marque *Secure*.
-3. No `codemagic.yaml`, descomente as linhas
-   ```yaml
-   groups:
-     - ubiqx_github
-   ```
-   (e `- ubiqx_apple` se também tiver o grupo de assinatura). Faça commit.
+2. No Codemagic: *Teams → Global variables and secrets*: variável `GITHUB_TOKEN` no grupo **`ubiqx_github`**,
+   e as variáveis `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` no grupo
+   **`ubiqx_updater`**; marque todas como *Secure*.
+3. No `codemagic.yaml`, descomente as linhas dos grupos (`ubiqx_github`, `ubiqx_updater` e, se tiver,
+   `ubiqx_apple`). Faça commit.
 
-Sem o grupo a etapa *Publicar atualização (GitHub Releases)* escreve "Publicação pulada: GITHUB_TOKEN não
-definido" e o build continua disponível em Artifacts. Os dois caminhos publicam na mesma release: com o
-mesmo commit as plataformas se somam (o Codemagic só traz o macOS); com commits diferentes, quem terminar por
-último com o commit mais novo vence e o outro pula.
+Sem o grupo `ubiqx_github` a etapa *Publicar atualização (GitHub Releases)* escreve "Publicação pulada:
+GITHUB_TOKEN não definido" e o build continua em Artifacts. Sem o `ubiqx_updater` o build **falha** na etapa
+*Versão deste build e chave de assinatura*, de propósito.
 
-**Instalar a atualização.** O botão **Baixar** abre o `.dmg` no navegador. O bundle continua com assinatura
-ad hoc e em quarentena, então repita a sequência do § 3.1:
+**Instalação manual (reserva).** O botão **Baixar (.dmg)** abre o instalador no navegador. O bundle continua
+com assinatura ad hoc e em quarentena, então repita a sequência do § 3.1:
 
 ```bash
 open ~/Downloads/ubiqX-macos-aarch64.dmg          # arraste o ubiqX para Aplicativos (substitua) e ejete
@@ -153,13 +206,20 @@ open /Applications/ubiqX.app
 
 Assinar com a **mesma** identidade `ubiqX Dev` a cada atualização é o que mantém Gravação de Tela, Automação e
 o Keychain: o macOS liga essas permissões à assinatura, e um binário reassinado com a mesma identidade é, para
-ele, o mesmo app. Se pular o `codesign`, o novo build volta a pedir tudo.
+ele, o mesmo app. É exatamente o que a atualização automática não consegue fazer hoje. Instalação no Windows e
+no Linux: [`WINDOWS-LINUX.md`](WINDOWS-LINUX.md) § 1.
+
+**Conferir uma assinatura à mão.** Cada artefato de atualização é publicado com o seu `.sig` ao lado:
+
+```bash
+minisign -Vm ubiqX-macos-aarch64.app.tar.gz -P "$(cat apps/desktop/src-tauri/tauri.conf.json | python3 -c 'import json,sys,base64; print(base64.b64decode(json.load(sys.stdin)["plugins"]["updater"]["pubkey"]).decode().splitlines()[1])')"
+```
 
 **Outro feed.** Para apontar o app a um fork ou a um servidor próprio, compile com
-`UBIQX_UPDATE_FEED_URL=https://.../latest.json pnpm tauri build` (o valor fica gravado no binário; o padrão é o
-`latest.json` da release `continuous` deste repositório). O `scripts/publish-release.mjs` aceita `--repo`,
-`--tag` e vários `--asset` (plataforma e tipo inferidos pelo nome do arquivo; `--dmg` e `--app-zip` continuam
-valendo) para publicar em outro lugar; `node scripts/publish-release.mjs --help` lista tudo.
+`UBIQX_UPDATE_FEED_URL=https://.../latest.json pnpm tauri build` (o aviso) e troque
+`plugins > updater > endpoints` no `tauri.conf.json` (a instalação). O `scripts/publish-release.mjs` aceita
+`--repo`, `--tag` e vários `--asset` (plataforma e tipo inferidos pelo nome do arquivo; `--dmg` e `--app-zip`
+continuam valendo) para publicar em outro lugar; `node scripts/publish-release.mjs --help` lista tudo.
 
 ## 4. Primeira execução (onboarding)
 
@@ -204,7 +264,9 @@ exatamente o texto enviado à IA por bloco e permite apagar tudo.
 | "ubiqX está danificado" / "desenvolvedor não identificado" ao abrir um app baixado | Quarentena do Gatekeeper num bundle com assinatura ad hoc | `xattr -dr com.apple.quarantine ubiqX.app` e assinar (§ 3.1) |
 | Banner de atualização não aparece mesmo com commit novo | Build de desenvolvimento (epoch 0) não verifica sozinho, verificação automática desligada, ou a CI ainda não publicou | Configurações → Atualizações → **Verificar agora**; confira a release `continuous` no GitHub e o log do job *Publish continuous release* (§ 3.2) |
 | "Publicação pulada: GITHUB_TOKEN não definido" no log do Codemagic | Grupo `ubiqx_github` não criado ou `groups` ainda comentado no yaml | Criar o token fine-grained e o grupo, descomentar `groups` (§ 3.2); enquanto isso o GitHub Actions publica sozinho |
-| Atualização instalada pede Gravação de Tela de novo | Novo bundle sem a assinatura `ubiqX Dev` | `xattr -dr com.apple.quarantine` e `codesign` com a mesma identidade (§ 3.2) |
+| Atualização automática pede Gravação de Tela e Automação de novo | Esperado: a CI assina o bundle ad hoc, sem identidade fixa, e o macOS vê um app diferente | Reconceder em Ajustes → Privacidade e Segurança, ou usar o caminho manual e reassinar com `ubiqX Dev`; solução definitiva no § 3.2 |
+| Job da CI falha em **Updater signing key** | Os secrets `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` não foram cadastrados | Cadastrar os dois em Settings → Secrets and variables → Actions (§ 3.2) |
+| **Atualizar agora** diz "Este build não consegue se atualizar sozinho" | O `updater.json` não tem entrada para este sistema/arquitetura, ou o build saiu sem assinatura | Usar **Baixar (.dmg)** e instalar como no § 3.1; conferir o `updater.json` da release `continuous` |
 | Cmd+Q "não fecha" o app | Esperado: Cmd+Q só esconde a janela | Para encerrar de verdade: tray → **Sair** |
 | Log sem linhas do rastreador | Nível de log baixo | `UBIQX_LOG=debug` antes de abrir o app; o arquivo fica em `~/Library/Logs/ai.ubiqx.app/` |
 | macOS 15 mostra aviso periódico de captura de tela | Comportamento do sistema para apps que usam captura | Esperado; clique em *Continuar a permitir* |

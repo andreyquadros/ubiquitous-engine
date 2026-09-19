@@ -21,6 +21,19 @@
 // merged with ours (ours win per key); when ours is newer it replaces the feed; when it is older nothing
 // is touched.
 //
+// A SECOND feed, updater.json, is published next to it whenever the build produced updater artifacts
+// (`bundle.createUpdaterArtifacts` in tauri.conf.json). It is the static JSON tauri-plugin-updater reads —
+// {version, notes, pub_date, platforms: {"darwin-aarch64": {signature, url}, …}} — and it points at the
+// artifacts the plugin installs by itself, each with the minisign signature Tauri wrote next to it:
+//
+//   https://github.com/<owner>/<repo>/releases/download/continuous/updater.json
+//   https://github.com/<owner>/<repo>/releases/download/continuous/ubiqX-macos-<arch>.app.tar.gz (+ .sig)
+//   https://github.com/<owner>/<repo>/releases/download/continuous/ubiqX-windows-<arch>-setup.nsis.zip (+ .sig)
+//   https://github.com/<owner>/<repo>/releases/download/continuous/ubiqX-linux-<arch>.AppImage.tar.gz (+ .sig)
+//
+// latest.json and its schema never change: the Rust checker, the banner and the tray still read that one,
+// and the manual installers stay published under their stable names.
+//
 // Node 22, ESM, no dependencies. Importable: `main(argv, env)` returns the exit code and only
 // runs when the file is executed directly, so scripts/publish-release.test.mjs can drive it
 // against an in-process mock of the GitHub API through --api and --uploads.
@@ -61,12 +74,14 @@ Opções:
                         arquivo: ubiqX-macos-<arch>.dmg, ubiqX-macos-<arch>.app.zip,
                         ubiqX-windows-<arch>.msi, ubiqX-windows-<arch>-setup.exe,
                         ubiqX-linux-<arch>.AppImage, ubiqX-linux-<arch>.deb (outros nomes com a mesma
-                        extensão também servem: o tipo vem da extensão e a arquitetura de --arch)
+                        extensão também servem: o tipo vem da extensão e a arquitetura de --arch).
+                        Artefatos de atualização (.app.tar.gz, -setup.nsis.zip, .AppImage.tar.gz) vão
+                        para o updater.json e exigem o <arquivo>.sig que o Tauri grava ao lado
   --dmg <caminho|glob>  atalho para --asset de um .dmg (padrão, sem --asset: ${DEFAULTS.dmg})
   --app-zip <caminho>   atalho para --asset de um .app.zip feito com ditto
-  --out <dir>           onde escrever latest.json (padrão: ${DEFAULTS.out})
+  --out <dir>           onde escrever latest.json e updater.json (padrão: ${DEFAULTS.out})
   --arch <arch>         aarch64 ou x86_64 para nomes sem arquitetura (padrão: a desta máquina)
-  --version <x.y.z>     versão do produto (padrão: [workspace.package] em Cargo.toml)
+  --version <x.y.z>     versão do produto (padrão: UBIQX_VERSION, depois a de tauri.conf.json)
   --api <url>           base da API do GitHub (padrão: ${DEFAULTS.api})
   --uploads <url>       base de upload de assets (padrão: ${DEFAULTS.uploads})
   --strict              falha (exit 1) quando GITHUB_TOKEN está ausente, em vez de pular
@@ -75,6 +90,7 @@ Opções:
 
 Ambiente:
   GITHUB_TOKEN          obrigatório; sem ele a publicação é pulada com exit 0 (ou 1 com --strict)
+  UBIQX_VERSION         versão do build (node scripts/app-version.mjs); sem ela vale a de tauri.conf.json
   UBIQX_BUILD_EPOCH, UBIQX_BUILD_NUMBER, UBIQX_BUILD_SHA, UBIQX_BUILD_BRANCH
                         identidade do build (eval "$(bash scripts/build-info.sh)"); sem elas o
                         script consulta o git
@@ -171,17 +187,25 @@ export function parseRepo(value) {
   return { owner: m[1], repo: m[2] };
 }
 
-export function productVersion(opts, root) {
+/**
+ * The version both feeds carry. tauri.conf.json comes first because that is the version the app was built
+ * with — the one Settings shows and the one tauri-plugin-updater compares — and CI rewrites it per run
+ * (`node scripts/app-version.mjs --write`, see scripts/app-version.mjs). `--version` and `UBIQX_VERSION`
+ * override it; `[workspace.package]` in Cargo.toml is the last resort.
+ */
+export function productVersion(opts, root, env = {}) {
   if (opts.version) return opts.version;
+  const fromEnv = String(env.UBIQX_VERSION ?? '').trim();
+  if (fromEnv) return fromEnv;
+  try {
+    const conf = JSON.parse(readFileSync(path.join(root, 'apps/desktop/src-tauri/tauri.conf.json'), 'utf8'));
+    if (conf.version) return String(conf.version);
+  } catch { /* fall through */ }
   try {
     const cargo = readFileSync(path.join(root, 'Cargo.toml'), 'utf8');
     const section = cargo.split(/^\[workspace\.package\]\s*$/m)[1] ?? '';
     const m = section.match(/^version\s*=\s*"([^"]+)"/m);
     if (m) return m[1];
-  } catch { /* fall through */ }
-  try {
-    const conf = JSON.parse(readFileSync(path.join(root, 'apps/desktop/src-tauri/tauri.conf.json'), 'utf8'));
-    if (conf.version) return String(conf.version);
   } catch { /* fall through */ }
   return '0.0.0';
 }
@@ -237,9 +261,15 @@ export const ASSET_KINDS = Object.freeze([
   { kind: 'msi', os: 'windows', platform: 'windows', test: /\.msi$/i, rank: 1, stableName: (arch) => `ubiqX-windows-${arch}.msi` },
   { kind: 'appimage', os: 'linux', platform: 'linux', test: /\.appimage$/i, rank: 0, stableName: (arch) => `ubiqX-linux-${arch}.AppImage` },
   { kind: 'deb', os: 'linux', platform: 'linux', test: /\.deb$/i, rank: 1, stableName: (arch) => `ubiqX-linux-${arch}.deb` },
+  // Updater artifacts (`bundle.createUpdaterArtifacts: "v1Compatible"`): what tauri-plugin-updater downloads
+  // and installs by itself. They never appear in latest.json — they are listed in updater.json, each with the
+  // minisign signature Tauri wrote next to the file (`<arquivo>.sig`).
+  { kind: 'app_tar_gz', updater: true, os: 'macos', platform: 'darwin', test: /\.app\.tar\.gz$/i, rank: 99, stableName: (arch) => `ubiqX-macos-${arch}.app.tar.gz` },
+  { kind: 'nsis_zip', updater: true, os: 'windows', platform: 'windows', test: /\.nsis\.zip$/i, rank: 99, stableName: (arch) => `ubiqX-windows-${arch}-setup.nsis.zip` },
+  { kind: 'appimage_tar_gz', updater: true, os: 'linux', platform: 'linux', test: /\.AppImage\.tar\.gz$/i, rank: 99, stableName: (arch) => `ubiqX-linux-${arch}.AppImage.tar.gz` },
 ]);
 
-const STABLE_NAME = /^ubiqX-(macos|windows|linux)-(aarch64|x86_64)(?:-setup)?\.(?:dmg|app\.zip|msi|exe|AppImage|deb)$/i;
+const STABLE_NAME = /^ubiqX-(macos|windows|linux)-(aarch64|x86_64)(?:-setup)?\.(?:app\.tar\.gz|AppImage\.tar\.gz|nsis\.zip|app\.zip|dmg|msi|exe|AppImage|deb)$/i;
 const ARCH_TOKEN = /(?:^|[-_.])(aarch64|arm64|x86_64|x64|amd64)(?=[-_.]|$)/i;
 
 /**
@@ -262,13 +292,14 @@ export function inferAsset(filePath, fallbackArch) {
     arch = token ? normalizeArch(token[1].toLowerCase()) : normalizeArch(fallbackArch);
   }
   if (!arch) return null;
-  return { path: filePath, kind: rule.kind, os: rule.os, platformKey: `${rule.platform}-${arch}`, arch, name: rule.stableName(arch), rank: rule.rank };
+  return { path: filePath, kind: rule.kind, os: rule.os, platformKey: `${rule.platform}-${arch}`, arch, name: rule.stableName(arch), rank: rule.rank, updater: rule.updater === true };
 }
 
 /** Feed `platforms` for a list of inferred assets (with `size`): one entry per platform key, sorted by key. */
 export function buildPlatforms(assets, download) {
   const byKey = new Map();
   for (const a of assets) {
+    if (a.updater) continue; // updater artifacts live in updater.json, never in latest.json (schema 1)
     if (!byKey.has(a.platformKey)) byKey.set(a.platformKey, []);
     byKey.get(a.platformKey).push(a);
   }
@@ -328,6 +359,52 @@ export function mergeFeeds(existing, ours) {
 export const dmgAssetName = (arch) => `ubiqX-macos-${arch}.dmg`;
 export const appZipAssetName = (arch) => `ubiqX-macos-${arch}.app.zip`;
 export const FEED_ASSET_NAME = 'latest.json';
+
+// ---------------------------------------------------------------------------------------------
+// The updater feed (updater.json)
+//
+// The second feed published next to latest.json, in the shape tauri-plugin-updater expects
+// (https://v2.tauri.app/plugin/updater/#static-json-file). It is what `plugins.updater.endpoints` in
+// apps/desktop/src-tauri/tauri.conf.json points at, and it lists only the updater artifacts:
+//
+//   { "version": "0.1.128", "notes": "…", "pub_date": "…Z",
+//     "platforms": { "darwin-aarch64": { "signature": "<minisign>", "url": "https://…app.tar.gz" }, … } }
+//
+// latest.json stays exactly as it was (schema 1): the Rust checker, the banner and the tray read that one.
+
+export const UPDATER_ASSET_NAME = 'updater.json';
+
+/** `platforms` of the updater feed: one `{ signature, url }` per platform key, sorted by key. */
+export function buildUpdaterPlatforms(assets, download) {
+  const platforms = {};
+  for (const a of assets.filter((x) => x.updater).sort((a, b) => a.platformKey.localeCompare(b.platformKey))) {
+    if (platforms[a.platformKey]) throw new Error(`${a.platformKey}: dois artefatos de atualização (${platforms[a.platformKey].url} e ${a.name})`);
+    if (!a.signature) throw new Error(`${a.name}: sem assinatura (${a.name}.sig)`);
+    platforms[a.platformKey] = { signature: a.signature, url: `${download}/${a.name}` };
+  }
+  return platforms;
+}
+
+/** The updater feed, or null when this build produced no updater artifact (nothing to publish then). */
+export function makeUpdaterFeed({ owner, repo, tag, version, assets, publishedAt, notes }) {
+  const download = `https://github.com/${owner}/${repo}/releases/download/${tag}`;
+  const platforms = buildUpdaterPlatforms(assets, download);
+  if (Object.keys(platforms).length === 0) return null;
+  return { version, notes, pub_date: publishedAt, platforms };
+}
+
+/**
+ * Like [`mergeFeeds`] for the updater feed: the publishers of the same build (the three OS jobs, or Actions
+ * and Codemagic) each bring their own platforms. Ours win per key; a feed of another version is replaced.
+ */
+export function mergeUpdaterFeeds(existing, ours) {
+  if (!existing || typeof existing !== 'object' || existing.version !== ours.version) return ours;
+  const platforms = { ...(existing.platforms ?? {}) };
+  for (const [key, entry] of Object.entries(ours.platforms)) platforms[key] = entry;
+  const sorted = {};
+  for (const key of Object.keys(platforms).sort()) sorted[key] = platforms[key];
+  return { ...ours, platforms: sorted };
+}
 
 // ---------------------------------------------------------------------------------------------
 // GitHub client (fetch + retries)
@@ -453,12 +530,14 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
 
   const build = buildInfo(env, root);
   const sha = fullSha(env, root, build.sha);
-  const version = productVersion(opts, root);
+  const version = productVersion(opts, root, env);
   const notes = commitNotes(root);
   const publishedAt = now().toISOString().replace(/\.\d{3}Z$/, 'Z');
   let feed;
+  let updaterFeed;
   try {
     feed = makeFeed({ owner, repo, tag: opts.tag, version, build, assets, publishedAt, notes });
+    updaterFeed = makeUpdaterFeed({ owner, repo, tag: opts.tag, version, assets, publishedAt, notes });
   } catch (err) {
     error(err.message);
     return 1;
@@ -484,6 +563,13 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
       const kept = Object.keys(existing.platforms ?? {}).filter((k) => !(k in feed.platforms));
       feed = mergeFeeds(existing, feed);
       log(`  latest.json atual é do mesmo build (epoch ${build.epoch}): plataformas mescladas${kept.length ? ` (mantidas: ${kept.join(', ')})` : ''}`);
+      if (updaterFeed) {
+        const existingUpdater = release.assets?.find((a) => a.name === UPDATER_ASSET_NAME);
+        const other = existingUpdater ? await readFeed(gh, owner, repo, existingUpdater.id, log) : null;
+        const keptUpdater = Object.keys(other?.platforms ?? {}).filter((k) => !(k in updaterFeed.platforms));
+        updaterFeed = mergeUpdaterFeeds(other, updaterFeed);
+        if (keptUpdater.length) log(`  updater.json atual é da mesma versão (${version}): plataformas mescladas (mantidas: ${keptUpdater.join(', ')})`);
+      }
     } else if (existing) {
       log(`  latest.json atual é mais antigo (epoch ${existing.build.epoch}): substituído`);
     }
@@ -501,6 +587,16 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
   writeFileSync(feedPath, feedJson);
   log(`  feed: ${path.relative(root, feedPath) || feedPath} (${Object.keys(feed.platforms).join(', ')})`);
 
+  let updaterJson = null;
+  if (updaterFeed) {
+    const updaterPath = path.join(outDir, UPDATER_ASSET_NAME);
+    updaterJson = `${JSON.stringify(updaterFeed, null, 2)}\n`;
+    writeFileSync(updaterPath, updaterJson);
+    log(`  feed do updater: ${path.relative(root, updaterPath) || updaterPath} (${Object.keys(updaterFeed.platforms).join(', ')})`);
+  } else {
+    log('  sem artefatos de atualização neste build: updater.json não foi tocado');
+  }
+
   const moved = await gh.updateTagRef(owner, repo, opts.tag, sha);
   if (moved === null) {
     await gh.createTagRef(owner, repo, opts.tag, sha);
@@ -511,7 +607,11 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
 
   const uploads = [
     ...assets.map((a) => ({ name: a.name, contentType: 'application/octet-stream', data: readFileSync(a.path) })),
+    // The signature travels inside updater.json; the .sig next to the artifact is published too so anyone
+    // can verify the download by hand (`minisign -Vm <artefato> -P <pubkey>`).
+    ...assets.filter((a) => a.updater).map((a) => ({ name: `${a.name}.sig`, contentType: 'text/plain', data: Buffer.from(`${a.signature}\n`, 'utf8') })),
     { name: FEED_ASSET_NAME, contentType: 'application/json', data: Buffer.from(feedJson, 'utf8') },
+    ...(updaterJson ? [{ name: UPDATER_ASSET_NAME, contentType: 'application/json', data: Buffer.from(updaterJson, 'utf8') }] : []),
   ];
   const names = new Set(uploads.map((u) => u.name));
   for (const asset of release.assets ?? []) {
@@ -558,9 +658,26 @@ export function collectAssets(opts, root, arch) {
     if (what === 'dmg' && inferred.kind !== 'dmg') throw new Error(`--dmg espera um .dmg, recebeu ${path.basename(file)}`);
     if (what === 'app.zip' && inferred.kind !== 'app_zip') throw new Error(`--app-zip espera um .app.zip, recebeu ${path.basename(file)}`);
     if (assets.some((a) => a.name === inferred.name)) throw new Error(`Dois arquivos viram o mesmo asset ${inferred.name} (${pattern})`);
-    assets.push({ ...inferred, size: statSync(file).size });
+    assets.push({ ...inferred, size: statSync(file).size, signature: inferred.updater ? readSignature(file) : null });
   }
   return assets;
+}
+
+/**
+ * The minisign signature Tauri writes next to an updater artifact (`<arquivo>.sig`). Without it the plugin
+ * refuses the update, so a missing .sig is a build that ran without TAURI_SIGNING_PRIVATE_KEY: fail loudly
+ * instead of publishing an artifact nobody can install.
+ */
+export function readSignature(file) {
+  const sig = `${file}.sig`;
+  let raw;
+  try {
+    raw = readFileSync(sig, 'utf8').trim();
+  } catch {
+    throw new Error(`Assinatura não encontrada: ${path.basename(sig)} (compile com TAURI_SIGNING_PRIVATE_KEY e TAURI_SIGNING_PRIVATE_KEY_PASSWORD definidos; sem ela o updater recusa a atualização)`);
+  }
+  if (!raw) throw new Error(`Assinatura vazia: ${path.basename(sig)}`);
+  return raw;
 }
 
 async function readFeed(gh, owner, repo, assetId, log) {

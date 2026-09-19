@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ipc } from './ipc';
 import { applyTheme, initialTheme, type Theme } from './theme';
+import { IDLE_INSTALL, checkInAppUpdate, isInstalling, relaunchApp, type UpdateInstall } from './updater';
 import { todayIso } from './format';
 import { hasUrlLocaleOverride, normaliseLocale, setLocale, type Locale } from '../i18n';
 import type {
@@ -84,8 +85,19 @@ interface AppState {
   checkForUpdates: () => Promise<UpdateStatus>;
   /** Hides the banner for the currently available build. */
   dismissUpdate: () => Promise<UpdateStatus | null>;
-  /** Opens the DMG download of the available release. */
+  /** Opens the DMG download of the available release (the manual fallback). */
   openUpdate: () => Promise<void>;
+
+  // in-app install (tauri-plugin-updater + tauri-plugin-process)
+  updateInstall: UpdateInstall;
+  /**
+   * Downloads the signed update with a progress bar, installs it and relaunches the app. Never throws:
+   * the outcome lands in `updateInstall` (`failed` with a message, `unavailable` when the plugin has
+   * nothing to install for this build) so the banner and Settings can show it and offer the manual path.
+   */
+  installUpdate: () => Promise<UpdateInstall>;
+  /** Back to `idle` after a failure, so the user can try again or take the manual route. */
+  resetUpdateInstall: () => void;
 
   // focus guard (blocked apps and sites) and focus sessions
   focusStatus: FocusStatus | null;
@@ -284,6 +296,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   dismissUpdate: async () => {
     const rel = get().updateStatus?.available;
     if (!rel) return get().updateStatus;
+    // Hiding the banner also clears a failed install: the next build starts from a clean slate.
+    if (!isInstalling(get().updateInstall)) get().resetUpdateInstall();
     // optimistic
     set((s) => (s.updateStatus ? { updateStatus: { ...s.updateStatus, dismissed: true } } : {}));
     const status = await ipc.dismissUpdate(rel.build.epoch);
@@ -291,6 +305,35 @@ export const useAppStore = create<AppState>((set, get) => ({
     return status;
   },
   openUpdate: () => ipc.openUpdate(),
+
+  updateInstall: IDLE_INSTALL,
+  installUpdate: async () => {
+    if (isInstalling(get().updateInstall)) return get().updateInstall;
+    const finish = (install: UpdateInstall): UpdateInstall => {
+      set({ updateInstall: install });
+      return install;
+    };
+    set({ updateInstall: { ...IDLE_INSTALL, phase: 'checking' } });
+    let update = null;
+    try {
+      update = await checkInAppUpdate();
+      if (!update) return finish({ ...IDLE_INSTALL, phase: 'unavailable' });
+      set({ updateInstall: { ...IDLE_INSTALL, phase: 'downloading' } });
+      await update.downloadAndInstall(({ downloaded, total }) => {
+        const phase = total !== null && downloaded >= total ? 'installing' : 'downloading';
+        set((s) => (isInstalling(s.updateInstall) ? { updateInstall: { ...s.updateInstall, phase, downloaded, total } } : {}));
+      });
+      // Windows never gets here: its installer exits the app. macOS and Linux relaunch themselves.
+      set((s) => ({ updateInstall: { ...s.updateInstall, phase: 'relaunching' } }));
+      await relaunchApp();
+      return get().updateInstall;
+    } catch (e) {
+      // The plugin keeps a handle per update: free it, or a retry piles them up on the Rust side.
+      await update?.close().catch(() => {});
+      return finish({ ...get().updateInstall, phase: 'failed', error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+  resetUpdateInstall: () => set({ updateInstall: IDLE_INSTALL }),
 
   focusStatus: null,
   focusTargets: [],

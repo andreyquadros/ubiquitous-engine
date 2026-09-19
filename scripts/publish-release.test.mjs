@@ -2,12 +2,30 @@
 // Run with: node --test scripts/publish-release.test.mjs
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { after, before, beforeEach, describe, test } from 'node:test';
 
-import { buildPlatforms, compareFeeds, inferAsset, main, makeFeed, mergeFeeds, parseArgs, parseRepo, trimNotes, resolveGlob } from './publish-release.mjs';
+import {
+  buildPlatforms,
+  buildUpdaterPlatforms,
+  compareFeeds,
+  inferAsset,
+  main,
+  makeFeed,
+  makeUpdaterFeed,
+  mergeFeeds,
+  mergeUpdaterFeeds,
+  parseArgs,
+  parseRepo,
+  productVersion,
+  trimNotes,
+  resolveGlob,
+  UPDATER_ASSET_NAME,
+} from './publish-release.mjs';
+import { appVersion, baseVersion, buildNumber, main as appVersionMain, writeAppVersion } from './app-version.mjs';
 
 const OWNER = 'andreyquadros';
 const REPO = 'ubiquitous-engine';
@@ -172,6 +190,10 @@ describe('publish-release', () => {
   let winMsi;
   let linuxAppImage;
   let linuxDeb;
+  // Updater artifacts (bundle.createUpdaterArtifacts) and the .sig Tauri writes next to each of them.
+  let macUpdater;
+  let winUpdater;
+  let linuxUpdater;
   let out;
   let lines;
   const log = (line) => lines.push(String(line));
@@ -192,6 +214,15 @@ describe('publish-release', () => {
     writeFileSync(winMsi, Buffer.alloc(3100, 4));
     writeFileSync(linuxAppImage, Buffer.alloc(4000, 5));
     writeFileSync(linuxDeb, Buffer.alloc(4100, 6));
+    macUpdater = path.join(work, 'ubiqX.app.tar.gz');
+    winUpdater = path.join(work, 'ubiqX_0.1.0_x64-setup.nsis.zip');
+    linuxUpdater = path.join(work, 'ubiqX_0.1.0_amd64.AppImage.tar.gz');
+    writeFileSync(macUpdater, Buffer.alloc(5000, 7));
+    writeFileSync(winUpdater, Buffer.alloc(5100, 8));
+    writeFileSync(linuxUpdater, Buffer.alloc(5200, 9));
+    writeFileSync(`${macUpdater}.sig`, 'dW50cnVzdGVkIG1hYw==\n');
+    writeFileSync(`${winUpdater}.sig`, 'dW50cnVzdGVkIHdpbg==\n');
+    writeFileSync(`${linuxUpdater}.sig`, 'dW50cnVzdGVkIGxpbnV4\n');
   });
   after(async () => {
     await gh.close();
@@ -421,6 +452,120 @@ describe('publish-release', () => {
     assert.deepEqual(gh.state.log, []);
   });
 
+  test('publishes updater.json and the .sig next to the installers, leaving latest.json untouched', async () => {
+    const code = await run([
+      '--asset', dmg,
+      '--asset', appZip,
+      '--asset', macUpdater,
+      '--asset', winExe,
+      '--asset', winUpdater,
+      '--asset', linuxAppImage,
+      '--asset', linuxUpdater,
+      '--out', out,
+      '--arch', 'aarch64',
+      '--api', api,
+      '--uploads', `${api}/uploads`,
+    ]);
+    assert.equal(code, 0, lines.join('\n'));
+    const release = gh.state.releases[0];
+    const download = `https://github.com/${OWNER}/${REPO}/releases/download/continuous`;
+
+    // Both feeds are uploaded, plus one .sig per updater artifact, and the installers keep their names.
+    assert.deepEqual(release.assets.map((a) => a.name), [
+      'ubiqX-macos-aarch64.dmg',
+      'ubiqX-macos-aarch64.app.zip',
+      'ubiqX-macos-aarch64.app.tar.gz',
+      'ubiqX-windows-x86_64-setup.exe',
+      'ubiqX-windows-x86_64-setup.nsis.zip',
+      'ubiqX-linux-x86_64.AppImage',
+      'ubiqX-linux-x86_64.AppImage.tar.gz',
+      'ubiqX-macos-aarch64.app.tar.gz.sig',
+      'ubiqX-windows-x86_64-setup.nsis.zip.sig',
+      'ubiqX-linux-x86_64.AppImage.tar.gz.sig',
+      'latest.json',
+      UPDATER_ASSET_NAME,
+    ]);
+
+    // latest.json: schema 1, installers only, no trace of the updater artifacts.
+    const feed = JSON.parse(readFileSync(path.join(out, 'latest.json'), 'utf8'));
+    assert.equal(feed.schema, 1);
+    assert.deepEqual(Object.keys(feed.platforms), ['darwin-aarch64', 'linux-x86_64', 'windows-x86_64']);
+    assert.equal(feed.platforms['darwin-aarch64'].kind, 'dmg');
+    assert.equal(feed.platforms['windows-x86_64'].url, `${download}/ubiqX-windows-x86_64-setup.exe`);
+    assert.equal(feed.platforms['linux-x86_64'].url, `${download}/ubiqX-linux-x86_64.AppImage`);
+    assert.ok(!JSON.stringify(feed).includes('tar.gz'), 'latest.json never mentions an updater artifact');
+    assert.ok(!JSON.stringify(feed).includes('nsis.zip'));
+    assert.ok(!JSON.stringify(feed).includes('signature'));
+
+    // updater.json: exactly the shape tauri-plugin-updater reads.
+    const updater = JSON.parse(readFileSync(path.join(out, UPDATER_ASSET_NAME), 'utf8'));
+    assert.deepEqual(Object.keys(updater).sort(), ['notes', 'platforms', 'pub_date', 'version']);
+    assert.equal(updater.version, '0.1.0');
+    assert.equal(updater.pub_date, '2026-09-18T19:10:00Z');
+    assert.equal(typeof updater.notes, 'string');
+    assert.deepEqual(updater.platforms, {
+      'darwin-aarch64': { signature: 'dW50cnVzdGVkIG1hYw==', url: `${download}/ubiqX-macos-aarch64.app.tar.gz` },
+      'linux-x86_64': { signature: 'dW50cnVzdGVkIGxpbnV4', url: `${download}/ubiqX-linux-x86_64.AppImage.tar.gz` },
+      'windows-x86_64': { signature: 'dW50cnVzdGVkIHdpbg==', url: `${download}/ubiqX-windows-x86_64-setup.nsis.zip` },
+    });
+    assert.deepEqual(JSON.parse(release.assets.find((a) => a.name === UPDATER_ASSET_NAME).content.toString()), updater, 'the uploaded updater feed is the one written to --out');
+    assert.equal(release.assets.find((a) => a.name === UPDATER_ASSET_NAME).contentType, 'application/json');
+    assert.equal(release.assets.find((a) => a.name === 'ubiqX-macos-aarch64.app.tar.gz.sig').content.toString(), 'dW50cnVzdGVkIG1hYw==\n');
+    assert.equal(release.assets.find((a) => a.name === 'ubiqX-macos-aarch64.app.tar.gz').content.length, 5000);
+  });
+
+  test('a build without updater artifacts publishes latest.json alone and leaves updater.json alone', async () => {
+    const code = await run(argv());
+    assert.equal(code, 0, lines.join('\n'));
+    assert.ok(!gh.state.releases[0].assets.some((a) => a.name === UPDATER_ASSET_NAME));
+    assert.match(lines.join('\n'), /sem artefatos de atualização/);
+  });
+
+  test('an updater artifact without its .sig is a named failure, not a silent unsigned publish', async () => {
+    const unsigned = path.join(work, 'unsigned', 'ubiqX-macos-aarch64.app.tar.gz');
+    mkdirSync(path.dirname(unsigned), { recursive: true });
+    writeFileSync(unsigned, Buffer.alloc(16, 1));
+    const code = await run(['--asset', dmg, '--asset', unsigned, '--out', out, '--arch', 'aarch64', '--api', api, '--uploads', `${api}/uploads`]);
+    assert.equal(code, 1);
+    const printed = lines.join('\n');
+    assert.match(printed, /Assinatura não encontrada: ubiqX-macos-aarch64\.app\.tar\.gz\.sig/);
+    assert.match(printed, /TAURI_SIGNING_PRIVATE_KEY/);
+    assert.deepEqual(gh.state.log, [], 'nothing is published without the signature');
+  });
+
+  test('same build epoch: the updater feed merges the platforms another publisher already put there', async () => {
+    const download = `https://github.com/${OWNER}/${REPO}/releases/download/continuous`;
+    const seeded = gh.seedRelease({ feedEpoch: 1758221040, assets: ['ubiqX-macos-aarch64.dmg'], platforms: {} });
+    seeded.assets.push({
+      id: 9001,
+      name: UPDATER_ASSET_NAME,
+      content: Buffer.from(JSON.stringify({ version: '0.1.0', notes: 'old', pub_date: '2026-09-18T18:00:00Z', platforms: { 'windows-x86_64': { signature: 'antiga', url: `${download}/ubiqX-windows-x86_64-setup.nsis.zip` } } })),
+      contentType: 'application/json',
+    });
+    const code = await run(['--asset', dmg, '--asset', macUpdater, '--out', out, '--arch', 'aarch64', '--api', api, '--uploads', `${api}/uploads`]);
+    assert.equal(code, 0, lines.join('\n'));
+    assert.match(lines.join('\n'), /updater\.json atual é da mesma versão/);
+    const updater = JSON.parse(gh.state.releases[0].assets.find((a) => a.name === UPDATER_ASSET_NAME).content.toString());
+    assert.deepEqual(Object.keys(updater.platforms), ['darwin-aarch64', 'windows-x86_64']);
+    assert.equal(updater.platforms['windows-x86_64'].signature, 'antiga', "the other publisher's platform survives");
+    assert.equal(updater.platforms['darwin-aarch64'].signature, 'dW50cnVzdGVkIG1hYw==');
+    assert.equal(updater.pub_date, '2026-09-18T19:10:00Z', 'ours is the feed being written');
+  });
+
+  test('--version and UBIQX_VERSION put the same number in both feeds', async () => {
+    let code = await run(['--asset', dmg, '--asset', macUpdater, '--out', out, '--arch', 'aarch64', '--version', '0.1.128', '--api', api, '--uploads', `${api}/uploads`]);
+    assert.equal(code, 0, lines.join('\n'));
+    assert.equal(JSON.parse(readFileSync(path.join(out, 'latest.json'), 'utf8')).version, '0.1.128');
+    assert.equal(JSON.parse(readFileSync(path.join(out, UPDATER_ASSET_NAME), 'utf8')).version, '0.1.128');
+
+    gh.reset();
+    lines = [];
+    code = await run(['--asset', dmg, '--asset', macUpdater, '--out', out, '--arch', 'aarch64', '--api', api, '--uploads', `${api}/uploads`], { UBIQX_VERSION: '0.1.129' });
+    assert.equal(code, 0, lines.join('\n'));
+    assert.equal(JSON.parse(readFileSync(path.join(out, 'latest.json'), 'utf8')).version, '0.1.129');
+    assert.equal(JSON.parse(readFileSync(path.join(out, UPDATER_ASSET_NAME), 'utf8')).version, '0.1.129');
+  });
+
   test('--help prints the usage and does nothing else', async () => {
     const code = await main(['--help'], { GITHUB_TOKEN: 'x' }, { log, error: log });
     assert.equal(code, 0);
@@ -511,6 +656,61 @@ describe('helpers', () => {
     assert.deepEqual(mergeFeeds(null, ours).platforms, ours.platforms);
   });
 
+  test('inferAsset knows the updater artifacts and marks them as such', () => {
+    const pick = ({ kind, platformKey, name, updater }) => ({ kind, platformKey, name, updater });
+    // Tauri's own output names…
+    assert.deepEqual(pick(inferAsset('bundle/macos/ubiqX.app.tar.gz', 'aarch64')), { kind: 'app_tar_gz', platformKey: 'darwin-aarch64', name: 'ubiqX-macos-aarch64.app.tar.gz', updater: true });
+    assert.deepEqual(pick(inferAsset('bundle/nsis/ubiqX_0.1.128_x64-setup.nsis.zip', 'aarch64')), { kind: 'nsis_zip', platformKey: 'windows-x86_64', name: 'ubiqX-windows-x86_64-setup.nsis.zip', updater: true });
+    assert.deepEqual(pick(inferAsset('bundle/appimage/ubiqX_0.1.128_amd64.AppImage.tar.gz', 'aarch64')), { kind: 'appimage_tar_gz', platformKey: 'linux-x86_64', name: 'ubiqX-linux-x86_64.AppImage.tar.gz', updater: true });
+    // …and the stable names CI renames them to, which must round-trip.
+    for (const name of ['ubiqX-macos-aarch64.app.tar.gz', 'ubiqX-windows-x86_64-setup.nsis.zip', 'ubiqX-linux-x86_64.AppImage.tar.gz']) {
+      assert.equal(inferAsset(name, 'x86_64').name, name, `${name} must keep its name`);
+      assert.equal(inferAsset(name, 'x86_64').updater, true);
+    }
+    // Installers are not updater artifacts, and an updater name of the wrong OS is still a mistake.
+    assert.equal(inferAsset('ubiqX-linux-x86_64.AppImage', 'x86_64').updater, false);
+    assert.equal(inferAsset('ubiqX-macos-aarch64.app.zip', 'x86_64').updater, false);
+    assert.equal(inferAsset('ubiqX-linux-x86_64.app.tar.gz', 'x86_64'), null, 'os and extension must agree');
+  });
+
+  test('buildPlatforms ignores updater artifacts so latest.json keeps schema 1', () => {
+    const d = 'https://d';
+    const a = (name, size) => ({ ...inferAsset(name, 'x86_64'), size, signature: 'sig' });
+    const platforms = buildPlatforms([a('ubiqX-linux-x86_64.AppImage', 3), a('ubiqX-linux-x86_64.AppImage.tar.gz', 9)], d);
+    assert.deepEqual(platforms, { 'linux-x86_64': { url: `${d}/ubiqX-linux-x86_64.AppImage`, kind: 'appimage', size: 3, app_zip_url: null } });
+    // An updater artifact alone is not an installer: it neither builds an entry nor trips the "sem o instalador" guard.
+    assert.deepEqual(buildPlatforms([a('ubiqX-macos-aarch64.app.tar.gz', 9)], d), {});
+  });
+
+  test('buildUpdaterPlatforms, makeUpdaterFeed and mergeUpdaterFeeds', () => {
+    const d = 'https://d';
+    const a = (name, signature) => ({ ...inferAsset(name, 'x86_64'), size: 1, signature });
+    const platforms = buildUpdaterPlatforms([a('ubiqX-windows-x86_64-setup.nsis.zip', 'w'), a('ubiqX-macos-aarch64.app.tar.gz', 'm'), a('ubiqX-linux-x86_64.AppImage', null)], d);
+    assert.deepEqual(Object.keys(platforms), ['darwin-aarch64', 'windows-x86_64'], 'sorted, installers left out');
+    assert.deepEqual(platforms['darwin-aarch64'], { signature: 'm', url: `${d}/ubiqX-macos-aarch64.app.tar.gz` });
+    assert.throws(() => buildUpdaterPlatforms([a('ubiqX-macos-aarch64.app.tar.gz', '')], d), /sem assinatura/);
+
+    const feed = makeUpdaterFeed({ owner: 'o', repo: 'r', tag: 'continuous', version: '0.1.7', assets: [a('ubiqX-macos-aarch64.app.tar.gz', 'm')], publishedAt: '2026-01-01T00:00:00Z', notes: 'n' });
+    assert.deepEqual(feed, { version: '0.1.7', notes: 'n', pub_date: '2026-01-01T00:00:00Z', platforms: { 'darwin-aarch64': { signature: 'm', url: 'https://github.com/o/r/releases/download/continuous/ubiqX-macos-aarch64.app.tar.gz' } } });
+    assert.equal(makeUpdaterFeed({ owner: 'o', repo: 'r', tag: 'continuous', version: '0.1.7', assets: [a('ubiqX-macos-aarch64.dmg', null)], publishedAt: 'p', notes: 'n' }), null, 'no updater artifact, no feed');
+
+    const ours = { version: '0.1.7', platforms: { 'darwin-aarch64': { signature: 'new' } } };
+    assert.deepEqual(mergeUpdaterFeeds(null, ours), ours);
+    assert.deepEqual(mergeUpdaterFeeds({ version: '0.1.6', platforms: { 'windows-x86_64': { signature: 'old' } } }, ours), ours, 'another version is replaced, never merged');
+    assert.deepEqual(mergeUpdaterFeeds({ version: '0.1.7', platforms: { 'windows-x86_64': { signature: 'old' }, 'darwin-aarch64': { signature: 'old' } } }, ours), {
+      version: '0.1.7',
+      platforms: { 'darwin-aarch64': { signature: 'new' }, 'windows-x86_64': { signature: 'old' } },
+    });
+  });
+
+  test('productVersion prefers --version, then UBIQX_VERSION, then tauri.conf.json', () => {
+    const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+    assert.equal(productVersion({ version: '9.9.9' }, root, { UBIQX_VERSION: '0.1.5' }), '9.9.9');
+    assert.equal(productVersion({ version: null }, root, { UBIQX_VERSION: '0.1.5' }), '0.1.5');
+    assert.equal(productVersion({ version: null }, root, {}), baseVersion(root), 'the checked-in tauri.conf.json version');
+    assert.equal(productVersion({ version: null }, '/nowhere', {}), '0.0.0');
+  });
+
   test('resolveGlob picks a matching file and returns null when none matches', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'ubiqx-glob-'));
     try {
@@ -521,5 +721,76 @@ describe('helpers', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// scripts/app-version.mjs: the version CI stamps into tauri.conf.json, which both feeds then carry.
+
+describe('app-version', () => {
+  const REAL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const CONF = path.join(REAL_ROOT, 'apps/desktop/src-tauri/tauri.conf.json');
+
+  test('the patch is the build number of the commit, on top of the major.minor of Cargo.toml', () => {
+    const base = baseVersion(REAL_ROOT);
+    const [major, minor] = base.split('.');
+    // The commit count every job already computes (scripts/build-info.sh) is what grows the version, so two
+    // machines building the same commit agree instead of racing with their own counters.
+    assert.equal(appVersion({ UBIQX_BUILD_NUMBER: '128' }, REAL_ROOT), `${major}.${minor}.128`);
+    assert.equal(appVersion({ UBIQX_BUILD_NUMBER: '1' }, REAL_ROOT), `${major}.${minor}.1`);
+    assert.equal(appVersion({ UBIQX_BUILD_NUMBER: '128', GITHUB_RUN_NUMBER: '7' }, REAL_ROOT), `${major}.${minor}.128`, 'the commit count wins');
+    // …and the CI run number stands in for a checkout without history.
+    assert.equal(appVersion({ GITHUB_RUN_NUMBER: '7' }, REAL_ROOT), `${major}.${minor}.7`);
+    assert.equal(appVersion({ UBIQX_BUILD_NUMBER: '0', GITHUB_RUN_NUMBER: '7' }, REAL_ROOT), `${major}.${minor}.7`);
+    assert.equal(buildNumber({ UBIQX_BUILD_NUMBER: '9' }), 9);
+    assert.equal(buildNumber({}), null);
+    // A local build (no numbers at all) keeps the base version and never pretends to be a published one.
+    assert.equal(appVersion({}, REAL_ROOT), base);
+    assert.equal(appVersion({ UBIQX_BUILD_NUMBER: '' }, REAL_ROOT), base);
+    assert.equal(appVersion({ UBIQX_BUILD_NUMBER: 'x' }, REAL_ROOT), base);
+    assert.equal(appVersion({ UBIQX_BUILD_NUMBER: '0' }, REAL_ROOT), base);
+    // UBIQX_VERSION wins, so one job can hand the number to the next.
+    assert.equal(appVersion({ UBIQX_VERSION: '0.2.3', UBIQX_BUILD_NUMBER: '128' }, REAL_ROOT), '0.2.3');
+  });
+
+  test('--write rewrites only the version of tauri.conf.json and prints it', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'ubiqx-version-'));
+    try {
+      const conf = path.join(dir, 'apps/desktop/src-tauri/tauri.conf.json');
+      mkdirSync(path.dirname(conf), { recursive: true });
+      writeFileSync(path.join(dir, 'Cargo.toml'), '[workspace.package]\nversion = "0.1.0"\n');
+      const before = readFileSync(CONF, 'utf8');
+      writeFileSync(conf, before);
+
+      const printed = [];
+      const io = { log: (l) => printed.push(String(l)), error: (l) => printed.push(String(l)) };
+      assert.equal(appVersionMain(['--write', '--root', dir], { UBIQX_BUILD_NUMBER: '128' }, io), 0, printed.join('\n'));
+      assert.deepEqual(printed, ['0.1.128']);
+
+      const after = readFileSync(conf, 'utf8');
+      assert.equal(JSON.parse(after).version, '0.1.128');
+      assert.equal(after, before.replace('"version": "0.1.0"', '"version": "0.1.128"'), 'no other byte of the file moves');
+      // The pubkey and the endpoint the in-app updater needs survive the rewrite.
+      assert.ok(JSON.parse(after).plugins.updater.pubkey.length > 0);
+      assert.match(JSON.parse(after).plugins.updater.endpoints[0], /updater\.json$/);
+
+      // Idempotent: writing the same version again changes nothing.
+      assert.equal(writeAppVersion(dir, '0.1.128'), false);
+      assert.equal(readFileSync(conf, 'utf8'), after);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('without --write nothing is touched, and an unknown option fails with the usage', () => {
+    const printed = [];
+    const io = { log: (l) => printed.push(String(l)), error: (l) => printed.push(String(l)) };
+    const before = readFileSync(CONF, 'utf8');
+    assert.equal(appVersionMain([], { UBIQX_BUILD_NUMBER: '7' }, io), 0);
+    assert.equal(readFileSync(CONF, 'utf8'), before, 'a plain run never edits the checked-in config');
+    assert.equal(appVersionMain(['--bogus'], {}, io), 2);
+    assert.match(printed.join('\n'), /Opção desconhecida/);
+    assert.equal(appVersionMain(['--help'], {}, io), 0);
+    assert.match(printed.join('\n'), /^Uso: node scripts\/app-version\.mjs/m);
   });
 });
