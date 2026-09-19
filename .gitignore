@@ -25,3 +25,6 @@ Thumbs.db
 # Python tooling (scripts/ubi-rig)
 __pycache__/
 *.pyc
+
+# Scratch worktrees created when an agent works on an isolated copy of the repo.
+/.claude/worktrees/
