@@ -493,9 +493,13 @@ describe('publish-release', () => {
     assert.equal(feed.platforms['darwin-aarch64'].kind, 'dmg');
     assert.equal(feed.platforms['windows-x86_64'].url, `${download}/ubiqX-windows-x86_64-setup.exe`);
     assert.equal(feed.platforms['linux-x86_64'].url, `${download}/ubiqX-linux-x86_64.AppImage`);
-    assert.ok(!JSON.stringify(feed).includes('tar.gz'), 'latest.json never mentions an updater artifact');
-    assert.ok(!JSON.stringify(feed).includes('nsis.zip'));
-    assert.ok(!JSON.stringify(feed).includes('signature'));
+    // Everything but `notes`, which carries the commit message verbatim: a commit that happens to
+    // say "signature" or "tar.gz" is not a feed that points at an updater artifact, and the day one
+    // did, this assertion failed for the wrong reason.
+    const { notes: _notes, ...structure } = feed;
+    assert.ok(!JSON.stringify(structure).includes('tar.gz'), 'latest.json never mentions an updater artifact');
+    assert.ok(!JSON.stringify(structure).includes('nsis.zip'));
+    assert.ok(!JSON.stringify(structure).includes('signature'));
 
     // updater.json: exactly the shape tauri-plugin-updater reads.
     const updater = JSON.parse(readFileSync(path.join(out, UPDATER_ASSET_NAME), 'utf8'));
