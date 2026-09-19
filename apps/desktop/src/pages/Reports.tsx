@@ -167,7 +167,13 @@ function ReportCard({ category, report, date, onChange, defaultTime }: { categor
   const latest = useRef(report);
   latest.current = report;
   const identity = report ? `${report.date}·${report.category_id}·${report.generated_at}` : null;
+  // Seeded once by `useState` above, so the mount pass has nothing left to do — and doing it anyway
+  // was not harmless: the effect runs after the commit, and an edit made in that gap was undone by
+  // its `setDirty(false)`. Rare by hand, routine on a slow machine (it was the flaky CI failure).
+  const seeded = useRef(identity);
   useEffect(() => {
+    if (seeded.current === identity) return;
+    seeded.current = identity;
     setDraft(latest.current);
     setDirty(false);
   }, [identity]);

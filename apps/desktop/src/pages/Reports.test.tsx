@@ -32,13 +32,14 @@ const report: DailyReport = {
 // Every real fetch deserializes fresh objects, so the double does too: a card that re-seeded its
 // draft from object identity would throw away the user's unsaved edits on any refresh.
 const getReports = vi.fn(async () => [structuredClone(report)]);
+const generateReport = vi.fn(async () => structuredClone(report));
 
 vi.mock('../lib/ipc', () => ({
   isTauri: () => false,
   onEngineEvent: async () => () => undefined,
   ipc: {
     getReports: (...args: unknown[]) => getReports(...(args as [])),
-    generateReport: vi.fn(async () => report),
+    generateReport: (...args: unknown[]) => generateReport(...(args as [])),
     updateReport: vi.fn(async (r: DailyReport) => r),
     getMonthlyReport: vi.fn(async () => '# Mensal'),
     listCategories: vi.fn(async () => categories),
@@ -61,6 +62,7 @@ const renderPage = () =>
 describe('Reports page', () => {
   beforeEach(() => {
     getReports.mockClear();
+    generateReport.mockClear();
     useAppStore.setState({ categories, date: '2026-09-17', settingsView: null, reportsVersion: 0 });
   });
 
@@ -107,6 +109,26 @@ describe('Reports page', () => {
 
     expect(minutes()).toHaveValue(100);
     expect(screen.getByRole('button', { name: 'Salvar alterações' })).toBeInTheDocument();
+  });
+
+  it('replaces an unsaved edit when the report is actually regenerated', async () => {
+    // The other half of the rule above: a regeneration is a *different* report, not a refresh of
+    // the same one, so the draft must follow it. Keeping the edit here would leave the user staring
+    // at numbers that no longer match a single word of what the model just wrote.
+    generateReport.mockResolvedValueOnce({
+      ...structuredClone(report),
+      generated_at: '2026-09-17T22:30:00Z',
+      items: [{ ...report.items[0]!, minutes: 55 }],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText(/1 de 2 relatórios prontos/)).toBeInTheDocument());
+    const minutes = () => screen.getAllByRole('spinbutton', { name: 'Minutos' })[0]!;
+    fireEvent.change(minutes(), { target: { value: '100' } });
+    expect(screen.getByRole('button', { name: 'Salvar alterações' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerar' }));
+    await waitFor(() => expect(minutes()).toHaveValue(55));
+    expect(screen.queryByRole('button', { name: 'Salvar alterações' })).not.toBeInTheDocument();
   });
 
   it('switches to the monthly tab and shows its empty state', async () => {
