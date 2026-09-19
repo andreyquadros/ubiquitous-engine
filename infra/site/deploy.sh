@@ -179,6 +179,13 @@ echo "[ubiqx]   http  -> título: $(title_of "$(probe 80 http)")"
 echo "[ubiqx] flags do provider docker deste traefik:"
 printf '%s\n' "$ARGS" | grep -iE '^--providers\.' | sed 's/^/    /' || echo "    (nenhuma na linha de comando)"
 
+# Portas 80 e 443 respondendo coisas diferentes é sinal de dois donos. Quem são, e o que mais
+# roda aqui: sem isso, configurar o Traefik errado é insistir numa porta que não é a da frente.
+echo "[ubiqx] quem escuta nas portas 80 e 443:"
+{ ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null; } | grep -E ':(80|443)[[:space:]]' | sed 's/^/    /' || echo "    (não consegui listar)"
+echo "[ubiqx] containers em execução:"
+docker ps --format '    {{.Names}}  |  {{.Image}}  |  {{.Ports}}' || true
+
 # O veredito de verdade é do Traefik: ele conta se pegou as labels e o que o ACME respondeu.
 if [ -n "$TRAEFIK" ]; then
   sleep 8
