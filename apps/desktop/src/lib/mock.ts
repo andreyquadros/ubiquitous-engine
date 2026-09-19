@@ -612,6 +612,24 @@ const seedTargets = (): FocusTarget[] => {
   ];
 };
 
+/** The oldest seeded intervention, in minutes. */
+const SEED_SPAN_MINS = 190;
+
+/**
+ * `mins` ago, but never earlier than today's local midnight: the Focus page counts the
+ * interventions whose local date is today, and this seed promises four of them. Before 03:10 a
+ * plain `minutesAgo(190)` lands on yesterday and the count drops, so early in the day the four
+ * are compressed into the part of the day that has already elapsed, keeping their order.
+ */
+const minutesAgoToday = (mins: number): IsoDateTime => {
+  const now = Date.now();
+  const midnight = new Date(now);
+  midnight.setHours(0, 0, 0, 0);
+  const elapsed = (now - midnight.getTime()) / 60_000;
+  const back = elapsed >= SEED_SPAN_MINS ? mins : (mins / SEED_SPAN_MINS) * elapsed;
+  return new Date(now - back * 60_000).toISOString();
+};
+
 /** Four interventions today, newest first. */
 const seedInterventions = (sessionId: Id | null): Intervention[] => {
   const mk = (i: number, at: IsoDateTime, target: FocusTarget, action: InterventionAction, session: Id | null): Intervention => ({
@@ -626,7 +644,7 @@ const seedInterventions = (sessionId: Id | null): Intervention[] => {
     message: interventionMessage(i),
   });
   const [yt, ig, dc] = seedTargets() as [FocusTarget, FocusTarget, FocusTarget];
-  return [mk(3, minutesAgo(3), yt, 'tab_closed', sessionId), mk(2, minutesAgo(48), ig, 'tab_closed', null), mk(1, minutesAgo(125), dc, 'app_quit', null), mk(0, minutesAgo(190), yt, 'tab_blanked', null)];
+  return [mk(3, minutesAgoToday(3), yt, 'tab_closed', sessionId), mk(2, minutesAgoToday(48), ig, 'tab_closed', null), mk(1, minutesAgoToday(125), dc, 'app_quit', null), mk(0, minutesAgoToday(SEED_SPAN_MINS), yt, 'tab_blanked', null)];
 };
 
 /** A 45-minute session started 12 minutes ago (`?session=active`, `__mock.setFocus({ session: 'active' })`). */

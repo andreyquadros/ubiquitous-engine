@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, beforeEach, vi } from 'vitest';
 import { __mock, handle } from './mock';
 import type { CorrectionOutcome, DashboardData, BlockGroup, ApiKeyResult, DailyReport, LicenseStatus, Settings, SettingsView } from './types';
 
@@ -204,5 +204,23 @@ describe('mock backend · license', () => {
     expect(after.state).toBe('unlicensed');
     expect((await view()).settings.ai_provider).toBe('ubi');
     expect((await view()).ai_health).toEqual({ state: 'not_configured' });
+  });
+});
+
+describe('mock backend · the focus seed stays inside the current day', () => {
+  afterEach(() => vi.useRealTimers());
+
+  // The Focus page shows "4 hoje", counted by local date. Seeding "190 minutes ago" put the
+  // oldest intervention on the previous day whenever the app was opened before 03:10.
+  it.each(['2026-09-19T00:04:00', '2026-09-19T02:30:00', '2026-09-19T13:00:00'])('at %s', async (local) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(local));
+    __mock.reset();
+    const today = new Date(local).toLocaleDateString('en-CA');
+    const interventions = await handle<{ at: string }[]>('list_interventions', {});
+    expect(interventions).toHaveLength(4);
+    expect(interventions.map((i) => new Date(i.at).toLocaleDateString('en-CA'))).toEqual([today, today, today, today]);
+    const status = await handle<{ interventions_today: number }>('get_focus_status', {});
+    expect(status.interventions_today).toBe(4);
   });
 });
