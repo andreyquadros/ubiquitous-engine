@@ -147,11 +147,32 @@ else
 fi
 [ "$code" = "200" ] || echo "[ubiqx] atenção: esperava 200 aqui; o Traefik provavelmente também não vai alcançar." >&2
 
+# O DNS aponta mesmo para esta máquina? Um registro A para outro servidor explica de uma vez
+# o certificado de outro domínio, o site alheio na tela e o silêncio do Traefik daqui: o
+# pedido do navegador simplesmente nunca chega nesta VPS.
+RESOLVED="$(getent ahostsv4 "$HOST" 2>/dev/null | awk '{print $1; exit}' || true)"
+MYIP="$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}' || true)"
+[ -n "$MYIP" ] || MYIP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+if [ -z "$RESOLVED" ]; then
+  echo "[ubiqx] atenção: $HOST ainda não resolve para IP nenhum (registro A ausente ou não propagado)." >&2
+elif [ -z "$MYIP" ]; then
+  echo "[ubiqx] dns: $HOST resolve para $RESOLVED; não consegui descobrir o IP desta VPS para comparar."
+elif [ "$RESOLVED" != "$MYIP" ]; then
+  echo "[ubiqx] ATENÇÃO: $HOST resolve para $RESOLVED, mas esta VPS é $MYIP." >&2
+  echo "[ubiqx] enquanto o registro A não apontar para cá, o navegador continua caindo noutro servidor." >&2
+else
+  echo "[ubiqx] dns: $HOST resolve para esta VPS."
+fi
+
 # O veredito de verdade é do Traefik: ele conta se pegou as labels e o que o ACME respondeu.
 if [ -n "$TRAEFIK" ]; then
   sleep 8
-  echo "[ubiqx] o que o traefik diz sobre este host e sobre certificados:"
-  docker logs --tail 400 "$TRAEFIK" 2>&1 \
-    | grep -iE "ubiqx|${HOST//./\\.}|acme|certificate" | tail -15 | sed 's/^/    /' || true
+  TLOG="$(docker logs --tail 400 "$TRAEFIK" 2>&1 | grep -iE "ubiqx|${HOST//./\\.}|acme|certificate" | tail -15 || true)"
+  if [ -n "$TLOG" ]; then
+    echo "[ubiqx] o que o traefik diz sobre este host e sobre certificados:"
+    printf '%s\n' "$TLOG" | sed 's/^/    /'
+  else
+    echo "[ubiqx] o traefik não registrou nada sobre este host — sinal de que nenhum pedido para $HOST chegou aqui."
+  fi
 fi
 echo "[ubiqx] pronto. Fora, depende do DNS: $HOST deve apontar para o IP desta VPS (registro A)."
