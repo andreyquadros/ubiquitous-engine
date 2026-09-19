@@ -28,3 +28,6 @@ __pycache__/
 
 # Scratch worktrees created when an agent works on an isolated copy of the repo.
 /.claude/worktrees/
+
+# Staging dir built by .github/workflows/deploy-site.yml
+/infra/site/.stage/

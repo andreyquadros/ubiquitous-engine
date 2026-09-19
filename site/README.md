@@ -61,6 +61,13 @@ the Open Graph image, default `https://andreyquadros.github.io` + `SITE_BASE`).
    `CNAME` file; keep it in `site/public/` so the build ships it), point the DNS at GitHub Pages, and change the
    build step to `SITE_BASE=/ SITE_URL=https://ubiqx.ai pnpm build`, since the site then lives at the root.
 
+## Deployment (own VPS)
+
+A second, parallel target: `.github/workflows/deploy-site.yml` builds the same `site/` with `SITE_BASE=/` and
+serves it from a Caddy container behind the Traefik the VPS already runs, at a real hostname
+(`ubi.mvk1.cloud` today). It needs the `VPS_HOST` and `VPS_SSH_KEY` repository secrets and an A record for the
+hostname; without the secrets it warns and stays green. See `infra/site/README.md`.
+
 ## Layout of `src/`
 
 - `i18n.ts`: the dictionary (pt-BR, en), the locale resolution (`?lang=` > localStorage > browser language) and `useCopy()`.
