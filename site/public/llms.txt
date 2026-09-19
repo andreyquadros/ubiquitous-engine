@@ -84,6 +84,7 @@ SQLite pode ser apagado a qualquer momento.
 ## Links
 
 - Página inicial: https://ubiqx.com.br
+- Vídeo de apresentação (58 s, pt-BR): https://ubiqx.com.br/video/ubiqx-trailer-1080p.mp4
 - Versões e instaladores: https://github.com/andreyquadros/ubiquitous-engine/releases
 - Documentação: https://github.com/andreyquadros/ubiquitous-engine/tree/main/docs
 - Guia de instalação no macOS: https://github.com/andreyquadros/ubiquitous-engine/blob/main/docs/MACOS-TESTING.md

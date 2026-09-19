@@ -4,6 +4,7 @@ import { ButtonLink } from '../components/Button';
 import { detectOs, DEFAULT_OS, type Os } from '../components/os';
 import { Particles } from '../components/Particles';
 import { UbiHero } from '../components/UbiHero';
+import { VideoBubble } from '../components/VideoBubble';
 import { DOWNLOAD_URLS } from '../config';
 import { useCopy } from '../i18n';
 
@@ -43,6 +44,8 @@ export function Hero() {
           <div className="relative">
             <Particles className="pointer-events-none absolute -inset-x-10 -top-8 bottom-0 h-[calc(100%+2rem)] w-[calc(100%+5rem)]" />
             <UbiHero size={400} className="relative w-[280px] sm:w-[360px] lg:w-[400px]" />
+            {/* Second bubble, on the mascot's other side: this one is a button and opens the trailer. */}
+            <VideoBubble className="relative z-20 ml-5 mt-1 w-[200px] sm:ml-10 sm:w-[224px]" />
           </div>
         </div>
       </div>

@@ -76,6 +76,8 @@ export interface Copy {
     bubbles: string[];
     /** Botão que liga a animação para quem tem "reduzir movimento" no sistema. */
     enableMotion: string;
+    /** Balão clicável ao lado do UBI que abre o trailer. */
+    video: { bubble: string; hint: string; title: string; caption: string; close: string; unsupported: string };
   };
   how: { eyebrow: string; title: string; intro: string; steps: Step[] };
   features: { eyebrow: string; title: string; intro: string; items: Feature[] };
@@ -153,6 +155,14 @@ const ptBR: Copy = {
       '1h50 sem pausa. Levanta 5 minutos, eu seguro o cronômetro.',
     ],
     enableMotion: 'Ativar animação',
+    video: {
+      bubble: 'Conheça mais no vídeo',
+      hint: 'Menos de 1 minuto',
+      title: 'ubiqX AI — o trailer',
+      caption: 'Para onde vão as suas horas, em menos de um minuto.',
+      close: 'Fechar o vídeo',
+      unsupported: 'O seu navegador não reproduz este vídeo.',
+    },
   },
   how: {
     eyebrow: 'Como funciona',
@@ -424,6 +434,14 @@ const en: Copy = {
       '1h50 without a break. Stand up for five minutes, I will hold the clock.',
     ],
     enableMotion: 'Turn on animation',
+    video: {
+      bubble: 'See more in the video',
+      hint: 'Under a minute',
+      title: 'ubiqX AI — the trailer',
+      caption: 'Where your hours go, in under a minute.',
+      close: 'Close the video',
+      unsupported: 'Your browser cannot play this video.',
+    },
   },
   how: {
     eyebrow: 'How it works',
