@@ -65,8 +65,15 @@ infra/ops/ssh-copy.sh infra/site/.stage /opt/ubiqx/site
 OPS_COMMAND='export UBIQX_HOST=ubi.mvk1.cloud; bash /opt/ubiqx/site/deploy.sh' infra/ops/ssh-run.sh
 ```
 
-## Quando a rede não se chama `dokploy-network`
+## Como o script acha a rede e o certificado
 
-`deploy.sh` procura a rede do Dokploy e o certresolver do Traefik sozinho. Se a VPS usar
-outro nome de rede, passe `UBIQX_NETWORK=<nome>`; se o certresolver não for `letsencrypt`,
-o script tenta descobri-lo no próprio container do Traefik antes de cair nesse padrão.
+O container precisa estar numa rede em que o **Traefik** também esteja — senão ele não
+alcança a página e o hostname responde 404. Esse nome muda de instalação para instalação
+(`dokploy-network` numa, `<projeto>_default` noutra), então `deploy.sh` não chuta: acha o
+container do Traefik, lê as redes dele e escolhe uma (preferindo a que tenha `dokploy` no
+nome). O certresolver sai do mesmo lugar, dos argumentos do Traefik, caindo em
+`letsencrypt` quando não dá para saber.
+
+Se a escolha sair errada, `UBIQX_NETWORK=<nome>` decide. O log de cada execução imprime as
+redes encontradas e a escolhida, e um nome inexistente lista as redes da máquina antes de
+parar.
