@@ -29,9 +29,10 @@ workflows:
       #                   marque a variável como Secure)
       # Sem o grupo a etapa "Publicar atualização" é pulada e o build continua válido em Artifacts.
       #
-      # Assinatura do updater (OBRIGATÓRIA para compilar). O ubiqX só instala uma atualização assinada com a
-      # chave cujo par público está em apps/desktop/src-tauri/tauri.conf.json (plugins > updater > pubkey), e
-      # o Tauri recusa empacotar sem a chave privada. Crie um grupo "ubiqx_updater" com
+      # Assinatura do updater (opcional). O ubiqX só instala uma atualização assinada com a chave cujo par
+      # público está em apps/desktop/src-tauri/tauri.conf.json (plugins > updater > pubkey). Sem a chave
+      # privada o build continua (com --no-sign) e entrega o DMG normalmente, mas não gera o artefato de
+      # atualização: quem já tem o app instala à mão. Crie um grupo "ubiqx_updater" com
       #   TAURI_SIGNING_PRIVATE_KEY            (conteúdo do arquivo .key gerado por `pnpm tauri signer generate`)
       #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD   (a senha dessa chave)
       # marcando as duas como Secure. São os mesmos secrets do GitHub Actions.
