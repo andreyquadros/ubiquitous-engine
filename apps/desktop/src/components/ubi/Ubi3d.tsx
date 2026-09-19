@@ -3,7 +3,6 @@ import { useReducedMotion } from 'framer-motion';
 import { Suspense, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode, type RefObject } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { useT } from '../../i18n';
@@ -29,8 +28,6 @@ import {
 
 /** The user's model, installed by scripts/install-ubi-model.sh and committed with the app. */
 export const GLB_URL = '/ubi/Ubi.glb';
-/** Local Draco decoder (public/draco) — keeps compressed models offline and CSP-safe. */
-export const DRACO_PATH = '/draco/';
 /**
  * Yaw applied to the export, in radians. `0` assumes UBI was exported facing +Z (towards the camera); use
  * `Math.PI` for an export that faces away, `±Math.PI / 2` for one that faces sideways.
@@ -52,16 +49,6 @@ const GL = { alpha: true, antialias: true, premultipliedAlpha: true, powerPrefer
 const DPR: [number, number] = [1, 2];
 /** The debugging attributes are refreshed at most this often (seconds). */
 const ATTR_INTERVAL = 0.1;
-
-let draco: DRACOLoader | null = null;
-/** Attaches the local Draco decoder; used by `useLoader` and its preload. */
-export function configureLoader(loader: GLTFLoader): void {
-  if (!draco) {
-    draco = new DRACOLoader();
-    draco.setDecoderPath(DRACO_PATH);
-  }
-  loader.setDRACOLoader(draco);
-}
 
 type EmissiveMaterial = THREE.Material & { emissive: THREE.Color; emissiveIntensity: number };
 const hasEmissive = (m: THREE.Material): m is EmissiveMaterial => 'emissive' in m && (m as EmissiveMaterial).emissive instanceof THREE.Color;
@@ -157,7 +144,7 @@ interface ModelProps {
 }
 
 function Model({ mood, size, speaking, box, bubble, pointer, handle, reduce, onReady }: ModelProps) {
-  const gltf = useLoader(GLTFLoader, GLB_URL, configureLoader);
+  const gltf = useLoader(GLTFLoader, GLB_URL);
   const invalidate = useThree((s) => s.invalidate);
   const eased = useRef({ yaw: 0, pitch: 0 });
   const { object, emissives } = useMemo(() => normalise(gltf), [gltf]);
@@ -366,10 +353,12 @@ export interface Ubi3dProps {
   speaking?: string;
   /** The bubble element (rendered by `Ubi`), the target of the glances. */
   bubbleRef?: RefObject<HTMLElement | null>;
+  /** Called once the model is on screen, so `Ubi` can report the presentation it really achieved. */
+  onReady?: () => void;
 }
 
 /**
- * UBI from the user's glTF: direct GLTFLoader (+ local Draco), transparent premultiplied canvas over the UI,
+ * UBI from the user's glTF: a direct GLTFLoader with no decoder plugin, transparent premultiplied canvas over the UI,
  * RoomEnvironment IBL, mood-coloured fill light and floor glow, a blink on emissive eye/visor materials and, with a
  * rigged export, one clip per mood (Idle/Excited/Worried/Sleep), one-shots (Yes on new speech, Wave/No on a tap,
  * Wave when the mood turns excited) and a procedural head look-at that follows the pointer and glances at the speech
@@ -379,7 +368,7 @@ export interface Ubi3dProps {
  * Debugging attributes on the box: `data-ubi-rig` ("1" with a Head bone and clips), `data-ubi-clip` (base clip),
  * `data-ubi-look` ("yaw,pitch" in degrees, ≤ 10×/s).
  */
-export default function Ubi3d({ mood, size, fallback, speaking, bubbleRef }: Ubi3dProps) {
+export default function Ubi3d({ mood, size, fallback, speaking, bubbleRef, onReady: onReadyProp }: Ubi3dProps) {
   const t = useT();
   const reduce = !!useReducedMotion();
   const glow = MOOD_GLOW[mood];
@@ -388,7 +377,12 @@ export default function Ubi3d({ mood, size, fallback, speaking, bubbleRef }: Ubi
   const pointer = useRef<Pointer>({ x: 0, y: 0 });
   const handle = useRef<{ tap: () => void } | null>(null);
   const [ready, setReady] = useState(false);
-  const onReady = useRef(() => setReady(true)).current;
+  const readyOnce = useRef(onReadyProp);
+  readyOnce.current = onReadyProp;
+  const onReady = useRef(() => {
+    setReady(true);
+    readyOnce.current?.();
+  }).current;
   const frameloop = !active ? 'never' : reduce ? 'demand' : 'always';
   const boxH = size * 1.2;
 
@@ -449,4 +443,4 @@ export default function Ubi3d({ mood, size, fallback, speaking, bubbleRef }: Ubi
   );
 }
 
-useLoader.preload(GLTFLoader, GLB_URL, configureLoader);
+useLoader.preload(GLTFLoader, GLB_URL);

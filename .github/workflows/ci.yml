@@ -76,6 +76,9 @@ jobs:
       - name: Release script tests (publish-release.mjs against a mock GitHub API)
         run: node --test scripts/publish-release.test.mjs
         working-directory: ${{ github.workspace }}
+      - name: The mascot's model loads with a plain GLTFLoader
+        run: node --test scripts/ubi-model.test.mjs
+        working-directory: ${{ github.workspace }}
 
   # The three app jobs only build and upload their installers under the stable names the update feed
   # points at (ubiqX-<os>-<arch>.<ext>). publish-continuous, below, publishes the three of them in one go.

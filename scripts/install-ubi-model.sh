@@ -33,7 +33,7 @@ install_one() {
       cp "$src" "$DEST_DIR/Ubi.glb"
       echo "✓ 3D model → $DEST_DIR/Ubi.glb ($(du -h "$DEST_DIR/Ubi.glb" | cut -f1))"
       if [[ $(stat -f %z "$src" 2>/dev/null || stat -c %s "$src") -gt 10000000 ]]; then
-        echo "  The model is over 10 MB: shrink it with scripts/optimize-ubi-model.sh \"$src\" (textures 1024 px + Draco, ~3 MB)."
+        echo "  The model is over 10 MB: shrink it with scripts/optimize-ubi-model.sh \"$src\" (textures 512 px + quantized geometry, ~4.5 MB)."
       fi
       ;;
     *)

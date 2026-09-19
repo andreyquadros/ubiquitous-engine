@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { AlertTriangle, ArrowDownToLine, BadgeCheck, Bell, BrainCircuit, Camera, Check, Copy, Download, ExternalLink, EyeOff, Info, KeyRound, ListRestart, Loader2, RefreshCw, Shield, ShieldCheck, SlidersHorizontal, Trash2, type LucideIcon } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Badge, StatusPill } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -23,6 +23,7 @@ import { useToast } from '../lib/toast';
 import { LICENSE_KEY_PREFIX, SITE_URL, isManagedProvider, keyStatus, licenseAllowsManaged, providerInfo, providerLabel, providerPitch, reconcileModels, sameModels } from '../lib/providers';
 import type { AiModels, AiProvider, LicenseStatus, PermissionKind, PermissionState, Platform, Plan, PrivateModeDuration, Settings, SettingsView, VisionPolicy } from '../lib/types';
 import { useAsync } from '../lib/useAsync';
+import { getUbiStatus, subscribeUbiStatus, ubiStatusLabel } from '../components/ubi/status';
 
 export const REPO_URL = 'https://github.com/andreyquadros/ubiquitous-engine';
 
@@ -1308,6 +1309,10 @@ function AboutSection({ view }: { view: SettingsView }) {
   const engine = t(`settings.about.engine_state.${view.tracker_state}`);
   const ai = t(`settings.about.ai_state.${view.ai_health.state}`);
 
+  // The mascot publishes how it is really being drawn; a release build has no devtools, so this row
+  // is the only place a silent fall back from the 3D model can be seen.
+  const ubi = useSyncExternalStore(subscribeUbiStatus, getUbiStatus, getUbiStatus);
+
   return (
     <Section id="sobre" title={t('settings.section.about')} description={t('settings.about.description')}>
       <dl className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-2.5 text-sm">
@@ -1319,6 +1324,8 @@ function AboutSection({ view }: { view: SettingsView }) {
         </dd>
         <dt className="text-ink-3">{t('settings.about.platform')}</dt>
         <dd>{PLATFORM_NAMES[view.platform] ?? t('settings.about.platform_dev')}</dd>
+        <dt className="text-ink-3">{t('settings.about.ubi')}</dt>
+        <dd data-testid="about-ubi">{ubiStatusLabel(ubi, t)}</dd>
         <dt className="text-ink-3">{t('settings.about.engine')}</dt>
         <dd>{engine}</dd>
         <dt className="text-ink-3">{t('settings.about.ai')}</dt>

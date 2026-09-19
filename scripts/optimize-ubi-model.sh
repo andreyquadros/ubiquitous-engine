@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# Shrinks a UBI export for the app: textures resized to 1024 px (JPEG/PNG kept, no new extensions),
-# geometry compressed with Draco (the decoder ships in apps/desktop/public/draco). A 34 MB Blender export
-# with 4K textures becomes ~3 MB with no visible loss at the sizes the mascot is drawn (≤ 200 px).
+# Shrinks a UBI export for the app: textures resized (JPEG/PNG kept) and geometry quantized with
+# KHR_mesh_quantization. A 34 MB Blender export with 4K textures becomes ~4.5 MB with no visible loss at
+# the sizes the mascot is drawn (≤ 200 px).
+#
+# Deliberately NOT Draco, and not meshopt either. Both need a decoder that three.js runs in a Worker
+# built from a `blob:` URL, which WebKit — the engine of the macOS app — refuses under the app's content
+# policy: the model failed to load and the mascot silently fell back to the flat drawing on every Mac.
+# Quantization is read by three.js itself, with no decoder and no Worker. scripts/ubi-model.test.mjs
+# fails the build if a decoder ever comes back.
 #
 # Usage:
 #   scripts/optimize-ubi-model.sh ~/Downloads/Ubi.glb                 # writes apps/desktop/public/ubi/Ubi.glb
@@ -14,7 +20,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 IN="${1:-}"
 OUT="${2:-$ROOT/apps/desktop/public/ubi/Ubi.glb}"
-SIZE="${TEXTURE_SIZE:-1024}"
+SIZE="${TEXTURE_SIZE:-512}"
 if [[ -z "$IN" || ! -f "$IN" ]]; then
   echo "usage: $0 <model.glb> [out.glb]" >&2
   exit 1
@@ -30,8 +36,9 @@ echo "→ $IN ($(du -h "$IN" | cut -f1))"
 "${GT[@]}" dedup "$TMP/1.glb" "$TMP/2.glb" >/dev/null
 "${GT[@]}" weld "$TMP/2.glb" "$TMP/3.glb" >/dev/null
 "${GT[@]}" resize --width "$SIZE" --height "$SIZE" "$TMP/3.glb" "$TMP/4.glb" >/dev/null
-"${GT[@]}" draco --method edgebreaker "$TMP/4.glb" "$OUT" >/dev/null
-echo "✓ $OUT ($(du -h "$OUT" | cut -f1)); textures ${SIZE}px, Draco geometry"
+"${GT[@]}" quantize "$TMP/4.glb" "$OUT" >/dev/null
+echo "✓ $OUT ($(du -h "$OUT" | cut -f1)); textures ${SIZE}px, quantized geometry"
+node --test "$ROOT/scripts/ubi-model.test.mjs" >/dev/null && echo "✓ carrega com um GLTFLoader puro"
 if [[ "$OUT" == "$ROOT/apps/desktop/public/ubi/Ubi.glb" ]]; then
   echo "Commit apps/desktop/public/ubi/Ubi.glb so cloud builds (GitHub Actions, Codemagic) include the 3D UBI."
 fi

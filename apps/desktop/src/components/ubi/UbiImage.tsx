@@ -11,20 +11,23 @@ export const PNG_URL = '/ubi/ubi.png';
 
 let probe: Promise<boolean> | null = null;
 
-/** Checks once (HEAD) whether /ubi/ubi.png exists. In jsdom the relative fetch throws → false. */
+/**
+ * Checks once whether `/ubi/ubi.png` exists, by loading it.
+ *
+ * It used to ask with `fetch(HEAD)`. That is a bad question to ask a desktop app: the page is served
+ * by a custom protocol, where a HEAD is not the plain request it is over http, and a miss answers
+ * with index.html rather than a 404. Letting the browser load the image answers the same question
+ * through `img-src`, which is the very thing that has to work for the PNG to be shown.
+ */
 export function probePng(): Promise<boolean> {
   if (!probe) {
-    probe = (async () => {
-      try {
-        if (typeof window === 'undefined') return false;
-        const res = await fetch(PNG_URL, { method: 'HEAD' });
-        if (!res.ok) return false;
-        const ct = res.headers.get('content-type') ?? '';
-        return ct.startsWith('image/');
-      } catch {
-        return false;
-      }
-    })();
+    probe = new Promise<boolean>((resolve) => {
+      if (typeof window === 'undefined' || typeof Image === 'undefined') return resolve(false);
+      const img = new Image();
+      img.onload = () => resolve(img.naturalWidth > 0);
+      img.onerror = () => resolve(false);
+      img.src = PNG_URL;
+    });
   }
   return probe;
 }

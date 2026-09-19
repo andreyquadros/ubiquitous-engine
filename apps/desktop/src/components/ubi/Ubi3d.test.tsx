@@ -103,8 +103,7 @@ function riggedGltf() {
   return { scene, animations };
 }
 
-import Ubi3d, { configureLoader, FIT, normalise } from './Ubi3d';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import Ubi3d, { FIT, normalise } from './Ubi3d';
 import { MOOD_GLOW } from './moods';
 import { LOOK_MAX_DT } from './rig';
 
@@ -375,13 +374,6 @@ describe('Ubi3d', () => {
     });
     frame();
     expect(box).toHaveAttribute('data-ubi-clip', 'Idle');
-  });
-
-  it('attaches the local Draco decoder to the loader', () => {
-    const loader = new GLTFLoader();
-    const spy = vi.spyOn(loader, 'setDRACOLoader');
-    configureLoader(loader);
-    expect(spy).toHaveBeenCalledTimes(1);
   });
 
   it('exposes one glow colour per mood', () => {

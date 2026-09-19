@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import type { Mood } from '../../lib/types';
 import { UbiSvg } from './UbiSvg';
 import { probePng, UbiImage, __resetPngProbe } from './UbiImage';
+import { setUbiStatus, type UbiMode } from './status';
 
 // three and the loaders stay out of the initial bundle: the chunk is fetched only when the model exists.
 const Ubi3d = lazy(() => import('./Ubi3d'));
@@ -22,56 +23,42 @@ export interface UbiProps {
   className?: string;
 }
 
-const GLB_URL = '/ubi/Ubi.glb';
-let probe: Promise<boolean> | null = null;
-
-const webglAvailable = (): boolean => {
+/**
+ * Whether WebGL is there at all. This is the only thing worth asking before trying the model: it
+ * ships inside the app, so its presence is not in question, and every other way it can fail (a bad
+ * export, a blocked decoder, a lost context) shows up as a load error that `onGlbError` catches.
+ *
+ * An earlier version also asked `fetch('/ubi/Ubi.glb', { method: 'HEAD' })` first. That probe was
+ * itself a failure mode: over the desktop app's custom protocol a HEAD is not the plain request it
+ * is over http, and when it answered wrong the mascot fell back to the flat drawing with the model
+ * sitting right there, unused.
+ */
+export function webglAvailable(): boolean {
   try {
     const c = document.createElement('canvas');
     return !!(c.getContext('webgl2') || c.getContext('webgl'));
   } catch {
     return false;
   }
-};
-
-/** Checks once whether the 3D model exists and WebGL works; otherwise the PNG or the SVG UBI is used. */
-export function probeGlb(): Promise<boolean> {
-  if (!probe) {
-    probe = (async () => {
-      try {
-        if (typeof window === 'undefined' || !webglAvailable()) return false;
-        const res = await fetch(GLB_URL, { method: 'HEAD' });
-        if (!res.ok) return false;
-        const ct = res.headers.get('content-type') ?? '';
-        return !ct.includes('text/html');
-      } catch {
-        return false;
-      }
-    })();
-  }
-  return probe;
 }
 
-/** Test hook: reset the cached probes (GLB and PNG). */
+/** Test hook: reset the cached PNG probe. */
 export function __resetProbe(): void {
-  probe = null;
   __resetPngProbe();
 }
 
-class Boundary extends Component<{ fallback: ReactNode; onError: () => void; children: ReactNode }, { failed: boolean }> {
+class Boundary extends Component<{ fallback: ReactNode; onError: (e: unknown) => void; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
   }
-  componentDidCatch() {
-    this.props.onError();
+  componentDidCatch(error: unknown) {
+    this.props.onError(error);
   }
   render() {
     return this.state.failed ? this.props.fallback : this.props.children;
   }
 }
-
-type Mode = 'svg' | 'png' | '3d';
 
 /** Dev-only overrides (`window.__ubiqxUbi.set({ mood, speaking })`) so the rig can be driven from the browser. */
 interface Override {
@@ -93,7 +80,7 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 
 /** The mascot with an optional speech bubble. Picks the richest available presentation. */
 export function Ubi({ mood: moodProp, size = 160, speaking: speakingProp, variant = 'auto', crop = 'full', className }: UbiProps) {
-  const [mode, setMode] = useState<Mode>('svg');
+  const [mode, setMode] = useState<UbiMode>('svg');
   const [pngOk, setPngOk] = useState(false);
   const [override, setOverride] = useState<Override>({});
   const reduce = useReducedMotion();
@@ -106,6 +93,14 @@ export function Ubi({ mood: moodProp, size = 160, speaking: speakingProp, varian
       if (bubble.current === el) bubble.current = null;
     };
   }, []);
+  // Only the `auto` mascot speaks for the app's status: `flat` and `svg` are deliberate choices,
+  // not failures, and the rail avatar must not report itself as a degraded 3D model.
+  const report = useCallback(
+    (m: UbiMode, reason: string | null) => {
+      if (variant === 'auto') setUbiStatus({ mode: m, reason });
+    },
+    [variant],
+  );
   const mood = override.mood ?? moodProp;
   const speaking = override.speaking === undefined ? speakingProp : (override.speaking ?? undefined);
 
@@ -121,18 +116,30 @@ export function Ubi({ mood: moodProp, size = 160, speaking: speakingProp, varian
     if (variant === 'svg') return;
     let alive = true;
     void (async () => {
-      const [png, glb] = await Promise.all([probePng(), variant === 'auto' ? probeGlb() : Promise.resolve(false)]);
+      const png = await probePng();
       if (!alive) return;
       setPngOk(png);
-      setMode(glb ? '3d' : png ? 'png' : 'svg');
+      if (variant === 'auto' && webglAvailable()) return setMode('3d');
+      setMode(png ? 'png' : 'svg');
+      if (variant === 'auto') report(png ? 'png' : 'svg', 'WebGL unavailable');
     })();
     return () => {
       alive = false;
     };
-  }, [variant]);
+  }, [variant, report]);
 
-  // The model exists but could not be loaded/rendered (bad export, WebGL context lost…): fall back to the PNG when it exists.
-  const onGlbError = useCallback(() => setMode(pngOk ? 'png' : 'svg'), [pngOk]);
+  const onGlbReady = useCallback(() => report('3d', null), [report]);
+
+  // The model could not be loaded or rendered (a bad export, a blocked decoder, a lost WebGL context):
+  // fall back to the PNG when it exists, and keep the reason for Settings → Sobre.
+  const onGlbError = useCallback(
+    (e: unknown) => {
+      const next = pngOk ? 'png' : 'svg';
+      setMode(next);
+      report(next, e instanceof Error ? e.message : String(e));
+    },
+    [pngOk, report],
+  );
 
   const svg = <UbiSvg mood={mood} size={size} />;
   let art: ReactNode = svg;
@@ -141,7 +148,7 @@ export function Ubi({ mood: moodProp, size = 160, speaking: speakingProp, varian
     art = (
       <Boundary fallback={pngOk ? <UbiImage mood={mood} size={size} crop={crop} /> : svg} onError={onGlbError}>
         <Suspense fallback={svg}>
-          <Ubi3d mood={mood} size={size} fallback={svg} speaking={speaking} bubbleRef={bubble} />
+          <Ubi3d mood={mood} size={size} fallback={svg} speaking={speaking} bubbleRef={bubble} onReady={onGlbReady} />
         </Suspense>
       </Boundary>
     );
