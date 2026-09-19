@@ -185,6 +185,12 @@ echo "[ubiqx] quem escuta nas portas 80 e 443:"
 { ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null; } | grep -E ':(80|443)[[:space:]]' | sed 's/^/    /' || echo "    (não consegui listar)"
 echo "[ubiqx] containers em execução:"
 docker ps --format '    {{.Names}}  |  {{.Image}}  |  {{.Ports}}' || true
+echo "[ubiqx] containers parados também:"
+docker ps -a --filter status=exited --filter status=created --format '    {{.Names}}  |  {{.Image}}  |  {{.Status}}' || true
+echo "[ubiqx] serviços swarm (o dokploy roda assim): $(docker service ls --format '{{.Name}}' 2>/dev/null | tr '\n' ' ' || echo 'swarm inativo')"
+echo "[ubiqx] pastas de painel: $(ls -d /etc/dokploy /etc/coolify /opt/dokploy 2>/dev/null | tr '\n' ' ' || echo 'nenhuma')"
+echo "[ubiqx] nginx: $(systemctl is-enabled nginx 2>/dev/null || echo '?') / $(systemctl is-active nginx 2>/dev/null || echo '?')"
+echo "[ubiqx] quem responde por livia.mvk1.cloud aqui: $(title_of "$(docker run --rm --network host curlimages/curl:latest -sk --max-time 10 --resolve 'livia.mvk1.cloud:443:127.0.0.1' 'https://livia.mvk1.cloud/' 2>/dev/null || true)")"
 
 # O veredito de verdade é do Traefik: ele conta se pegou as labels e o que o ACME respondeu.
 if [ -n "$TRAEFIK" ]; then
