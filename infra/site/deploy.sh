@@ -164,6 +164,21 @@ else
   echo "[ubiqx] dns: $HOST resolve para esta VPS."
 fi
 
+# Quem responde por este host nesta máquina? `--resolve` pula o DNS e entrega o pedido ao
+# Traefik local, com o cabeçalho Host certo. Se vier a página do ubiqX aqui e outra coisa no
+# navegador, o problema não é roteamento: é o pedido chegando noutro servidor.
+probe() {
+  docker run --rm --network host curlimages/curl:latest -sk --max-time 10 \
+    --resolve "$HOST:$1:127.0.0.1" "$2://$HOST/" 2>/dev/null || true
+}
+title_of() { printf '%s' "$1" | tr -d '\r\n' | sed -n 's/.*<title>\([^<]*\)<\/title>.*/\1/p' | cut -c1-70; }
+echo "[ubiqx] perguntando ao traefik desta máquina, sem passar pelo dns:"
+echo "[ubiqx]   https -> título: $(title_of "$(probe 443 https)")"
+echo "[ubiqx]   http  -> título: $(title_of "$(probe 80 http)")"
+
+echo "[ubiqx] flags do provider docker deste traefik:"
+printf '%s\n' "$ARGS" | grep -iE '^--providers\.' | sed 's/^/    /' || echo "    (nenhuma na linha de comando)"
+
 # O veredito de verdade é do Traefik: ele conta se pegou as labels e o que o ACME respondeu.
 if [ -n "$TRAEFIK" ]; then
   sleep 8
