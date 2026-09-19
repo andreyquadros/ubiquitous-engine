@@ -1048,6 +1048,14 @@ async fn day_scope_does_not_spread_a_domainless_browser_block() {
     code_a.app_name = "Visual Studio Code".into();
     code_a.url = None;
     code_a.domain = None;
+    // Classified already, and not by the user — so the backfill below may still rewrite it, while
+    // the engine's own classification pass leaves it alone (it only picks up blocks with no
+    // category). Left pending, that pass would race this test: this harness maps
+    // "visual studio code" to cat-inc, and a block already in the target category is skipped by
+    // the backfill, which turned the assertion below into a flaky 0 on slower machines.
+    code_a.category_id = Some("cat-ifro".into());
+    code_a.source = Some(ClassificationSource::Llm);
+    code_a.confidence = 0.8;
     let mut code_b = code_a.clone();
     code_b.id = "code-b".into();
     code_b.started_at -= ChronoDuration::hours(1);
