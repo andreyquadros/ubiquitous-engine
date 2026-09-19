@@ -15,9 +15,10 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
   # Updater signing (tauri-plugin-updater). The public half lives in apps/desktop/src-tauri/tauri.conf.json
-  # (plugins > updater > pubkey); these two secrets are the private half. Without them the Tauri CLI refuses
-  # to bundle ("A public key has been found, but no private key"), so a build never produces an unsigned
-  # artifact by accident — the guard step in each app job says so up front.
+  # (plugins > updater > pubkey); these two secrets are the private half, and they have to be *repository*
+  # secrets — an environment secret reaches no job that does not declare that environment, and arrives here
+  # empty. Without them the build still produces the DMG and the installers, but no updater artifact: see
+  # scripts/ci-updater-signing.sh, which each app job runs and which says which of the two is missing.
   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
