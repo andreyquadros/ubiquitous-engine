@@ -39,6 +39,14 @@ extensão *AppIndicator and KStatusNotifierItem Support*.
 `windows-x86_64` / `linux-x86_64`; **Baixar** abre o `.exe` ou o `.AppImage` no navegador (o `.msi` e o
 `.deb` ficam em `alternates`). A seção *Atualizações* em Configurações mostra as instruções do sistema em uso.
 
+**Atualizar sem baixar nada.** **Atualizar agora** (no banner ou em Configurações) usa o `tauri-plugin-updater`:
+ele baixa o artefato assinado que o `updater.json` aponta — `ubiqX-windows-x86_64-setup.nsis.zip` no Windows,
+`ubiqX-linux-x86_64.AppImage.tar.gz` no Linux —, mostra a barra de progresso, instala e reabre o app. No Windows
+o instalador NSIS roda em modo *passive* (só a barra) e substitui a versão anterior mantendo dados e
+configurações; no Linux o AppImage em execução é trocado no lugar. Diferente do macOS, aqui a atualização
+automática não custa nenhuma permissão. Se falhar, a mensagem aparece na hora e o instalador manual continua a
+um clique.
+
 ## 2. Compilar
 
 Pré-requisitos comuns: Rust estável (`rustup`), Node 22, pnpm 10 e `pnpm install` em `apps/desktop`.

@@ -15,6 +15,7 @@ import { Toggle } from '../components/ui/Toggle';
 import { UsageBar } from '../components/ui/UsageBar';
 import { LICENSE_SECTION_ID } from '../components/layout/LicenseBanner';
 import { UPDATES_SECTION_ID, downloadLabel, fmtBuildDate } from '../components/layout/UpdateBanner';
+import { InstallUpdateButton, UpdateInstallStatus } from '../components/layout/UpdateInstall';
 import { useLocale, useT, type Locale, type Vars } from '../i18n';
 import { fmtDateNumeric, fmtDateTime, fmtTime, fmtUsd, hhmmToInput, inputToHhmm } from '../lib/format';
 import { ipc, ipcErrorMessage } from '../lib/ipc';
@@ -1169,7 +1170,6 @@ function UpdatesSection({ draft, patch, view }: SectionProps & { view: SettingsV
               )}
               <Button
                 size="sm"
-                variant="primary"
                 icon={<ArrowDownToLine className="size-4" strokeWidth={2} />}
                 onClick={() => {
                   openUpdate().catch(openFailed);
@@ -1177,14 +1177,17 @@ function UpdatesSection({ draft, patch, view }: SectionProps & { view: SettingsV
               >
                 {downloadLabel(t, release.kind)}
               </Button>
+              <InstallUpdateButton size="sm" macWarning={view.platform === 'macos'} />
             </div>
           </div>
+          <UpdateInstallStatus />
           <ReleaseNotes notes={release.notes} />
         </div>
       )}
 
       <div className="flex flex-col gap-2 border-t border-line pt-4" data-testid="install-notes">
         <p className="text-sm font-medium">{t('settings.updates.install.title')}</p>
+        <p className="text-xs leading-5 text-ink-2">{t('settings.updates.install.fallback')}</p>
         <p className="text-xs leading-5 text-ink-2">{t(install.hint)}</p>
         {install.commands.length > 0 && (
           <div className="relative">

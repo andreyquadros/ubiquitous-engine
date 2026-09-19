@@ -29,10 +29,18 @@ workflows:
       #                   marque a variável como Secure)
       # Sem o grupo a etapa "Publicar atualização" é pulada e o build continua válido em Artifacts.
       #
+      # Assinatura do updater (OBRIGATÓRIA para compilar). O ubiqX só instala uma atualização assinada com a
+      # chave cujo par público está em apps/desktop/src-tauri/tauri.conf.json (plugins > updater > pubkey), e
+      # o Tauri recusa empacotar sem a chave privada. Crie um grupo "ubiqx_updater" com
+      #   TAURI_SIGNING_PRIVATE_KEY            (conteúdo do arquivo .key gerado por `pnpm tauri signer generate`)
+      #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD   (a senha dessa chave)
+      # marcando as duas como Secure. São os mesmos secrets do GitHub Actions.
+      #
       # Depois descomente as linhas dos grupos que você criou:
       # groups:
       #   - ubiqx_apple
       #   - ubiqx_github
+      #   - ubiqx_updater
       # Sem o grupo ubiqx_apple o bundle sai com assinatura ad hoc ("-") e abre depois de remover a quarentena.
     cache:
       cache_paths:
@@ -94,7 +102,16 @@ workflows:
             echo "UBIQX_ARCH=$ARCH"
           } >> "$CM_ENV"
           echo "build $UBIQX_BUILD_NUMBER ($UBIQX_BUILD_SHA, $UBIQX_BUILD_BRANCH, epoch $UBIQX_BUILD_EPOCH), arch $ARCH"
-      - name: Compilar ubiqX.app
+      - name: Versão deste build e chave de assinatura
+        # A versão (0.1.<contagem de commits>) vai para tauri.conf.json antes de compilar: é ela que o
+        # tauri-plugin-updater compara. A chave de assinatura é obrigatória: sem ela o Tauri não empacota.
+        script: |
+          set -e
+          bash scripts/ci-app-version.sh
+          bash scripts/ci-require-signing-key.sh
+      - name: Compilar ubiqX.app e o DMG
+        # Um único `tauri build`: o alvo `app` é o que gera o artefato de atualização (.app.tar.gz + .sig),
+        # e `dmg` sozinho não serve para isso (o bundler recusa "no updater-enabled targets were built").
         script: |
           set -e
           source "$HOME/.cargo/env"
@@ -103,18 +120,7 @@ workflows:
           eval "$(bash scripts/build-info.sh)"   # garante a identidade mesmo se $CM_ENV não tiver sido aplicado
           cd apps/desktop
           export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
-          pnpm tauri build --bundles app
-      - name: Gerar DMG
-        # O DMG é o que a atualização baixa; sem ele a release contínua não é publicada.
-        script: |
-          set -e
-          source "$HOME/.cargo/env"
-          export PATH="$HOME/.local/bin:$PATH"
-          export npm_config_package_manager_strict=false
-          eval "$(bash scripts/build-info.sh)"
-          cd apps/desktop
-          export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
-          pnpm tauri build --bundles dmg
+          pnpm tauri build --bundles app,dmg
       - name: Zipar o .app com ditto
         # O zip de artifacts perde modos de arquivo e symlinks; o ditto preserva, e o nome estável
         # ubiqX-macos-<arch>.app.zip é o que o latest.json aponta.
@@ -142,9 +148,18 @@ workflows:
           fi
           eval "$(bash scripts/build-info.sh)"
           ARCH="${UBIQX_ARCH:-$(uname -m)}"; [ "$ARCH" = "arm64" ] && ARCH=aarch64
-          node scripts/publish-release.mjs --dmg 'target/release/bundle/dmg/*.dmg' --app-zip "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.zip"
+          tgz="$(ls target/release/bundle/macos/*.app.tar.gz | head -n 1)"
+          mv "$tgz" "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.tar.gz"
+          mv "$tgz.sig" "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.tar.gz.sig"
+          node scripts/publish-release.mjs \
+            --dmg 'target/release/bundle/dmg/*.dmg' \
+            --app-zip "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.zip" \
+            --asset "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.tar.gz"
     artifacts:
       - target/release/bundle/macos/*.app
       - target/release/bundle/macos/*.app.zip
+      - target/release/bundle/macos/*.app.tar.gz
+      - target/release/bundle/macos/*.app.tar.gz.sig
       - target/release/bundle/dmg/*.dmg
       - target/release/bundle/latest.json
+      - target/release/bundle/updater.json

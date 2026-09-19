@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setLocale } from '../../i18n';
 import { __mock } from '../../lib/mock';
 import { useAppStore } from '../../lib/store';
+import { IDLE_INSTALL } from '../../lib/updater';
 import { UpdateBanner, downloadLabel, fmtBuildDate, hasPendingUpdate } from './UpdateBanner';
 
 function Where() {
@@ -32,7 +33,7 @@ const renderBanner = () =>
 describe('UpdateBanner (mock backend)', () => {
   beforeEach(() => {
     __mock.reset();
-    useAppStore.setState({ updateStatus: null });
+    useAppStore.setState({ updateStatus: null, updateInstall: IDLE_INSTALL });
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -139,6 +140,96 @@ describe('UpdateBanner (mock backend)', () => {
     });
     expect(await screen.findByRole('button', { name: 'Baixar (.AppImage)' })).toBeInTheDocument();
     expect(downloadLabel((k) => k, 'deb')).toBe('updates.download.deb');
+  });
+
+  it('"Atualizar agora" warns about the macOS permissions, then downloads, installs and reopens the app', async () => {
+    __mock.setUpdate(true);
+    __mock.setUpdateInstall({ totalBytes: 24_000_000 });
+    renderBanner();
+    await act(async () => {
+      await useAppStore.getState().loadUpdateStatus();
+    });
+    await screen.findByTestId('update-banner');
+
+    // macOS (the feed entry is a .dmg): the first click only arms the warning, nothing is installed yet.
+    fireEvent.click(screen.getByRole('button', { name: 'Atualizar agora' }));
+    const warning = await screen.findByTestId('update-macos-warning');
+    expect(warning).toHaveTextContent('Gravação de Tela e Automação terão de ser concedidas de novo');
+    expect(__mock.state().update.install.installed).toBe(0);
+
+    // Cancelling puts the button back without touching anything.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(await screen.findByRole('button', { name: 'Atualizar agora' })).toBeInTheDocument();
+    expect(__mock.state().update.install.installed).toBe(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Atualizar agora' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Atualizar mesmo assim' }));
+
+    // The progress bar reports bytes over total while the plugin downloads…
+    const bar = await screen.findByRole('progressbar', { name: 'Progresso da atualização' });
+    expect(bar).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('update-install-progress')).toHaveTextContent(/Baixando .* de 24 MB/));
+    // …and the app installs and reopens itself, without any manual download.
+    await waitFor(() => expect(__mock.state().update.install.installed).toBe(1));
+    await waitFor(() => expect(__mock.state().update.install.relaunched).toBe(1));
+    expect(useAppStore.getState().updateInstall.phase).toBe('relaunching');
+    expect(screen.queryByTestId('update-install-error')).not.toBeInTheDocument();
+  });
+
+  it('installs straight away off macOS and shows a download without a known size', async () => {
+    __mock.setPlatform('linux');
+    __mock.setUpdate(true);
+    __mock.setUpdateInstall({ totalBytes: null });
+    renderBanner();
+    await act(async () => {
+      await useAppStore.getState().loadUpdateStatus();
+    });
+    await screen.findByTestId('update-banner');
+    fireEvent.click(await screen.findByRole('button', { name: 'Atualizar agora' }));
+    expect(screen.queryByTestId('update-macos-warning')).not.toBeInTheDocument();
+    const bar = await screen.findByRole('progressbar', { name: 'Progresso da atualização' });
+    expect(bar).not.toHaveAttribute('aria-valuenow');
+    await waitFor(() => expect(screen.getByTestId('update-install-progress')).toHaveTextContent('Baixando…'));
+    await waitFor(() => expect(__mock.state().update.install.relaunched).toBe(1));
+  });
+
+  it('shows a failure and keeps the manual installer one click away', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    __mock.setPlatform('windows');
+    __mock.setUpdate(true);
+    __mock.setUpdateInstall({ failure: 'servidor fora do ar' });
+    renderBanner();
+    await act(async () => {
+      await useAppStore.getState().loadUpdateStatus();
+    });
+    await screen.findByTestId('update-banner');
+    fireEvent.click(await screen.findByRole('button', { name: 'Atualizar agora' }));
+
+    const error = await screen.findByTestId('update-install-error');
+    expect(error).toHaveTextContent('A atualização automática falhou: servidor fora do ar');
+    expect(useAppStore.getState().updateInstall.phase).toBe('failed');
+    expect(__mock.state().update.install.relaunched).toBe(0);
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument();
+
+    // The manual route is still right there.
+    fireEvent.click(screen.getByRole('button', { name: 'Baixar (.exe)' }));
+    await waitFor(() => expect(open).toHaveBeenCalledWith(expect.stringMatching(/ubiqX-windows-x86_64-setup\.exe$/), '_blank', 'noopener'));
+  });
+
+  it('says so when this build cannot update itself', async () => {
+    __mock.setUpdate(true);
+    __mock.setUpdateInstall({ supported: false });
+    renderBanner();
+    await act(async () => {
+      await useAppStore.getState().loadUpdateStatus();
+    });
+    await screen.findByTestId('update-banner');
+    fireEvent.click(await screen.findByRole('button', { name: 'Atualizar agora' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Atualizar mesmo assim' }));
+    const error = await screen.findByTestId('update-install-error');
+    expect(error).toHaveTextContent('Este build não consegue se atualizar sozinho. Baixe o instalador e instale à mão.');
+    expect(useAppStore.getState().updateInstall.phase).toBe('unavailable');
+    expect(screen.queryByRole('button', { name: 'Tentar de novo' })).not.toBeInTheDocument();
   });
 
   it('stays hidden on development builds', async () => {

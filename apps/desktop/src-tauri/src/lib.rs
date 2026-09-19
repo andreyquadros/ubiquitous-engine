@@ -199,9 +199,15 @@ fn ubi_api_base() -> Option<String> {
 
 /// The build identity stamped by `build.rs` (`UBIQX_BUILD_*`), a development build when the
 /// stamp is empty.
-fn build_info() -> BuildInfo {
+///
+/// `version` is the application version, which comes from `tauri.conf.json` (CI rewrites it to
+/// `<major>.<minor>.<run number>` before building, see `scripts/app-version.mjs`) and is exactly
+/// what `tauri-plugin-updater` compares against the updater feed. Reading it from the Tauri
+/// package info instead of `CARGO_PKG_VERSION` keeps the number in Settings, the number in the
+/// feed and the number the updater compares the same one.
+fn build_info(version: &str) -> BuildInfo {
     BuildInfo::from_stamp(
-        env!("CARGO_PKG_VERSION"),
+        version,
         env!("UBIQX_BUILD_EPOCH"),
         env!("UBIQX_BUILD_NUMBER"),
         env!("UBIQX_BUILD_SHA"),
@@ -508,6 +514,12 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .build(),
         )
+        // In-app update: the plugin downloads and installs the signed artifact listed by the
+        // updater feed (`plugins.updater.endpoints` in tauri.conf.json), and the process plugin
+        // relaunches the app afterwards. The announcement feed (`latest.json`) stays as it is;
+        // see `ubiqx_core::update` and `scripts/publish-release.mjs`.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .on_menu_event(|app, event| {
             if event.id().as_ref() == HIDE_WINDOW_ID {
                 if let Some(w) = app.get_webview_window("main") {
@@ -547,7 +559,7 @@ pub fn run() {
             } else {
                 ubiqx_app::AiBackend::Remote
             };
-            let build = build_info();
+            let build = build_info(&app.package_info().version.to_string());
             tracing::info!(
                 version = %build.version,
                 epoch = build.epoch,
