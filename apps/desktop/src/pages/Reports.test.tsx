@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setLocale } from '../i18n';
@@ -29,7 +29,9 @@ const report: DailyReport = {
   edited: false,
 };
 
-const getReports = vi.fn(async () => [report]);
+// Every real fetch deserializes fresh objects, so the double does too: a card that re-seeded its
+// draft from object identity would throw away the user's unsaved edits on any refresh.
+const getReports = vi.fn(async () => [structuredClone(report)]);
 
 vi.mock('../lib/ipc', () => ({
   isTauri: () => false,
@@ -85,6 +87,25 @@ describe('Reports page', () => {
 
     // editing a row surfaces the save action
     fireEvent.change(screen.getAllByRole('spinbutton', { name: 'Minutos' })[0]!, { target: { value: '100' } });
+    expect(await screen.findByRole('button', { name: 'Salvar alterações' })).toBeInTheDocument();
+  });
+
+  it('keeps an unsaved edit when the daily list is re-fetched', async () => {
+    // The engine bumps `reportsVersion` whenever it finishes work, and every fetch brings fresh
+    // objects: re-seeding the draft from those silently discarded what the user had just typed.
+    renderPage();
+    await waitFor(() => expect(screen.getByText(/1 de 2 relatórios prontos/)).toBeInTheDocument());
+    const minutes = () => screen.getAllByRole('spinbutton', { name: 'Minutos' })[0]!;
+    fireEvent.change(minutes(), { target: { value: '100' } });
+    expect(screen.getByRole('button', { name: 'Salvar alterações' })).toBeInTheDocument();
+
+    const before = getReports.mock.calls.length;
+    act(() => useAppStore.setState({ reportsVersion: 1 }));
+    await waitFor(() => expect(getReports.mock.calls.length).toBeGreaterThan(before));
+    // the call alone proves nothing: let its result land and the effects run
+    await act(async () => {});
+
+    expect(minutes()).toHaveValue(100);
     expect(screen.getByRole('button', { name: 'Salvar alterações' })).toBeInTheDocument();
   });
 

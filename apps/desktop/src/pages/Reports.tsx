@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { Copy, Download, FileText, RefreshCw } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Badge } from '../components/ui/Badge';
 import { useLicenseGate } from '../components/layout/LicenseBanner';
@@ -157,10 +157,20 @@ function ReportCard({ category, report, date, onChange, defaultTime }: { categor
   const [dirty, setDirty] = useState(false);
   const toast = useToast();
 
+  /**
+   * Seed the editable draft from the report — but only when this card is really showing a different
+   * one. The daily list is re-fetched whenever the engine bumps `reportsVersion`, and every fetch
+   * brings fresh objects with the same content, so reacting to object identity threw away whatever
+   * the user had typed since, without a word. The report's own identity is the day, the category and
+   * the moment it was generated: a regeneration does replace the draft, a refresh does not.
+   */
+  const latest = useRef(report);
+  latest.current = report;
+  const identity = report ? `${report.date}·${report.category_id}·${report.generated_at}` : null;
   useEffect(() => {
-    setDraft(report);
+    setDraft(latest.current);
     setDirty(false);
-  }, [report]);
+  }, [identity]);
 
   // Hard enforcement only: without a license the dialog explains the plans instead of calling the AI.
   const licenseGate = useLicenseGate();
