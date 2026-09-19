@@ -22,7 +22,7 @@ primary_region = "gru"
   UBI_MODEL_SMART = "claude-sonnet-5"
   UBI_MONTHLY_BUDGET_USD = "6.0"
   # Leave unset to trust the public key compiled into ubiqx-core; set to rotate.
-  # UBI_LICENSE_PUBKEY_HEX = "de87f36a111822ff93cdc9c39d06a543e179b2345d593826e04fac4d46a1c210"
+  # UBI_LICENSE_PUBKEY_HEX = "ba31f58756b2ea408d3ea7fa8116ca3a802aff3986919492f482ea7bf73e2282"
   RUST_LOG = "info"
 
 [[mounts]]

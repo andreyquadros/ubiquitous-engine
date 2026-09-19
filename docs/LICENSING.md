@@ -69,7 +69,7 @@ cargo run --manifest-path services/ubi-api/Cargo.toml --bin ubi-license -- keyge
 ```
 
 A chave pública comprometida no repositório é a do par de **desenvolvimento**
-(`de87f36a…c210`). Para produção: gere um par novo, troque a constante, publique um build do
+(`ba31f587…2282`). Para produção: gere um par novo, troque a constante, publique um build do
 app e configure o proxy com a chave privada (`UBI_LICENSE_PRIVKEY_HEX`). Trocar a chave pública
 invalida todas as chaves já emitidas — planeje a rotação junto com uma reemissão.
 
@@ -179,10 +179,10 @@ Observações:
 
 ## 6. Chaves de desenvolvimento
 
-O par de desenvolvimento tem a chave pública `de87f36a111822ff93cdc9c39d06a543e179b2345d593826e04fac4d46a1c210`
+O par de desenvolvimento tem a chave pública `ba31f58756b2ea408d3ea7fa8116ca3a802aff3986919492f482ea7bf73e2282`
 comprometida em `license.rs`; a chave privada fica com o responsável pelo produto (fora do
 repositório). A chave de exemplo assinada com esse par (`sub_dev_managed_0001`, mensal, válida até
-2027-09-18) está nos testes do serviço (`services/ubi-api/tests/license_cli.rs`); emita outras
+2036-09-18) está nos testes do serviço (`services/ubi-api/tests/license_cli.rs`); emita outras
 com `ubi-license issue`. O mock do frontend (`apps/desktop/src/lib/mock.ts`) não usa essas
 chaves: ele monta as suas (`__mock.sampleLicenseKeys`, assinatura fictícia, validade relativa
 ao carregamento) porque nada ali verifica assinatura.

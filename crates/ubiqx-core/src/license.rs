@@ -38,7 +38,7 @@ use thiserror::Error;
 /// product owner (see `docs/LICENSING.md`). Rotate it here (and in the proxy's
 /// `UBI_LICENSE_PUBKEY_HEX`) to invalidate every key ever issued.
 pub const UBIQX_LICENSE_PUBKEY_HEX: &str =
-    "de87f36a111822ff93cdc9c39d06a543e179b2345d593826e04fac4d46a1c210";
+    "ba31f58756b2ea408d3ea7fa8116ca3a802aff3986919492f482ea7bf73e2282";
 
 /// Prefix of every license key.
 pub const KEY_PREFIX: &str = "UBIQX-";
