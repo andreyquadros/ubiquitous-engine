@@ -1,0 +1,138 @@
+# Publica a página do ubiqX (site/) numa VPS própria, servida por um container Caddy
+# atrás do Traefik do Dokploy. É um caminho paralelo ao GitHub Pages (site.yml), para
+# um domínio de verdade enquanto ubiqx.ai não existe.
+#
+# Segredos do repositório (Settings → Secrets and variables → Actions → repository):
+#   VPS_HOST     IP ou hostname da VPS                       (obrigatório)
+#   VPS_SSH_KEY  chave privada SSH, sem passphrase           (ou VPS_PASSWORD)
+#   VPS_USER     opcional; "root" quando não definido
+#
+# Sem esses segredos o job avisa e termina verde, para não deixar o ramo vermelho por
+# uma publicação que ninguém pediu; num disparo manual, ele falha, porque aí o pedido foi
+# explícito. Antes da primeira execução, aponte o DNS: registro A de ubi.mvk1.cloud para
+# o IP da VPS.
+name: Site · publicar na VPS
+run-name: "Site: publicar em ${{ inputs.host || 'ubi.mvk1.cloud' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: Hostname servido pelo Traefik
+        required: false
+        default: ubi.mvk1.cloud
+        type: string
+  push:
+    branches:
+      - main
+      # Temporário: publica também a partir do ramo de desenvolvimento, para a página
+      # ficar de pé antes do merge do PR #1. Remova esta linha depois de mesclar.
+      - claude/sharp-bardeen-sk27ae
+    paths:
+      - "site/**"
+      - "infra/**"
+      - ".github/workflows/deploy-site.yml"
+
+concurrency:
+  group: vps
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Publicar a página
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Conferir credenciais da VPS
+        id: creds
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+        run: |
+          missing=()
+          [ -n "$VPS_HOST" ] || missing+=(VPS_HOST)
+          [ -n "$VPS_SSH_KEY" ] || [ -n "$VPS_PASSWORD" ] || missing+=(VPS_SSH_KEY)
+          if [ "${#missing[@]}" -eq 0 ]; then
+            echo "ready=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          joined="$(IFS=', '; echo "${missing[*]}")"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "::error title=Faltam segredos da VPS::Cadastre ${joined} em Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          echo "::warning title=Publicação na VPS pulada::Faltam os secrets ${joined}; a página não foi enviada."
+          echo "ready=0" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v4
+        if: steps.creds.outputs.ready == '1'
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        if: steps.creds.outputs.ready == '1'
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: site/pnpm-lock.yaml
+
+      - name: Compilar a página
+        if: steps.creds.outputs.ready == '1'
+        working-directory: site
+        # Domínio próprio: a página fica na raiz, e SITE_URL é o que vai no canonical e na
+        # imagem de Open Graph. `pnpm build` já typecheca antes do vite build.
+        env:
+          SITE_BASE: /
+          SITE_URL: https://${{ inputs.host || 'ubi.mvk1.cloud' }}
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Montar o pacote
+        if: steps.creds.outputs.ready == '1'
+        # O que sobe para a VPS: a página compilada em www/, mais o Caddyfile e o deploy.sh
+        # que o passo seguinte executa lá dentro.
+        run: |
+          rm -rf infra/site/.stage
+          mkdir -p infra/site/.stage
+          cp -R site/dist infra/site/.stage/www
+          cp infra/site/Caddyfile infra/site/deploy.sh infra/site/.stage/
+          du -sh infra/site/.stage
+
+      - name: Preparar cliente SSH
+        if: steps.creds.outputs.ready == '1'
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -n "$VPS_SSH_KEY" ]; then
+            umask 077
+            printf '%s\n' "$VPS_SSH_KEY" > "$RUNNER_TEMP/vps_key"
+            echo "VPS_SSH_KEY_FILE=$RUNNER_TEMP/vps_key" >> "$GITHUB_ENV"
+          else
+            sudo apt-get install -y -q sshpass >/dev/null
+          fi
+
+      - name: Enviar a página
+        if: steps.creds.outputs.ready == '1'
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'root' }}
+          VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+        run: bash infra/ops/ssh-copy.sh infra/site/.stage /opt/ubiqx/site
+
+      - name: Subir o container
+        if: steps.creds.outputs.ready == '1'
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'root' }}
+          VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+          OPS_COMMAND: |
+            export UBIQX_HOST='${{ inputs.host || 'ubi.mvk1.cloud' }}'
+            bash /opt/ubiqx/site/deploy.sh
+        run: bash infra/ops/ssh-run.sh

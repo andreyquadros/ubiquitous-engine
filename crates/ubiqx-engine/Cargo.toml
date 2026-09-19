@@ -1,5 +1,6 @@
 [package]
 name = "ubiqx-engine"
+description = "ubiqX application layer: tracking loop, classification pipeline, report scheduling, nudges and the service facade used by the desktop app and the CLI"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,3 +10,21 @@ authors.workspace = true
 
 [dependencies]
 ubiqx-core.workspace = true
+async-trait.workspace = true
+base64.workspace = true
+chrono.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+ubiqx-storage.workspace = true
+ubiqx-platform.workspace = true
+ubiqx-ai.workspace = true
+# Tests sign license keys with their own pair.
+ed25519-dalek.workspace = true
+tempfile.workspace = true

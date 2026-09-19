@@ -1,0 +1,172 @@
+# Codemagic: compila o ubiqX.app num Mac mini na nuvem, sem toolchain local.
+# Conecte o repositório em https://codemagic.io (Add application → GitHub → este repo → codemagic.yaml),
+# inicie o workflow "ubiqX macOS app" no branch desejado e baixe o .app (zipado) ou o .dmg em Artifacts.
+# Passo a passo, quarentena e assinatura: docs/MACOS-TESTING.md § 3.1. Atualizações automáticas: § 3.2.
+# Este workflow é só macOS: os instaladores de Windows e Linux saem do GitHub Actions (.github/workflows/ci.yml),
+# que publica as três plataformas de uma vez. Quando os dois publicam o mesmo commit, o publish-release.mjs
+# mescla as plataformas do latest.json (mesmo epoch), então este passo nunca apaga o Windows e o Linux.
+workflows:
+  macos-app:
+    name: ubiqX macOS app
+    # mac_mini_m2 entra nos 500 minutos gratuitos por mês; mac_mini_m4 exige plano com cobrança.
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      xcode: latest
+      node: 22.18.0
+      vars:
+        CARGO_TERM_COLOR: always
+        CARGO_INCREMENTAL: "0"
+      # Assinatura opcional. Crie um grupo de variáveis chamado "ubiqx_apple" com
+      #   APPLE_CERTIFICATE           (o .p12 em base64: `base64 -i ubiqx-dev.p12`)
+      #   APPLE_CERTIFICATE_PASSWORD
+      #   APPLE_SIGNING_IDENTITY      ("ubiqX Dev" ou "Developer ID Application: Nome (TEAMID)")
+      # e, para notarizar com Developer ID, APPLE_ID, APPLE_PASSWORD e APPLE_TEAM_ID.
+      #
+      # Publicação da atualização (opcional). Cada build vira a release contínua do GitHub que o app
+      # instalado consulta para avisar "nova versão disponível". Crie um grupo chamado "ubiqx_github" com
+      #   GITHUB_TOKEN   (token pessoal fine-grained só deste repositório, permissão Contents: read and write;
+      #                   marque a variável como Secure)
+      # Sem o grupo a etapa "Publicar atualização" é pulada e o build continua válido em Artifacts.
+      #
+      # Assinatura do updater (opcional). O ubiqX só instala uma atualização assinada com a chave cujo par
+      # público está em apps/desktop/src-tauri/tauri.conf.json (plugins > updater > pubkey). Sem a chave
+      # privada o build continua (com --no-sign) e entrega o DMG normalmente, mas não gera o artefato de
+      # atualização: quem já tem o app instala à mão. Crie um grupo "ubiqx_updater" com
+      #   TAURI_SIGNING_PRIVATE_KEY            (conteúdo do arquivo .key gerado por `pnpm tauri signer generate`)
+      #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD   (a senha dessa chave)
+      # marcando as duas como Secure. São os mesmos secrets do GitHub Actions.
+      #
+      # Depois descomente as linhas dos grupos que você criou:
+      # groups:
+      #   - ubiqx_apple
+      #   - ubiqx_github
+      #   - ubiqx_updater
+      # Sem o grupo ubiqx_apple o bundle sai com assinatura ad hoc ("-") e abre depois de remover a quarentena.
+    cache:
+      cache_paths:
+        - $HOME/.cargo/registry
+        - $HOME/.cargo/git
+        - $CM_BUILD_DIR/target   # acelera muito; remova se o cache ficar pesado demais
+    triggering:
+      events:
+        - push
+        - pull_request
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+        - pattern: "claude/*"
+          include: true
+          source: true
+      cancel_previous_builds: true
+    scripts:
+      - name: Rust estável (rustup)
+        script: |
+          set -e
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable --no-modify-path
+          source "$HOME/.cargo/env"
+          cargo --version
+      - name: pnpm 10 e dependências do frontend
+        script: |
+          set -e
+          # Diagnóstico do que a máquina já traz (não interrompe a etapa).
+          echo "arch: $(uname -m)"; node --version; npm --version
+          echo "npm prefix: $(npm config get prefix 2>/dev/null || true)"
+          echo "pnpm pré-instalado: $(command -v pnpm 2>/dev/null || echo nenhum) $(pnpm --version 2>/dev/null || true)"
+          # Binário standalone do pnpm, com versão fixa: não passa pelo npm nem pelo /usr/local.
+          PNPM_VERSION=10.34.5
+          case "$(uname -m)" in arm64|aarch64) ASSET=pnpm-macos-arm64 ;; *) ASSET=pnpm-macos-x64 ;; esac
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/${ASSET}" -o "$HOME/.local/bin/pnpm"
+          chmod +x "$HOME/.local/bin/pnpm"
+          export PATH="$HOME/.local/bin:$PATH"
+          # A máquina do Codemagic tem um package.json acima do clone configurado para yarn; com a checagem
+          # estrita ligada o pnpm 10 recusa rodar ("This project is configured to use yarn").
+          export npm_config_package_manager_strict=false
+          cd apps/desktop
+          echo "pnpm em uso: $(command -v pnpm) $(pnpm --version)"
+          pnpm install --frozen-lockfile
+      - name: Identidade do build (commit)
+        # Epoch, número, sha e branch do commit compilado. O build.rs grava os mesmos valores no binário e o
+        # latest.json publicado repete-os: é assim que o app instalado sabe que existe um build mais novo.
+        # As variáveis vão para $CM_ENV para valerem nas etapas seguintes.
+        script: |
+          set -e
+          eval "$(bash scripts/build-info.sh)"
+          ARCH="$(uname -m)"; [ "$ARCH" = "arm64" ] && ARCH=aarch64
+          {
+            echo "UBIQX_BUILD_EPOCH=$UBIQX_BUILD_EPOCH"
+            echo "UBIQX_BUILD_NUMBER=$UBIQX_BUILD_NUMBER"
+            echo "UBIQX_BUILD_SHA=$UBIQX_BUILD_SHA"
+            echo "UBIQX_BUILD_BRANCH=$UBIQX_BUILD_BRANCH"
+            echo "UBIQX_ARCH=$ARCH"
+          } >> "$CM_ENV"
+          echo "build $UBIQX_BUILD_NUMBER ($UBIQX_BUILD_SHA, $UBIQX_BUILD_BRANCH, epoch $UBIQX_BUILD_EPOCH), arch $ARCH"
+      - name: Versão deste build e chave de assinatura
+        # A versão (0.1.<contagem de commits>) vai para tauri.conf.json antes de compilar: é ela que o
+        # tauri-plugin-updater compara. Sem a chave de assinatura o build continua, com --no-sign, e este
+        # build simplesmente não se instala sozinho (scripts/ci-updater-signing.sh explica).
+        script: |
+          set -e
+          bash scripts/ci-app-version.sh
+          GITHUB_ENV="$CM_ENV" bash scripts/ci-updater-signing.sh
+      - name: Compilar ubiqX.app e o DMG
+        # Um único `tauri build`: o alvo `app` é o que gera o artefato de atualização (.app.tar.gz + .sig),
+        # e `dmg` sozinho não serve para isso (o bundler recusa "no updater-enabled targets were built").
+        script: |
+          set -e
+          source "$HOME/.cargo/env"
+          export PATH="$HOME/.local/bin:$PATH"
+          export npm_config_package_manager_strict=false
+          eval "$(bash scripts/build-info.sh)"   # garante a identidade mesmo se $CM_ENV não tiver sido aplicado
+          cd apps/desktop
+          export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
+          pnpm tauri build --bundles app,dmg ${UBIQX_TAURI_SIGN_FLAG:-}
+      - name: Zipar o .app com ditto
+        # O zip de artifacts perde modos de arquivo e symlinks; o ditto preserva, e o nome estável
+        # ubiqX-macos-<arch>.app.zip é o que o latest.json aponta.
+        script: |
+          set -e
+          ARCH="${UBIQX_ARCH:-$(uname -m)}"; [ "$ARCH" = "arm64" ] && ARCH=aarch64
+          ditto -c -k --sequesterRsrc --keepParent target/release/bundle/macos/ubiqX.app "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.zip"
+      - name: Publicar atualização (GitHub Releases)
+        # Move a tag "continuous" para este commit, troca o DMG, o .app.zip e o latest.json da release.
+        # Só em push (builds de pull request apenas compilam) e só com GITHUB_TOKEN (grupo ubiqx_github).
+        # O latest.json publicado mantém as entradas windows-* e linux-* do GitHub Actions quando o build é o
+        # mesmo (epoch igual); se este build for mais novo, elas voltam assim que o Actions publicar o commit.
+        script: |
+          set -e
+          if [ "${CM_PULL_REQUEST:-false}" = "true" ]; then
+            echo "Publicação pulada: build de pull request. Só pushes viram atualização."
+            exit 0
+          fi
+          if [ -z "${GITHUB_TOKEN:-}" ]; then
+            echo "Publicação pulada: GITHUB_TOKEN não definido."
+            echo "Para publicar a atualização, crie no Codemagic o grupo de variáveis ubiqx_github com GITHUB_TOKEN"
+            echo "(token fine-grained com Contents: read and write neste repositório) e descomente 'groups' no codemagic.yaml."
+            echo "Ver docs/MACOS-TESTING.md § 3.2."
+            exit 0
+          fi
+          eval "$(bash scripts/build-info.sh)"
+          ARCH="${UBIQX_ARCH:-$(uname -m)}"; [ "$ARCH" = "arm64" ] && ARCH=aarch64
+          args=(--dmg 'target/release/bundle/dmg/*.dmg' --app-zip "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.zip")
+          # Sem chave de assinatura o build saiu com --no-sign: o artefato de atualização não é publicado,
+          # porque o ubiqX recusaria instalá-lo (scripts/ci-updater-signing.sh).
+          tgz="$(ls target/release/bundle/macos/*.app.tar.gz 2>/dev/null | head -n 1)"
+          if [ "${UBIQX_UPDATER_SIGNED:-0}" = "1" ] && [ -n "$tgz" ] && [ -f "$tgz.sig" ]; then
+            mv "$tgz" "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.tar.gz"
+            mv "$tgz.sig" "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.tar.gz.sig"
+            args+=(--asset "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.tar.gz")
+          else
+            rm -f target/release/bundle/macos/*.app.tar.gz target/release/bundle/macos/*.app.tar.gz.sig
+          fi
+          node scripts/publish-release.mjs "${args[@]}"
+    artifacts:
+      - target/release/bundle/macos/*.app
+      - target/release/bundle/macos/*.app.zip
+      - target/release/bundle/macos/*.app.tar.gz
+      - target/release/bundle/macos/*.app.tar.gz.sig
+      - target/release/bundle/dmg/*.dmg
+      - target/release/bundle/latest.json
+      - target/release/bundle/updater.json

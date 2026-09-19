@@ -1,0 +1,21 @@
+# Servidor estático da página do ubiqX. O TLS e o roteamento por hostname ficam no
+# Traefik do Dokploy (ubi.mvk1.cloud -> este container, porta 80).
+{
+	auto_https off
+	admin off
+}
+
+:80 {
+	encode zstd gzip
+
+	root * /srv/www
+
+	# O Vite põe hash no nome dos arquivos em /assets, então eles podem ser cacheados
+	# para sempre; o resto (index.html, imagens, o modelo do UBI) é revalidado.
+	header /assets/* Cache-Control "public, max-age=31536000, immutable"
+	header Cache-Control "no-cache"
+
+	# Página estática de uma rota só: qualquer caminho desconhecido cai no index.
+	try_files {path} {path}/ /index.html
+	file_server
+}
