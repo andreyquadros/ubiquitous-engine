@@ -48,6 +48,15 @@ try {
   for (const [name, route, testId, theme] of PAGES) {
     if (onlyPage && name !== onlyPage) continue;
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, colorScheme: theme, reducedMotion: 'reduce', locale: lang === 'en' ? 'en-US' : 'pt-BR' });
+    // The unlicensed reminder is a product nag, not something the gallery should advertise: mark it dismissed
+    // (the app keeps the unix ms of the last dismissal in localStorage) before the app boots.
+    await context.addInitScript(() => {
+      try {
+        localStorage.setItem('ubiqx.license_nag', String(Date.now()));
+      } catch {
+        /* storage unavailable: the banner simply stays */
+      }
+    });
     const page = await context.newPage();
     page.on('pageerror', (err) => console.error(`[${name}] page error:`, err.message));
     await page.goto(`${base}/?theme=${theme}&lang=${lang}#${route}`, { waitUntil: 'networkidle' });
