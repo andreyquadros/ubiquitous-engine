@@ -44,7 +44,9 @@ e ele aprende. O **UBI**, o mascote, mostra seu humor de foco e avisa quando voc
 - **Privacidade por padrão**: URLs sem query string, e-mails/telefones/CPF/CNPJ mascarados, títulos de apps de
   mensagens reduzidos ao nome do app; "Dados enviados à IA" mostra exatamente o que saiu da máquina. Modo privado
   com prazo, apps e domínios bloqueados e janelas anônimas viram blocos "[privado]" — o tempo conta, o conteúdo não.
-- **Aprende com você**: cada correção reclassifica o bloco, alimenta a memória, penaliza a regra que errou e sugere
+- **Aprende com você**: a fila de Revisão só pergunta o que a cadeia não conseguiu resolver — o que o Ubi classificou
+  com confiança fica na lista de baixo, e um clique confirma tudo de uma vez (o que vira memória e resolve o mesmo
+  contexto de graça amanhã). Cada correção reclassifica o bloco, alimenta a memória, penaliza a regra que errou e sugere
   "Sempre: sei.ifro.edu.br → IFRO".
 - **Relatórios que viram entregas**: itens no passado com tipo (reunião, desenvolvimento, ensino…), minutos e
   evidências; visão mensal por categoria que agrupa continuações ("continuou X — 3 dias, 7 h 20") e exporta Markdown.

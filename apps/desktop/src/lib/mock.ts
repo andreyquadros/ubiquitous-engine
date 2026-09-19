@@ -1750,6 +1750,26 @@ const commands: Record<string, Cmd> = {
     if (!target) throw new Error('Grupo não encontrado');
     return applyCorrection(target, str(a.categoryId, 'categoryId'), 'group', date);
   },
+  // Each block keeps the category it already has: this confirms the classifier, it never
+  // overwrites it with the group's majority, and it never spreads to a block that has no answer
+  // yet -- that one is still a question for the queue. Nothing is backfilled, matching
+  // `reclassify` under `ReclassifyScope::Block` in the engine.
+  confirm_groups: (a) => {
+    const date = str(a.date, 'date');
+    const keys = new Set((a.keys as string[] | undefined) ?? []);
+    const out: CorrectionOutcome = { block_ids: [], backfilled: 0, suggestions: [], auto_rules: [], disabled_rules: [] };
+    for (const b of dayBlocks(date)) {
+      if (!keys.has(groupKey(b)) || b.source === 'user' || !b.category_id) continue;
+      b.confidence = 1;
+      b.source = 'user';
+      b.needs_review = false;
+      out.block_ids.push(b.id);
+      for (const s of suggestionsFor(b, b.category_id)) {
+        if (!out.suggestions.some((x) => x.matcher === s.matcher && x.pattern === s.pattern)) out.suggestions.push(s);
+      }
+    }
+    return out;
+  },
   accept_rule_suggestion: (a) => {
     const s = a.suggestion as RuleSuggestion;
     const rule: Rule = {

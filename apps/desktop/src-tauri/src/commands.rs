@@ -221,26 +221,24 @@ pub async fn reclassify_group(
             let out = e.reclassify(&id, &category_id, None, ReclassifyScope::Block)?;
             match &mut merged {
                 None => merged = Some(out),
-                Some(m) => {
-                    m.block_ids.extend(out.block_ids);
-                    m.backfilled += out.backfilled;
-                    for s in out.suggestions {
-                        if !m
-                            .suggestions
-                            .iter()
-                            .any(|x| x.matcher == s.matcher && x.pattern == s.pattern)
-                        {
-                            m.suggestions.push(s);
-                        }
-                    }
-                    m.auto_rules.extend(out.auto_rules);
-                    m.disabled_rules.extend(out.disabled_rules);
-                }
+                Some(m) => m.merge(out),
             }
         }
         merged.ok_or_else(|| CoreError::NotFound("group has no blocks".into()))
     })
     .await
+}
+
+/// Accepts the classifier's own answers for whole review groups at once, so the queue can ask
+/// only about what it could not settle without the confident blocks never becoming memory.
+#[tauri::command]
+pub async fn confirm_groups(
+    state: State<'_, AppState>,
+    date: String,
+    keys: Vec<String>,
+) -> IpcResult<ubiqx_engine::learning::CorrectionOutcome> {
+    let date = parse_date(&date)?;
+    blocking(engine(&state), move |e| e.confirm_groups(date, &keys)).await
 }
 
 #[tauri::command]
@@ -942,6 +940,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         get_ai_sent,
         reclassify,
         reclassify_group,
+        confirm_groups,
         accept_rule_suggestion,
         split_block,
         add_manual_entry,

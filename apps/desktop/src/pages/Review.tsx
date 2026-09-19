@@ -30,12 +30,25 @@ const isTypingTarget = (t: EventTarget | null): boolean => {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
 };
 
-/** A group the user has not decided yet. Everything else was reviewed and collects at the bottom. */
-const isPending = (g: BlockGroup, decided: Set<string>): boolean => g.source !== 'user' && !decided.has(g.key);
+/**
+ * A group the chain could not settle: it has no category, or it was flagged because nothing
+ * reached the confidence floor. An answer the classifier *was* sure of is not a question, so it
+ * never enters the queue -- it waits in the section below, one click from being confirmed or
+ * corrected. This is the difference between a daily ritual of confirming everything and a queue
+ * that is empty when there is nothing to decide.
+ */
+const isPending = (g: BlockGroup, decided: Set<string>): boolean =>
+  g.source !== 'user' && !decided.has(g.key) && (isUncategorized(g.category_id) || g.needs_review);
 
-/** Queue order: what the classifier could not settle first (uncategorized, needs review), then by rising confidence. */
-const queueRank = (g: BlockGroup): number => (isUncategorized(g.category_id) || g.needs_review ? 0 : 1);
-const byQueueOrder = (a: BlockGroup, b: BlockGroup): number => queueRank(a) - queueRank(b) || a.min_confidence - b.min_confidence || b.total_secs - a.total_secs;
+/** Queue order: the least confident first, then the longest. */
+const byQueueOrder = (a: BlockGroup, b: BlockGroup): number => a.min_confidence - b.min_confidence || b.total_secs - a.total_secs;
+
+/** Below the queue: the classifier's own answers first, since those are the ones "Confirmar" acts on. */
+const bySettledOrder = (a: BlockGroup, b: BlockGroup): number =>
+  Number(a.source === 'user') - Number(b.source === 'user') || a.first_started_at.localeCompare(b.first_started_at);
+
+/** A settled group that is still the classifier's word, not the user's -- what a confirmation promotes. */
+const isConfirmable = (g: BlockGroup): boolean => g.source !== 'user' && !isUncategorized(g.category_id);
 
 /** Page-local: a 3 px confidence line. Volt when the classifier is sure enough, ember when it needs a human. */
 function ConfidenceLine({ value, className }: { value: number; className?: string }) {
@@ -268,6 +281,7 @@ export function Review() {
   const [accepted, setAccepted] = useState<Set<string>>(new Set());
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [classifying, setClassifying] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -288,9 +302,10 @@ export function Review() {
   const blocksOf = useCallback((g: BlockGroup): ActivityBlock[] => g.block_ids.map((id) => blocksById.get(id)).filter((b): b is ActivityBlock => !!b), [blocksById]);
 
   const pending = useMemo(() => (groups ? groups.filter((g) => isPending(g, decided)).sort(byQueueOrder) : null), [groups, decided]);
-  const reviewed = useMemo(() => (groups ?? []).filter((g) => !isPending(g, decided)).sort((a, b) => a.first_started_at.localeCompare(b.first_started_at)), [groups, decided]);
-  /** Rows the arrow keys walk through: the queue, then the reviewed section when it is open. */
-  const visible = useMemo(() => [...(pending ?? []), ...(reviewedOpen ? reviewed : [])], [pending, reviewed, reviewedOpen]);
+  const settled = useMemo(() => (groups ?? []).filter((g) => !isPending(g, decided)).sort(bySettledOrder), [groups, decided]);
+  const confirmable = useMemo(() => settled.filter(isConfirmable), [settled]);
+  /** Rows the arrow keys walk through: the queue, then the settled section when it is open. */
+  const visible = useMemo(() => [...(pending ?? []), ...(reviewedOpen ? settled : [])], [pending, settled, reviewedOpen]);
 
   const uncategorizedSecs = useMemo(() => (pending ?? []).filter((g) => isUncategorized(g.category_id)).reduce((s, g) => s + g.total_secs, 0), [pending]);
 
@@ -343,6 +358,30 @@ export function Review() {
     },
     [busyKey, date, groups, pending, setData, toast, bumpData, t],
   );
+
+  /**
+   * Accepts the classifier's answers for the whole settled section in one go. Each block keeps
+   * the category it already had -- this promotes it to the user's own word, which is the only
+   * thing the memory classifier learns from, and what answers the same activity for free
+   * tomorrow. It lives inside the expanded list on purpose: you open it, you look, then you
+   * confirm.
+   */
+  const confirmAll = useCallback(async () => {
+    const keys = confirmable.map((g) => g.key);
+    if (!keys.length || confirming) return;
+    setConfirming(true);
+    try {
+      const outcome = await ipc.confirmGroups(date, keys);
+      const done = new Set(keys);
+      setData((groups ?? []).map((g) => (done.has(g.key) ? { ...g, source: 'user', min_confidence: 1, needs_review: false } : g)));
+      toast.success(t('review.toast.confirmed', { count: keys.length }), t('review.toast.confirmed_body', { count: outcome.block_ids.length }));
+      bumpData();
+    } catch (e) {
+      toast.error(t('review.toast.confirm_failed'), e instanceof Error ? e.message : String(e));
+    } finally {
+      setConfirming(false);
+    }
+  }, [confirmable, confirming, date, groups, setData, toast, bumpData, t]);
 
   // keyboard: ↑/↓ (or j/k) move, Enter opens/closes the details, 1–9 assign the nth category.
   // The handler is kept in a ref updated on every render, so the single window listener always sees the
@@ -492,13 +531,13 @@ export function Review() {
                   <Ubi mood="excited" size={132} speaking={t('review.done.speech')} />
                   <div>
                     <p className="display text-lg text-ink">{t('review.done.title')}</p>
-                    <p className="mx-auto mt-1 max-w-sm text-sm leading-5 text-ink-2">{t('review.done.body', { count: reviewed.length })}</p>
+                    <p className="mx-auto mt-1 max-w-sm text-sm leading-5 text-ink-2">{t('review.done.body', { count: settled.length })}</p>
                   </div>
                   <EmptyActions backlog={backlog} onGoTo={setDate} />
                 </div>
               )}
 
-              <section className="border-t border-line" aria-label={t('review.reviewed.title', { count: reviewed.length })}>
+              <section className="border-t border-line" aria-label={t('review.reviewed.title', { count: settled.length })}>
                 <button
                   type="button"
                   aria-expanded={reviewedOpen}
@@ -507,16 +546,26 @@ export function Review() {
                   className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors duration-150 hover:bg-panel-2/60"
                 >
                   <span className="min-w-0">
-                    <span className="block text-sm leading-5 font-medium text-ink-2">{t('review.reviewed.title', { count: reviewed.length })}</span>
-                    {reviewedOpen && <span className="block text-xs leading-4 text-ink-3">{reviewed.length ? t('review.reviewed.hint') : t('review.reviewed.empty')}</span>}
+                    <span className="block text-sm leading-5 font-medium text-ink-2">{t('review.reviewed.title', { count: settled.length })}</span>
+                    {reviewedOpen && <span className="block text-xs leading-4 text-ink-3">{settled.length ? t('review.reviewed.hint') : t('review.reviewed.empty')}</span>}
                   </span>
                   <ChevronDown className={clsx('size-4 shrink-0 text-ink-4 transition-transform duration-180', reviewedOpen && 'rotate-180')} strokeWidth={1.75} aria-hidden />
                 </button>
-                {reviewedOpen && reviewed.length > 0 && (
-                  <div role="list" aria-label={t('review.reviewed.title', { count: reviewed.length })} data-testid="reviewed-list" className="border-t border-line">
-                    {reviewed.map((g, i) => (
-                      <Fragment key={g.key}>{renderRow(g, (pending?.length ?? 0) + i)}</Fragment>
-                    ))}
+                {reviewedOpen && settled.length > 0 && (
+                  <div className="border-t border-line">
+                    {confirmable.length > 0 && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 bg-panel-2/40 px-4 py-2">
+                        <p className="min-w-0 text-xs leading-4 text-ink-3">{t('review.confirm.hint', { count: confirmable.length })}</p>
+                        <Button size="sm" loading={confirming} onClick={() => void confirmAll()} data-testid="confirm-all">
+                          {t('review.confirm.cta', { count: confirmable.length })}
+                        </Button>
+                      </div>
+                    )}
+                    <div role="list" aria-label={t('review.reviewed.title', { count: settled.length })} data-testid="reviewed-list" className="border-t border-line">
+                      {settled.map((g, i) => (
+                        <Fragment key={g.key}>{renderRow(g, (pending?.length ?? 0) + i)}</Fragment>
+                      ))}
+                    </div>
                   </div>
                 )}
               </section>

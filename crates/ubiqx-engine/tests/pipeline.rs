@@ -1248,6 +1248,78 @@ async fn stale_open_block_from_an_abrupt_exit_is_closed_at_start() {
     h.handle.shutdown();
 }
 
+/// The review queue only asks about what the chain could not settle, so a confident answer would
+/// never become a user label — and the memory classifier, which resolves future blocks for free,
+/// learns from nothing else. `confirm_groups` is what closes that gap for a whole day at once.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn confirming_a_group_promotes_each_block_keeping_its_own_answer() {
+    let h = harness_with(HarnessOptions {
+        seed: |store| {
+            // Same app and domain, so all three land in one review group.
+            let mut ifro = pending_block("llm-ifro", 90);
+            ifro.category_id = Some("cat-ifro".into());
+            ifro.source = Some(ClassificationSource::Llm);
+            ifro.confidence = 0.82;
+            let mut inc = pending_block("llm-inc", 80);
+            inc.category_id = Some("cat-inc".into());
+            inc.source = Some(ClassificationSource::Llm);
+            inc.confidence = 0.91;
+            // Never answered: still a question, and confirming must not answer it for the user.
+            // Parked past its retry window so the classify worker, whose first tick fires at
+            // start-up, cannot answer it underneath the assertions.
+            let mut open_question = pending_block("unanswered", 70);
+            open_question.next_attempt_at = Some(fixed_now() + ChronoDuration::days(1));
+            for b in [&ifro, &inc, &open_question] {
+                BlockRepo::insert(store, b).unwrap();
+            }
+        },
+        ..Default::default()
+    })
+    .await;
+    let today = fixed_now().with_timezone(&Local).date_naive();
+    let key = review_groups(h.handle.state(), today)
+        .unwrap()
+        .into_iter()
+        .find(|g| g.block_ids.iter().any(|id| id == "llm-ifro"))
+        .expect("group")
+        .key;
+
+    let out = h.handle.confirm_groups(today, &[key]).unwrap();
+    assert_eq!(
+        out.block_ids.len(),
+        2,
+        "the unanswered block is not confirmed"
+    );
+
+    // Each block keeps the category it already had — no majority is imposed on the group.
+    let ifro = get_block(&h, "llm-ifro");
+    assert_eq!(ifro.category_id.as_deref(), Some("cat-ifro"));
+    assert_eq!(ifro.source, Some(ClassificationSource::User));
+    assert_eq!(ifro.confidence, 1.0);
+    assert!(!ifro.needs_review);
+    let inc = get_block(&h, "llm-inc");
+    assert_eq!(
+        inc.category_id.as_deref(),
+        Some("cat-inc"),
+        "not overwritten"
+    );
+    assert_eq!(inc.source, Some(ClassificationSource::User));
+
+    // Untouched, so it stays in the queue instead of being silently answered by a sibling.
+    let still_open = get_block(&h, "unanswered");
+    assert!(still_open.category_id.is_none());
+    assert_eq!(still_open.source, None);
+
+    // Confirming is not a correction: the same category in and out teaches no new mapping.
+    assert!(
+        CorrectionRepo::list_recent(h.store.as_ref(), 10)
+            .unwrap()
+            .is_empty(),
+        "no correction is logged when nothing changed"
+    );
+    h.handle.shutdown();
+}
+
 /// The dashboard describes one day. `needs_review` used to ignore that and count every flagged
 /// block in the database, so the sidebar badge insisted there was work left while the review
 /// page for that day — which reads the same range as `timeline` — was legitimately empty.

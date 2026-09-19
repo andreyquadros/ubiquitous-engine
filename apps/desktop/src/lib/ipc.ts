@@ -80,6 +80,9 @@ export const ipc = {
     call<CorrectionOutcome>('reclassify', { blockId, categoryId, scope, note: note ?? null }),
   reclassifyGroup: (date: IsoDate, key: string, categoryId: Id) =>
     call<CorrectionOutcome>('reclassify_group', { date, key, categoryId }),
+  /** Accepts the classifier's own answers for whole groups, so they become memory for the next day. */
+  confirmGroups: (date: IsoDate, keys: string[]) =>
+    call<CorrectionOutcome>('confirm_groups', { date, keys }),
   acceptRuleSuggestion: (suggestion: RuleSuggestion) =>
     call<Rule>('accept_rule_suggestion', { suggestion }),
   splitBlock: (blockId: Id, at: IsoDateTime) => call<Id>('split_block', { blockId, at }),

@@ -200,6 +200,15 @@ impl EngineHandle {
         crate::learning::reclassify(&self.state, block_id, category_id, note, scope)
     }
 
+    /// Turns the classifier's own answers for these review groups into user answers.
+    pub fn confirm_groups(
+        &self,
+        date: chrono::NaiveDate,
+        keys: &[String],
+    ) -> CoreResult<CorrectionOutcome> {
+        crate::learning::confirm_groups(&self.state, date, keys)
+    }
+
     pub fn accept_rule_suggestion(&self, suggestion: &RuleSuggestion) -> CoreResult<Rule> {
         crate::learning::accept_suggestion(&self.state, suggestion)
     }

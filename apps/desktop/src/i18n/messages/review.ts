@@ -65,19 +65,25 @@ const messages = {
     'block.screenshot_loading': 'Carregando captura',
     'block.screenshot_dialog': '{app}, {range}',
 
-    // Reviewed groups (decided by the user) collect at the bottom
-    'reviewed.title': 'Revisados neste dia ({count})',
-    'reviewed.hint': 'Clique em um grupo para reabrir e reatribuir.',
-    'reviewed.show': 'Mostrar os grupos revisados',
-    'reviewed.hide': 'Ocultar os grupos revisados',
-    'reviewed.empty': 'Nenhum grupo revisado ainda.',
+    // Everything already answered -- by the Ubi or by the user -- collects at the bottom.
+    'reviewed.title': 'Classificados neste dia ({count})',
+    'reviewed.hint': 'A etiqueta de cada linha diz quem decidiu. Clique para reabrir e reatribuir.',
+    'reviewed.show': 'Mostrar os grupos classificados',
+    'reviewed.hide': 'Ocultar os grupos classificados',
+    'reviewed.empty': 'Nenhum grupo classificado ainda.',
     'suggestions.after': 'Da última decisão',
 
-    // Queue cleared: everything was decided by the user
-    'done.speech': 'Fila limpa!',
-    'done.title': 'Tudo revisado',
-    'done.body_one': 'Você decidiu {count} grupo neste dia. Novos blocos em dúvida aparecem aqui.',
-    'done.body_other': 'Você decidiu {count} grupos neste dia. Novos blocos em dúvida aparecem aqui.',
+    // One click turns the Ubi's own answers into the user's, which is what feeds the memory.
+    'confirm.hint_one': '{count} grupo foi o Ubi que decidiu.',
+    'confirm.hint_other': '{count} grupos foram o Ubi que decidiu.',
+    'confirm.cta_one': 'Confirmar {count}',
+    'confirm.cta_other': 'Confirmar os {count}',
+
+    // Queue cleared: nothing was left in doubt
+    'done.speech': 'Nada em dúvida!',
+    'done.title': 'Nada esperando por você',
+    'done.body_one': 'O Ubi resolveu {count} grupo neste dia. Abra a lista abaixo se quiser conferir.',
+    'done.body_other': 'O Ubi resolveu {count} grupos neste dia. Abra a lista abaixo se quiser conferir.',
 
     // Toasts
     'toast.classified_one': '{count} bloco classificado',
@@ -87,6 +93,11 @@ const messages = {
     'toast.rule_disabled_title': 'Regra desativada',
     'toast.rule_disabled_body': 'A regra “{pattern}” foi contradita e desativada.',
     'toast.assign_failed': 'Não foi possível classificar',
+    'toast.confirmed_one': '{count} grupo confirmado',
+    'toast.confirmed_other': '{count} grupos confirmados',
+    'toast.confirmed_body_one': '{count} bloco virou memória: o Ubi resolve sozinho da próxima vez.',
+    'toast.confirmed_body_other': '{count} blocos viraram memória: o Ubi resolve sozinho da próxima vez.',
+    'toast.confirm_failed': 'Não foi possível confirmar',
     'toast.classify_done_title': 'Classificação concluída',
     'toast.classify_done_body': '{local} pelas regras, {remote} pela IA, {vision} por visão e {needs_review} para revisar.',
     'toast.classify_skipped_remote': 'A IA foi ignorada (modo somente local).',
@@ -157,19 +168,25 @@ const messages = {
     'block.screenshot_loading': 'Loading screenshot',
     'block.screenshot_dialog': '{app}, {range}',
 
-    // Reviewed groups (decided by the user) collect at the bottom
-    'reviewed.title': 'Reviewed on this day ({count})',
-    'reviewed.hint': 'Click a group to reopen it and reassign.',
-    'reviewed.show': 'Show reviewed groups',
-    'reviewed.hide': 'Hide reviewed groups',
-    'reviewed.empty': 'No group reviewed yet.',
+    // Everything already answered -- by the Ubi or by the user -- collects at the bottom.
+    'reviewed.title': 'Classified on this day ({count})',
+    'reviewed.hint': 'The badge on each row says who decided. Click one to reopen it and reassign.',
+    'reviewed.show': 'Show classified groups',
+    'reviewed.hide': 'Hide classified groups',
+    'reviewed.empty': 'No group classified yet.',
     'suggestions.after': 'From your last decision',
 
-    // Queue cleared: everything was decided by the user
-    'done.speech': 'Queue cleared!',
-    'done.title': 'All reviewed',
-    'done.body_one': 'You decided {count} group on this day. New uncertain blocks will show up here.',
-    'done.body_other': 'You decided {count} groups on this day. New uncertain blocks will show up here.',
+    // One click turns the Ubi's own answers into the user's, which is what feeds the memory.
+    'confirm.hint_one': '{count} group was decided by the Ubi.',
+    'confirm.hint_other': '{count} groups were decided by the Ubi.',
+    'confirm.cta_one': 'Confirm {count}',
+    'confirm.cta_other': 'Confirm all {count}',
+
+    // Queue cleared: nothing was left in doubt
+    'done.speech': 'Nothing uncertain!',
+    'done.title': 'Nothing waiting on you',
+    'done.body_one': 'The Ubi settled {count} group on this day. Open the list below to check its work.',
+    'done.body_other': 'The Ubi settled {count} groups on this day. Open the list below to check its work.',
 
     // Toasts
     'toast.classified_one': '{count} block classified',
@@ -179,6 +196,11 @@ const messages = {
     'toast.rule_disabled_title': 'Rule disabled',
     'toast.rule_disabled_body': 'The rule “{pattern}” was contradicted and has been disabled.',
     'toast.assign_failed': "Couldn't classify",
+    'toast.confirmed_one': '{count} group confirmed',
+    'toast.confirmed_other': '{count} groups confirmed',
+    'toast.confirmed_body_one': '{count} block became memory: the Ubi will settle it on its own next time.',
+    'toast.confirmed_body_other': '{count} blocks became memory: the Ubi will settle them on its own next time.',
+    'toast.confirm_failed': "Couldn't confirm",
     'toast.classify_done_title': 'Classification complete',
     'toast.classify_done_body': '{local} by rules, {remote} by AI, {vision} by vision and {needs_review} to review.',
     'toast.classify_skipped_remote': 'AI was skipped (local-only mode).',

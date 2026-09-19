@@ -22,6 +22,79 @@ pub struct CorrectionOutcome {
     pub disabled_rules: Vec<Rule>,
 }
 
+impl CorrectionOutcome {
+    /// Folds one block's outcome into a running total. Suggestions are de-duplicated by
+    /// matcher and pattern: every block of a group proposes the same rule.
+    pub fn merge(&mut self, other: CorrectionOutcome) {
+        self.block_ids.extend(other.block_ids);
+        self.backfilled += other.backfilled;
+        for s in other.suggestions {
+            if !self
+                .suggestions
+                .iter()
+                .any(|x| x.matcher == s.matcher && x.pattern == s.pattern)
+            {
+                self.suggestions.push(s);
+            }
+        }
+        self.auto_rules.extend(other.auto_rules);
+        self.disabled_rules.extend(other.disabled_rules);
+    }
+}
+
+/// Promotes what the classifier decided on its own into the user's own answers.
+///
+/// The review queue only asks about what the chain could not settle, so a confident
+/// classification would otherwise never become a user label — and [`MemoryClassifier`] , which
+/// answers future blocks for free, learns from nothing else. This is what closes that gap, a
+/// whole day at a time, without making the user press a key per group.
+///
+/// Every block keeps the category it already has: this confirms the classifier, it does not
+/// overwrite it with the group's majority. Blocks with no category, and blocks the user already
+/// decided, are skipped — there is nothing to confirm. Going through [`reclassify`] means
+/// `from == to`, so no correction is logged and no rule is demoted, while rule suggestions still
+/// come back for the UI.
+///
+/// [`MemoryClassifier`]: ubiqx_core::learning::MemoryClassifier
+pub fn confirm_groups(
+    state: &Arc<EngineState>,
+    date: NaiveDate,
+    keys: &[String],
+) -> CoreResult<CorrectionOutcome> {
+    let groups = crate::service::review_groups(state, date)?;
+    let mut out = CorrectionOutcome {
+        block_ids: vec![],
+        backfilled: 0,
+        suggestions: vec![],
+        auto_rules: vec![],
+        disabled_rules: vec![],
+    };
+    for key in keys {
+        let Some(group) = groups.iter().find(|g| &g.key == key) else {
+            continue;
+        };
+        for id in &group.block_ids {
+            let Some(block) = state.deps.repos.blocks.get(id)? else {
+                continue;
+            };
+            if block.source == Some(ClassificationSource::User) {
+                continue;
+            }
+            let Some(category_id) = block.category_id.clone() else {
+                continue;
+            };
+            out.merge(reclassify(
+                state,
+                id,
+                &category_id,
+                None,
+                ReclassifyScope::Block,
+            )?);
+        }
+    }
+    Ok(out)
+}
+
 pub fn reclassify(
     state: &Arc<EngineState>,
     block_id: &str,

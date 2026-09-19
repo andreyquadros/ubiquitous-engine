@@ -55,6 +55,10 @@ const reclassifyGroup = vi.fn(async (_date: string, key: string, categoryId: Id)
   overrides[key] = { category_id: categoryId, source: 'user', needs_review: false, min_confidence: 1 };
   return { block_ids: ['b3'], backfilled: 1, suggestions: [{ category_id: categoryId, matcher: 'domain', pattern: 'mail.google.com', support: 3, rationale: 'x', auto_apply_safe: true }], auto_rules: [], disabled_rules: [] };
 });
+const confirmGroups = vi.fn(async (_date: string, keys: string[]) => {
+  for (const key of keys) overrides[key] = { source: 'user', min_confidence: 1, needs_review: false };
+  return { block_ids: keys.map((k) => `blocks-of-${k}`), backfilled: 0, suggestions: [], auto_rules: [], disabled_rules: [] };
+});
 const getScreenshot = vi.fn(async (blockId: Id) => {
   const b = blocks.find((x) => x.id === blockId);
   return b?.screenshot_id ? placeholderScreenshot(b.app_name, b.title) : null;
@@ -69,6 +73,7 @@ vi.mock('../lib/ipc', () => ({
     getScreenshot: (...args: unknown[]) => getScreenshot(...(args as [Id])),
     listCategories: vi.fn(async () => categories),
     reclassifyGroup: (...args: unknown[]) => reclassifyGroup(...(args as [string, string, Id])),
+    confirmGroups: (...args: unknown[]) => confirmGroups(...(args as [string, string[]])),
     acceptRuleSuggestion: vi.fn(async () => ({})),
     classifyNow: vi.fn(async () => ({ local: 0, remote: 0, vision: 0, needs_review: 0, skipped_remote: false })),
     getSettings: vi.fn(),
@@ -98,17 +103,20 @@ describe('Review page', () => {
   beforeEach(() => {
     overrides = {};
     reclassifyGroup.mockClear();
+    confirmGroups.mockClear();
     getScreenshot.mockClear();
     __clearScreenshotCache();
     useAppStore.setState({ categories, date: '2026-09-17', dataVersion: 0, license: null, dashboards: {} });
   });
 
-  it('lists the pending groups (unsettled first) and assigns the nth category with the keyboard', async () => {
+  // The queue asks only about what the chain could not settle. Calendário was classified with
+  // enough confidence, so it is an answer, not a question, and never shows up here.
+  it('queues only what the classifier could not settle and assigns the nth category with the keyboard', async () => {
     renderPage();
-    await waitFor(() => expect(pendingRows()).toHaveLength(3));
-    expect(screen.getByText(/3 grupos esperam sua decisão/)).toBeInTheDocument();
-    // needs_review / uncategorized first, then rising confidence: WhatsApp (0.4), Gmail (0.62), Calendário (0.7, settled)
-    expect(pendingRows().map((el) => el.getAttribute('data-key'))).toEqual(['net.whatsapp.WhatsApp|whatsapp', 'com.google.Chrome|mail.google.com', 'com.apple.iCal|calendario']);
+    await waitFor(() => expect(pendingRows()).toHaveLength(2));
+    expect(screen.getByText(/2 grupos esperam sua decisão/)).toBeInTheDocument();
+    // rising confidence: WhatsApp (0.4, uncategorized), Gmail (0.62, flagged)
+    expect(pendingRows().map((el) => el.getAttribute('data-key'))).toEqual(['net.whatsapp.WhatsApp|whatsapp', 'com.google.Chrome|mail.google.com']);
 
     // move to the second group and press "2" → Incubadora
     fireEvent.keyDown(window, { key: 'ArrowDown' });
@@ -121,49 +129,68 @@ describe('Review page', () => {
     await waitFor(() => expect(screen.getByText(/mail\.google\.com/, { selector: 'button span' })).toBeInTheDocument());
   });
 
-  it('clears the queue as the user decides and collects the reviewed groups at the bottom', async () => {
+  it('clears the queue as the user decides and collects the answered groups at the bottom', async () => {
     renderPage();
-    await waitFor(() => expect(pendingRows()).toHaveLength(3));
+    await waitFor(() => expect(pendingRows()).toHaveLength(2));
 
     // WhatsApp is selected first; "1" → IFRO
     fireEvent.keyDown(window, { key: '1' });
     await waitFor(() => expect(reclassifyGroup).toHaveBeenCalledWith('2026-09-17', 'net.whatsapp.WhatsApp|whatsapp', 'cat-ifro'));
 
     // the group leaves the pending list and the selection moves on to the next one
-    await waitFor(() => expect(pendingRows()).toHaveLength(2));
-    expect(pendingRows().map((el) => el.getAttribute('data-key'))).not.toContain('net.whatsapp.WhatsApp|whatsapp');
+    await waitFor(() => expect(pendingRows()).toHaveLength(1));
     expect(pendingRows()[0]).toHaveAttribute('aria-current', 'true');
     expect(pendingRows()[0]).toHaveAttribute('data-key', 'com.google.Chrome|mail.google.com');
-    expect(screen.getByText(/2 grupos esperam sua decisão/)).toBeInTheDocument();
+    expect(screen.getByText(/1 grupo espera sua decisão/)).toBeInTheDocument();
 
-    // it now sits under "Revisados neste dia (1)", where it can be reopened and reassigned
-    const toggle = screen.getByRole('button', { name: 'Mostrar os grupos revisados' });
-    expect(toggle).toHaveTextContent('Revisados neste dia (1)');
+    // it joins Calendário under "Classificados neste dia (2)", the Ubi's answer first
+    const toggle = screen.getByRole('button', { name: 'Mostrar os grupos classificados' });
+    expect(toggle).toHaveTextContent('Classificados neste dia (2)');
     fireEvent.click(toggle);
-    const reviewedList = screen.getByTestId('reviewed-list');
-    const reviewedRow = within(reviewedList).getByTestId('review-row');
-    expect(reviewedRow).toHaveAttribute('data-key', 'net.whatsapp.WhatsApp|whatsapp');
-    expect(within(reviewedRow).getByText('IFRO')).toBeInTheDocument();
+    const rows = within(screen.getByTestId('reviewed-list')).getAllByTestId('review-row');
+    expect(rows.map((el) => el.getAttribute('data-key'))).toEqual(['com.apple.iCal|calendario', 'net.whatsapp.WhatsApp|whatsapp']);
+    const mine = rows[1]!;
+    expect(within(mine).getByText('IFRO')).toBeInTheDocument();
 
-    fireEvent.click(reviewedRow);
+    // and can be reopened and reassigned from there
+    fireEvent.click(mine);
     fireEvent.keyDown(window, { key: '2' });
     await waitFor(() => expect(reclassifyGroup).toHaveBeenLastCalledWith('2026-09-17', 'net.whatsapp.WhatsApp|whatsapp', 'cat-incubadora'));
     await waitFor(() => expect(within(screen.getByTestId('reviewed-list')).getByText('Incubadora')).toBeInTheDocument());
-    expect(pendingRows()).toHaveLength(2);
+    expect(pendingRows()).toHaveLength(1);
   });
 
-  it('celebrates a cleared queue with the reviewed count', async () => {
+  // The queue no longer forces a decision per group, so the classifier's own answers would never
+  // become user labels -- and user labels are the only thing the memory classifier learns from.
+  // This button is what closes that gap, and it only exists inside the expanded list.
+  it('confirms the Ubi own answers in one click, and offers nothing to confirm once they are yours', async () => {
+    renderPage();
+    await waitFor(() => expect(pendingRows()).toHaveLength(2));
+    expect(screen.queryByTestId('confirm-all')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar os grupos classificados' }));
+    expect(screen.getByText('1 grupo foi o Ubi que decidiu.')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('confirm-all'));
+
+    await waitFor(() => expect(confirmGroups).toHaveBeenCalledWith('2026-09-17', ['com.apple.iCal|calendario']));
+    // nothing left that is not the user's word, so the button goes away
+    await waitFor(() => expect(screen.queryByTestId('confirm-all')).not.toBeInTheDocument());
+    expect(pendingRows()).toHaveLength(2);
+    expect(reclassifyGroup).not.toHaveBeenCalled();
+  });
+
+  // The day is clean when nothing is in doubt -- not when the user has pressed a key on everything.
+  it('celebrates a queue with nothing in doubt, counting what the Ubi settled', async () => {
     overrides = {
-      'net.whatsapp.WhatsApp|whatsapp': { source: 'user', category_id: 'cat-ifro' },
-      'com.google.Chrome|mail.google.com': { source: 'user' },
-      'com.apple.iCal|calendario': { source: 'user' },
+      'net.whatsapp.WhatsApp|whatsapp': { category_id: 'cat-ifro', needs_review: false, min_confidence: 0.9 },
+      'com.google.Chrome|mail.google.com': { needs_review: false, min_confidence: 0.8 },
     };
     renderPage();
     await waitFor(() => expect(screen.getByTestId('review-done')).toBeInTheDocument());
-    expect(screen.getByText('Tudo revisado')).toBeInTheDocument();
-    expect(screen.getByText(/Você decidiu 3 grupos neste dia/)).toBeInTheDocument();
+    expect(screen.getByText('Nada esperando por você')).toBeInTheDocument();
+    expect(screen.getByText(/O Ubi resolveu 3 grupos neste dia/)).toBeInTheDocument();
     expect(screen.getByText(/a fila está vazia/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Mostrar os grupos revisados' })).toHaveTextContent('Revisados neste dia (3)');
+    expect(screen.getByRole('button', { name: 'Mostrar os grupos classificados' })).toHaveTextContent('Classificados neste dia (3)');
     expect(pendingRows()).toHaveLength(0);
   });
 
@@ -171,9 +198,8 @@ describe('Review page', () => {
   // days are not, or the flagged blocks there are reachable only by guessing the date.
   it('points a cleared day at the most recent day that still has flagged blocks', async () => {
     overrides = {
-      'net.whatsapp.WhatsApp|whatsapp': { source: 'user' },
-      'com.google.Chrome|mail.google.com': { source: 'user' },
-      'com.apple.iCal|calendario': { source: 'user' },
+      'net.whatsapp.WhatsApp|whatsapp': { category_id: 'cat-ifro', needs_review: false },
+      'com.google.Chrome|mail.google.com': { needs_review: false },
     };
     useAppStore.setState({ dashboards: { '2026-09-17': { review_backlog: { count: 2, date: '2026-09-15' } } as DashboardData } });
     renderPage();
@@ -186,9 +212,8 @@ describe('Review page', () => {
 
   it('offers no jump when every other day is clean', async () => {
     overrides = {
-      'net.whatsapp.WhatsApp|whatsapp': { source: 'user' },
-      'com.google.Chrome|mail.google.com': { source: 'user' },
-      'com.apple.iCal|calendario': { source: 'user' },
+      'net.whatsapp.WhatsApp|whatsapp': { category_id: 'cat-ifro', needs_review: false },
+      'com.google.Chrome|mail.google.com': { needs_review: false },
     };
     useAppStore.setState({ dashboards: { '2026-09-17': { review_backlog: null } as DashboardData } });
     renderPage();
@@ -198,7 +223,7 @@ describe('Review page', () => {
 
   it('opens a group to show its blocks, the AI payload and the stored screenshot', async () => {
     renderPage();
-    await waitFor(() => expect(pendingRows()).toHaveLength(3));
+    await waitFor(() => expect(pendingRows()).toHaveLength(2));
     expect(screen.queryByTestId('block-details')).not.toBeInTheDocument();
 
     // Enter opens the selected (first) group
@@ -242,9 +267,10 @@ describe('Review page', () => {
 
   it('truncates a long category name in the row chip and in the assign list, keeping the full name as a tooltip', async () => {
     renderPage();
-    await waitFor(() => expect(pendingRows()).toHaveLength(3));
+    await waitFor(() => expect(pendingRows()).toHaveLength(2));
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar os grupos classificados' }));
     const long = 'Compromissos Pessoais (Igreja, Estudos, Cursos)';
-    const chip = within(pendingRows()[2]!).getByTestId('group-category');
+    const chip = within(within(screen.getByTestId('reviewed-list')).getAllByTestId('review-row')[0]!).getByTestId('group-category');
     expect(chip).toHaveAttribute('title', long);
     expect(chip.className).toContain('max-w-full');
     const label = within(chip).getByText(long);
@@ -257,7 +283,7 @@ describe('Review page', () => {
 
   it('ignores shortcuts while typing in an input', async () => {
     renderPage();
-    await waitFor(() => expect(pendingRows()).toHaveLength(3));
+    await waitFor(() => expect(pendingRows()).toHaveLength(2));
     const input = document.createElement('input');
     document.body.appendChild(input);
     fireEvent.keyDown(input, { key: '1' });
@@ -280,7 +306,7 @@ describe('Review page', () => {
     useAppStore.setState({ license: hard });
     vi.mocked(ipc.classifyNow).mockClear();
     renderPage();
-    await waitFor(() => expect(pendingRows()).toHaveLength(3));
+    await waitFor(() => expect(pendingRows()).toHaveLength(2));
 
     fireEvent.click(screen.getByRole('button', { name: 'Classificar agora' }));
     expect(await screen.findByText('Licença necessária')).toBeInTheDocument();
@@ -296,11 +322,11 @@ describe('Review page', () => {
   it('speaks English when the locale is en and keeps the number shortcuts', async () => {
     setLocale('en');
     renderPage();
-    await waitFor(() => expect(pendingRows()).toHaveLength(3));
+    await waitFor(() => expect(pendingRows()).toHaveLength(2));
     expect(screen.getByRole('heading', { level: 1, name: 'Review' })).toBeInTheDocument();
-    expect(screen.getByText(/3 groups await your decision, 9 min still uncategorized/)).toBeInTheDocument();
+    expect(screen.getByText(/2 groups await your decision, 9 min still uncategorized/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Classify now' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Show reviewed groups' })).toHaveTextContent('Reviewed on this day (0)');
+    expect(screen.getByRole('button', { name: 'Show classified groups' })).toHaveTextContent('Classified on this day (1)');
     // the 1–9 hint is one translated sentence with the keys rendered as <kbd>
     expect(screen.getByText((_, el) => el?.tagName === 'P' && el.textContent === 'Press 1 to 9 or pick a category on the right; your choice applies to all 2 blocks and teaches the classifier.')).toBeInTheDocument();
     expect(screen.getByText('2 blocks')).toBeInTheDocument();
@@ -313,6 +339,6 @@ describe('Review page', () => {
 
     fireEvent.keyDown(window, { key: '1' });
     await waitFor(() => expect(reclassifyGroup).toHaveBeenCalledWith('2026-09-17', 'net.whatsapp.WhatsApp|whatsapp', 'cat-ifro'));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Show reviewed groups' })).toHaveTextContent('Reviewed on this day (1)'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show classified groups' })).toHaveTextContent('Classified on this day (2)'));
   });
 });
