@@ -124,12 +124,12 @@ jobs:
         # in the binary, in Settings and in both feeds: scripts/app-version.mjs writes the commit count into
         # tauri.conf.json and exports UBIQX_VERSION.
         run: bash scripts/ci-app-version.sh
-      - name: Updater signing key
-        run: bash scripts/ci-require-signing-key.sh
+      - name: Updater signing key (warns and builds without it)
+        run: bash scripts/ci-updater-signing.sh
       - name: Rust tests (all crates, macOS)
         run: cargo test --workspace
       - name: Build app bundle, DMG and the signed updater artifact
-        run: pnpm tauri build --bundles app,dmg
+        run: pnpm tauri build --bundles app,dmg $UBIQX_TAURI_SIGN_FLAG
         working-directory: apps/desktop
         env:
           # Ad-hoc seal: without an identity Tauri never runs codesign and a downloaded bundle reads as "damaged".
@@ -143,9 +143,15 @@ jobs:
           dmg="$(ls target/release/bundle/dmg/*.dmg | head -n 1)"
           mv "$dmg" "target/release/bundle/dmg/ubiqX-macos-${UBIQX_ARCH}.dmg"
           tgz="$(ls target/release/bundle/macos/*.app.tar.gz | head -n 1)"
-          test -f "$tgz" && test -f "$tgz.sig"
-          mv "$tgz" "target/release/bundle/macos/ubiqX-macos-${UBIQX_ARCH}.app.tar.gz"
-          mv "$tgz.sig" "target/release/bundle/macos/ubiqX-macos-${UBIQX_ARCH}.app.tar.gz.sig"
+          # An unsigned updater artifact is deleted: the plugin would refuse it anyway, and publishing it
+          # would offer an update nobody can install. See scripts/ci-updater-signing.sh.
+          if [ "${UBIQX_UPDATER_SIGNED:-0}" = "1" ]; then
+            test -f "$tgz" && test -f "$tgz.sig"
+            mv "$tgz" "target/release/bundle/macos/ubiqX-macos-${UBIQX_ARCH}.app.tar.gz"
+            mv "$tgz.sig" "target/release/bundle/macos/ubiqX-macos-${UBIQX_ARCH}.app.tar.gz.sig"
+          else
+            rm -f target/release/bundle/macos/*.app.tar.gz target/release/bundle/macos/*.app.tar.gz.sig
+          fi
           ls -la target/release/bundle/dmg target/release/bundle/macos
       - uses: actions/upload-artifact@v4
         with:
@@ -194,15 +200,15 @@ jobs:
         # in the binary, in Settings and in both feeds: scripts/app-version.mjs writes the commit count into
         # tauri.conf.json and exports UBIQX_VERSION.
         run: bash scripts/ci-app-version.sh
-      - name: Updater signing key
-        run: bash scripts/ci-require-signing-key.sh
+      - name: Updater signing key (warns and builds without it)
+        run: bash scripts/ci-updater-signing.sh
       - name: Rust tests (portable crates and the Windows adapters)
         run: cargo test --workspace --exclude ubiqx-desktop
       - name: Clippy on the desktop shell (Windows)
         # rust-linux cannot type-check ubiqx-desktop for MSVC (ring and libsqlite3-sys compile C there).
         run: cargo clippy -p ubiqx-desktop -- -D warnings
       - name: Build MSI and NSIS installers plus the signed updater artifact
-        run: pnpm tauri build --bundles msi,nsis
+        run: pnpm tauri build --bundles msi,nsis $UBIQX_TAURI_SIGN_FLAG
         working-directory: apps/desktop
       - name: Stable installer names
         # ubiqX-windows-<arch>.msi and ubiqX-windows-<arch>-setup.exe are what latest.json points at;
@@ -214,11 +220,17 @@ jobs:
           msi="$(ls target/release/bundle/msi/*pt-BR*.msi | head -n 1)"
           exe="$(ls target/release/bundle/nsis/*-setup.exe | head -n 1)"
           zip="$(ls target/release/bundle/nsis/*-setup.nsis.zip | head -n 1)"
-          test -f "$msi" && test -f "$exe" && test -f "$zip" && test -f "$zip.sig"
+          test -f "$msi" && test -f "$exe"
           mv "$msi" "target/release/bundle/msi/ubiqX-windows-${UBIQX_ARCH}.msi"
           mv "$exe" "target/release/bundle/nsis/ubiqX-windows-${UBIQX_ARCH}-setup.exe"
-          mv "$zip" "target/release/bundle/nsis/ubiqX-windows-${UBIQX_ARCH}-setup.nsis.zip"
-          mv "$zip.sig" "target/release/bundle/nsis/ubiqX-windows-${UBIQX_ARCH}-setup.nsis.zip.sig"
+          # Unsigned, the updater artifact is deleted rather than published (ci-updater-signing.sh).
+          if [ "${UBIQX_UPDATER_SIGNED:-0}" = "1" ]; then
+            test -f "$zip" && test -f "$zip.sig"
+            mv "$zip" "target/release/bundle/nsis/ubiqX-windows-${UBIQX_ARCH}-setup.nsis.zip"
+            mv "$zip.sig" "target/release/bundle/nsis/ubiqX-windows-${UBIQX_ARCH}-setup.nsis.zip.sig"
+          else
+            rm -f target/release/bundle/nsis/*-setup.nsis.zip target/release/bundle/nsis/*-setup.nsis.zip.sig
+          fi
           ls -la target/release/bundle/msi target/release/bundle/nsis
       - uses: actions/upload-artifact@v4
         with:
@@ -270,10 +282,10 @@ jobs:
         # in the binary, in Settings and in both feeds: scripts/app-version.mjs writes the commit count into
         # tauri.conf.json and exports UBIQX_VERSION.
         run: bash scripts/ci-app-version.sh
-      - name: Updater signing key
-        run: bash scripts/ci-require-signing-key.sh
+      - name: Updater signing key (warns and builds without it)
+        run: bash scripts/ci-updater-signing.sh
       - name: Build AppImage, .deb and the signed updater artifact
-        run: pnpm tauri build --bundles appimage,deb
+        run: pnpm tauri build --bundles appimage,deb $UBIQX_TAURI_SIGN_FLAG
         working-directory: apps/desktop
       - name: Stable installer names
         # ubiqX-linux-<arch>.AppImage and ubiqX-linux-<arch>.deb are what latest.json points at;
@@ -282,11 +294,17 @@ jobs:
           appimage="$(ls target/release/bundle/appimage/*.AppImage | head -n 1)"
           deb="$(ls target/release/bundle/deb/*.deb | head -n 1)"
           tgz="$(ls target/release/bundle/appimage/*.AppImage.tar.gz | head -n 1)"
-          test -f "$appimage" && test -f "$deb" && test -f "$tgz" && test -f "$tgz.sig"
+          test -f "$appimage" && test -f "$deb"
           mv "$appimage" "target/release/bundle/appimage/ubiqX-linux-${UBIQX_ARCH}.AppImage"
           mv "$deb" "target/release/bundle/deb/ubiqX-linux-${UBIQX_ARCH}.deb"
-          mv "$tgz" "target/release/bundle/appimage/ubiqX-linux-${UBIQX_ARCH}.AppImage.tar.gz"
-          mv "$tgz.sig" "target/release/bundle/appimage/ubiqX-linux-${UBIQX_ARCH}.AppImage.tar.gz.sig"
+          # Unsigned, the updater artifact is deleted rather than published (ci-updater-signing.sh).
+          if [ "${UBIQX_UPDATER_SIGNED:-0}" = "1" ]; then
+            test -f "$tgz" && test -f "$tgz.sig"
+            mv "$tgz" "target/release/bundle/appimage/ubiqX-linux-${UBIQX_ARCH}.AppImage.tar.gz"
+            mv "$tgz.sig" "target/release/bundle/appimage/ubiqX-linux-${UBIQX_ARCH}.AppImage.tar.gz.sig"
+          else
+            rm -f target/release/bundle/appimage/*.AppImage.tar.gz target/release/bundle/appimage/*.AppImage.tar.gz.sig
+          fi
           ls -la target/release/bundle/appimage target/release/bundle/deb
       - uses: actions/upload-artifact@v4
         with:

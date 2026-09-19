@@ -104,11 +104,12 @@ workflows:
           echo "build $UBIQX_BUILD_NUMBER ($UBIQX_BUILD_SHA, $UBIQX_BUILD_BRANCH, epoch $UBIQX_BUILD_EPOCH), arch $ARCH"
       - name: Versão deste build e chave de assinatura
         # A versão (0.1.<contagem de commits>) vai para tauri.conf.json antes de compilar: é ela que o
-        # tauri-plugin-updater compara. A chave de assinatura é obrigatória: sem ela o Tauri não empacota.
+        # tauri-plugin-updater compara. Sem a chave de assinatura o build continua, com --no-sign, e este
+        # build simplesmente não se instala sozinho (scripts/ci-updater-signing.sh explica).
         script: |
           set -e
           bash scripts/ci-app-version.sh
-          bash scripts/ci-require-signing-key.sh
+          GITHUB_ENV="$CM_ENV" bash scripts/ci-updater-signing.sh
       - name: Compilar ubiqX.app e o DMG
         # Um único `tauri build`: o alvo `app` é o que gera o artefato de atualização (.app.tar.gz + .sig),
         # e `dmg` sozinho não serve para isso (o bundler recusa "no updater-enabled targets were built").
@@ -120,7 +121,7 @@ workflows:
           eval "$(bash scripts/build-info.sh)"   # garante a identidade mesmo se $CM_ENV não tiver sido aplicado
           cd apps/desktop
           export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
-          pnpm tauri build --bundles app,dmg
+          pnpm tauri build --bundles app,dmg ${UBIQX_TAURI_SIGN_FLAG:-}
       - name: Zipar o .app com ditto
         # O zip de artifacts perde modos de arquivo e symlinks; o ditto preserva, e o nome estável
         # ubiqX-macos-<arch>.app.zip é o que o latest.json aponta.
@@ -148,13 +149,18 @@ workflows:
           fi
           eval "$(bash scripts/build-info.sh)"
           ARCH="${UBIQX_ARCH:-$(uname -m)}"; [ "$ARCH" = "arm64" ] && ARCH=aarch64
-          tgz="$(ls target/release/bundle/macos/*.app.tar.gz | head -n 1)"
-          mv "$tgz" "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.tar.gz"
-          mv "$tgz.sig" "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.tar.gz.sig"
-          node scripts/publish-release.mjs \
-            --dmg 'target/release/bundle/dmg/*.dmg' \
-            --app-zip "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.zip" \
-            --asset "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.tar.gz"
+          args=(--dmg 'target/release/bundle/dmg/*.dmg' --app-zip "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.zip")
+          # Sem chave de assinatura o build saiu com --no-sign: o artefato de atualização não é publicado,
+          # porque o ubiqX recusaria instalá-lo (scripts/ci-updater-signing.sh).
+          tgz="$(ls target/release/bundle/macos/*.app.tar.gz 2>/dev/null | head -n 1)"
+          if [ "${UBIQX_UPDATER_SIGNED:-0}" = "1" ] && [ -n "$tgz" ] && [ -f "$tgz.sig" ]; then
+            mv "$tgz" "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.tar.gz"
+            mv "$tgz.sig" "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.tar.gz.sig"
+            args+=(--asset "target/release/bundle/macos/ubiqX-macos-${ARCH}.app.tar.gz")
+          else
+            rm -f target/release/bundle/macos/*.app.tar.gz target/release/bundle/macos/*.app.tar.gz.sig
+          fi
+          node scripts/publish-release.mjs "${args[@]}"
     artifacts:
       - target/release/bundle/macos/*.app
       - target/release/bundle/macos/*.app.zip

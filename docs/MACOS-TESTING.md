@@ -166,9 +166,17 @@ Actions → New repository secret*:
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | a senha dessa chave |
 
 A metade pública dessa chave já está em `apps/desktop/src-tauri/tauri.conf.json`. Os três jobs de build
-(`macos-app`, `windows-app`, `linux-app`) começam com a etapa **Updater signing key**: sem os dois secrets ela
-para o job com a mensagem dizendo exatamente o que falta, em vez de gerar um pacote sem assinatura que o app
-recusaria depois. A chave privada nunca entra no repositório. Para trocar a chave, gere outro par
+(`macos-app`, `windows-app`, `linux-app`) começam com a etapa **Updater signing key**, que decide o que este
+build consegue fazer:
+
+- **com os dois secrets**: o Tauri assina o artefato de atualização, ele vai para a release junto com o
+  `updater.json`, e quem já tem o ubiqX instalado se atualiza pelo próprio app;
+- **sem eles**: o build continua com `--no-sign` e publica normalmente o DMG e os instaladores, mas o
+  artefato de atualização é descartado antes do upload e o `updater.json` não é escrito. O job registra um
+  aviso nomeando os secrets que faltam. Ninguém recebe uma atualização que o app recusaria instalar; a
+  instalação manual continua funcionando.
+
+A chave privada nunca entra no repositório. Para trocar a chave, gere outro par
 (`pnpm tauri signer generate -w ubiqx-updater.key`), troque o `pubkey` no `tauri.conf.json` e atualize os dois
 secrets — quem estiver numa versão antiga terá de atualizar à mão uma última vez.
 
@@ -265,7 +273,7 @@ exatamente o texto enviado à IA por bloco e permite apagar tudo.
 | Banner de atualização não aparece mesmo com commit novo | Build de desenvolvimento (epoch 0) não verifica sozinho, verificação automática desligada, ou a CI ainda não publicou | Configurações → Atualizações → **Verificar agora**; confira a release `continuous` no GitHub e o log do job *Publish continuous release* (§ 3.2) |
 | "Publicação pulada: GITHUB_TOKEN não definido" no log do Codemagic | Grupo `ubiqx_github` não criado ou `groups` ainda comentado no yaml | Criar o token fine-grained e o grupo, descomentar `groups` (§ 3.2); enquanto isso o GitHub Actions publica sozinho |
 | Atualização automática pede Gravação de Tela e Automação de novo | Esperado: a CI assina o bundle ad hoc, sem identidade fixa, e o macOS vê um app diferente | Reconceder em Ajustes → Privacidade e Segurança, ou usar o caminho manual e reassinar com `ubiqX Dev`; solução definitiva no § 3.2 |
-| Job da CI falha em **Updater signing key** | Os secrets `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` não foram cadastrados | Cadastrar os dois em Settings → Secrets and variables → Actions (§ 3.2) |
+| A release saiu sem `updater.json` e o app não se atualiza sozinho | Os secrets `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` não foram cadastrados, e o build avisou isso na etapa **Updater signing key** | Cadastrar os dois em Settings → Secrets and variables → Actions (§ 3.2); o build seguinte já se atualiza |
 | **Atualizar agora** diz "Este build não consegue se atualizar sozinho" | O `updater.json` não tem entrada para este sistema/arquitetura, ou o build saiu sem assinatura | Usar **Baixar (.dmg)** e instalar como no § 3.1; conferir o `updater.json` da release `continuous` |
 | Cmd+Q "não fecha" o app | Esperado: Cmd+Q só esconde a janela | Para encerrar de verdade: tray → **Sair** |
 | Log sem linhas do rastreador | Nível de log baixo | `UBIQX_LOG=debug` antes de abrir o app; o arquivo fica em `~/Library/Logs/ai.ubiqx.app/` |
