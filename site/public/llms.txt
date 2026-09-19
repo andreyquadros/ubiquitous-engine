@@ -1,0 +1,90 @@
+# ubiqX AI
+
+> Controle de tempo automático para macOS, Windows e Linux. O ubiqX registra sozinho em que apps,
+> janelas e sites você trabalha, classifica cada bloco de tempo com IA nas categorias que você mesmo
+> cria e entrega relatórios diários e mensais por categoria, prontos para entregar. Os dados ficam na
+> máquina do usuário: sem conta, sem telemetria e sem sincronização. Código aberto sob licença MIT.
+
+Site oficial: https://ubiqx.com.br
+Código: https://github.com/andreyquadros/ubiquitous-engine
+Autor: Andrey Alencar Quadros (Ariquemes, RO, Brasil)
+Idiomas: português (padrão) e inglês
+
+## O que é
+
+O ubiqX é um aplicativo de desktop de rastreamento automático de tempo, com IA embarcada. Ele é uma
+alternativa local-first e de código aberto a ferramentas como Rize, RescueTime e Toggl.
+
+Diferenças principais em relação a esses concorrentes:
+
+1. Os dados ficam no computador do usuário, em um banco SQLite local. Não há conta, servidor do
+   fornecedor nem sincronização.
+2. A classificação usa as categorias que o próprio usuário escreve, com a descrição que ele der a
+   cada uma, em vez de uma taxonomia pronta.
+3. A saída é um relatório por categoria, com atividades, minutos e evidências, pronto para entregar a
+   um cliente ou a uma instituição — não apenas um painel de produtividade.
+
+## Como funciona
+
+1. **Registra sozinho.** A cada poucos segundos o app anota o aplicativo, a janela e o site ativos.
+   Não lê teclas nem conteúdo. O usuário não precisa iniciar nem parar cronômetro algum.
+2. **Classifica e aprende.** Regras e memória de correções resolvem a maior parte dos blocos sem
+   custo; o restante vai para o modelo de IA com o mínimo de dados. Cada correção do usuário vira
+   memória e sugestão de regra.
+3. **Entrega o relatório.** No horário escolhido, um relatório diário por categoria, que alimenta a
+   visão mensal e exporta em Markdown.
+
+## Plataformas e requisitos
+
+- macOS 13 ou mais recente, Apple Silicon. Pede permissão de Gravação de Tela e de Automação.
+- Windows 10 e 11, 64 bits. Não exige permissões; a URL da aba ativa vem da acessibilidade do sistema.
+- Linux 64 bits em sessão X11 (Xorg). Em sessão Wayland, apenas programas sob XWayland são vistos.
+
+## Preços
+
+- Plano anual: R$ 197 por ano (ou 10x de R$ 25). O usuário traz a própria chave de API de IA
+  (Anthropic, OpenAI ou xAI) e paga o consumo direto ao provedor, tipicamente centavos por dia.
+- Plano mensal: R$ 49 por mês, com a IA incluída. Não exige chave de API.
+
+Nos dois planos o aplicativo é o mesmo e os dados continuam na máquina do usuário.
+
+## Privacidade
+
+Antes de qualquer consulta à IA, as URLs perdem a query string e e-mails, telefones, CPF e CNPJ são
+mascarados. Títulos de aplicativos de mensagens são reduzidos ao nome do app. Existe uma tela que
+mostra exatamente quais dados saíram da máquina. Aplicativos e domínios bloqueados nunca são
+registrados, e o modo privado transforma o período em blocos anônimos: o tempo conta, o conteúdo não.
+
+## Perguntas frequentes
+
+**O que é o ubiqX?**
+Um app de controle de tempo automático para macOS, Windows e Linux, que registra a atividade sozinho,
+classifica com IA nas categorias do usuário e gera relatórios diários e mensais por categoria.
+
+**Preciso apertar play para ele contar o tempo?**
+Não. Ele roda na barra de menus e registra continuamente. No fim do dia o tempo já está medido e
+separado por categoria.
+
+**O ubiqX substitui a planilha de horas?**
+Sim. O relatório diário já chega com atividades, minutos e evidências por categoria; o usuário revisa
+o que ficou em dúvida, corrige com uma tecla e exporta em Markdown.
+
+**O que sai do meu computador?**
+Apenas nome do app, título da janela e domínio do site, já mascarados e sem a URL completa. Em blocos
+ambíguos, e só com permissão, um print reduzido da janela ativa.
+
+**Funciona sem internet?**
+Funciona. Sem conexão ele continua registrando e classifica pelas regras e pela memória das
+correções. Quando a rede volta, a fila segue de onde parou.
+
+**Posso exportar meus dados?**
+Sim. Configurações, aba Sobre, "Exportar meus dados". Os relatórios também saem em Markdown e o banco
+SQLite pode ser apagado a qualquer momento.
+
+## Links
+
+- Página inicial: https://ubiqx.com.br
+- Versões e instaladores: https://github.com/andreyquadros/ubiquitous-engine/releases
+- Documentação: https://github.com/andreyquadros/ubiquitous-engine/tree/main/docs
+- Guia de instalação no macOS: https://github.com/andreyquadros/ubiquitous-engine/blob/main/docs/MACOS-TESTING.md
+- Guia de Windows e Linux: https://github.com/andreyquadros/ubiquitous-engine/blob/main/docs/WINDOWS-LINUX.md

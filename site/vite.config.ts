@@ -27,9 +27,57 @@ function siteUrlPlugin(): Plugin {
   };
 }
 
+/**
+ * Emits robots.txt and sitemap.xml pointing at the deployment's own origin, so they never drift from
+ * SITE_URL. llms.txt is a hand-written file in public/ (it is content, not plumbing).
+ */
+function crawlerFilesPlugin(): Plugin {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    name: 'ubiqx-crawler-files',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'robots.txt',
+        source: [
+          'User-agent: *',
+          'Allow: /',
+          '',
+          '# AI crawlers and answer engines are welcome: see llms.txt for a plain-text summary.',
+          `Sitemap: ${siteUrl}sitemap.xml`,
+          '',
+        ].join('\n'),
+      });
+      this.emitFile({
+        type: 'asset',
+        fileName: 'sitemap.xml',
+        source: [
+          '<?xml version="1.0" encoding="UTF-8"?>',
+          '<urlset xmlns="http://www.sitemap.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">'.replace(
+            'www.sitemap.org',
+            'www.sitemaps.org',
+          ),
+          '  <url>',
+          `    <loc>${siteUrl}</loc>`,
+          `    <lastmod>${today}</lastmod>`,
+          '    <changefreq>weekly</changefreq>',
+          '    <priority>1.0</priority>',
+          `    <xhtml:link rel="alternate" hreflang="pt-BR" href="${siteUrl}"/>`,
+          `    <xhtml:link rel="alternate" hreflang="en" href="${siteUrl}?lang=en"/>`,
+          `    <xhtml:link rel="alternate" hreflang="x-default" href="${siteUrl}"/>`,
+          '  </url>',
+          '</urlset>',
+          '',
+        ].join('\n'),
+      });
+    },
+  };
+}
+
 export default defineConfig({
   base,
-  plugins: [react(), tailwindcss(), siteUrlPlugin()],
+  plugins: [react(), tailwindcss(), siteUrlPlugin(), crawlerFilesPlugin()],
   define: {
     __SITE_URL__: JSON.stringify(siteUrl),
   },

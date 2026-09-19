@@ -1,5 +1,8 @@
 import { Download, Lock } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { ButtonLink } from '../components/Button';
+import { detectOs, DEFAULT_OS, type Os } from '../components/os';
+import { Particles } from '../components/Particles';
 import { UbiHero } from '../components/UbiHero';
 import { DOWNLOAD_URLS } from '../config';
 import { useCopy } from '../i18n';
@@ -7,7 +10,10 @@ import { useCopy } from '../i18n';
 export function Hero() {
   const { copy } = useCopy();
   const h = copy.hero;
-  const cta = DOWNLOAD_URLS.macos || '#baixar';
+  // detected after mount so the first paint is identical for every visitor (and for the capture scripts)
+  const [os, setOs] = useState<Os>(DEFAULT_OS);
+  useEffect(() => setOs(detectOs()), []);
+  const cta = DOWNLOAD_URLS[os] || '#baixar';
   return (
     <section className="relative overflow-hidden" aria-labelledby="hero-title">
       <div className="hairline-grid pointer-events-none absolute inset-0" aria-hidden="true" />
@@ -20,8 +26,8 @@ export function Hero() {
           </h1>
           <p className="mt-5 max-w-xl text-[15px] leading-6 text-ink-2 sm:text-[17px] sm:leading-7">{h.subtitle}</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <ButtonLink href={cta} size="lg" icon={<Download size={18} strokeWidth={1.75} aria-hidden="true" />}>
-              {h.primary}
+            <ButtonLink href={cta} size="lg" className="neon-cta" icon={<Download size={18} strokeWidth={1.75} aria-hidden="true" />}>
+              {copy.downloadFor[os]}
             </ButtonLink>
             <ButtonLink href="#planos" size="lg" variant="secondary">
               {h.secondary}
@@ -34,7 +40,10 @@ export function Hero() {
           </p>
         </div>
         <div className="flex min-w-0 justify-center lg:col-span-5 lg:justify-end">
-          <UbiHero size={400} className="w-[280px] sm:w-[360px] lg:w-[400px]" />
+          <div className="relative">
+            <Particles className="pointer-events-none absolute -inset-x-10 -top-8 bottom-0 h-[calc(100%+2rem)] w-[calc(100%+5rem)]" />
+            <UbiHero size={400} className="relative w-[280px] sm:w-[360px] lg:w-[400px]" />
+          </div>
         </div>
       </div>
     </section>

@@ -61,6 +61,8 @@ export interface Copy {
     footerLinks: string;
   };
   lang: { 'pt-BR': string; en: string; switchTo: string };
+  /** Rótulo do botão principal por sistema operacional detectado. */
+  downloadFor: { macos: string; windows: string; linux: string };
   hero: {
     eyebrow: string;
     title: string;
@@ -70,6 +72,10 @@ export interface Copy {
     trust: string;
     mascotAlt: string;
     platforms: string;
+    /** Falas curtas que giram no balão ao lado do UBI. */
+    bubbles: string[];
+    /** Botão que liga a animação para quem tem "reduzir movimento" no sistema. */
+    enableMotion: string;
   };
   how: { eyebrow: string; title: string; intro: string; steps: Step[] };
   features: { eyebrow: string; title: string; intro: string; items: Feature[] };
@@ -104,11 +110,11 @@ export interface Copy {
 
 const ptBR: Copy = {
   meta: {
-    title: 'ubiqX AI',
+    title: 'ubiqX AI — Controle de tempo automático com IA',
     description:
-      'Rastreamento automático de tempo para o seu Mac, com IA que classifica cada bloco nas suas categorias e um mascote que cuida do seu foco. Tudo fica na sua máquina.',
-    ogTitle: 'ubiqX AI. Seu tempo, entendido.',
-    ogDescription: 'Um mascote que cuida do seu foco. Rastreamento automático, categorias suas, relatórios prontos.',
+      'O ubiqX registra sozinho em que apps e sites você trabalha, classifica cada bloco com IA nas suas categorias e entrega o relatório de horas pronto. Sem planilha, sem cronômetro.',
+    ogTitle: 'Trabalhe o dia inteiro. O relatório se escreve sozinho.',
+    ogDescription: 'Controle de tempo automático com IA: para onde o seu dia foi, por categoria, em relatórios prontos para entregar.',
   },
   nav: {
     brand: 'ubiqX AI',
@@ -127,72 +133,82 @@ const ptBR: Copy = {
     footerLinks: 'Links do rodapé',
   },
   lang: { 'pt-BR': 'PT', en: 'EN', switchTo: 'Mudar idioma para {lang}' },
+  downloadFor: { macos: 'Baixar para macOS', windows: 'Baixar para Windows', linux: 'Baixar para Linux' },
   hero: {
-    eyebrow: 'Para quem trabalha em mais de uma frente',
-    title: 'Seu tempo, entendido. Um mascote que cuida do seu foco.',
+    eyebrow: 'Os dias não estão menores. O seu tempo é que está vazando.',
+    title: 'Descubra para onde vão as suas horas. E retome o controle do dia.',
     subtitle:
-      'O ubiqX registra sozinho em qual app, janela e site você está, classifica cada bloco com IA nas categorias que você cria (IFRO, Incubadora, Cidades Inteligentes) e entrega relatórios diários e mensais prontos. O UBI, o mascote, avisa quando você se distrai e bloqueia o que rouba atenção.',
+      'Você senta às 8h, levanta às 18h e não sabe dizer o que rendeu. Não foi o dia que encurtou: foram as trocas de janela, as abas abertas e o \u201Csó um minuto\u201D que virou quarenta. O ubiqX mede tudo isso sozinho, mostra quanto foi foco e quanto foi distração, e ainda entrega o relatório por categoria pronto. Chega de procrastinar no escuro: o UBI chegou para te ajudar.',
     primary: 'Baixar para macOS',
     secondary: 'Ver os planos',
-    trust: 'Tudo fica no seu Mac. Sem contas, sem telemetria.',
+    trust: 'Tudo fica no seu computador. Sem contas, sem telemetria.',
     mascotAlt: 'UBI, o mascote do ubiqX: um robô branco com visor escuro, crista azul e faixa laranja',
     platforms: 'macOS, Windows e Linux.',
+    bubbles: [
+      'Oi! Eu sou o UBI. Eu conto as suas horas pra você não ter que contar.',
+      'Você trocou de janela 21 vezes nos últimos 30 minutos. Quer fechar o que não é urgente?',
+      '5h08 de foco hoje. Ontem foram 3h40 — tá subindo.',
+      'Esse bloco eu não soube classificar. Me corrige uma vez e eu nunca mais erro.',
+      'Relatório do dia pronto. É só conferir e enviar.',
+      '1h50 sem pausa. Levanta 5 minutos, eu seguro o cronômetro.',
+    ],
+    enableMotion: 'Ativar animação',
   },
   how: {
     eyebrow: 'Como funciona',
-    title: 'Três passos, nenhum deles seu.',
-    intro: 'Você instala uma vez, cria suas categorias e segue trabalhando. O resto acontece em segundo plano.',
+    title: 'Três passos. Nenhum deles é seu.',
+    intro: 'Você instala uma vez, cria as suas categorias e volta a trabalhar. O resto roda em segundo plano, sem pedir sua atenção.',
     steps: [
       {
-        title: 'Registra',
-        text: 'A cada poucos segundos o ubiqX anota o app, a janela e o site ativos, sem teclas nem conteúdo. Blocos de contexto nascem sozinhos.',
+        title: 'Registra sozinho',
+        text: 'A cada poucos segundos ele anota o app, a janela e o site ativos. Sem teclas, sem conteúdo e sem você lembrar de apertar play.',
       },
       {
-        title: 'Classifica com IA e aprende com você',
-        text: 'Regras e memória resolvem a maioria dos blocos de graça; o resto vai para a IA com o mínimo de dados. Corrigiu um bloco? Ele aprende e sugere a regra.',
+        title: 'Classifica e aprende',
+        text: 'Regras e memória resolvem a maior parte de graça; o resto vai para a IA com o mínimo de dados. Corrigiu um bloco, ele aprende e já sugere a regra.',
       },
       {
-        title: 'Relata e protege o foco',
-        text: 'No horário que você escolher, um relatório diário por categoria, pronto para virar o mensal. Enquanto isso o UBI mede seu foco e intervém quando precisa.',
+        title: 'Entrega o relatório',
+        text: 'No horário que você escolher, um relatório por categoria com itens, minutos e evidências. Você confere, copia e entrega.',
       },
     ],
   },
   features: {
     eyebrow: 'Recursos',
-    title: 'Um painel de instrumentos para a sua atenção.',
-    intro: 'Feito para quem precisa prestar contas do tempo em várias frentes e não quer preencher planilha nenhuma.',
+    title: 'Menos tempo prestando contas do tempo.',
+    intro: 'Feito para quem toca várias frentes ao mesmo tempo e precisa mostrar o que fez, sem que isso vire um segundo trabalho.',
     items: [
       {
-        title: 'Rastreamento automático',
-        text: 'App, janela e o site do navegador, registrados sozinhos. Prints esparsos só da janela ativa, e só quando você permite.',
+        title: 'Zero esforço diário',
+        text: 'Nada de apertar play, parar o cronômetro ou lembrar no fim do dia. Ele registra o app, a janela e o site ativos sozinho, o dia inteiro.',
       },
       {
-        title: 'Categorias suas',
-        text: 'IFRO, Incubadora, Cidades Inteligentes, o que você quiser. Cada uma com uma descrição do que conta como trabalho; a IA usa exatamente esse texto.',
+        title: 'As suas categorias, não as dele',
+        text: 'Cliente, projeto, disciplina, instituição: você cria as frentes e descreve o que conta como trabalho em cada uma. A IA segue exatamente essa descrição.',
       },
       {
-        title: 'Relatórios diário e mensal',
-        text: 'Itens no passado com tipo, minutos e evidências. A visão mensal agrupa continuações e exporta em Markdown.',
+        title: 'O relatório sai pronto',
+        text: 'Diário e mensal, por categoria, com atividades, minutos e evidências. A visão mensal junta o que continuou de um dia para o outro e exporta em Markdown.',
       },
       {
-        title: 'Revisão com teclado e capturas',
-        text: 'Os blocos incertos esperam numa fila. Você confirma ou corrige com uma tecla, olhando a captura quando houver. Cada correção ensina.',
+        title: 'Cinco minutos de revisão',
+        text: 'Só o que a IA não teve certeza entra na fila. Você confirma ou corrige com uma tecla, e cada correção vira regra para o mês seguinte.',
       },
       {
-        title: 'Foco',
-        text: 'Bloqueio de apps e sites, sessões de foco e intervenções do UBI quando as trocas de contexto disparam. Com teto diário e horário silencioso.',
+        title: 'Menos troca de contexto',
+        text: 'Bloqueio de apps e sites, sessões de foco e um aviso discreto quando você começa a pular de janela em janela. Com teto diário e horário silencioso.',
       },
       {
-        title: 'Privacidade',
-        text: 'Redação antes de enviar à IA: URLs sem query, e-mails, telefones e documentos mascarados. Apps bloqueados nunca são registrados. Modo privado com prazo.',
+        title: 'Seus dados não saem da máquina',
+        text: 'Banco local, sem contas e sem telemetria. Antes de qualquer consulta à IA, URLs perdem a query e e-mail, telefone, CPF e CNPJ são mascarados.',
       },
       {
-        title: 'UBI em 3D, com humores',
-        text: 'O mascote reflete o seu foco: calmo, concentrado, empolgado ou preocupado. Ele fala pouco e no momento certo.',
+        title: 'Funciona sem internet',
+        text: 'Sem conexão, ele continua registrando e classifica pelas suas regras e pela memória das correções. Quando a rede volta, a fila segue de onde parou.',
       },
       {
-        title: 'Português e inglês',
-        text: 'Interface, relatórios e o próprio UBI nos dois idiomas. Troque quando quiser nas configurações.',
+        title: 'macOS, Windows e Linux',
+        text: 'O mesmo app e o mesmo feed de atualização nos três sistemas, em português e em inglês.',
       },
     ],
   },
@@ -201,7 +217,7 @@ const ptBR: Copy = {
     title: 'O app, como ele é.',
     intro: 'Capturas reais da interface com dados de demonstração.',
     shots: [
-      { file: 'dashboard', title: 'Hoje', caption: 'O dial de foco, a frase do dia escrita a partir dos dados e o UBI no canto.' },
+      { file: 'dashboard', title: 'Hoje', caption: 'O foco do dia em um número, o resumo escrito a partir dos seus próprios dados e o que ainda falta revisar.' },
       { file: 'timeline', title: 'Timeline', caption: 'Cada bloco de contexto do dia, com categoria, app e duração.' },
       { file: 'review', title: 'Revisão', caption: 'A fila do que a IA não teve certeza. Uma tecla confirma, outra corrige.' },
       { file: 'reports', title: 'Relatórios', caption: 'Diário por categoria, com itens, minutos e evidências. Vira o mensal.' },
@@ -306,7 +322,23 @@ const ptBR: Copy = {
     title: 'O que as pessoas perguntam antes de instalar.',
     items: [
       {
-        q: 'O que sai do meu Mac?',
+        q: 'O que é o ubiqX?',
+        a: 'O ubiqX é um app de controle de tempo automático para macOS, Windows e Linux. Ele registra sozinho em que apps, janelas e sites você trabalha, usa IA para classificar cada bloco de tempo nas categorias que você criar e gera relatórios diários e mensais por categoria, prontos para entregar.',
+      },
+      {
+        q: 'Preciso apertar play para ele contar o tempo?',
+        a: 'Não. Essa é a diferença principal para um cronômetro comum. O ubiqX roda na barra de menus e registra a sua atividade continuamente, sozinho. Você não inicia nem para nada: no fim do dia o tempo já está medido e separado por categoria.',
+      },
+      {
+        q: 'Em que ele é diferente do Rize, do RescueTime ou do Toggl?',
+        a: 'Três pontos. Os dados ficam na sua máquina, sem conta e sem servidor nosso. A classificação usa as categorias que você escreve, não uma taxonomia pronta. E a saída é um relatório por categoria pronto para entregar a um cliente ou instituição, não só um gráfico de produtividade.',
+      },
+      {
+        q: 'O ubiqX substitui a minha planilha de horas?',
+        a: 'Essa é a ideia. Em vez de lembrar no fim da semana o que você fez, o relatório diário já chega com as atividades, os minutos e as evidências de cada categoria. Você revisa o que ficou em dúvida, corrige com uma tecla e exporta em Markdown.',
+      },
+      {
+        q: 'O que sai do meu computador?',
         a: 'Só o necessário para classificar um bloco: nome do app, título da janela e domínio do site, já com e-mails, telefones, CPF e CNPJ mascarados e sem a URL completa. Em blocos ambíguos, e só se você permitir, um print reduzido da janela ativa. A tela "Dados enviados à IA" mostra exatamente o que saiu. Sem contas, sem telemetria, sem sincronização.',
       },
       {
@@ -336,7 +368,7 @@ const ptBR: Copy = {
     ],
   },
   footer: {
-    tagline: 'Rastreamento inteligente de atividade, com IA e um mascote que cuida do seu foco.',
+    tagline: 'Controle de tempo automático com IA. O seu dia, contado sem você anotar nada.',
     repo: 'Código no GitHub',
     releases: 'Versões',
     docs: 'Documentação',
@@ -349,11 +381,11 @@ const ptBR: Copy = {
 
 const en: Copy = {
   meta: {
-    title: 'ubiqX AI',
+    title: 'ubiqX AI — Automatic time tracking with AI',
     description:
-      'Automatic time tracking for your Mac, with AI that files every block into your own categories and a mascot that guards your focus. Everything stays on your machine.',
-    ogTitle: 'ubiqX AI. Your time, understood.',
-    ogDescription: 'A mascot that guards your focus. Automatic tracking, your own categories, reports ready to send.',
+      'ubiqX records which apps and sites you work in, files every block with AI into your own categories and hands you the timesheet already written. No spreadsheet, no stopwatch.',
+    ogTitle: 'Work all day. The report writes itself.',
+    ogDescription: 'Automatic time tracking with AI: where your day went, by category, in reports ready to hand in.',
   },
   nav: {
     brand: 'ubiqX AI',
@@ -372,72 +404,82 @@ const en: Copy = {
     footerLinks: 'Footer links',
   },
   lang: { 'pt-BR': 'PT', en: 'EN', switchTo: 'Switch language to {lang}' },
+  downloadFor: { macos: 'Download for macOS', windows: 'Download for Windows', linux: 'Download for Linux' },
   hero: {
-    eyebrow: 'For people who work on more than one front',
-    title: 'Your time, understood. A mascot that guards your focus.',
+    eyebrow: 'The days are not getting shorter. Your time is leaking.',
+    title: 'Find out where your hours go. And take the day back.',
     subtitle:
-      'ubiqX quietly records which app, window and site you are in, files every block with AI into the categories you create (IFRO, Incubadora, Cidades Inteligentes) and delivers daily and monthly reports ready to send. UBI, the mascot, nudges you when you drift and blocks what steals your attention.',
+      'You sit down at 8, get up at 6 and cannot say what you got done. The day did not shrink: the window switches, the open tabs and the \u201Cjust a minute\u201D that became forty did that. ubiqX measures all of it on its own, shows how much was focus and how much was distraction, and hands you the report per category. Stop guessing in the dark: UBI is here to help.',
     primary: 'Download for macOS',
     secondary: 'See the plans',
-    trust: 'Everything stays on your Mac. No accounts, no telemetry.',
+    trust: 'Everything stays on your computer. No accounts, no telemetry.',
     mascotAlt: 'UBI, the ubiqX mascot: a white robot with a dark visor, a blue crest and an orange sash',
     platforms: 'macOS, Windows and Linux.',
+    bubbles: [
+      'Hi! I am UBI. I count your hours so you do not have to.',
+      'You switched windows 21 times in the last 30 minutes. Shall we close what is not urgent?',
+      '5h08 of focus today. Yesterday it was 3h40 — it is going up.',
+      'I was not sure about this block. Correct me once and I will not miss it again.',
+      'Today\u2019s report is ready. Check it and send it.',
+      '1h50 without a break. Stand up for five minutes, I will hold the clock.',
+    ],
+    enableMotion: 'Turn on animation',
   },
   how: {
     eyebrow: 'How it works',
-    title: 'Three steps, none of them yours.',
-    intro: 'Install once, create your categories and keep working. The rest happens in the background.',
+    title: 'Three steps. None of them yours.',
+    intro: 'Install once, create your categories and go back to work. The rest runs in the background, without asking for your attention.',
     steps: [
       {
-        title: 'Records',
-        text: 'Every few seconds ubiqX notes the active app, window and site, with no keystrokes and no content. Context blocks build themselves.',
+        title: 'It records by itself',
+        text: 'Every few seconds it notes the active app, window and site. No keystrokes, no content, and nothing for you to press.',
       },
       {
-        title: 'Classifies with AI and learns from you',
-        text: 'Rules and memory settle most blocks for free; the rest goes to the AI with the least data possible. Corrected a block? It learns and proposes the rule.',
+        title: 'It classifies and learns',
+        text: 'Rules and memory settle most of it for free; the rest goes to the AI with the least data possible. Correct a block and it learns, then proposes the rule.',
       },
       {
-        title: 'Reports and protects your focus',
-        text: 'At the time you pick, a daily report per category, ready to become the monthly one. Meanwhile UBI measures your focus and steps in when needed.',
+        title: 'It hands you the report',
+        text: 'At the time you pick, a report per category with activities, minutes and evidence. You check it, copy it and hand it in.',
       },
     ],
   },
   features: {
     eyebrow: 'Features',
-    title: 'An instrument panel for your attention.',
-    intro: 'Made for people who have to account for their time on several fronts and refuse to fill in a spreadsheet.',
+    title: 'Less time accounting for your time.',
+    intro: 'Made for people running several fronts at once who still have to show what they did, without turning that into a second job.',
     items: [
       {
-        title: 'Automatic tracking',
-        text: 'App, window and the browser site, recorded on their own. Sparse screenshots of the active window only, and only when you allow them.',
+        title: 'Zero daily effort',
+        text: 'No start button, no stopwatch to remember, no reconstructing the day at 6pm. It records the active app, window and site on its own, all day.',
       },
       {
-        title: 'Your own categories',
-        text: 'IFRO, Incubadora, Cidades Inteligentes, whatever you need. Each one carries a description of what counts as its work; the AI uses exactly that text.',
+        title: 'Your categories, not its own',
+        text: 'Client, project, course, institution: you create the fronts and describe what counts as work in each. The AI follows exactly that description.',
       },
       {
-        title: 'Daily and monthly reports',
-        text: 'Items in the past tense with type, minutes and evidence. The monthly view groups continuations and exports Markdown.',
+        title: 'The report comes out written',
+        text: 'Daily and monthly, per category, with activities, minutes and evidence. The monthly view joins what carried over between days and exports Markdown.',
       },
       {
-        title: 'Keyboard review with captures',
-        text: 'Uncertain blocks wait in a queue. Confirm or correct with one key, looking at the capture when there is one. Every correction teaches.',
+        title: 'Five minutes of review',
+        text: 'Only what the AI was unsure about reaches the queue. You confirm or correct with one key, and every correction becomes a rule for next month.',
       },
       {
-        title: 'Focus',
-        text: 'App and site blocking, focus sessions and UBI interventions when context switching spikes. With a daily cap and quiet hours.',
+        title: 'Fewer context switches',
+        text: 'App and site blocking, focus sessions and a quiet nudge when you start hopping between windows. With a daily cap and quiet hours.',
       },
       {
-        title: 'Privacy',
-        text: 'Redaction before anything reaches the AI: URLs without queries, e-mails, phones and IDs masked. Blocked apps are never recorded. Private mode with a timer.',
+        title: 'Your data never leaves the machine',
+        text: 'Local database, no account, no telemetry. Before anything reaches the AI, URLs lose their query and e-mails, phones and ID numbers are masked.',
       },
       {
-        title: 'UBI in 3D, with moods',
-        text: 'The mascot mirrors your focus: calm, focused, excited or worried. He speaks little and at the right moment.',
+        title: 'Works offline',
+        text: 'With no connection it keeps recording and classifies from your rules and the memory of your corrections. When the network is back, the queue resumes.',
       },
       {
-        title: 'Portuguese and English',
-        text: 'Interface, reports and UBI himself in both languages. Switch whenever you like in the settings.',
+        title: 'macOS, Windows and Linux',
+        text: 'The same app and the same update feed on all three systems, in Portuguese and English.',
       },
     ],
   },
@@ -446,7 +488,7 @@ const en: Copy = {
     title: 'The app, as it is.',
     intro: 'Real captures of the interface with demo data.',
     shots: [
-      { file: 'dashboard', title: 'Today', caption: 'The focus dial, a sentence written from the data and UBI in the corner.' },
+      { file: 'dashboard', title: 'Today', caption: 'The focus of the day as a single number, a summary written from your own data, and what is still waiting for review.' },
       { file: 'timeline', title: 'Timeline', caption: 'Every context block of the day, with category, app and duration.' },
       { file: 'review', title: 'Review', caption: 'The queue of what the AI was unsure about. One key confirms, another corrects.' },
       { file: 'reports', title: 'Reports', caption: 'Daily per category, with items, minutes and evidence. It becomes the monthly.' },
@@ -551,7 +593,23 @@ const en: Copy = {
     title: 'What people ask before installing.',
     items: [
       {
-        q: 'What leaves my Mac?',
+        q: 'What is ubiqX?',
+        a: 'ubiqX is an automatic time tracking app for macOS, Windows and Linux. It records which apps, windows and sites you work in, uses AI to file every block of time into the categories you create, and produces daily and monthly reports per category, ready to hand in.',
+      },
+      {
+        q: 'Do I have to press start for it to count time?',
+        a: 'No. That is the main difference from a regular stopwatch. ubiqX lives in the menu bar and records your activity continuously, on its own. You never start or stop anything: by the end of the day the time is already measured and split by category.',
+      },
+      {
+        q: 'How is it different from Rize, RescueTime or Toggl?',
+        a: 'Three things. Your data stays on your machine, with no account and no server of ours. Classification uses the categories you write, not a fixed taxonomy. And the output is a report per category ready to hand to a client or an institution, not only a productivity chart.',
+      },
+      {
+        q: 'Does it replace my timesheet?',
+        a: 'That is the idea. Instead of reconstructing the week from memory, the daily report already arrives with the activities, the minutes and the evidence for each category. You review whatever was uncertain, correct it with one key and export Markdown.',
+      },
+      {
+        q: 'What leaves my computer?',
         a: 'Only what is needed to classify a block: app name, window title and site domain, with e-mails, phones and IDs masked and without the full URL. For ambiguous blocks, and only if you allow it, a downscaled screenshot of the active window. The "Data sent to the AI" screen shows exactly what went out. No accounts, no telemetry, no sync.',
       },
       {
@@ -581,7 +639,7 @@ const en: Copy = {
     ],
   },
   footer: {
-    tagline: 'Smart activity tracking, with AI and a mascot that guards your focus.',
+    tagline: 'Automatic time tracking with AI. Your day, accounted for without writing anything down.',
     repo: 'Code on GitHub',
     releases: 'Releases',
     docs: 'Documentation',

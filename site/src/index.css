@@ -182,3 +182,39 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Neon edge around the primary call to action: a bright gradient that slides around the button plus a soft
+   halo breathing behind it. No rotation — a rotating box would sweep its corners far outside the button.
+   Decorative only: the reduced-motion block above freezes both animations. */
+@keyframes neon-slide {
+  to { background-position: 300% 0; }
+}
+@keyframes neon-breathe {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.9; }
+}
+.neon-cta {
+  position: relative;
+  isolation: isolate;
+}
+.neon-cta::before {
+  content: "";
+  position: absolute;
+  inset: -1.5px;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4d8dff, #9dc0ff, #4d8dff, #9dc0ff);
+  background-size: 300% 100%;
+  animation: neon-slide 3.2s linear infinite;
+}
+.neon-cta::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  z-index: -2;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4d8dff, #9dc0ff, #4d8dff);
+  background-size: 300% 100%;
+  filter: blur(10px);
+  animation: neon-slide 3.2s linear infinite, neon-breathe 3s ease-in-out infinite;
+}

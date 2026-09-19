@@ -1,12 +1,28 @@
 // The 3D UBI for the hero. Lazy-loaded (three lives in its own chunk) and only mounted when WebGL exists.
-// Mirrors the desktop app's Ubi3d: GLTFLoader + Draco decoder (three's own copy, bundled as hashed assets), RoomEnvironment IBL, a key light, a volt
-// fill from below, normalised to FIT units with the feet on y = 0, slow turn, pointer parallax and a blink on
-// emissive materials. Stops rendering when off screen or when the tab is hidden.
-import { useEffect, useRef } from 'react';
+// Same rig as the desktop app (./ubi-rig.ts, copied from apps/desktop): the glTF carries the Idle/Wave/Yes/Jump/
+// Excited clips and a Head/Neck skeleton, so an AnimationMixer drives the body while a procedural look-at is
+// layered on the head. The mascot follows the pointer, glances at the speech bubble and plays a one-shot now and
+// then. Stops rendering when off screen or when the tab is hidden.
+import { useEffect, useRef, type RefObject } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import {
+  BODY_MOTION_WITH_RIG,
+  CLIPS,
+  Cooldown,
+  GlanceScheduler,
+  REST_LOOK,
+  Rig,
+  easeLook,
+  lookAtBubble,
+  lookAtPoint,
+  resolveLook,
+  tapClipFor,
+  type Look,
+  type Mood,
+} from './ubi-rig';
 
 const BASE = import.meta.env.BASE_URL;
 const GLB_URL = `${BASE}ubi/Ubi.glb`;
@@ -14,8 +30,18 @@ const FIT = 2.4;
 const GLOW = '#4d8dff';
 const EMISSIVE_RE = /eye|visor|crest|glow|emiss/i;
 
+/** Moods the landing page cycles through; the negative ones belong in the app, not in a hero. */
+const MOODS: Mood[] = ['calm', 'focused', 'excited'];
+/** Seconds between mood changes and between the idle one-shots. */
+const MOOD_EVERY = 18;
+const ONE_SHOT_EVERY = 11;
+/** One-shots that read as friendly on a landing page. */
+const IDLE_ONE_SHOTS: string[] = [CLIPS.wave, CLIPS.yes, CLIPS.jump, CLIPS.excited];
+
 type EmissiveMaterial = THREE.Material & { emissive: THREE.Color; emissiveIntensity: number };
 const hasEmissive = (m: THREE.Material): m is EmissiveMaterial => 'emissive' in m && (m as EmissiveMaterial).emissive instanceof THREE.Color;
+
+const pick = <T,>(list: readonly T[]): T => list[Math.floor(Math.random() * list.length)] as T;
 
 function normalise(gltf: Pick<GLTF, 'scene'>): { object: THREE.Object3D; emissives: EmissiveMaterial[] } {
   const object = gltf.scene;
@@ -48,16 +74,23 @@ function normalise(gltf: Pick<GLTF, 'scene'>): { object: THREE.Object3D; emissiv
 }
 
 export interface UbiHero3dProps {
-  /** Reduced motion or the capture mode: one static frame, no turn, no float. */
+  /** Capture mode: one static frame, no clips, no look-at. */
   still: boolean;
+  /** Text currently in the speech bubble; a change makes the mascot glance at it (and nod). */
+  speech?: string;
+  /** The bubble element, so the glance aims at where it actually is. */
+  bubbleRef?: RefObject<HTMLElement | null>;
   onReady: () => void;
   onError: () => void;
 }
 
-export default function UbiHero3d({ still, onReady, onError }: UbiHero3dProps) {
+export default function UbiHero3d({ still, speech, bubbleRef, onReady, onError }: UbiHero3dProps) {
   const host = useRef<HTMLDivElement>(null);
   const cb = useRef({ onReady, onError });
   cb.current = { onReady, onError };
+  // read by the render loop without re-running the effect
+  const live = useRef({ speech, bubbleRef });
+  live.current = { speech, bubbleRef };
 
   useEffect(() => {
     const el = host.current;
@@ -117,16 +150,26 @@ export default function UbiHero3d({ still, onReady, onError }: UbiHero3dProps) {
     });
     ro.observe(el);
 
-    const pointer = { x: 0, y: 0 };
-    const eased = { yaw: 0, pitch: 0 };
+    // pointer in viewport coordinates, so the look-at can aim at it from where the head is drawn
+    const pointer = { x: 0, y: 0, seen: false };
     const onMove = (e: PointerEvent) => {
       if (still) return;
-      pointer.x = (e.clientX / window.innerWidth - 0.5) * 2;
-      pointer.y = (e.clientY / window.innerHeight - 0.5) * 2;
+      pointer.x = e.clientX;
+      pointer.y = e.clientY;
+      pointer.seen = true;
     };
     window.addEventListener('pointermove', onMove, { passive: true });
 
+    let rig: Rig | null = null;
     let emissives: EmissiveMaterial[] = [];
+    let mood: Mood = 'calm';
+    let moodAt = 0;
+    let shotAt = 0;
+    const eased: Look = { ...REST_LOOK };
+    const glances = new GlanceScheduler();
+    const nod = new Cooldown(6);
+    let lastSpeech = live.current.speech;
+
     const timer = new THREE.Timer();
 
     const frame = (now?: number) => {
@@ -135,11 +178,46 @@ export default function UbiHero3d({ still, onReady, onError }: UbiHero3dProps) {
       timer.update(now);
       const dt = Math.min(timer.getDelta(), 0.05);
       const t = timer.getElapsed();
+
       if (!still) {
-        eased.yaw = THREE.MathUtils.damp(eased.yaw, pointer.x * 0.28, 5, dt);
-        eased.pitch = THREE.MathUtils.damp(eased.pitch, pointer.y * 0.12, 5, dt);
-        group.rotation.set(eased.pitch + Math.sin(t * 0.45) * 0.03, Math.sin(t * 0.32) * 0.42 + eased.yaw, Math.sin(t * 0.6) * 0.015);
-        group.position.y = Math.sin((t * Math.PI * 2) / 4.2) * 0.07;
+        // the clips drive the body; the group only adds a slow drift on top of them
+        const amp = rig?.rigged ? BODY_MOTION_WITH_RIG : 1;
+        group.rotation.set(Math.sin(t * 0.45) * 0.03 * amp, Math.sin(t * 0.32) * 0.42 * amp, Math.sin(t * 0.6) * 0.015 * amp);
+        group.position.y = Math.sin((t * Math.PI * 2) / 4.2) * 0.07 * amp;
+
+        if (rig) {
+          // a new bubble text: glance at it and, at most once every few seconds, nod
+          const speechNow = live.current.speech;
+          if (speechNow !== lastSpeech) {
+            lastSpeech = speechNow;
+            if (speechNow) {
+              glances.speech(t);
+              if (nod.take(t)) rig.playOnce(CLIPS.yes);
+            }
+          }
+          // mood changes and idle one-shots keep it alive while nobody interacts
+          if (t - moodAt > MOOD_EVERY) {
+            moodAt = t;
+            mood = pick(MOODS);
+            rig.setMood(mood);
+          }
+          if (t - shotAt > ONE_SHOT_EVERY && !rig.busy) {
+            shotAt = t;
+            rig.playOnce(pick(IDLE_ONE_SHOTS));
+          }
+
+          rig.update(dt);
+
+          const box = el.getBoundingClientRect();
+          const bubble = live.current.bubbleRef?.current?.getBoundingClientRect() ?? null;
+          const glancing = glances.active(t, Boolean(bubble && live.current.speech));
+          const target = resolveLook(
+            glancing && bubble ? lookAtBubble(box, box.width, bubble) : null,
+            pointer.seen ? lookAtPoint(box, box.width, pointer.x, pointer.y) : null,
+          );
+          rig.look(easeLook(eased, target, dt));
+        }
+
         if (emissives.length) {
           const ph = t % 4.6;
           const k = ph < 0.16 ? 1 - Math.sin((ph / 0.16) * Math.PI) * 0.85 : 1;
@@ -152,6 +230,12 @@ export default function UbiHero3d({ still, onReady, onError }: UbiHero3dProps) {
     const kick = () => {
       if (!raf && !disposed) raf = requestAnimationFrame(frame);
     };
+    const onTap = () => {
+      if (still || !rig) return;
+      rig.playOnce(tapClipFor(mood));
+      kick();
+    };
+    el.addEventListener('pointerdown', onTap);
 
     const io = new IntersectionObserver((entries) => {
       active = entries.some((e) => e.isIntersecting);
@@ -177,6 +261,9 @@ export default function UbiHero3d({ still, onReady, onError }: UbiHero3dProps) {
         emissives = n.emissives;
         for (const m of emissives) m.emissiveIntensity = 1.1;
         group.add(n.object);
+        rig = new Rig(n.object, gltf.animations ?? []);
+        rig.attach();
+        rig.setMood(mood, still);
         if (still) group.rotation.set(0, -0.18, 0);
         renderer.render(scene, camera);
         cb.current.onReady();
@@ -194,7 +281,9 @@ export default function UbiHero3d({ still, onReady, onError }: UbiHero3dProps) {
       ro.disconnect();
       io.disconnect();
       window.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerdown', onTap);
       document.removeEventListener('visibilitychange', onVis);
+      rig?.detach();
       timer.dispose();
       draco.dispose();
       env.dispose();

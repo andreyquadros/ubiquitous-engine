@@ -4,6 +4,7 @@ import { ButtonLink } from '../components/Button';
 import { cx } from '../components/cx';
 import { LangToggle } from '../components/LangToggle';
 import { LogoMark } from '../components/LogoMark';
+import { detectOs, DEFAULT_OS, type Os } from '../components/os';
 import { DOWNLOAD_URLS } from '../config';
 import { useCopy } from '../i18n';
 
@@ -35,7 +36,9 @@ export function Nav() {
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
-  const cta = DOWNLOAD_URLS.macos || '#baixar';
+  const [os, setOs] = useState<Os>(DEFAULT_OS);
+  useEffect(() => setOs(detectOs()), []);
+  const cta = DOWNLOAD_URLS[os] || '#baixar';
 
   return (
     <header className={cx('sticky top-0 z-50 transition-colors', scrolled || open ? 'border-b border-line bg-canvas/85 backdrop-blur-md' : 'bg-transparent')}>
@@ -58,7 +61,7 @@ export function Nav() {
         <div className="hidden items-center gap-3 lg:flex">
           <LangToggle />
           <ButtonLink href={cta} icon={<Download size={16} strokeWidth={1.75} aria-hidden="true" />}>
-            {copy.nav.cta}
+            {copy.downloadFor[os]}
           </ButtonLink>
         </div>
         <div className="flex items-center gap-2 lg:hidden">
@@ -87,7 +90,7 @@ export function Nav() {
             ))}
           </ul>
           <ButtonLink href={cta} className="w-full" size="lg" icon={<Download size={16} strokeWidth={1.75} aria-hidden="true" />} onClick={() => setOpen(false)}>
-            {copy.nav.cta}
+            {copy.downloadFor[os]}
           </ButtonLink>
         </div>
       )}
