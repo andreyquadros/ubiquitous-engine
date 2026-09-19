@@ -67,13 +67,21 @@ OPS_COMMAND='export UBIQX_HOST=ubi.mvk1.cloud; bash /opt/ubiqx/site/deploy.sh' i
 
 ## Como o script acha a rede e o certificado
 
-O container precisa estar numa rede em que o **Traefik** também esteja — senão ele não
-alcança a página e o hostname responde 404. Esse nome muda de instalação para instalação
-(`dokploy-network` numa, `<projeto>_default` noutra), então `deploy.sh` não chuta: acha o
-container do Traefik, lê as redes dele e escolhe uma (preferindo a que tenha `dokploy` no
-nome). O certresolver sai do mesmo lugar, dos argumentos do Traefik, caindo em
-`letsencrypt` quando não dá para saber.
+Para o Traefik alcançar a página, os dois precisam se enxergar — senão o hostname responde
+404. Há dois arranjos, e `deploy.sh` descobre qual é perguntando ao próprio Traefik em vez
+de chutar um nome:
 
-Se a escolha sair errada, `UBIQX_NETWORK=<nome>` decide. O log de cada execução imprime as
-redes encontradas e a escolhida, e um nome inexistente lista as redes da máquina antes de
-parar.
+* **Traefik numa rede Docker** (`dokploy-network`, `<projeto>_default`…) — o container entra
+  na mesma rede e recebe a label `traefik.docker.network`, que diz de qual IP falar.
+* **Traefik em modo host** (o caso da VPS de hoje) — ele enxerga qualquer container pelo IP,
+  então a bridge padrão basta e a label não deve existir; ela faria o Traefik procurar um IP
+  numa rede que ele não tem.
+
+O certresolver sai do mesmo lugar, dos argumentos do Traefik, caindo em `letsencrypt` quando
+não dá para saber.
+
+Se a escolha sair errada, `UBIQX_NETWORK=<nome>` decide. Cada execução imprime o Traefik
+encontrado, o modo de rede dele, seus *providers* e a rede escolhida; um nome inexistente
+lista as redes da máquina antes de parar. No fim, o script confere a página **de onde o
+Traefik está** — de dentro da rede dele, ou do próprio host quando ele é host — e avisa se
+não vier `200`, que é o sinal de que o Traefik também não vai alcançar.

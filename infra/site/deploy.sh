@@ -23,9 +23,13 @@ RESOLVER="$(docker inspect "${TRAEFIK:-traefik}" --format '{{json .Args}}' 2>/de
   | grep -o 'certificatesresolvers\.[A-Za-z0-9_-]*\.acme' | head -1 | cut -d. -f2 || true)"
 RESOLVER="${RESOLVER:-letsencrypt}"
 
-# A rede também: o container precisa estar numa rede em que o Traefik esteja, senão ele não
-# alcança a página. O nome muda de instalação para instalação (dokploy-network numa,
-# <projeto>_default noutra), então perguntamos ao Traefik em vez de fixar um palpite.
+# A rede: para o Traefik alcançar a página, os dois precisam se enxergar. Há dois arranjos,
+# e o nome da rede muda de instalação para instalação, então perguntamos ao Traefik:
+#
+#   * Traefik numa rede Docker (dokploy-network, <projeto>_default…) — entramos nela também;
+#   * Traefik em modo host (o caso desta VPS) — ele enxerga qualquer container pelo IP, então
+#     a bridge padrão basta e a label traefik.docker.network não deve ser usada.
+MODE="$(docker inspect "${TRAEFIK:-traefik}" --format '{{.HostConfig.NetworkMode}}' 2>/dev/null || true)"
 NETS=""
 if [ -n "$TRAEFIK" ]; then
   NETS="$(docker inspect "$TRAEFIK" \
@@ -37,26 +41,33 @@ if [ -n "${UBIQX_NETWORK:-}" ]; then
 else
   NET="$(printf '%s\n' "$NETS" | grep -m1 dokploy || true)"
   [ -n "$NET" ] || NET="$(printf '%s\n' "$NETS" | grep -m1 . || true)"
-  [ -n "$NET" ] || NET=dokploy-network
 fi
 
-echo "[ubiqx] host=$HOST certresolver=$RESOLVER traefik=${TRAEFIK:-não encontrado}"
-echo "[ubiqx] redes do Traefik: $(printf '%s' "$NETS" | tr '\n' ' ')| escolhida: $NET"
+PROVIDERS="$(docker inspect "${TRAEFIK:-traefik}" --format '{{json .Args}}' 2>/dev/null \
+  | grep -oE '\-\-providers\.[a-z]+' | sort -u | tr '\n' ' ' || true)"
+echo "[ubiqx] host=$HOST certresolver=$RESOLVER"
+echo "[ubiqx] traefik=${TRAEFIK:-não encontrado} modo-de-rede=${MODE:-?} providers=${PROVIDERS:-?}"
+echo "[ubiqx] redes do traefik: $(printf '%s' "$NETS" | tr '\n' ' ')| escolhida: ${NET:-bridge padrão}"
 
-docker network inspect "$NET" >/dev/null 2>&1 || {
-  echo "a rede '$NET' não existe nesta VPS." >&2
-  echo "redes disponíveis:" >&2
-  docker network ls --format '  {{.Name}}' >&2
-  echo "escolha uma com UBIQX_NETWORK=<nome> (precisa ser uma em que o Traefik esteja)." >&2
-  exit 2
-}
+NET_ARGS=()
+if [ -n "$NET" ]; then
+  docker network inspect "$NET" >/dev/null 2>&1 || {
+    echo "a rede '$NET' não existe nesta VPS." >&2
+    echo "redes disponíveis:" >&2
+    docker network ls --format '  {{.Name}}' >&2
+    echo "escolha uma com UBIQX_NETWORK=<nome> (precisa ser uma em que o Traefik esteja)." >&2
+    exit 2
+  }
+  # Com várias redes em jogo, a label diz ao Traefik de qual IP do container ele deve falar.
+  NET_ARGS=(--network "$NET" -l traefik.docker.network="$NET")
+fi
 
 docker rm -f ubiqx-web >/dev/null 2>&1 || true
-docker run -d --name ubiqx-web --restart unless-stopped --network "$NET" \
+docker run -d --name ubiqx-web --restart unless-stopped \
+  ${NET_ARGS[@]+"${NET_ARGS[@]}"} \
   -v "$DIR/Caddyfile:/etc/caddy/Caddyfile:ro" \
   -v "$DIR/www:/srv/www:ro" \
   -l traefik.enable=true \
-  -l traefik.docker.network="$NET" \
   -l "traefik.http.routers.ubiqx.rule=Host(\`$HOST\`)" \
   -l traefik.http.routers.ubiqx.entrypoints=websecure \
   -l "traefik.http.routers.ubiqx.tls.certresolver=$RESOLVER" \
@@ -65,6 +76,14 @@ docker run -d --name ubiqx-web --restart unless-stopped --network "$NET" \
 
 sleep 3
 docker ps --filter name=ubiqx-web --format '[ubiqx] {{.Names}} {{.Status}}'
-code="$(docker run --rm --network "$NET" curlimages/curl:latest -s -o /dev/null -w '%{http_code}' http://ubiqx-web/ || true)"
-echo "[ubiqx] a página responde $code na rede interna"
+# O teste é feito de onde o Traefik está: na rede dele, ou no próprio host quando ele é host.
+IP="$(docker inspect ubiqx-web --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' | awk '{print $1}')"
+if [ -n "$NET" ]; then
+  code="$(docker run --rm --network "$NET" curlimages/curl:latest -s -o /dev/null -w '%{http_code}' http://ubiqx-web/ || true)"
+  echo "[ubiqx] a página responde $code para quem está em $NET"
+else
+  code="$(docker run --rm --network host curlimages/curl:latest -s -o /dev/null -w '%{http_code}' "http://$IP/" || true)"
+  echo "[ubiqx] a página responde $code em http://$IP/, que é como o Traefik em modo host a alcança"
+fi
+[ "$code" = "200" ] || echo "[ubiqx] atenção: esperava 200 aqui; o Traefik provavelmente também não vai alcançar." >&2
 echo "[ubiqx] pronto. Fora, depende do DNS: $HOST deve apontar para o IP desta VPS (registro A)."
