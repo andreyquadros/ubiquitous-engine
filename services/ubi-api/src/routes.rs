@@ -9,7 +9,7 @@ use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
@@ -62,6 +62,7 @@ impl AppState {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
+        .route("/panel", get(panel))
         .route("/admin/models", get(admin_models))
         .route("/v1/license/status", get(license_status))
         .route("/v1/messages", post(messages))
@@ -536,6 +537,27 @@ struct RevokeBody {
     reason: Option<String>,
 }
 
+/// Rust sums floats from `-0.0`, because that identity keeps the sign of every addend; an empty
+/// ledger therefore totals `-0.0`, which then reaches the panel as "US$ -0.00". Adding zero
+/// settles it without touching any real total.
+fn usd(total: f64) -> f64 {
+    total + 0.0
+}
+
+/// The operator's panel: one file, no build step, no CDN. It carries no data of its own -- every
+/// figure on it comes from the `/admin` routes, which still want the bearer -- but it is only
+/// served at all when an admin token is configured. A service with no way in has no panel.
+async fn panel(State(state): State<AppState>) -> Response {
+    if state.config.admin_token.is_none() {
+        return (
+            StatusCode::NOT_FOUND,
+            "panel disabled: UBI_ADMIN_TOKEN is not set",
+        )
+            .into_response();
+    }
+    Html(include_str!("panel.html")).into_response()
+}
+
 /// A freshly signed key and what it asserts. Writing it to the ledger is the caller's call:
 /// the webhook's duplicate path re-sends a key without recording anything.
 struct SignedLicense {
@@ -689,7 +711,7 @@ async fn admin_subscribers(
                 obj.insert("expired".into(), json!(r.expires_at <= now));
                 obj.insert(
                     "month_cost_usd".into(),
-                    json!(spent.get(&r.sub).copied().unwrap_or(0.0)),
+                    json!(usd(spent.get(&r.sub).copied().unwrap_or(0.0))),
                 );
             }
             v
@@ -736,7 +758,7 @@ async fn admin_stats(
     Ok(Json(json!({
         "stats": stats_of(&rows, now),
         "month": month,
-        "month_cost_usd": usage.iter().map(|u| u.cost_usd).sum::<f64>(),
+        "month_cost_usd": usd(usage.iter().map(|u| u.cost_usd).sum::<f64>()),
         "month_requests": usage.iter().map(|u| u.requests).sum::<u64>(),
         "budget_usd": state.config.monthly_budget_usd,
     })))
@@ -793,7 +815,7 @@ async fn admin_usage(
     Ok(Json(json!({
         "month": month,
         "budget_usd": state.config.monthly_budget_usd,
-        "total_cost_usd": total,
+        "total_cost_usd": usd(total),
         "subscribers": subscribers,
     })))
 }

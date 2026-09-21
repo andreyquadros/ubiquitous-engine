@@ -33,7 +33,7 @@ description (plans, enforcement, payment flow) is in `docs/LICENSING.md` (Portug
 | `UBI_API_LISTEN` | `0.0.0.0:8080` | Bind address. |
 | `UBI_LICENSE_PUBKEY_HEX` | the key compiled into `ubiqx-core` | Ed25519 public key license keys must verify against. Set it only to rotate. |
 | `UBI_LICENSE_PRIVKEY_HEX` | — | Ed25519 private key used by the payment webhook to **issue** keys. Without it `subscription.created/renewed` answer `503`. Secret. |
-| `UBI_ADMIN_TOKEN` | — | Bearer token for `/admin/licenses/revoke`, `/admin/usage` and `/admin/models`. Without it they answer `503`. Secret. |
+| `UBI_ADMIN_TOKEN` | — | Bearer token for every `/admin` route, and what you log into `/panel` with. Without it they answer `503` and the panel answers `404`. Secret. |
 | `UBI_WEBHOOK_SECRET` | — | HMAC-SHA256 secret of `/admin/webhooks/generic`. Without it the webhook answers `503`. Secret. |
 | `UBI_VENDOR` | `anthropic` | Upstream vendor (only `anthropic` today). |
 | `ANTHROPIC_API_KEY` | — | The operator's vendor key. Required. Secret. |
@@ -82,8 +82,30 @@ Every error body is Anthropic-shaped so the app's client reads it unchanged:
 
 | Route | Body / query | Result |
 |---|---|---|
+| `GET /admin/subscribers?q=` | `q` matches the subscriber id, the platform's id, the e-mail hash or the key hint | `{month, count, subscribers:[{sub, plan, email_hash, external_id, key_hint, issued_at, expires_at, events, revoked_at, revoked_reason, expired, month_cost_usd}]}` |
+| `GET /admin/subscribers/{sub}` | — | `{subscriber, expired, licenses:[…every key ever issued…], usage:[{month, requests, cost_usd}], budget_usd}` |
+| `GET /admin/stats` | — | `{stats:{subscribers, active, expired, revoked, expiring_soon, annual, monthly}, month, month_cost_usd, month_requests, budget_usd}` |
+| `POST /admin/licenses/issue` | `{"plan":"monthly_managed","email":"…","months":6,"external_id":null}` | the same shape the webhook returns, key included — courtesy, support, a sale from outside the platform |
 | `POST /admin/licenses/revoke` | `{"sub":"sub_…","reason":"chargeback"}` | `{"sub":…,"revoked":true}` — takes effect on the next call. |
+| `POST /admin/licenses/unrevoke` | `{"sub":"sub_…"}` | `{"sub":…,"revoked":false,"lifted":true}` |
 | `GET /admin/usage?month=YYYY-MM` | month defaults to the current one | `{month, budget_usd, total_cost_usd, subscribers:[{sub, requests, input_tokens, output_tokens, cost_usd}]}` |
+
+`expiring_soon` reads against the plan, not the calendar: seven days for a monthly licence,
+thirty for an annual one. A month is the whole life of a monthly key, so a thirty-day window
+would flag every one of them, for ever.
+
+### Panel — `GET /panel`
+
+The operator's page, served by this service: one HTML file, no build step, no CDN, nothing
+fetched from the network. It lists subscribers with their state and this month's spend, opens
+one to show every key ever issued for it and the spend month by month, and carries the levers —
+issue by hand, revoke, put back. It holds no credential: you paste `UBI_ADMIN_TOKEN` into it,
+it keeps it in `sessionStorage` for the tab, and every figure comes from the `/admin` routes
+above, which still check the bearer. Without `UBI_ADMIN_TOKEN` configured the route answers
+`404`: a service with no way in has no panel.
+
+Serving it from here rather than from the site is deliberate — one deploy, one secret store, no
+CORS, and the private key never leaves the process that already holds it.
 
 ### Payment webhook — `POST /admin/webhooks/generic`
 

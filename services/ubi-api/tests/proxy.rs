@@ -676,6 +676,26 @@ async fn the_platform_event_id_recognises_a_retry_whose_bytes_changed() {
     assert_eq!(h.state.db.license_events(&sub).unwrap(), 2);
 }
 
+/// The panel itself carries no data and no credential: it is a shell that asks the `/admin`
+/// routes for everything, and it is not served at all when there is no way to log into it.
+#[tokio::test]
+async fn the_panel_is_served_only_when_there_is_a_way_in() {
+    let h = Harness::start().await;
+    let resp = h.http.get(h.url("/panel")).send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("Licen\u{e7}as"), "the page rendered");
+    assert!(
+        !body.contains(ADMIN_TOKEN),
+        "no credential is baked into it"
+    );
+    assert!(!body.contains(VENDOR_KEY));
+
+    let h2 = Harness::start_with(|c| c.admin_token = None).await;
+    let resp = h2.http.get(h2.url("/panel")).send().await.unwrap();
+    assert_eq!(resp.status(), 404, "no admin token, no panel");
+}
+
 /// What the panel reads and writes: who the subscribers are, what each one has been issued and
 /// spent, and the operator's own levers -- issue by hand, revoke, put back.
 #[tokio::test]

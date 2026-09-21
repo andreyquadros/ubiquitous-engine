@@ -120,7 +120,9 @@ pub struct Stats {
     pub active: u64,
     pub expired: u64,
     pub revoked: u64,
-    /// Active, but expiring within 30 days -- who to chase.
+    /// Active, but close enough to expiry to be worth chasing. "Close" depends on the plan: a
+    /// month is the whole life of a monthly licence, so thirty days would flag every one of
+    /// them, for ever, and the warning would mean nothing.
     pub expiring_soon: u64,
     pub annual: u64,
     pub monthly: u64,
@@ -393,9 +395,18 @@ fn parse_ts(s: &str) -> DateTime<Utc> {
         .unwrap_or_else(|_| DateTime::<Utc>::UNIX_EPOCH)
 }
 
+/// How long before expiry a licence counts as expiring, by plan. A monthly licence lives about
+/// thirty days, so it is only news in its last week; an annual one is worth chasing a month out.
+pub fn expiring_window_days(plan: &str) -> i64 {
+    if plan == "monthly_managed" {
+        7
+    } else {
+        30
+    }
+}
+
 /// Folds the subscriber list into the panel's header counts.
 pub fn stats_of(rows: &[SubscriberRow], now: DateTime<Utc>) -> Stats {
-    let soon = now + chrono::Duration::days(30);
     let mut s = Stats {
         subscribers: rows.len() as u64,
         ..Default::default()
@@ -412,7 +423,7 @@ pub fn stats_of(rows: &[SubscriberRow], now: DateTime<Utc>) -> Stats {
             s.expired += 1;
         } else {
             s.active += 1;
-            if r.expires_at <= soon {
+            if r.expires_at <= now + chrono::Duration::days(expiring_window_days(&r.plan)) {
                 s.expiring_soon += 1;
             }
         }
@@ -509,6 +520,50 @@ mod tests {
         assert!(db
             .claim_webhook_event("id:evt_1", "s", "created", t0)
             .unwrap());
+    }
+
+    #[test]
+    fn expiring_soon_is_read_against_the_plan_not_the_calendar() {
+        let now = DateTime::parse_from_rfc3339("2026-09-21T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let row = |plan: &str, days: i64| SubscriberRow {
+            sub: format!("{plan}-{days}"),
+            plan: plan.into(),
+            email_hash: "h".into(),
+            external_id: None,
+            key_hint: "ABCD".into(),
+            issued_at: now,
+            expires_at: now + Duration::days(days),
+            events: 1,
+            revoked_at: None,
+            revoked_reason: None,
+        };
+        // A monthly licence 20 days out is simply mid-term; an annual one is worth a nudge.
+        let rows = [
+            row("monthly_managed", 20),
+            row("monthly_managed", 5),
+            row("annual_own_key", 20),
+            row("annual_own_key", 200),
+        ];
+        let s = stats_of(&rows, now);
+        assert_eq!(s.active, 4);
+        assert_eq!(
+            s.expiring_soon, 2,
+            "the 5-day monthly and the 20-day annual"
+        );
+        assert_eq!(s.monthly, 2);
+        assert_eq!(s.annual, 2);
+
+        // Revoked and expired are counted apart from active, and revocation wins.
+        let mut revoked = row("monthly_managed", 5);
+        revoked.revoked_at = Some(now);
+        let past = row("annual_own_key", -1);
+        let s = stats_of(&[revoked, past], now);
+        assert_eq!(
+            (s.active, s.revoked, s.expired, s.expiring_soon),
+            (0, 1, 1, 0)
+        );
     }
 
     #[test]

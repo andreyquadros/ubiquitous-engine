@@ -184,9 +184,21 @@ Passo a passo (exemplo com Mercado Pago):
 3. Envie por e-mail ao cliente o campo `key` da resposta com o link para
    *Configurações › Licença* do app.
 4. Na renovação, repita com `subscription.renewed`; no cancelamento/estorno, `subscription.cancelled`.
-5. Para casos manuais (cortesia, suporte): `ubi-license issue …` no seu computador com a chave
-   privada, ou `POST /admin/licenses/revoke {"sub"}` com o bearer `UBI_ADMIN_TOKEN`.
-6. Acompanhe o consumo com `GET /admin/usage?month=YYYY-MM`.
+5. Para casos manuais (cortesia, suporte): use o painel (abaixo), ou `ubi-license issue …` no seu
+   computador com a chave privada.
+6. Acompanhe o consumo pelo painel ou por `GET /admin/usage?month=YYYY-MM`.
+
+### O painel — `GET /panel`
+
+Servido pelo próprio proxy: uma página, sem build, sem CDN, sem nada buscado na rede. Lista os
+assinantes com estado e gasto do mês, abre um para mostrar todas as chaves já emitidas e o
+consumo mês a mês, e traz as alavancas — emitir à mão, revogar, restaurar. Você entra colando o
+`UBI_ADMIN_TOKEN`; ele fica no `sessionStorage` da aba e some ao fechar. Sem `UBI_ADMIN_TOKEN`
+configurado, a rota responde `404`.
+
+O `external_id` aparece na lista e na busca de propósito: é o id da assinatura na plataforma de
+pagamento, e é por ele que se concilia os dois lados. Quando o Asaas entrar, é esse campo que
+liga um assinante daqui a uma cobrança de lá.
 
 Observações:
 
