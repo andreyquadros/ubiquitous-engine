@@ -526,6 +526,142 @@ async fn admin_routes_need_the_bearer() {
     assert_eq!(resp.status(), 503);
 }
 
+/// Every payment platform retries a delivery it did not see acknowledged. A retry must still
+/// hand the key back -- a delivery that died mid-flight cannot leave a paying customer without
+/// one -- while changing nothing: no second row in the ledger, and above all no reinstatement.
+/// Replaying an old `subscription.created` used to undo a cancellation.
+#[tokio::test]
+async fn a_replayed_delivery_neither_doubles_the_ledger_nor_undoes_a_cancellation() {
+    let h = Harness::start().await;
+    let created = json!({
+        "event": "subscription.created",
+        "plan": "monthly_managed",
+        "email": "cliente@exemplo.com",
+        "months": 1,
+        "external_id": "asaas_sub_9"
+    });
+
+    let v: Value = h
+        .webhook(&created, WEBHOOK_SECRET)
+        .await
+        .json()
+        .await
+        .unwrap();
+    let sub = v["sub"].as_str().unwrap().to_string();
+    assert_eq!(v["duplicate"], false);
+    assert_eq!(h.state.db.license_events(&sub).unwrap(), 1);
+
+    // The same bytes arrive again.
+    let v: Value = h
+        .webhook(&created, WEBHOOK_SECRET)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["duplicate"], true);
+    assert_eq!(v["sub"], sub);
+    let key = v["key"].as_str().unwrap().to_string();
+    assert_eq!(
+        h.post_messages(&key, &Harness::messages_body("ubi-fast", false))
+            .await
+            .status(),
+        200,
+        "the retry still answers with a usable key"
+    );
+    assert_eq!(
+        h.state.db.license_events(&sub).unwrap(),
+        1,
+        "and writes nothing"
+    );
+
+    // Cancelled -- then the original delivery is replayed one more time.
+    h.webhook(
+        &json!({"event": "subscription.cancelled", "external_id": "asaas_sub_9"}),
+        WEBHOOK_SECRET,
+    )
+    .await;
+    assert!(h.state.db.is_revoked(&sub).unwrap());
+    let v: Value = h
+        .webhook(&created, WEBHOOK_SECRET)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["duplicate"], true);
+    assert!(
+        h.state.db.is_revoked(&sub).unwrap(),
+        "a replayed purchase must not reinstate a cancelled subscriber"
+    );
+    assert_eq!(
+        h.post_messages(
+            v["key"].as_str().unwrap(),
+            &Harness::messages_body("ubi-fast", false)
+        )
+        .await
+        .status(),
+        403
+    );
+}
+
+/// When the platform sends its own event id, a retry is recognisable even though the bytes
+/// differ -- which is the case the body hash alone cannot catch.
+#[tokio::test]
+async fn the_platform_event_id_recognises_a_retry_whose_bytes_changed() {
+    let h = Harness::start().await;
+    let first = json!({
+        "event": "subscription.created",
+        "event_id": "evt_1",
+        "plan": "monthly_managed",
+        "email": "c@e.com",
+        "months": 1,
+        "external_id": "asaas_sub_1"
+    });
+    let again = json!({
+        "event": "subscription.created",
+        "event_id": "evt_1",
+        "plan": "monthly_managed",
+        "email": "c@e.com",
+        "months": 1,
+        "external_id": "asaas_sub_1",
+        "attempt": 2
+    });
+    let v: Value = h
+        .webhook(&first, WEBHOOK_SECRET)
+        .await
+        .json()
+        .await
+        .unwrap();
+    let sub = v["sub"].as_str().unwrap().to_string();
+    assert_eq!(v["duplicate"], false);
+
+    let v: Value = h
+        .webhook(&again, WEBHOOK_SECRET)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["duplicate"], true, "same event id, different bytes");
+    assert_eq!(h.state.db.license_events(&sub).unwrap(), 1);
+
+    // A genuinely different event on the same subscriber still applies.
+    let renewed = json!({
+        "event": "subscription.renewed",
+        "event_id": "evt_2",
+        "plan": "monthly_managed",
+        "email": "c@e.com",
+        "months": 1,
+        "external_id": "asaas_sub_1"
+    });
+    let v: Value = h
+        .webhook(&renewed, WEBHOOK_SECRET)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["duplicate"], false);
+    assert_eq!(h.state.db.license_events(&sub).unwrap(), 2);
+}
+
 #[tokio::test]
 async fn webhook_issues_renews_and_revokes() {
     let h = Harness::start().await;

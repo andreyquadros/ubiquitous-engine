@@ -41,6 +41,16 @@ CREATE TABLE IF NOT EXISTS licenses (
     expires_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS licenses_sub ON licenses(sub);
+-- Every payment platform retries a webhook it did not see acknowledged, so the same event
+-- arrives more than once. Without this table a retry issued a second recorded licence and,
+-- worse, reinstated a subscriber who had been cancelled in between.
+CREATE TABLE IF NOT EXISTS webhook_events (
+    dedup_key TEXT PRIMARY KEY,
+    sub       TEXT NOT NULL,
+    event     TEXT NOT NULL,
+    at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS webhook_events_at ON webhook_events(at);
 "#;
 
 /// `YYYY-MM` in UTC: the accounting period of the managed plan.
@@ -216,6 +226,39 @@ impl Db {
         })
     }
 
+    /// Claims `dedup_key` for this delivery: `true` the first time it is seen, `false` when the
+    /// platform is retrying one we already acted on. The insert is the claim, so two concurrent
+    /// deliveries of the same event cannot both win.
+    pub fn claim_webhook_event(
+        &self,
+        dedup_key: &str,
+        sub: &str,
+        event: &str,
+        at: DateTime<Utc>,
+    ) -> Result<bool> {
+        self.with(|c| {
+            c.execute(
+                "INSERT OR IGNORE INTO webhook_events (dedup_key, sub, event, at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![dedup_key, sub, event, at.to_rfc3339()],
+            )
+            .map(|n| n > 0)
+        })
+    }
+
+    /// Drops claims older than `before`, so the table cannot grow without bound. A platform
+    /// that retries later than this will be treated as a fresh event, which is the safe way
+    /// round: a duplicate licence beats a customer with none.
+    pub fn prune_webhook_events(&self, before: DateTime<Utc>) -> Result<u64> {
+        self.with(|c| {
+            c.execute(
+                "DELETE FROM webhook_events WHERE at < ?1",
+                params![before.to_rfc3339()],
+            )
+            .map(|n| n as u64)
+        })
+    }
+
     /// Number of issuance events recorded for `sub` (tests, admin listing).
     pub fn license_events(&self, sub: &str) -> Result<u64> {
         self.with(|c| {
@@ -232,6 +275,7 @@ impl Db {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Duration;
 
     fn row(sub: &str, cost: f64, at: DateTime<Utc>) -> UsageRow {
         UsageRow {
@@ -285,6 +329,38 @@ mod tests {
         assert_eq!(by_sub[0].input_tokens, 26);
         assert_eq!(by_sub[0].output_tokens, 10);
         assert_eq!(by_sub[1].sub, "b");
+    }
+
+    #[test]
+    fn a_delivery_is_claimed_once_and_the_claim_expires() {
+        let db = Db::open(":memory:").unwrap();
+        let t0 = DateTime::parse_from_rfc3339("2026-09-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!(db
+            .claim_webhook_event("id:evt_1", "s", "created", t0)
+            .unwrap());
+        assert!(
+            !db.claim_webhook_event("id:evt_1", "s", "created", t0)
+                .unwrap(),
+            "the second delivery of the same event loses"
+        );
+        assert!(
+            db.claim_webhook_event("id:evt_2", "s", "renewed", t0)
+                .unwrap(),
+            "a different event on the same subscriber still wins"
+        );
+
+        // Past the window the claim is gone, so a late retry counts as new -- a duplicate
+        // licence is a nuisance, a customer left without one is a refund.
+        assert_eq!(db.prune_webhook_events(t0).unwrap(), 0);
+        assert_eq!(
+            db.prune_webhook_events(t0 + Duration::seconds(1)).unwrap(),
+            2
+        );
+        assert!(db
+            .claim_webhook_event("id:evt_1", "s", "created", t0)
+            .unwrap());
     }
 
     #[test]

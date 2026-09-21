@@ -144,11 +144,30 @@ assinatura muda (diretamente ou por uma automação — Make, Zapier, n8n — qu
 plataforma para este corpo):
 
 ```json
-{ "event": "subscription.created", "plan": "monthly_managed",
+{ "event": "subscription.created", "event_id": "evt_abc", "plan": "monthly_managed",
   "email": "cliente@exemplo.com", "months": 1, "external_id": "mp_sub_123" }
 ```
 
 Cabeçalho `x-ubi-signature` = HMAC-SHA256 (hex) do **corpo bruto** com `UBI_WEBHOOK_SECRET`.
+
+`external_id` é o id da assinatura **na plataforma** — é dele que sai o `sub`, de forma
+determinística, então renovação e revogação da mesma assinatura sempre caem no mesmo assinante.
+Guarde-o: é por ele que se concilia o painel com a plataforma.
+
+### Reentrega
+
+Toda plataforma reenvia um evento que não viu confirmado. O proxy trata isso: a chave de dedupe
+é o `event_id` quando existe (Asaas, Stripe e Mercado Pago mandam um) e, na falta dele, o
+SHA-256 do corpo bruto. Uma reentrega:
+
+* **devolve a chave de novo** — uma entrega que morreu no meio não pode deixar o cliente sem
+  licença — e marca `"duplicate": true` na resposta;
+* **não grava** segunda emissão no livro-razão;
+* **não reinstala** assinante cancelado. Sem isso, reenviar um `subscription.created` antigo
+  desfazia um cancelamento.
+
+A janela é de 7 dias (`WEBHOOK_DEDUP_WINDOW_DAYS`); passado esse prazo o mesmo evento conta como
+novo, porque licença duplicada é aborrecimento e cliente sem licença é reembolso.
 
 | Evento | O proxy… | Devolve |
 |---|---|---|

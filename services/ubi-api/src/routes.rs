@@ -16,7 +16,7 @@ use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use tracing::{info, warn};
 use ubiqx_core::license::{
     self, key_hint, LicenseClaims, Plan, HEADER_UBIQX_COST_USD, HEADER_UBIQX_PLAN,
@@ -605,6 +605,11 @@ pub enum WebhookEvent {
 #[derive(Debug, Deserialize)]
 pub struct WebhookBody {
     pub event: WebhookEvent,
+    /// The platform's own id for this delivery, when it has one (Asaas, Stripe and Mercado
+    /// Pago all do). It is what makes a retry recognisable; without it we fall back to the
+    /// body's hash, which catches an identical retry but not a resend with a new timestamp.
+    #[serde(default)]
+    pub event_id: Option<String>,
     #[serde(default)]
     pub plan: Option<String>,
     #[serde(default)]
@@ -613,6 +618,19 @@ pub struct WebhookBody {
     pub months: Option<u32>,
     #[serde(default)]
     pub external_id: Option<String>,
+}
+
+/// How long a delivery stays recognisable as a retry. Beyond it the same event is treated as
+/// new: a duplicate licence is a nuisance, a customer left without one is a refund.
+pub const WEBHOOK_DEDUP_WINDOW_DAYS: i64 = 7;
+
+/// What identifies this delivery for de-duplication: the platform's event id when it sent one,
+/// otherwise the hash of the exact bytes it signed.
+fn dedup_key(event_id: Option<&str>, body: &[u8]) -> String {
+    match event_id.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(id) => format!("id:{id}"),
+        None => format!("body:{}", issue::hex_encode(&Sha256::digest(body))),
+    }
 }
 
 /// Checks `x-ubi-signature` (hex HMAC-SHA256 of the raw body, optional `sha256=` prefix).
@@ -675,6 +693,10 @@ async fn webhook_generic(
     let event: WebhookBody = serde_json::from_slice(&body)
         .map_err(|e| ApiError::bad_request(format!("webhook body: {e}")))?;
     let now = Utc::now();
+    let dedup = dedup_key(event.event_id.as_deref(), &body);
+    state
+        .db
+        .prune_webhook_events(now - chrono::Duration::days(WEBHOOK_DEDUP_WINDOW_DAYS))?;
 
     let email_hash = event
         .email
@@ -689,10 +711,18 @@ async fn webhook_generic(
             else {
                 return Err(ApiError::bad_request("external_id or email is required"));
             };
-            state.db.revoke(&sub, Some("subscription.cancelled"), now)?;
-            info!(%sub, "subscription cancelled: license revoked");
+            let first =
+                state
+                    .db
+                    .claim_webhook_event(&dedup, &sub, "subscription.cancelled", now)?;
+            if first {
+                state.db.revoke(&sub, Some("subscription.cancelled"), now)?;
+                info!(%sub, "subscription cancelled: license revoked");
+            } else {
+                info!(%sub, "duplicate cancellation delivery ignored");
+            }
             Ok(Json(
-                json!({ "event": event.event, "sub": sub, "revoked": true }),
+                json!({ "event": event.event, "sub": sub, "revoked": true, "duplicate": !first }),
             ))
         }
         WebhookEvent::SubscriptionCreated | WebhookEvent::SubscriptionRenewed => {
@@ -718,6 +748,34 @@ async fn webhook_generic(
             let claims = issue::claims_for(plan, sub.clone(), email_hash.clone(), months, now)
                 .map_err(|e| ApiError::bad_request(e.to_string()))?;
             let key = issue::issue(&claims, &signing_key);
+            // A retry still gets its key back -- a delivery that failed mid-flight must not
+            // leave a paying customer without one -- but it changes no state: no second row in
+            // the ledger, and above all no reinstatement. Replaying an old `subscription.created`
+            // was enough to undo a cancellation.
+            let first = state.db.claim_webhook_event(
+                &dedup,
+                &sub,
+                serde_json::to_value(event.event)
+                    .ok()
+                    .and_then(|v| v.as_str().map(String::from))
+                    .unwrap_or_default()
+                    .as_str(),
+                now,
+            )?;
+            if !first {
+                info!(%sub, plan = plan.id(), "duplicate issuance delivery: key re-sent, ledger untouched");
+                return Ok(Json(json!({
+                    "event": event.event,
+                    "sub": sub,
+                    "plan": plan,
+                    "email_hash": email_hash,
+                    "months": months,
+                    "expires_at": claims.expires_at_utc().to_rfc3339(),
+                    "key_hint": key_hint(&key),
+                    "key": key,
+                    "duplicate": true,
+                })));
+            }
             // A renewal (or a re-purchase) reinstates a cancelled subscriber.
             state.db.unrevoke(&sub)?;
             state.db.record_license(&IssuedLicense {
@@ -743,6 +801,7 @@ async fn webhook_generic(
                 "expires_at": claims.expires_at_utc().to_rfc3339(),
                 "key_hint": key_hint(&key),
                 "key": key,
+                "duplicate": false,
             })))
         }
     }
