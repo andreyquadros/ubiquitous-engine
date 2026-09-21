@@ -85,7 +85,48 @@ pub struct SubscriberUsage {
     pub cost_usd: f64,
 }
 
-#[derive(Debug, Clone)]
+/// One subscriber as the panel lists them: the latest issuance, plus whether they are revoked.
+/// `email_hash` is all there is -- the address itself never reaches this service.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct SubscriberRow {
+    pub sub: String,
+    pub plan: String,
+    pub email_hash: String,
+    /// The subscription's id on the payment platform, for reconciling the two sides.
+    pub external_id: Option<String>,
+    pub key_hint: String,
+    pub issued_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    /// How many times a key was issued for this subscriber (first sale plus renewals).
+    pub events: u64,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub revoked_reason: Option<String>,
+}
+
+/// What one subscriber spent in one month.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct MonthUsage {
+    pub month: String,
+    pub requests: u64,
+    pub cost_usd: f64,
+}
+
+/// Counts for the panel's header. Cheap to compute in Rust over the subscriber list: this is a
+/// single-operator product, not a data warehouse.
+#[derive(Debug, Clone, Serialize, PartialEq, Default)]
+pub struct Stats {
+    pub subscribers: u64,
+    /// Neither revoked nor past `expires_at`.
+    pub active: u64,
+    pub expired: u64,
+    pub revoked: u64,
+    /// Active, but expiring within 30 days -- who to chase.
+    pub expiring_soon: u64,
+    pub annual: u64,
+    pub monthly: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct IssuedLicense {
     pub sub: String,
     pub plan: String,
@@ -259,6 +300,78 @@ impl Db {
         })
     }
 
+    /// Every subscriber, newest issuance first: the latest row per `sub`, joined with the
+    /// revocation list.
+    pub fn list_subscribers(&self) -> Result<Vec<SubscriberRow>> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT l.sub, l.plan, l.email_hash, l.external_id, l.key_hint, l.issued_at,
+                        l.expires_at, (SELECT COUNT(*) FROM licenses WHERE sub = l.sub),
+                        r.at, r.reason
+                 FROM licenses l
+                 JOIN (SELECT sub, MAX(id) AS id FROM licenses GROUP BY sub) last ON last.id = l.id
+                 LEFT JOIN revoked r ON r.sub = l.sub
+                 ORDER BY l.issued_at DESC, l.sub",
+            )?;
+            let rows = stmt.query_map([], |r| {
+                Ok(SubscriberRow {
+                    sub: r.get(0)?,
+                    plan: r.get(1)?,
+                    email_hash: r.get(2)?,
+                    external_id: r.get(3)?,
+                    key_hint: r.get(4)?,
+                    issued_at: parse_ts(&r.get::<_, String>(5)?),
+                    expires_at: parse_ts(&r.get::<_, String>(6)?),
+                    events: r.get::<_, i64>(7)? as u64,
+                    revoked_at: r.get::<_, Option<String>>(8)?.map(|s| parse_ts(&s)),
+                    revoked_reason: r.get(9)?,
+                })
+            })?;
+            rows.collect()
+        })
+    }
+
+    /// Every key ever issued for `sub`, newest first.
+    pub fn licenses_of(&self, sub: &str) -> Result<Vec<IssuedLicense>> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT sub, plan, email_hash, external_id, event, key_hint, issued_at, expires_at
+                 FROM licenses WHERE sub = ?1 ORDER BY id DESC",
+            )?;
+            let rows = stmt.query_map(params![sub], |r| {
+                Ok(IssuedLicense {
+                    sub: r.get(0)?,
+                    plan: r.get(1)?,
+                    email_hash: r.get(2)?,
+                    external_id: r.get(3)?,
+                    event: r.get(4)?,
+                    key_hint: r.get(5)?,
+                    issued_at: parse_ts(&r.get::<_, String>(6)?),
+                    expires_at: parse_ts(&r.get::<_, String>(7)?),
+                })
+            })?;
+            rows.collect()
+        })
+    }
+
+    /// What `sub` spent, month by month, newest first.
+    pub fn usage_of(&self, sub: &str) -> Result<Vec<MonthUsage>> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT month, COUNT(*), COALESCE(SUM(cost_usd), 0.0)
+                 FROM usage WHERE sub = ?1 GROUP BY month ORDER BY month DESC",
+            )?;
+            let rows = stmt.query_map(params![sub], |r| {
+                Ok(MonthUsage {
+                    month: r.get(0)?,
+                    requests: r.get::<_, i64>(1)? as u64,
+                    cost_usd: r.get(2)?,
+                })
+            })?;
+            rows.collect()
+        })
+    }
+
     /// Number of issuance events recorded for `sub` (tests, admin listing).
     pub fn license_events(&self, sub: &str) -> Result<u64> {
         self.with(|c| {
@@ -270,6 +383,41 @@ impl Db {
             .map(|n| n as u64)
         })
     }
+}
+
+/// Timestamps are written with `to_rfc3339` and only ever read back here; a row that somehow
+/// is not parseable dates to the epoch rather than failing the whole listing.
+fn parse_ts(s: &str) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(s)
+        .map(|d| d.with_timezone(&Utc))
+        .unwrap_or_else(|_| DateTime::<Utc>::UNIX_EPOCH)
+}
+
+/// Folds the subscriber list into the panel's header counts.
+pub fn stats_of(rows: &[SubscriberRow], now: DateTime<Utc>) -> Stats {
+    let soon = now + chrono::Duration::days(30);
+    let mut s = Stats {
+        subscribers: rows.len() as u64,
+        ..Default::default()
+    };
+    for r in rows {
+        match r.plan.as_str() {
+            "annual_own_key" => s.annual += 1,
+            "monthly_managed" => s.monthly += 1,
+            _ => {}
+        }
+        if r.revoked_at.is_some() {
+            s.revoked += 1;
+        } else if r.expires_at <= now {
+            s.expired += 1;
+        } else {
+            s.active += 1;
+            if r.expires_at <= soon {
+                s.expiring_soon += 1;
+            }
+        }
+    }
+    s
 }
 
 #[cfg(test)]

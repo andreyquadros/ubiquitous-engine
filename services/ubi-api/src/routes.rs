@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use axum::body::{Body, Bytes};
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -23,7 +23,7 @@ use ubiqx_core::license::{
 };
 
 use crate::config::{Config, ANTHROPIC_VERSION};
-use crate::db::{is_month, month_of, Db, IssuedLicense, UsageRow};
+use crate::db::{is_month, month_of, stats_of, Db, IssuedLicense, UsageRow};
 use crate::issue;
 use crate::sse::{usage_from_message, StreamUsage, UsageTap};
 
@@ -66,6 +66,11 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/license/status", get(license_status))
         .route("/v1/messages", post(messages))
         .route("/admin/licenses/revoke", post(admin_revoke))
+        .route("/admin/licenses/unrevoke", post(admin_unrevoke))
+        .route("/admin/licenses/issue", post(admin_issue))
+        .route("/admin/subscribers", get(admin_subscribers))
+        .route("/admin/subscribers/:sub", get(admin_subscriber))
+        .route("/admin/stats", get(admin_stats))
         .route("/admin/usage", get(admin_usage))
         .route("/admin/webhooks/generic", post(webhook_generic))
         .with_state(state)
@@ -531,6 +536,212 @@ struct RevokeBody {
     reason: Option<String>,
 }
 
+/// A freshly signed key and what it asserts. Writing it to the ledger is the caller's call:
+/// the webhook's duplicate path re-sends a key without recording anything.
+struct SignedLicense {
+    sub: String,
+    key: String,
+    claims: license::LicenseClaims,
+}
+
+/// Signs a licence for these terms. The only place that turns a sale into a key, so the webhook
+/// and the panel cannot drift apart on months, `sub` derivation or claim shape.
+fn sign_license(
+    state: &AppState,
+    plan: Plan,
+    email_hash: &str,
+    months: u32,
+    external_id: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<SignedLicense, ApiError> {
+    let Some(privkey) = state.config.license_privkey_hex.as_deref() else {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "issuing_disabled",
+            "UBI_LICENSE_PRIVKEY_HEX is not configured",
+        ));
+    };
+    let signing_key = issue::signing_key_from_hex(privkey).map_err(ApiError::internal)?;
+    let sub = issue::derive_sub(external_id, email_hash);
+    let claims = issue::claims_for(plan, sub.clone(), email_hash.to_string(), months, now)
+        .map_err(|e| ApiError::bad_request(e.to_string()))?;
+    let key = issue::issue(&claims, &signing_key);
+    Ok(SignedLicense { sub, key, claims })
+}
+
+#[derive(Debug, Deserialize)]
+struct IssueBody {
+    plan: String,
+    email: String,
+    #[serde(default)]
+    months: Option<u32>,
+    #[serde(default)]
+    external_id: Option<String>,
+}
+
+/// Issues a key by hand: courtesy, support, a sale that came in outside the platform. It is a
+/// real issuance -- it lands in the ledger like any other, and lifts a revocation, because the
+/// operator asking for it is the decision.
+async fn admin_issue(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<IssueBody>,
+) -> Result<Json<Value>, ApiError> {
+    require_admin(&state, &headers)?;
+    let plan = Plan::parse(&body.plan)
+        .ok_or_else(|| ApiError::bad_request("plan must be annual_own_key or monthly_managed"))?;
+    let email = body.email.trim();
+    if email.is_empty() {
+        return Err(ApiError::bad_request("email is required"));
+    }
+    let email_hash = license::email_hash(email);
+    let months = body.months.unwrap_or(match plan {
+        Plan::AnnualOwnKey => 12,
+        Plan::MonthlyManaged => 1,
+    });
+    let now = Utc::now();
+    let signed = sign_license(
+        &state,
+        plan,
+        &email_hash,
+        months,
+        body.external_id.as_deref(),
+        now,
+    )?;
+    state.db.unrevoke(&signed.sub)?;
+    state.db.record_license(&IssuedLicense {
+        sub: signed.sub.clone(),
+        plan: plan.id().into(),
+        email_hash: email_hash.clone(),
+        external_id: body.external_id.clone(),
+        event: "admin.issue".into(),
+        key_hint: key_hint(&signed.key),
+        issued_at: now,
+        expires_at: signed.claims.expires_at_utc(),
+    })?;
+    info!(sub = %signed.sub, plan = plan.id(), months, "license issued by the operator");
+    Ok(Json(json!({
+        "sub": signed.sub,
+        "plan": plan,
+        "email_hash": email_hash,
+        "months": months,
+        "expires_at": signed.claims.expires_at_utc().to_rfc3339(),
+        "key_hint": key_hint(&signed.key),
+        "key": signed.key,
+    })))
+}
+
+async fn admin_unrevoke(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<RevokeBody>,
+) -> Result<Json<Value>, ApiError> {
+    require_admin(&state, &headers)?;
+    let sub = body.sub.trim().to_string();
+    if sub.is_empty() {
+        return Err(ApiError::bad_request("sub is required"));
+    }
+    let lifted = state.db.unrevoke(&sub)?;
+    info!(%sub, lifted, "revocation lifted");
+    Ok(Json(
+        json!({ "sub": sub, "revoked": false, "lifted": lifted }),
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+struct SubscribersQuery {
+    /// Case-insensitive substring of the subscriber id, the platform's id or the key hint.
+    #[serde(default)]
+    q: Option<String>,
+}
+
+async fn admin_subscribers(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SubscribersQuery>,
+) -> Result<Json<Value>, ApiError> {
+    require_admin(&state, &headers)?;
+    let now = Utc::now();
+    let rows = state.db.list_subscribers()?;
+    let month = month_of(now);
+    let spent: std::collections::HashMap<String, f64> = state
+        .db
+        .usage_by_sub(&month)?
+        .into_iter()
+        .map(|u| (u.sub, u.cost_usd))
+        .collect();
+    let needle = query.q.as_deref().map(str::trim).filter(|q| !q.is_empty());
+    let matches = |r: &crate::db::SubscriberRow, q: &str| {
+        let q = q.to_lowercase();
+        r.sub.to_lowercase().contains(&q)
+            || r.key_hint.to_lowercase().contains(&q)
+            || r.email_hash.to_lowercase().contains(&q)
+            || r.external_id
+                .as_deref()
+                .is_some_and(|e| e.to_lowercase().contains(&q))
+    };
+    let filtered: Vec<_> = rows
+        .iter()
+        .filter(|r| needle.is_none_or(|q| matches(r, q)))
+        .map(|r| {
+            let mut v = serde_json::to_value(r).unwrap_or_else(|_| json!({}));
+            if let Some(obj) = v.as_object_mut() {
+                obj.insert("expired".into(), json!(r.expires_at <= now));
+                obj.insert(
+                    "month_cost_usd".into(),
+                    json!(spent.get(&r.sub).copied().unwrap_or(0.0)),
+                );
+            }
+            v
+        })
+        .collect();
+    Ok(Json(json!({
+        "month": month,
+        "count": filtered.len(),
+        "subscribers": filtered,
+    })))
+}
+
+async fn admin_subscriber(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(sub): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    require_admin(&state, &headers)?;
+    let now = Utc::now();
+    let row = state
+        .db
+        .list_subscribers()?
+        .into_iter()
+        .find(|r| r.sub == sub)
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "not_found", "unknown subscriber"))?;
+    Ok(Json(json!({
+        "subscriber": row,
+        "expired": row.expires_at <= now,
+        "licenses": state.db.licenses_of(&sub)?,
+        "usage": state.db.usage_of(&sub)?,
+        "budget_usd": state.config.monthly_budget_usd,
+    })))
+}
+
+async fn admin_stats(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    require_admin(&state, &headers)?;
+    let now = Utc::now();
+    let rows = state.db.list_subscribers()?;
+    let month = month_of(now);
+    let usage = state.db.usage_by_sub(&month)?;
+    Ok(Json(json!({
+        "stats": stats_of(&rows, now),
+        "month": month,
+        "month_cost_usd": usage.iter().map(|u| u.cost_usd).sum::<f64>(),
+        "month_requests": usage.iter().map(|u| u.requests).sum::<u64>(),
+        "budget_usd": state.config.monthly_budget_usd,
+    })))
+}
+
 async fn admin_revoke(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -726,14 +937,6 @@ async fn webhook_generic(
             ))
         }
         WebhookEvent::SubscriptionCreated | WebhookEvent::SubscriptionRenewed => {
-            let Some(privkey) = state.config.license_privkey_hex.as_deref() else {
-                return Err(ApiError::new(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "issuing_disabled",
-                    "UBI_LICENSE_PRIVKEY_HEX is not configured",
-                ));
-            };
-            let signing_key = issue::signing_key_from_hex(privkey).map_err(ApiError::internal)?;
             let plan = event.plan.as_deref().and_then(Plan::parse).ok_or_else(|| {
                 ApiError::bad_request("plan must be annual_own_key or monthly_managed")
             })?;
@@ -744,10 +947,14 @@ async fn webhook_generic(
                 Plan::AnnualOwnKey => 12,
                 Plan::MonthlyManaged => 1,
             });
-            let sub = issue::derive_sub(event.external_id.as_deref(), &email_hash);
-            let claims = issue::claims_for(plan, sub.clone(), email_hash.clone(), months, now)
-                .map_err(|e| ApiError::bad_request(e.to_string()))?;
-            let key = issue::issue(&claims, &signing_key);
+            let SignedLicense { sub, key, claims } = sign_license(
+                &state,
+                plan,
+                &email_hash,
+                months,
+                event.external_id.as_deref(),
+                now,
+            )?;
             // A retry still gets its key back -- a delivery that failed mid-flight must not
             // leave a paying customer without one -- but it changes no state: no second row in
             // the ledger, and above all no reinstatement. Replaying an old `subscription.created`

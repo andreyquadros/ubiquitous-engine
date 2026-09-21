@@ -443,6 +443,20 @@ async fn admin_routes_need_the_bearer() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 401);
+    for path in ["/admin/subscribers", "/admin/subscribers/x", "/admin/stats"] {
+        let resp = h.http.get(h.url(path)).send().await.unwrap();
+        assert_eq!(resp.status(), 401, "{path} is behind the bearer");
+    }
+    for path in ["/admin/licenses/issue", "/admin/licenses/unrevoke"] {
+        let resp = h
+            .http
+            .post(h.url(path))
+            .json(&json!({"sub": "x", "plan": "monthly_managed", "email": "a@b.c"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 401, "{path} is behind the bearer");
+    }
 
     // Usage listing.
     h.vendor.set_mode(VendorMode::Json {
@@ -660,6 +674,161 @@ async fn the_platform_event_id_recognises_a_retry_whose_bytes_changed() {
         .unwrap();
     assert_eq!(v["duplicate"], false);
     assert_eq!(h.state.db.license_events(&sub).unwrap(), 2);
+}
+
+/// What the panel reads and writes: who the subscribers are, what each one has been issued and
+/// spent, and the operator's own levers -- issue by hand, revoke, put back.
+#[tokio::test]
+async fn the_panel_sees_subscribers_and_can_issue_revoke_and_restore() {
+    let h = Harness::start().await;
+    let admin_get = |path: String| {
+        let http = h.http.clone();
+        let url = h.url(&path);
+        async move {
+            http.get(url)
+                .bearer_auth(ADMIN_TOKEN)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()
+        }
+    };
+
+    // Nothing sold yet.
+    let v = admin_get("/admin/subscribers".into()).await;
+    assert_eq!(v["count"], 0);
+    let v = admin_get("/admin/stats".into()).await;
+    assert_eq!(v["stats"]["subscribers"], 0);
+
+    // One sale through the payment platform.
+    let sold: Value = h
+        .webhook(
+            &json!({"event": "subscription.created", "plan": "monthly_managed",
+                    "email": "cliente@exemplo.com", "months": 1, "external_id": "asaas_sub_7"}),
+            WEBHOOK_SECRET,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let sub = sold["sub"].as_str().unwrap().to_string();
+
+    let v = admin_get("/admin/subscribers".into()).await;
+    assert_eq!(v["count"], 1);
+    let row = &v["subscribers"][0];
+    assert_eq!(row["sub"], sub);
+    assert_eq!(row["plan"], "monthly_managed");
+    assert_eq!(
+        row["external_id"], "asaas_sub_7",
+        "reconciles with the platform"
+    );
+    assert_eq!(row["events"], 1);
+    assert_eq!(row["expired"], false);
+    assert_eq!(row["revoked_at"], Value::Null);
+    assert_eq!(row["month_cost_usd"], 0.0);
+    assert_eq!(
+        row["email_hash"],
+        ubiqx_core::license::email_hash("cliente@exemplo.com"),
+        "the address itself never reaches this service"
+    );
+
+    // The search box matches the platform's id as well as the subscriber's.
+    assert_eq!(
+        admin_get("/admin/subscribers?q=asaas".into()).await["count"],
+        1
+    );
+    assert_eq!(
+        admin_get("/admin/subscribers?q=ASAAS_SUB_7".into()).await["count"],
+        1
+    );
+    assert_eq!(
+        admin_get("/admin/subscribers?q=nobody".into()).await["count"],
+        0
+    );
+
+    // Detail: the issuance history and the month-by-month spend.
+    let v = admin_get(format!("/admin/subscribers/{sub}")).await;
+    assert_eq!(v["subscriber"]["sub"], sub);
+    assert_eq!(v["licenses"].as_array().unwrap().len(), 1);
+    assert_eq!(v["licenses"][0]["event"], "subscription.created");
+    assert_eq!(v["usage"].as_array().unwrap().len(), 0);
+    let missing = h
+        .http
+        .get(h.url("/admin/subscribers/sub_nobody"))
+        .bearer_auth(ADMIN_TOKEN)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), 404);
+
+    // Revoked from the panel, then put back.
+    h.http
+        .post(h.url("/admin/licenses/revoke"))
+        .bearer_auth(ADMIN_TOKEN)
+        .json(&json!({"sub": sub, "reason": "chargeback"}))
+        .send()
+        .await
+        .unwrap();
+    let row = &admin_get("/admin/subscribers".into()).await["subscribers"][0];
+    assert_eq!(row["revoked_reason"], "chargeback");
+    assert_eq!(
+        admin_get("/admin/stats".into()).await["stats"]["revoked"],
+        1
+    );
+
+    let v: Value = h
+        .http
+        .post(h.url("/admin/licenses/unrevoke"))
+        .bearer_auth(ADMIN_TOKEN)
+        .json(&json!({"sub": sub}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["lifted"], true);
+    assert_eq!(admin_get("/admin/stats".into()).await["stats"]["active"], 1);
+
+    // A courtesy key issued by hand: a real issuance, and it works on the proxy.
+    let v: Value = h
+        .http
+        .post(h.url("/admin/licenses/issue"))
+        .bearer_auth(ADMIN_TOKEN)
+        .json(&json!({"plan": "monthly_managed", "email": "cortesia@exemplo.com", "months": 3}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["months"], 3);
+    let key = v["key"].as_str().unwrap().to_string();
+    let claims = ubiqx_core::license::verify_key_with(&key, &h.pair.public_hex).unwrap();
+    assert!(claims.days_left_at(chrono::Utc::now()) >= 88);
+    assert_eq!(
+        h.post_messages(&key, &Harness::messages_body("ubi-fast", false))
+            .await
+            .status(),
+        200
+    );
+    let stats = admin_get("/admin/stats".into()).await;
+    assert_eq!(stats["stats"]["subscribers"], 2);
+    assert_eq!(stats["stats"]["monthly"], 2);
+    assert_eq!(stats["stats"]["active"], 2);
+    assert!(
+        stats["month_cost_usd"].as_f64().unwrap() > 0.0,
+        "the call above was billed"
+    );
+
+    // …and the spend shows up against that subscriber.
+    let courtesy = v["sub"].as_str().unwrap().to_string();
+    let v = admin_get(format!("/admin/subscribers/{courtesy}")).await;
+    assert_eq!(v["licenses"][0]["event"], "admin.issue");
+    assert_eq!(v["usage"].as_array().unwrap().len(), 1);
+    assert!(v["usage"][0]["cost_usd"].as_f64().unwrap() > 0.0);
 }
 
 #[tokio::test]
