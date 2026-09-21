@@ -1,0 +1,55 @@
+[package]
+name = "ubi-api"
+description = "ubiqX Ubi proxy: licensed, budgeted Anthropic Messages passthrough for the monthly_managed plan, plus the ubi-license CLI"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/andreyquadros/ubiquitous-engine"
+authors = ["Andrey Quadros"]
+publish = false
+
+# Standalone project on purpose: it is NOT a member of the root workspace, so desktop builds
+# never compile the server stack. Build it with `--manifest-path services/ubi-api/Cargo.toml`.
+[workspace]
+
+[[bin]]
+name = "ubi-api"
+path = "src/main.rs"
+
+[[bin]]
+name = "ubi-license"
+path = "src/bin/ubi-license.rs"
+
+[dependencies]
+ubiqx-core = { path = "../../crates/ubiqx-core", features = ["sign"] }
+
+anyhow = "1.0"
+axum = { version = "0.7", features = ["json", "query", "tokio", "http1"] }
+bytes = "1.10"
+chrono = { version = "0.4", features = ["serde", "clock"] }
+clap = { version = "4.5", features = ["derive", "env"] }
+data-encoding = "2.9"
+ed25519-dalek = { version = "2.2", default-features = false, features = ["std", "zeroize", "rand_core"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+hmac = "0.12"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+rusqlite = { version = "0.39", features = ["bundled", "chrono"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+thiserror = "2.0"
+tokio = { version = "1.47", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1.17", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3.20"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+strip = true

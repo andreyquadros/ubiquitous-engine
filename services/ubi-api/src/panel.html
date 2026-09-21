@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Licenças · ubiqX</title>
+    <!-- Inline, so the panel asks the network for nothing at all -- not even a favicon. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23111726'/%3E%3Crect x='7' y='12' width='18' height='11' rx='5.5' fill='%234d8dff'/%3E%3Ccircle cx='12.5' cy='17.5' r='1.6' fill='%2305070f'/%3E%3Ccircle cx='19.5' cy='17.5' r='1.6' fill='%2305070f'/%3E%3C/svg%3E"
+    />
+    <style>
+      /* The app's palette, kept in one place so the panel looks like the product it manages. */
+      :root {
+        --canvas: #0a0d16;
+        --panel: #111726;
+        --panel-2: #172033;
+        --line: #1f2a40;
+        --ink: #e8edf9;
+        --ink-2: #a8b4cd;
+        --ink-3: #6f7d99;
+        --volt: #4d8dff;
+        --ember: #ff7a1f;
+        --rose: #f2555a;
+        --mint: #2ecc8f;
+        color-scheme: dark;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--canvas);
+        color: var(--ink);
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      .num { font-variant-numeric: tabular-nums; }
+      a { color: var(--volt); }
+      main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
+      header.bar {
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        padding: 16px 0 20px;
+      }
+      header.bar h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+      header.bar .grow { flex: 1; }
+      .mark {
+        width: 28px; height: 28px; border-radius: 8px; background: var(--panel-2);
+        border: 1px solid var(--line); display: grid; place-items: center;
+        color: var(--volt); font-weight: 700; font-size: 13px;
+      }
+      button, input, select {
+        font: inherit; color: inherit; border-radius: 8px;
+        border: 1px solid var(--line); background: var(--panel); padding: 7px 11px;
+      }
+      input, select { min-width: 0; }
+      input:focus-visible, select:focus-visible, button:focus-visible {
+        outline: 2px solid var(--volt); outline-offset: 1px;
+      }
+      button { cursor: pointer; transition: background-color .15s, filter .15s; }
+      button:hover:not(:disabled) { background: var(--panel-2); }
+      button:disabled { opacity: .5; cursor: not-allowed; }
+      button.primary { background: var(--volt); border-color: var(--volt); color: #05070f; font-weight: 600; }
+      button.primary:hover:not(:disabled) { filter: brightness(1.1); background: var(--volt); }
+      button.danger { border-color: rgba(242, 85, 90, .4); background: rgba(242, 85, 90, .1); color: var(--rose); }
+      button.danger:hover:not(:disabled) { background: rgba(242, 85, 90, .16); }
+
+      .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+      .card {
+        background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+      }
+      .card .label { color: var(--ink-3); font-size: 12px; }
+      .card .value { font-size: 24px; font-weight: 640; margin-top: 2px; letter-spacing: -0.02em; }
+      .card .sub { color: var(--ink-3); font-size: 12px; margin-top: 2px; }
+
+      .toolbar { display: flex; gap: 8px; align-items: center; margin: 22px 0 10px; flex-wrap: wrap; }
+      .toolbar input[type="search"] { flex: 1; min-width: 200px; }
+
+      table { width: 100%; border-collapse: collapse; }
+      .tablewrap { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+      th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+      th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
+      tbody tr:last-child td { border-bottom: 0; }
+      tbody tr { cursor: pointer; }
+      tbody tr:hover { background: var(--panel-2); }
+      tbody tr[aria-selected="true"] { background: rgba(77, 141, 255, .12); }
+      td.right, th.right { text-align: right; }
+
+      .pill {
+        display: inline-flex; align-items: center; gap: 5px; border-radius: 999px;
+        padding: 2px 9px; font-size: 12px; border: 1px solid;
+      }
+      .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+      .pill.ok { color: var(--mint); border-color: rgba(46, 204, 143, .35); background: rgba(46, 204, 143, .1); }
+      .pill.soon { color: var(--ember); border-color: rgba(255, 122, 31, .35); background: rgba(255, 122, 31, .1); }
+      .pill.off { color: var(--rose); border-color: rgba(242, 85, 90, .35); background: rgba(242, 85, 90, .1); }
+      .pill.mute { color: var(--ink-3); border-color: var(--line); background: var(--panel-2); }
+
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+      .muted { color: var(--ink-3); }
+      .empty { padding: 40px 16px; text-align: center; color: var(--ink-3); }
+
+      dialog {
+        border: 1px solid var(--line); border-radius: 14px; background: var(--panel);
+        color: var(--ink); padding: 0; width: min(560px, calc(100vw - 32px));
+      }
+      dialog::backdrop { background: rgba(5, 7, 15, .7); }
+      dialog .head { padding: 16px 18px 0; }
+      dialog h2 { margin: 0; font-size: 15px; font-weight: 640; }
+      dialog .body { padding: 14px 18px; display: grid; gap: 12px; }
+      dialog .foot { padding: 0 18px 16px; display: flex; gap: 8px; justify-content: flex-end; }
+      label { display: grid; gap: 5px; font-size: 12px; color: var(--ink-3); }
+      label > input, label > select { color: var(--ink); }
+
+      .keybox {
+        background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+        padding: 11px 12px; word-break: break-all; line-height: 1.45;
+      }
+      .warn {
+        border-left: 2px solid var(--ember); padding-left: 10px; color: var(--ink-2); font-size: 12.5px;
+      }
+      .detail { margin-top: 18px; display: grid; gap: 14px; }
+      .detail h3 { margin: 0 0 8px; font-size: 13px; color: var(--ink-2); font-weight: 600; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 13px; }
+      .kv dt { color: var(--ink-3); }
+      .kv dd { margin: 0; }
+      .toast {
+        position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+        background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+        padding: 9px 14px; font-size: 13px; box-shadow: 0 8px 28px rgba(0, 0, 0, .45);
+      }
+      @media (max-width: 720px) {
+        th.hide, td.hide { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="bar">
+        <span class="mark" aria-hidden="true">uX</span>
+        <h1>Licenças</h1>
+        <span class="grow"></span>
+        <span id="who" class="muted"></span>
+        <button id="new-key" hidden>Emitir chave</button>
+        <button id="logout" hidden>Sair</button>
+      </header>
+
+      <section id="login">
+        <div class="card" style="max-width: 420px">
+          <p style="margin: 0 0 12px">Cole o token de administração do serviço (<span class="mono">UBI_ADMIN_TOKEN</span>).</p>
+          <form id="login-form" class="row">
+            <input id="token" type="password" placeholder="Token" autocomplete="current-password" style="flex: 1" />
+            <button class="primary" type="submit">Entrar</button>
+          </form>
+          <p id="login-error" class="muted" style="margin: 10px 0 0"></p>
+        </div>
+      </section>
+
+      <section id="app" hidden>
+        <div class="cards" id="stats"></div>
+
+        <div class="toolbar">
+          <input id="q" type="search" placeholder="Buscar por assinante, id da plataforma, hash do e-mail ou final da chave" />
+          <button id="refresh">Atualizar</button>
+        </div>
+
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Assinante</th>
+                <th>Plano</th>
+                <th class="hide">Id na plataforma</th>
+                <th>Expira</th>
+                <th>Estado</th>
+                <th class="right hide">Mês (US$)</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+          <div id="empty" class="empty" hidden></div>
+        </div>
+
+        <div id="detail" class="detail" hidden></div>
+      </section>
+    </main>
+
+    <dialog id="issue-dialog">
+      <form method="dialog">
+        <div class="head"><h2>Emitir chave</h2></div>
+        <div class="body">
+          <label>Plano
+            <select id="i-plan">
+              <option value="monthly_managed">Mensal, com a IA do Ubi</option>
+              <option value="annual_own_key">Anual, com a sua IA</option>
+            </select>
+          </label>
+          <label>E-mail do cliente
+            <input id="i-email" type="email" required placeholder="cliente@exemplo.com" />
+          </label>
+          <label>Meses <span class="muted">— vazio usa o padrão do plano (1 ou 12)</span>
+            <input id="i-months" type="number" min="1" max="120" placeholder="" />
+          </label>
+          <label>Id na plataforma <span class="muted">— opcional; é por ele que a renovação encontra o mesmo assinante</span>
+            <input id="i-external" type="text" placeholder="asaas_sub_…" />
+          </label>
+          <p id="i-error" class="muted" style="margin: 0"></p>
+        </div>
+        <div class="foot">
+          <button value="cancel">Cancelar</button>
+          <button id="i-submit" class="primary" value="issue">Emitir</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="key-dialog">
+      <div class="head"><h2>Chave emitida</h2></div>
+      <div class="body">
+        <div id="k-key" class="keybox mono"></div>
+        <p class="warn">
+          O serviço guarda só os quatro últimos caracteres. Copie agora — para ver de novo, só
+          emitindo outra. E uma chave nova <strong>não invalida</strong> a anterior: a verificação
+          é offline, então a antiga vale até a data de expiração dela.
+        </p>
+      </div>
+      <div class="foot">
+        <button id="k-copy" class="primary">Copiar</button>
+        <button id="k-close">Fechar</button>
+      </div>
+    </dialog>
+
+    <script>
+      (() => {
+        'use strict';
+        const $ = (id) => document.getElementById(id);
+        const STORE = 'ubiqx.panel.token';
+        let token = sessionStorage.getItem(STORE) || '';
+        let rows = [];
+        let selected = null;
+
+        const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString('pt-BR') : '—');
+        const fmtUsd = (n) => (Number(n) || 0).toFixed(2);
+        const short = (s) => (s && s.length > 18 ? s.slice(0, 10) + '…' + s.slice(-6) : s || '—');
+        const PLAN = { monthly_managed: 'Mensal', annual_own_key: 'Anual' };
+        const days = (iso) => Math.floor((new Date(iso) - Date.now()) / 86400000);
+        // A month is the whole life of a monthly licence, so thirty days would paint every one
+        // of them orange for ever. Same rule as `expiring_window_days` on the service.
+        const window = (plan) => (plan === 'monthly_managed' ? 7 : 30);
+
+        function toast(msg) {
+          const el = document.createElement('div');
+          el.className = 'toast';
+          el.textContent = msg;
+          document.body.appendChild(el);
+          setTimeout(() => el.remove(), 2600);
+        }
+
+        async function api(path, options = {}) {
+          const res = await fetch(path, {
+            ...options,
+            headers: {
+              Authorization: 'Bearer ' + token,
+              ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+              ...(options.headers || {}),
+            },
+          });
+          if (res.status === 401) {
+            signOut();
+            throw new Error('Token recusado.');
+          }
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data?.error?.message || `Falhou (${res.status})`);
+          }
+          return data;
+        }
+
+        function state(row) {
+          if (row.revoked_at) return { cls: 'off', text: 'Revogado' };
+          if (row.expired) return { cls: 'mute', text: 'Expirado' };
+          const d = days(row.expires_at);
+          if (d <= window(row.plan)) return { cls: 'soon', text: `Expira em ${d}d` };
+          return { cls: 'ok', text: 'Ativo' };
+        }
+
+        function renderStats(s) {
+          const st = s.stats;
+          const card = (label, value, sub) =>
+            `<div class="card"><div class="label">${label}</div><div class="value num">${value}</div>${
+              sub ? `<div class="sub">${sub}</div>` : ''
+            }</div>`;
+          $('stats').innerHTML = [
+            card('Assinantes', st.subscribers, `${st.monthly} mensais · ${st.annual} anuais`),
+            card(
+              'Ativos',
+              st.active,
+              st.expiring_soon
+                ? `${st.expiring_soon} ${st.expiring_soon === 1 ? 'expira' : 'expiram'} em breve`
+                : 'nenhum expirando',
+            ),
+            card('Expirados', st.expired, ''),
+            card('Revogados', st.revoked, ''),
+            card(
+              `Custo do mês (${s.month})`,
+              'US$ ' + fmtUsd(s.month_cost_usd),
+              `${s.month_requests} chamadas · orçamento US$ ${fmtUsd(s.budget_usd)}/assinante`,
+            ),
+          ].join('');
+        }
+
+        function renderRows() {
+          const body = $('rows');
+          body.innerHTML = rows
+            .map((r) => {
+              const s = state(r);
+              return `<tr data-sub="${r.sub}" aria-selected="${r.sub === selected}">
+                <td class="mono">${short(r.sub)}</td>
+                <td>${PLAN[r.plan] || r.plan}</td>
+                <td class="mono hide">${r.external_id || '—'}</td>
+                <td class="num">${fmtDate(r.expires_at)}</td>
+                <td><span class="pill ${s.cls}">${s.text}</span></td>
+                <td class="right num hide">${fmtUsd(r.month_cost_usd)}</td>
+              </tr>`;
+            })
+            .join('');
+          $('empty').hidden = rows.length > 0;
+          $('empty').textContent = rows.length ? '' : 'Nenhum assinante encontrado.';
+          for (const tr of body.querySelectorAll('tr')) {
+            tr.addEventListener('click', () => openDetail(tr.dataset.sub));
+          }
+        }
+
+        async function load() {
+          const q = $('q').value.trim();
+          const [stats, list] = await Promise.all([
+            api('/admin/stats'),
+            api('/admin/subscribers' + (q ? '?q=' + encodeURIComponent(q) : '')),
+          ]);
+          renderStats(stats);
+          rows = list.subscribers;
+          renderRows();
+          if (selected && !rows.some((r) => r.sub === selected)) closeDetail();
+        }
+
+        function closeDetail() {
+          selected = null;
+          $('detail').hidden = true;
+          $('detail').innerHTML = '';
+          renderRows();
+        }
+
+        async function openDetail(sub) {
+          selected = sub;
+          renderRows();
+          const d = await api('/admin/subscribers/' + encodeURIComponent(sub));
+          const r = d.subscriber;
+          const s = state({ ...r, expired: d.expired });
+          const history = d.licenses
+            .map(
+              (l) => `<tr><td class="num">${fmtDate(l.issued_at)}</td><td>${l.event}</td>
+                      <td class="num">${fmtDate(l.expires_at)}</td><td class="mono">…${l.key_hint}</td></tr>`,
+            )
+            .join('');
+          const usage = d.usage.length
+            ? d.usage
+                .map(
+                  (u) => `<tr><td class="num">${u.month}</td><td class="right num">${u.requests}</td>
+                          <td class="right num">${fmtUsd(u.cost_usd)}</td></tr>`,
+                )
+                .join('')
+            : '<tr><td colspan="3" class="muted">Nada consumido pela IA do Ubi.</td></tr>';
+
+          $('detail').hidden = false;
+          $('detail').innerHTML = `
+            <div class="card">
+              <div class="row" style="justify-content: space-between">
+                <h3 style="margin:0">Assinante <span class="mono">${r.sub}</span></h3>
+                <span class="pill ${s.cls}">${s.text}</span>
+              </div>
+              <dl class="kv" style="margin: 12px 0 0">
+                <dt>Plano</dt><dd>${PLAN[r.plan] || r.plan}</dd>
+                <dt>Id na plataforma</dt><dd class="mono">${r.external_id || '—'}</dd>
+                <dt>Hash do e-mail</dt><dd class="mono">${r.email_hash}</dd>
+                <dt>Expira</dt><dd class="num">${fmtDate(r.expires_at)}</dd>
+                <dt>Emissões</dt><dd class="num">${r.events}</dd>
+                ${r.revoked_at ? `<dt>Revogado</dt><dd>${fmtDate(r.revoked_at)} — ${r.revoked_reason || 'sem motivo'}</dd>` : ''}
+              </dl>
+              <div class="row" style="margin-top: 14px">
+                <button id="d-reissue">Reemitir</button>
+                ${
+                  r.revoked_at
+                    ? '<button id="d-unrevoke">Restaurar</button>'
+                    : '<button id="d-revoke" class="danger">Revogar</button>'
+                }
+              </div>
+              <p class="muted" style="margin: 10px 0 0; font-size: 12.5px">
+                ${
+                  r.plan === 'monthly_managed'
+                    ? 'Revogar corta a IA do Ubi na hora: é por este serviço que o plano mensal fala. A chave continua verificando offline, mas sem IA ela não serve para nada.'
+                    : `Revogar não alcança o plano anual: a chave é verificada offline e vale até ${fmtDate(r.expires_at)} de qualquer forma. Revogar um anual é, na prática, não renovar.`
+                }
+              </p>
+            </div>
+            <div class="card">
+              <h3>Emissões</h3>
+              <table><thead><tr><th>Quando</th><th>Origem</th><th>Expira</th><th>Final</th></tr></thead>
+              <tbody>${history}</tbody></table>
+            </div>
+            <div class="card">
+              <h3>Consumo por mês</h3>
+              <table><thead><tr><th>Mês</th><th class="right">Chamadas</th><th class="right">US$</th></tr></thead>
+              <tbody>${usage}</tbody></table>
+            </div>`;
+
+          $('d-reissue')?.addEventListener('click', () => {
+            $('i-plan').value = r.plan;
+            $('i-email').value = '';
+            $('i-months').value = '';
+            $('i-external').value = r.external_id || '';
+            $('i-error').textContent =
+              'O e-mail precisa ser o mesmo da compra: é ele que forma o assinante quando não há id da plataforma.';
+            $('issue-dialog').showModal();
+          });
+          $('d-revoke')?.addEventListener('click', async () => {
+            const reason = prompt('Motivo da revogação (opcional):', 'cancelamento') ?? '';
+            try {
+              await api('/admin/licenses/revoke', {
+                method: 'POST',
+                body: JSON.stringify({ sub, reason: reason || null }),
+              });
+              toast('Revogado.');
+              await load();
+              await openDetail(sub);
+            } catch (e) {
+              toast(e.message);
+            }
+          });
+          $('d-unrevoke')?.addEventListener('click', async () => {
+            try {
+              await api('/admin/licenses/unrevoke', { method: 'POST', body: JSON.stringify({ sub }) });
+              toast('Restaurado.');
+              await load();
+              await openDetail(sub);
+            } catch (e) {
+              toast(e.message);
+            }
+          });
+        }
+
+        function showKey(key) {
+          $('k-key').textContent = key;
+          $('key-dialog').showModal();
+        }
+
+        function signIn(t) {
+          token = t;
+          sessionStorage.setItem(STORE, t);
+          $('login').hidden = true;
+          $('app').hidden = false;
+          $('new-key').hidden = false;
+          $('logout').hidden = false;
+        }
+
+        function signOut() {
+          token = '';
+          sessionStorage.removeItem(STORE);
+          $('app').hidden = true;
+          $('new-key').hidden = true;
+          $('logout').hidden = true;
+          $('login').hidden = false;
+          closeDetail();
+        }
+
+        $('login-form').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const t = $('token').value.trim();
+          if (!t) return;
+          token = t;
+          try {
+            await api('/admin/stats');
+            signIn(t);
+            $('token').value = '';
+            $('login-error').textContent = '';
+            await load();
+          } catch (err) {
+            $('login-error').textContent = err.message;
+          }
+        });
+
+        $('logout').addEventListener('click', signOut);
+        $('refresh').addEventListener('click', () => load().catch((e) => toast(e.message)));
+
+        let timer;
+        $('q').addEventListener('input', () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => load().catch((e) => toast(e.message)), 200);
+        });
+
+        $('new-key').addEventListener('click', () => {
+          $('i-email').value = '';
+          $('i-months').value = '';
+          $('i-external').value = '';
+          $('i-error').textContent = '';
+          $('issue-dialog').showModal();
+        });
+
+        $('issue-dialog').addEventListener('close', async (e) => {
+          if ($('issue-dialog').returnValue !== 'issue') return;
+          const email = $('i-email').value.trim();
+          if (!email) return toast('Informe o e-mail.');
+          const months = $('i-months').value ? Number($('i-months').value) : null;
+          const external_id = $('i-external').value.trim() || null;
+          try {
+            const out = await api('/admin/licenses/issue', {
+              method: 'POST',
+              body: JSON.stringify({ plan: $('i-plan').value, email, months, external_id }),
+            });
+            showKey(out.key);
+            await load();
+          } catch (err) {
+            toast(err.message);
+          }
+        });
+
+        $('k-copy').addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText($('k-key').textContent);
+            toast('Copiada.');
+          } catch {
+            toast('O navegador não deixou copiar; selecione e copie à mão.');
+          }
+        });
+        $('k-close').addEventListener('click', () => $('key-dialog').close());
+
+        // A token kept from an earlier tab is only trusted once the service agrees.
+        if (token) {
+          api('/admin/stats')
+            .then(() => {
+              signIn(token);
+              return load();
+            })
+            .catch(() => signOut());
+        }
+      })();
+    </script>
+  </body>
+</html>

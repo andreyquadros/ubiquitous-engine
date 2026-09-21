@@ -1,5 +1,6 @@
 [package]
 name = "ubiqx-ai"
+description = "ubiqX adapter: Anthropic / OpenAI / xAI HTTP clients, prompts, LLM classifiers, report writer and advisor"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,3 +10,18 @@ authors.workspace = true
 
 [dependencies]
 ubiqx-core.workspace = true
+async-trait.workspace = true
+base64.workspace = true
+chrono.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+parking_lot.workspace = true
+tokio.workspace = true
+wiremock = "0.6"
