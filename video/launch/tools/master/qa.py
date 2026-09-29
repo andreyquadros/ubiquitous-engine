@@ -19,10 +19,24 @@ if '--no-sheets' not in sys.argv:
     for f in os.listdir(outdir):
         if f.startswith('contact-') and f.endswith('.jpg'):
             os.remove(os.path.join(outdir, f))
-    vf = (f"drawtext=fontfile={font}:text='%{{frame_num}}':x=8:y=8:fontsize=28:fontcolor=yellow:box=1:boxcolor=black@0.7,"
-          "select='not(mod(n\\,10))',scale=640:360,tile=4x3:padding=4:color=magenta")
-    subprocess.run([FF, '-hide_banner', '-y', '-i', src, '-vf', vf, '-fps_mode', 'vfr', '-q:v', '3',
-                    os.path.join(outdir, 'contact-%02d.jpg')], check=True, capture_output=True)
+    import tempfile, shutil
+    from PIL import Image, ImageDraw, ImageFont
+    tmpd = tempfile.mkdtemp(dir=outdir)
+    subprocess.run([FF, '-hide_banner', '-y', '-i', src, '-vf', "select='not(mod(n\\,10))',scale=640:360", '-fps_mode', 'vfr',
+                    '-q:v', '3', os.path.join(tmpd, 'f%04d.jpg')], check=True, capture_output=True)
+    shots = sorted(os.listdir(tmpd))
+    F = ImageFont.truetype(font, 22)
+    sid = lambda fr: next(i for i, st, d in scenes if st <= fr < st + d)
+    for k in range(0, len(shots), 12):
+        sheet = Image.new('RGB', (4 * 644 - 4, 3 * 364 - 4), (255, 0, 255))
+        for j, name in enumerate(shots[k:k + 12]):
+            fr = (k + j) * 10
+            im = Image.open(os.path.join(tmpd, name)).convert('RGB')
+            d = ImageDraw.Draw(im); lab = f'{fr} {sid(fr)[:3]}'
+            d.rectangle([0, 0, 12 * len(lab) + 10, 28], fill=(0, 0, 0)); d.text((5, 2), lab, font=F, fill=(255, 230, 0))
+            sheet.paste(im, ((j % 4) * 644, (j // 4) * 364))
+        sheet.save(os.path.join(outdir, f'contact-{k // 12 + 1:02d}.jpg'), quality=86)
+    shutil.rmtree(tmpd)
 
 # audio
 wav = os.path.join(outdir, '_a.wav')

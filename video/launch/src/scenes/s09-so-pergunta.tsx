@@ -36,6 +36,9 @@ const FILE = 'ui/review-queue-selected.png';
  */
 const HINT_PATCH = {x: 626, y: 394, w: 1232, h: 48, fill: '#15233f'};
 const LEGEND_PATCH = {x: 2124, y: 800, w: 670, h: 48, fill: '#0c1220'};
+/** Integrator: the sidebar's orange 'Revisão' pending-count badge (nav-revisao-badge), covered in the
+ *  active-row colour as s12, s14, s15 and s16 do, so no second count of the dataset reads in shot A. */
+const BADGE_PATCH = {x: 373, y: 375, w: 44, h: 42, fill: '#14223c'};
 
 /** The four "pendente" pills of rows 1–4 (measured ink boxes, image px). */
 const PILLS = [274, 498, 610, 722].map((y) => ({x: 1812, y, w: 128, h: 40}));
@@ -122,6 +125,7 @@ const S09SoPergunta: React.FC = () => {
 			<G3Screen {...shot} style={{zIndex: 'auto'}}>
 				<Patch {...HINT_PATCH} />
 				<Patch {...LEGEND_PATCH} />
+				<Patch {...BADGE_PATCH} />
 				<DimMask
 					dim={dim}
 					holes={[
