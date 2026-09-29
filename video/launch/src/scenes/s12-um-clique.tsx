@@ -104,8 +104,8 @@ const CAMERA: CameraKey[] = [
 	{at: SWAP, zoom: 1.86, focus: {x: 1500, y: 580}, anchor: {x: 830, y: 610}, duration: SWAP, easing: E.linear},
 	// v2 review: push IN on the first confirmed rows (s 0.93 → 1.2 comp px per image px: row titles ≥ 36 px, "você" chips
 	// ≈ 48 px); row 1 sits just under the headline band, the sidebar and the picker stay fully out of frame
-	{at: 50, zoom: HOLD_ZOOM, focus: {x: 1265, y: 717}, anchor: {x: 934, y: 668}, duration: 50 - SWAP, easing: E.push},
-	{at: 89, zoom: HOLD_ZOOM * 1.035, focus: {x: 1262, y: 717}, anchor: {x: 934, y: 668}, duration: 39, easing: E.linear},
+	{at: 50, zoom: HOLD_ZOOM, focus: {x: 1265, y: 717}, anchor: {x: 934, y: 680}, duration: 50 - SWAP, easing: E.push},
+	{at: 89, zoom: HOLD_ZOOM * 1.035, focus: {x: 1262, y: 717}, anchor: {x: 934, y: 680}, duration: 39, easing: E.linear},
 ];
 
 const shotOf = (src: string): ScreenConfig => ({
@@ -374,8 +374,8 @@ const S12UmClique: React.FC = () => {
 							style={{
 								opacity: band,
 								pointerEvents: 'none',
-								// v2 review: a clean band behind the headline (y 0–278 at ≈ 0.97; the section header sits under it), fading out above row 1 (y ≈ 325)
-								background: `linear-gradient(180deg, ${navyDim(0.975)} 0px, ${navyDim(0.965)} 278px, ${navyDim(0.4)} 306px, ${navyDim(0)} 328px)`,
+								// v2 review: a clean band behind the headline (y 0–296 at ≈ 0.98; the section header sits under it), fading out above row 1 (y ≈ 340)
+								background: `linear-gradient(180deg, ${navyDim(0.98)} 0px, ${navyDim(0.975)} 296px, ${navyDim(0.4)} 318px, ${navyDim(0)} 336px)`,
 								zIndex: 31,
 							}}
 						/>

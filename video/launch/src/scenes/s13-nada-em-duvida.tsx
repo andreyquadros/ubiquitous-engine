@@ -84,10 +84,10 @@ const BUBBLE_EASE = Easing.bezier(0.45, 0, 0.55, 1);
  * y 784–821) LIFTS out of the racking app from f17 as a slim floating chip under the bubble, in the lower-right
  * quadrant that was empty backdrop; a mint check draws on at its left (f25–33). No number is shown.
  */
-const CHIP: {x: number; y: number; w: number; h: number} = {x: 900, y: 762, w: 672, h: 80};
+const CHIP: {x: number; y: number; w: number; h: number} = {x: 920, y: 762, w: 652, h: 80};
 const CHIP_AT = 17;
 const CHIP_K = 1.42;
-const CHIP_POS = {x: 1372, y: 700};
+const CHIP_POS = {x: 1380, y: 752};
 const Chip: React.FC<{f: number}> = ({f}) => {
 	if (f < CHIP_AT) return null;
 	const props: LiftCardProps = {
@@ -156,7 +156,9 @@ const Bubble: React.FC<{f: number; text: string; from: {cx: number; cy: number; 
 	if (f < MATCH) return null;
 	// v2 review: the in-app bubble holds its place f15–20, then grows f20–27 and PEAKS (overshoot 1.05) on f27 =
 	// abs 897, the storyboard landFrame and the pop+2 transient; it settles 1.05 → 1 over f27–33
-	const g = BUBBLE_EASE(ramp(f, BUBBLE_GROW, BUBBLE_LAND));
+	// f15–20 a small anticipation drift (15 % of the path, up and right, clear of his growing helmet), then the pop
+	const pre = 0.15 * E.enter(ramp(f, MATCH, BUBBLE_GROW));
+	const g = lerp(pre, 1, BUBBLE_EASE(ramp(f, BUBBLE_GROW, BUBBLE_LAND)));
 	const settle = E.glide(ramp(f, BUBBLE_LAND, BUBBLE_LAND + 6));
 	const k = f < BUBBLE_LAND ? lerp(from.w / BUBBLE.w, 1.05, g) : lerp(1.05, 1, settle);
 	const bx = BUBBLE.x + BUBBLE.w / 2;
