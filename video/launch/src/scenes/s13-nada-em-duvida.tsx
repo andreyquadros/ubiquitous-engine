@@ -57,7 +57,9 @@ const ARC = 70; // extra leap height (px) on top of the clip's own jump, 0 at f1
 /** The big bubble's final box and its tail (tip at his helmet). */
 const BUBBLE = {x: 872, y: 286, w: 968, h: 188, r: 48};
 const TEXT_SIZE = 100;
-const TAIL = {base0: 96, base1: 190, tip: {x: 812, y: 520}};
+// v2 review: a side tail off the bubble's left edge (base y 366–426), tip just right of his helmet's ear disc
+// (≈ x 720, y 450 in the hold) — it points at his head, not at the orbiting orb
+const TAIL = {base0: 366, base1: 426, tip: {x: 758, y: 452}};
 
 const CAMERA: CameraKey[] = [
 	// framed below the title bar from the first frame (v1 showed the canvas + title-bar strip f0–6)
@@ -181,11 +183,12 @@ const Bubble: React.FC<{f: number; text: string; from: {cx: number; cy: number; 
 		`Q ${x1} ${y0} ${x1} ${y0 + r}`,
 		`V ${y1 - r}`,
 		`Q ${x1} ${y1} ${x1 - r} ${y1}`,
-		`H ${x0 + TAIL.base1}`,
-		`Q ${x0 + 90} ${y1 + 8} ${TAIL.tip.x} ${TAIL.tip.y}`,
-		`Q ${x0 + 50} ${y1 - 2} ${x0 + TAIL.base0 - 50} ${y1}`,
 		`H ${x0 + r}`,
 		`Q ${x0} ${y1} ${x0} ${y1 - r}`,
+		`V ${TAIL.base1}`,
+		// the wedge: the lower edge sags a little, the upper edge curves back in (a soft comic-bubble tail)
+		`Q ${x0 - 40} ${TAIL.base1 + 16} ${TAIL.tip.x} ${TAIL.tip.y}`,
+		`Q ${x0 - 44} ${TAIL.base0 + 34} ${x0} ${TAIL.base0}`,
 		`V ${y0 + r}`,
 		`Q ${x0} ${y0} ${x0 + r} ${y0}`,
 		'Z',

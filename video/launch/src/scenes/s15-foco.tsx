@@ -23,7 +23,7 @@ import {noise2D} from '@remotion/noise';
 import {GLASS_INSET, RIM_PX, rimBackground, Screen, WINDOW_SHADOW, type ScreenConfig} from '../components/Screen';
 import {gradeFilter, resolveGrade} from '../components/screen-geometry';
 import {alpha, color} from '../design/tokens';
-import {E, hotspot, springAt, storyboardCamera, TransitionIn, TransitionOut, UbiClip, UBI_ANCHORS, useScene, useSceneFrame, type SfxCue} from '../shared';
+import {E, hotspot, springAt, storyboardCamera, TransitionIn, TransitionOut, UbiClip, UBI_ANCHORS, ubiFrameIndex, useScene, useSceneFrame, type SfxCue} from '../shared';
 import {arcPoint, ArrowCursor, Backdrop, ClickRipple, Crop, Finish, Headline, lerp, LightSweep, pressAt, ramp, Shockwave, unitsOf} from './_parts/G5/common';
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
@@ -127,8 +127,11 @@ const OkFace: React.FC<{f: number}> = ({f}) => {
  * panel's own background (the app's `bg-panel` #0c1220 + `--hero-glow` radial-gradient(60% 80% at 22% 30%,
  * rgb(77 141 255 / 0.16), transparent 70%), drawn over the whole panel box so the patch is seamless; measured
  * against the capture: median error 0.6 levels) and the hi-res 3D UBI is composited at the same pose and place:
- * the app's `mood="worried"` = the `worried` clip (finger up, orb in the other hand), looping, feet on the
- * capture's feet (image px: silhouette x 180–449, y 172–595 → frame scale 0.687). The app's FloorGlow is
+ * v2 review (cont.): he now ACTS the line. The `no` clip (two head shakes, ±12° yaw) plays f4–41 under
+ * "Não! Foque na sua produtividade.", he holds the rest pose, and after the "Ok, foco!" click he nods (`yes`,
+ * f46–83: `no`'s last frame IS `yes`'s first, so the splice is seamless). Same pose family as the app's (finger up,
+ * orb in the other hand); feet on the capture's feet (image px: silhouette y 172–595 → 423 px tall; the rest
+ * pose's silhouette is 637 of the 900-px frame, y 160–797). The app's FloorGlow is
  * re-drawn (rose #ff5c7a, 0.62 × 0.11 of the 480-px box, blur 24, opacity 0.7 ↔ 0.45 / scaleX 1 ↔ 0.86 over
  * 3.6 s) and he floats like the in-app mascot does.
  */
@@ -138,7 +141,9 @@ const PANEL_BG: React.CSSProperties = {
 	backgroundSize: `${IMG.w}px ${IMG.h}px`,
 	backgroundRepeat: 'no-repeat',
 };
-const UBI_K = 423 / 616; // capture silhouette height / worried-clip silhouette height (900-px frame)
+const UBI_K = 423 / 637; // capture silhouette height / rest-pose silhouette height (900-px frame)
+const NO_AT = 4;
+const YES_AT = CLICK + 1;
 const UBI_FEET = {x: 314.5 + (UBI_ANCHORS.feet.x - 460) * UBI_K, y: 595 + (UBI_ANCHORS.feet.y - 796) * UBI_K};
 const PATCH_BOTTOM = 704;
 const FLOAT_P = 108; // FloorGlow FLOAT_PERIOD.worried = 3.6 s
@@ -165,7 +170,11 @@ const HiResUbi: React.FC<{f: number}> = ({f}) => {
 					transform: `scaleX(${lerp(1, 0.86, ph).toFixed(4)})`,
 				}}
 			/>
-			<UbiClip clip="worried" loop x={UBI_FEET.x} y={UBI_FEET.y} size={900 * UBI_K} float={9} floatPeriod={FLOAT_P} />
+			{f < YES_AT ? (
+				<UbiClip clip="no" index={ubiFrameIndex('no', f, {startFrame: NO_AT, loop: false})} x={UBI_FEET.x} y={UBI_FEET.y} size={900 * UBI_K} float={9} floatPeriod={FLOAT_P} />
+			) : (
+				<UbiClip clip="yes" index={ubiFrameIndex('yes', f, {startFrame: YES_AT, loop: false})} x={UBI_FEET.x} y={UBI_FEET.y} size={900 * UBI_K} float={9} floatPeriod={FLOAT_P} />
+			)}
 		</>
 	);
 };
@@ -202,10 +211,12 @@ const S15Foco: React.FC = () => {
 		if (c.text !== 'Não! Foque na sua produtividade.' && c.text !== 'Ok, foco!') throw new Error(`s15 copy drift: ${c.text}`);
 	}
 	const units = unitsOf(HEADLINE, [
-		// v2 review: +3 f so it lands and turns volt exactly on f30 (abs 1065: the tick and the beat)
-		{text: 'Foco', at: 23},
-		{text: 'que se', at: 25},
-		{text: 'defende.', at: 27, volt: 'defende.'},
+		// v2 review: the line lands ON f30 (abs 1065: the tick and the beat). SNAPPY reaches s 0.96 / volt 1 / blur 0.3
+		// six frames after `at`, so "defende." starts at 24 (grey and in flight at f27–28, volt and settled on f30);
+		// the lead words start closer to it (21/23) so the whole line arrives as one gesture, not three
+		{text: 'Foco', at: 21},
+		{text: 'que se', at: 23},
+		{text: 'defende.', at: 24, volt: 'defende.'},
 	]);
 
 	// backdrop: Foco page on the Bloqueios card (storyboard backdrop key), −12 px drift, glitch jolt f2–4

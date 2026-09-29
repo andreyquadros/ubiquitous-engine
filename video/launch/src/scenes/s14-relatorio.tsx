@@ -385,11 +385,12 @@ const FieldFades: React.FC = () => (
 				key={i}
 				style={{
 					position: 'absolute',
-					left: 1986,
+					left: 1968,
 					top: top + 1,
-					width: 86,
+					width: 104,
 					height: 62,
-					background: `linear-gradient(90deg, rgba(18,26,43,0) 0%, ${FIELD_BG} 72%)`,
+					// transparent → field fill by 62 %: the last clipped glyph ("…e ca", "…/2(") is fully under the fill
+					background: `linear-gradient(90deg, rgba(18,26,43,0) 0%, ${FIELD_BG} 62%)`,
 				}}
 			/>
 		))}
