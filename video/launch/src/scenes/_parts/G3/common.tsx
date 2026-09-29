@@ -29,6 +29,13 @@ export const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 export const ramp = (frame: number, a: number, b: number, easing?: (t: number) => number) =>
 	b <= a ? (frame >= b ? 1 : 0) : interpolate(frame, [a, b], [0, 1], {...CLAMP, easing});
 
+/** Mix two #rrggbb colours → #rrggbb. */
+export const hexMix = (a: string, b: string, t: number) => {
+	const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
+	const pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16));
+	return '#' + pa.map((v, i) => Math.round(v + (pb[i] - v) * clamp01(t)).toString(16).padStart(2, '0')).join('');
+};
+
 /** Mix two #rrggbb colours → rgb(). */
 export const mixHex = (a: string, b: string, t: number) => {
 	const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
@@ -104,6 +111,29 @@ export const shakeTransform = (s: {x: number; y: number; r: number}) =>
 /* Words: S03 word stagger                                                   */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * v2 headline fill (v2-look §3 "Headlines"): white with a slight top-to-bottom
+ * gradient; a volt word is a volt gradient (#8ab4ff → #4d8dff). `volt` 0–1
+ * mixes between the two (the S03 land-to-volt).
+ */
+export const INK_TOP = '#ffffff';
+export const INK_BOTTOM = '#c3cde0';
+export const VOLT_TOP = '#8ab4ff';
+export const VOLT_BOTTOM = color.volt;
+export const gradientInk = (volt = 0, dim = 0): React.CSSProperties => {
+	const top = hexMix(hexMix(INK_TOP, VOLT_TOP, volt), color.ink2, dim);
+	const bottom = hexMix(hexMix(INK_BOTTOM, VOLT_BOTTOM, volt), color.ink2, dim);
+	return {
+		backgroundImage: `linear-gradient(180deg, ${top} 18%, ${bottom} 92%)`,
+		WebkitBackgroundClip: 'text',
+		backgroundClip: 'text',
+		color: 'transparent',
+		WebkitTextFillColor: 'transparent',
+	};
+};
+/** Soft volt glow behind a volt word (drop-shadow follows the glyphs). */
+export const voltGlow = (a: number) => `drop-shadow(0 0 18px rgba(77,141,255,${(0.45 * a).toFixed(3)}))`;
+
 export type WordUnit = {
 	/** The unit's text (NBSP-glued groups count as one unit). */
 	text: string;
@@ -139,7 +169,9 @@ export const Words: React.FC<{
 	marker?: MarkerSpec;
 	preset?: SpringName;
 	rise?: number;
-}> = ({f, units, size, weight = 700, letterSpacing = '-0.035em', left, capTop, baseline, color: ink = color.ink, marker, preset = 'SNAPPY', rise = 28}) => {
+	/** v2: top-lit gradient fill (white → cool grey; volt words a volt gradient + soft glow). Default true. */
+	gradient?: boolean;
+}> = ({f, units, size, weight = 700, letterSpacing = '-0.035em', left, capTop, baseline, color: ink = color.ink, marker, preset = 'SNAPPY', rise = 28, gradient = true}) => {
 	const top =
 		capTop !== undefined
 			? boxTopForCapTop(METRICS.sora, size, capTop)
@@ -157,8 +189,8 @@ export const Words: React.FC<{
 					display: 'inline-block',
 					opacity: o,
 					transform: Math.abs(y) > 0.01 ? `translateY(${y.toFixed(2)}px)` : undefined,
-					filter: blur > 0.15 ? `blur(${blur.toFixed(2)}px)` : undefined,
-					color: volt > 0 ? mixHex(color.ink, color.volt, volt) : undefined,
+					filter: [blur > 0.15 ? `blur(${blur.toFixed(2)}px)` : '', gradient && volt > 0.01 ? voltGlow(volt) : ''].join(' ').trim() || undefined,
+					...(gradient ? gradientInk(volt) : {color: volt > 0 ? mixHex(color.ink, color.volt, volt) : undefined}),
 					position: 'relative',
 					zIndex: 1,
 				}}

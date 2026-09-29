@@ -1,34 +1,40 @@
 /**
  * s08-regras-memoria-ia — S08 · abs 510–584 (75 f) · features · bar 9.3 → 10.4
  *
- * Three hits on three beats. Left: a stacked slam "Regras," / "memória," / "IA."
- * (Sora 800 150 px, x 144, cap-tops 250 / 393 / 536) on a canvas scrim. Right:
- * the real "Classificados neste dia (19)" rows, tilted, jump-cutting badge to
- * badge on each hit:
- *   f0  (abs 510) hard cut into the first contact: "Regras," at full opacity,
- *       scale 1.06 → 1 (SLAM), 6-px camera shake over 8 f; the "regra" badge
- *       (row 1, sei.ifro.edu.br) is lit (dim 0 → 0.62 over 8 f) and ringed.
- *  f15  (abs 525) jump-cut down to the "memória" badge (row 3, docs.google.com)
- *       as "memória," slams on line 2; "Regras," settles to ink-2.
- *  f30  (abs 540, bar-10 downbeat) jump-cut to the "IA" badge (row 5, Terminal)
- *       as "IA." slams in volt; canvas lift #0a0d16 → #121a2c → #0a0d16 over 3 f.
- * Each ring pops on its hit (scale 1.12 → 1, SLAM, glow flash) and stays drawn
- * at 60 % after the hop. f30–74 hold on row 5: glow breathes 0.3 → 0.22, the
- * plane drifts (y −12 image px, rx 4 → 3°) and pushes 1.00 → 1.025. f75 cut.
+ * v2. Three hits on three beats, word ↔ proof. Left: the slam stack "Regras," /
+ * "memória," / "IA." (Sora 800 184 px, −0.045em, top-lit gradient; "IA." volt
+ * gradient + glow), x 104, cap-tops 236 / 432 / 628. Right: the real
+ * "Classificados neste dia (19)" list in a tilted window that sits back on the
+ * stage; on each hit the matching ORIGIN BADGE lifts out of its row as a big
+ * floating card (≈ 2.4×, badge text ≈ 53 px) and flies left to sit beside its
+ * word; the row keeps an empty socket (LiftHole).
+ *   f0  (abs 510) hard cut straight into the first contact: "Regras," SLAM
+ *       (scale 1.06 → 1, 4-f white-hot settle) + 6-px camera shake; the "regra"
+ *       badge (row 1, sei.ifro.edu.br) lifts.
+ *  f15  (abs 525) jump-cut down the list (the window re-frames on row 3) as
+ *       "memória," slams; the "memória" badge (row 3, docs.google.com) lifts;
+ *       "Regras," and its card step back.
+ *  f30  (abs 540, bar-10 downbeat) jump-cut to row 5 as "IA." slams in volt; the
+ *       "IA" badge (row 5, Terminal) lifts; the stage lights flash (level
+ *       1 → 1.35 → 1 over 4 f, the v1 canvas lift).
+ * Each card's volt ring pops on its hit (scale 1.12 → 1, glow flash) and stays
+ * at 45 % after the next hit. f30–74 hold: the IA card's glow breathes, every
+ * card floats on its own phase, the window pushes 1.00 → 1.03 with rx 4 → 3°,
+ * the aurora sweeps. f75 hard cut to s09.
  */
 import React from 'react';
-import {AbsoluteFill} from 'remotion';
-import type {CameraKey, ScreenConfig} from '../components/screen-geometry';
+import {AbsoluteFill, useVideoConfig} from 'remotion';
+import type {CameraKey, Rect, ScreenConfig} from '../components/screen-geometry';
+import {mapImageRect} from '../components/screen-geometry';
+import {LiftCard, LiftHole, liftCardPose, type LiftCardProps} from '../components/LiftCard';
 import type {Keyframe} from '../design/motion';
-import {E, springAt, useScene, useSceneFrame, type SfxCue, type StoryboardCameraKey} from '../shared';
+import {E, springAt, useScene, useSceneFrame, type SfxCue} from '../shared';
 import {G3Screen} from './_parts/G3/G3Screen';
 import {
 	boxTopForCapTop,
-	clamp01,
-	DimMask,
+	gradientInk,
 	lerp,
 	METRICS,
-	mixHex,
 	Patch,
 	ramp,
 	Ring,
@@ -36,8 +42,9 @@ import {
 	slamShake,
 	Stage,
 	StageTop,
+	voltGlow,
 } from './_parts/G3/common';
-import {color, font} from '../design/tokens';
+import {font} from '../design/tokens';
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
 export const sfx: SfxCue[] = [
@@ -47,6 +54,7 @@ export const sfx: SfxCue[] = [
 ];
 
 const FILE = 'ui/review-settled-expanded.png';
+const COMP = {width: 1920, height: 1080};
 const HITS = [0, 15, 30] as const;
 
 /**
@@ -55,146 +63,189 @@ const HITS = [0, 15, 30] as const;
  * the chip bottoms). Solid card colour.
  */
 const LEGEND_PATCH = {x: 2124, y: 656, w: 670, h: 48, fill: '#0c1220'};
+/** List panel colour around the badges (sampled at (1700, 560), (2000, 586)). */
+const PANEL = '#0c1220';
+/**
+ * Confidence percentages (texture; at the window's size they are ≈ 11 px, but a
+ * legible "100%" beside "regra" would read as an accuracy claim — facts §6.13).
+ * Measured glyph boxes + 4 px: rows 1–5.
+ */
+const PCT_PATCHES = [
+	{x: 1735, y: 572, w: 66, h: 24},
+	{x: 1781, y: 686, w: 52, h: 24},
+	{x: 1714, y: 800, w: 49, h: 24},
+	{x: 1713, y: 914, w: 50, h: 24},
+	{x: 1781, y: 1028, w: 52, h: 24},
+];
 
-/** A slam word: full opacity on its contact frame, scale 1.06 → 1 (SLAM), a 4-f white-hot → colour settle. */
-const SlamWord: React.FC<{f: number; text: string; at: number; capTop: number; rest: string; dimAt?: number}> = ({f, text, at, capTop, rest, dimAt}) => {
+/** Origin badges (storyboard rects, image px): row 1 "regra", row 3 "memória", row 5 "IA". */
+const BADGES: Rect[] = [
+	{x: 1826, y: 566, w: 114, h: 40},
+	{x: 1788, y: 792, w: 152, h: 40},
+	{x: 1858, y: 1020, w: 82, h: 40},
+];
+/** Card crop = badge + 22 px (x) / 16 px (y) of the row around it. */
+const crop = (b: Rect): Rect => ({x: b.x - 22, y: b.y - 16, w: b.w + 44, h: b.h + 32});
+const CROPS = BADGES.map(crop);
+/** Card scale: comp px per image px (badge text 22 image px → ≈ 53 px). */
+const K = 2.4;
+/** Stack geometry. */
+const SLAM = {size: 188, left: 100, capTops: [232, 432, 632]};
+const CAP = METRICS.sora.cap * SLAM.size;
+/** Card column: left edge + vertical centre on each word's cap band. */
+const CARD_LEFT = [880, 1050, 470];
+const GLOWS = ['volt', '#8a78ff', 'volt'] as const;
+
+/** A slam word: full opacity on its contact frame, scale 1.06 → 1 (SLAM), a 4-f white-hot → colour settle, then steps back. */
+const SlamWord: React.FC<{f: number; text: string; at: number; capTop: number; volt?: boolean; dimAt?: number}> = ({f, text, at, capTop, volt = false, dimAt}) => {
 	if (f < at) return null;
-	const size = 150;
 	const s = springAt(f, at, 'SLAM');
 	const scale = 1.06 - 0.06 * s;
 	const hot = 1 - ramp(f, at, at + 4, E.enter);
 	const settle = dimAt !== undefined ? ramp(f, dimAt, dimAt + 4, E.enter) : 0;
-	const base = settle > 0 ? mixHex(rest, color.ink2, settle) : rest;
-	const c = hot > 0 ? mixHex(rest, '#ffffff', 0.55 * hot) : settle > 0 ? base : rest;
+	const ink = gradientInk(volt ? 1 - 0.7 * hot : 0, 0.62 * settle);
 	return (
 		<div
 			style={{
 				position: 'absolute',
-				left: 144,
-				top: boxTopForCapTop(METRICS.sora, size, capTop),
+				left: SLAM.left,
+				top: boxTopForCapTop(METRICS.sora, SLAM.size, capTop),
 				fontFamily: font.display,
 				fontWeight: 800,
-				fontSize: size,
+				fontSize: SLAM.size,
 				lineHeight: 1,
 				letterSpacing: '-0.045em',
 				whiteSpace: 'pre',
-				color: c,
 				transformOrigin: '0% 70%',
 				transform: Math.abs(scale - 1) > 0.0005 ? `scale(${scale.toFixed(4)})` : undefined,
+				filter: [volt ? voltGlow(1) : '', hot > 0.01 ? `brightness(${(1 + 0.6 * hot).toFixed(3)})` : ''].join(' ').trim() || undefined,
 			}}
 		>
-			{text}
+			<span style={{...ink, display: 'inline-block', padding: '0 0.04em'}}>{text}</span>
 		</div>
 	);
 };
 
-/** Canvas lift colour (#121a2c) mixed into an rgb triple → "r,g,b". */
-const liftRgb = (base: [number, number, number], t: number) => {
-	const to = [18, 26, 44];
-	return base.map((v, i) => Math.round(v + (to[i] - v) * clamp01(t))).join(',');
-};
-
 const S08RegrasMemoriaIa: React.FC = () => {
 	const scene = useScene();
+	const {fps} = useVideoConfig();
 	const {frame: f} = useSceneFrame();
-	const keys = scene.camera.filter((k) => k.file && k.target !== 'canvas');
-	const [kA, kB, kC, kD] = keys as [StoryboardCameraKey, StoryboardCameraKey, StoryboardCameraKey, StoryboardCameraKey];
 
-	/* ---- camera: the storyboard's three hard framings + a micro push inside each hold ---- */
-	const PUSH = 1.012; // per 14-f hold (style S11: micro drift ×1.00 → ×1.02)
-	const at = (k: StoryboardCameraKey, frame: number, zoom: number, duration: number, easing = E.linear): CameraKey => ({
+	/* ---- window: back on the stage, right; hard re-frame on each hit (jump-cut down the list) ---- */
+	const ROW_Y = BADGES.map((b) => b.y + b.h / 2);
+	const ANCHOR = {x: 1790, y: 560};
+	const Z = 0.9;
+	const at = (frame: number, row: number, zoom: number, duration: number): CameraKey => ({
 		at: frame,
 		zoom,
-		focus: k.focus!,
-		anchor: k.anchor!,
+		focus: {x: 1883, y: ROW_Y[row]},
+		anchor: ANCHOR,
 		duration,
-		easing,
+		easing: E.linear,
 	});
 	const camera: CameraKey[] = [
-		at(kA, kA.atFrame, kA.zoom, 0),
-		at(kA, kB.atFrame - 1, kA.zoom * PUSH, kB.atFrame - 1 - kA.atFrame),
-		at(kB, kB.atFrame, kB.zoom, 0),
-		at(kB, kC.atFrame - 1, kB.zoom * PUSH, kC.atFrame - 1 - kB.atFrame),
-		at(kC, kC.atFrame, kC.zoom, 0),
-		at(kD, kD.atFrame, kD.zoom * 1.025, kD.atFrame - kC.atFrame),
-	];
-	const tiltKeys = (axis: 'rx' | 'ry'): Keyframe[] => [
-		[kA.atFrame, kA.tilt![axis]],
-		[kB.atFrame - 1, kA.tilt![axis]],
-		[kB.atFrame, kB.tilt![axis]],
-		[kC.atFrame - 1, kB.tilt![axis]],
-		[kC.atFrame, kC.tilt![axis]],
-		[kD.atFrame, kD.tilt![axis], E.linear],
+		at(0, 0, Z, 0),
+		at(14, 0, Z * 1.012, 14),
+		at(15, 1, Z * 1.03, 0),
+		at(29, 1, Z * 1.042, 14),
+		at(30, 2, Z * 1.06, 0),
+		at(74, 2, Z * 1.09, 44),
 	];
 	const shot: ScreenConfig = {
 		src: FILE,
 		width: 1440,
 		radius: 18,
-		glow: false,
+		float: 3,
 		camera,
-		rotateX: tiltKeys('rx'),
-		rotateY: tiltKeys('ry'),
+		rotateX: [[0, 5], [14, 5], [15, 4], [29, 4], [30, 5], [74, 3.5, E.linear]] as Keyframe[],
+		rotateY: [[0, -14], [14, -14], [15, -12], [29, -12], [30, -14], [74, -12, E.linear]] as Keyframe[],
 	};
-
-	/* ---- badge spotlights (storyboard rects = badge + 16 px), dim 0.62 ---- */
-	const spots = scene.spotlights.map((s) => ({rect: s.rect!, from: s.from, to: s.to, dim: s.dim ?? 0.62}));
-	const cur = spots.findIndex((s) => f >= s.from && f <= s.to);
-	const d = ramp(f, 0, 8, E.enter);
-	const onScreen = (1440 / 2880) * kA.zoom;
 
 	// camera hit shake on each contact (whole picture, like a camera bump)
 	const hit = [...HITS].reverse().find((h) => f >= h) ?? 0;
 	const shake = slamShake(f, hit, `s08-${hit}`, 6, 0.4, 8);
+	// downbeat light flash (the v1 canvas lift): stage level 1 → 1.35 → 1 over f30–33
+	const flash = f === 30 ? 1 : f === 31 ? 0.6 : f === 32 ? 0.25 : f === 33 ? 0.08 : 0;
 
-	// canvas lift on the downbeat (abs 540): #0a0d16 → #121a2c → #0a0d16 over 3 f
-	// (applied to the CANVAS only — the scrim under the stack and the dim's tint — so the lit badge pops;
-	// a full-frame "lighten" veil flattened the whole picture)
-	const lift = f === 30 ? 1 : f === 31 ? 0.55 : f === 32 ? 0.18 : 0;
-	const canvasRgb = liftRgb([10, 13, 22], lift);
+	/* ---- the three badge cards ---- */
+	const cards = BADGES.map((b, i) => {
+		const h = HITS[i];
+		const rect = CROPS[i];
+		const w = rect.w * K;
+		const cy = SLAM.capTops[i] + CAP / 2;
+		const cx = CARD_LEFT[i] + w / 2;
+		const next = HITS[i + 1];
+		const back = next !== undefined ? ramp(f, next, next + 6, E.enter) : 0;
+		const breathe = i === 2 ? 0.08 * Math.sin((Math.max(0, f - 38) / 22) * Math.PI) : 0;
+		const props: LiftCardProps = {
+			src: FILE,
+			rect,
+			at: h,
+			enter: 'lift',
+			spring: 'snappy',
+			from: (fr) => mapImageRect(shot, fr, COMP, rect),
+			x: [[h, cx], [74, cx - 10 - 4 * i, E.linear]] as Keyframe[],
+			y: cy,
+			width: w,
+			rotateX: [[h, 8], [74, 5, E.linear]] as Keyframe[],
+			rotateY: [[h, -14], [74, -9, E.linear]] as Keyframe[],
+			float: 5,
+			floatPeriod: 70 + 11 * i,
+			radius: 20,
+			glow: GLOWS[i],
+			glowOpacity: lerp(0.55, 0.26, back) + breathe,
+			// the cards sit in the key light, closer to the camera than the window: a touch brighter than its grade
+			grade: {brightness: 1.3, contrast: 1.05, saturate: 1.2, lift: 0.07},
+			style: {zIndex: 30 + i},
+		};
+		return {props, badge: b, h, back};
+	});
 
 	const [cRegras, cMemoria, cIa] = scene.copy;
 
 	return (
-		<Stage>
+		<Stage
+			seed="s08"
+			look={{
+				level: 1 + 0.35 * flash,
+				keyPool: {x: 0.52, y: 0.48, w: 0.86, h: 0.98, opacity: 0.5},
+				keyLight: {x: 0.58, y: 0.5, w: 0.5, h: 0.62, opacity: 0.16},
+			}}
+		>
 			<AbsoluteFill style={{transform: shakeTransform(shake)}}>
 				<G3Screen {...shot} style={{zIndex: 'auto'}}>
 					<Patch {...LEGEND_PATCH} />
-					<DimMask dim={0.62 * d} tint={liftRgb([6, 9, 16], lift)} holes={cur >= 0 ? [{...spots[cur].rect, r: 14}] : []} />
-					{spots.map((s, i) => {
-						if (f < s.from) return null;
-						const active = i === cur;
-						// pop on the hit: scale 1.12 → 1 (SLAM), glow flash 0.55 → 0.3, then breathe 0.3 → 0.22 on the last hold
-						const pop = springAt(f, s.from, 'SLAM');
-						const scale = active ? 1.12 - 0.12 * pop : 1;
-						const flash = active ? 0.25 * (1 - ramp(f, s.from, s.from + 8, E.enter)) : 0;
-						const breathe = active && i === spots.length - 1 ? lerp(0.3, 0.22, 0.5 - 0.5 * Math.cos(Math.PI * ramp(f, 38, 74, E.linear) * 2)) : 0.3;
-						const opacity = active ? (i === 0 ? d : 1) : 0.6;
-						return (
-							<Ring
-								key={i}
-								rect={s.rect}
-								radius={14}
-								onScreen={onScreen}
-								opacity={opacity}
-								scale={scale}
-								line={2}
-								glow={40}
-								glowAlpha={active ? breathe + flash : 0.3}
-							/>
-						);
-					})}
+					{PCT_PATCHES.map((p, i) => (
+						<Patch key={i} {...p} fill={PANEL} />
+					))}
+					{cards.map((c, i) => (
+						<LiftHole key={i} rect={c.badge} at={c.h} enter="lift" color={PANEL} radius={12} pad={8} feather={14} />
+					))}
 				</G3Screen>
-				{/* left canvas scrim under the slam stack: 85 % → 0 at x 1000 */}
-				<AbsoluteFill
-					style={{
-						background: `linear-gradient(90deg, rgba(${canvasRgb},0.85) 0px, rgba(${canvasRgb},0.85) 520px, rgba(${canvasRgb},0.5) 780px, rgba(${canvasRgb},0) 1000px)`,
-					}}
-				/>
-				<SlamWord f={f} text={cRegras.text} at={cRegras.landFrame} capTop={250} rest={color.ink} dimAt={cMemoria.landFrame} />
-				<SlamWord f={f} text={cMemoria.text} at={cMemoria.landFrame} capTop={393} rest={color.ink} dimAt={cIa.landFrame} />
-				<SlamWord f={f} text={cIa.text} at={cIa.landFrame} capTop={536} rest={color.volt} />
+				{cards.map((c, i) => {
+					const pose = liftCardPose(c.props, f, fps);
+					const pop = springAt(f, c.h, 'SLAM');
+					const flashRing = 0.3 * (1 - ramp(f, c.h, c.h + 8, E.enter));
+					return (
+						<LiftCard key={i} {...c.props}>
+							<Ring
+								rect={c.badge}
+								radius={10}
+								onScreen={pose.k * pose.s}
+								opacity={f < c.h ? 0 : lerp(1, 0.45, c.back)}
+								scale={1.12 - 0.12 * pop}
+								line={2.5}
+								glow={34}
+								glowAlpha={0.3 + flashRing}
+							/>
+						</LiftCard>
+					);
+				})}
+				<SlamWord f={f} text={cRegras.text} at={cRegras.landFrame} capTop={SLAM.capTops[0]} dimAt={cMemoria.landFrame} />
+				<SlamWord f={f} text={cMemoria.text} at={cMemoria.landFrame} capTop={SLAM.capTops[1]} dimAt={cIa.landFrame} />
+				<SlamWord f={f} text={cIa.text} at={cIa.landFrame} capTop={SLAM.capTops[2]} volt />
 			</AbsoluteFill>
-			<StageTop seed="s08" />
+			<StageTop seed="s08" vignette={0.5} />
 		</Stage>
 	);
 };

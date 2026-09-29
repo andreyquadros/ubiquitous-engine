@@ -38,7 +38,7 @@ export const DropBurst: React.FC<{f: number}> = ({f}) => {
 	const raysScale = lerp(0.7, 1.35, ramp(f, 0, 16, E.push));
 	const ring = (delay: number, col: string, width: number) => {
 		const p = ramp(f, delay, delay + 20, E.push);
-		if (f < delay || p >= 1) return null;
+		if (f <= delay || p >= 1) return null; // first visible 1 f after its start, already expanding (no "eye" around the caret on the drop frame)
 		const r = lerp(40, 1150, p);
 		const o = (1 - p) ** 1.4;
 		return (
@@ -91,7 +91,7 @@ export const DropBurst: React.FC<{f: number}> = ({f}) => {
 				/>
 			) : null}
 			{ring(0, 'rgba(225,236,255,A)', 3)}
-			{ring(3, 'rgba(77,141,255,A)', 2)}
+			{ring(2, 'rgba(77,141,255,A)', 2)}
 			{SPARKS.map((s, i) => {
 				const t = f;
 				if (t >= s.life) return null;
