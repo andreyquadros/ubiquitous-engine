@@ -159,22 +159,23 @@ const Bubble: React.FC<{f: number; text: string; from: {cx: number; cy: number; 
 };
 
 /** Contact sparks: small volt / mint / ember dots bursting off the floor around his feet (deterministic). */
+const LIFE = 29;
 const Sparks: React.FC<{f: number; x: number; y: number}> = ({f, x, y}) => {
 	const d = f - CONTACT;
-	if (d < 0 || d > 22) return null;
+	if (d < 0 || d > LIFE) return null;
 	const n = 22;
 	return (
 		<>
 			{Array.from({length: n}, (_, i) => {
 				const a = Math.PI * (1.05 + (0.9 * i) / (n - 1)) + noise2D('s13-sa', i, 0) * 0.12; // upper half-fan
 				const sp = 380 + 220 * (0.5 + 0.5 * noise2D('s13-ss', i, 1));
-				const t = clamp01(d / 22);
+				const t = clamp01(d / LIFE);
 				const e = E.push(t);
 				const px = x + Math.cos(a) * sp * e * 1.25;
-				const py = y + Math.sin(a) * sp * e * 0.7 + 90 * t * t; // a little gravity
+				const py = y + Math.sin(a) * sp * e * 0.7 + 60 * t * t; // a little gravity
 				const r = (i % 3 === 0 ? 10 : 7) * (1 - 0.5 * t);
 				const c = i % 3 === 0 ? color.mint : i % 3 === 1 ? color.volt : color.ember;
-				const o = (1 - t) * ramp(d, 0, 2);
+				const o = (1 - t * t) * ramp(d, 0, 2);
 				return (
 					<div
 						key={i}

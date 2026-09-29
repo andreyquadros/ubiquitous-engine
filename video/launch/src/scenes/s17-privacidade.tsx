@@ -1,54 +1,75 @@
 /**
  * s17-privacidade — S17 · abs 1230–1379 (150 f) · proof · bar 21.3 → 24.1
  *
- * The breather and the trust proof, no UI. f0–5 blur-dissolve in-half on the
- * background + UBI (the type stays crisp); line 1 masks up from f0 (≥ 0.9 by f8).
- * f0–44 UBI idles (idle 75→119). f45 (beat 2) internal jump-cut to a composition
- * scale 1.08; the window-title chip "ana@example.com" is set below the lines and
- * UBI's look clip starts. f60 line 2 masks up. f76–88 a volt marker sweeps the
- * address. f90 (downbeat) CONTACT: the address collapses into "[email]" (SNAPPY
- * width morph, old glyphs blur/fade 4 f). f92–104 a 2-px volt line draws from the
- * token up to "IA" and underlines it; "mínimo." turns volt. f105–149 the build:
- * the push accelerates (E.exit), grid floor 0 → 30 %, volt orb 0.16 → 0.24.
+ * v2. The breather and the trust proof. Z layout: line 1 "Seus dados ficam com
+ * você." (104 px) across the top, UBI large on the left, line 2 "A IA vê só o
+ * mínimo." (88 px) and a REDACTION PANEL on the right: a floating window with
+ * four fictional samples (the exact tokens of crates/ubiqx-core/src/redact.rs).
+ * Left column = your data (it stays), a volt "mask gate", right column = what
+ * the AI gets. On a beat-locked cascade each value passes through the gate and
+ * comes out as its token:
+ *   ana@example.com        → [email]      f90  (abs 1320, downbeat)
+ *   (69) 99999-0000        → [telefone]   f98  (8th)
+ *   123.456.789-00         → [cpf]        f105 (beat)
+ *   example.com/?ref=ana   → example.com  f113 (8th; query stripped)
+ *
+ * f0–5 blur-dissolve in-half on the stage lights + UBI (the navy base and the
+ * type stay crisp). Line 1 masks up from f0 (≥ 0.9 by f8). f4–30 the panel
+ * rises and its rows fill in. f45 (beat 2) internal jump-cut: the stage + UBI
+ * jump to 1.08 (the type/panel layer to 1.02: parallax), UBI's look clip starts.
+ * f60 line 2 masks up. f76–88 the gate arms (draws down) and a volt marker
+ * sweeps the address. f90 CONTACT (row 1), f98/105/113 rows 2–4. f92–104 a 2-px
+ * volt line draws from the [email] token up under "IA"; "mínimo." turns volt.
+ * f105–149 the build: stage/UBI push to 1.16 (E.exit), type/panel to 1.04,
+ * grid floor 0 → 30 %, volt orb up, the tokens breathe on beats 120/135.
  * f150: hard cut on the final hit.
  */
 import React from 'react';
 import {AbsoluteFill} from 'remotion';
 import {evolvePath} from '@remotion/paths';
+import {StageBase} from '../components/Stage';
 import {alpha, color} from '../design/tokens';
 import {E, springAt, TransitionIn, TransitionOut, UbiTrack, useSceneFrame, type SfxCue} from '../shared';
-import {clamp01, FilmGrain, lerp, MaskLine, MEASURED, ramp, Stage, TYPE, Vignette} from './_parts/G6/common';
+import {clamp01, FilmGrain, lerp, MaskLine, ramp, Stage, TYPE, Vignette} from './_parts/G6/common';
+import {gradientFill, mixHex, voltGlow} from './_parts/G6/kit';
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
 export const sfx: SfxCue[] = [
-	{ref: 'ui_tick_1.wav', atFrame: 76, gainDb: -22, note: 'Marker sweep starts.'},
-	{ref: 'pop.wav', atFrame: 90, gainDb: -14, note: 'Mask contact.'},
+	{ref: 'ui_tick_1.wav', atFrame: 76, gainDb: -22, note: 'Marker sweep starts (the mask gate arms).'},
+	{ref: 'pop.wav', atFrame: 90, gainDb: -14, note: 'Mask contact (row 1 → [email]).'},
+	{ref: 'pop+1.wav', atFrame: 98, gainDb: -17, note: 'v2 cascade: row 2 → [telefone].'},
+	{ref: 'pop+2.wav', atFrame: 105, gainDb: -17, note: 'v2 cascade: row 3 → [cpf].'},
+	{ref: 'pop+3.wav', atFrame: 113, gainDb: -17, note: 'v2 cascade: row 4 → bare domain.'},
 ];
 
 /* ------------------------------------------------------------------------ */
 /* Layout (canvas px at camera scale 1)                                      */
 /* ------------------------------------------------------------------------ */
 
-const COL_X = 740;
-const L1 = {capTop: 300, size: 72};
-const L2 = {capTop: 396, size: 72};
-const L2_BASELINE = L2.capTop - TYPE.sora.capTop * L2.size + TYPE.sora.baseline * L2.size; // 448.6
-
-/** Window-title chip: panel-2, radius 22, 1.5 px border, 96 px tall, 28-px window glyph, Inter 48. */
-const CHIP = {x: COL_X, y: 520, h: 96, padL: 28, glyph: 28, gap: 18, padR: 32, radius: 22} as const;
-const TEXT_X = CHIP.padL + CHIP.glyph + CHIP.gap; // 74, text start inside the chip
-const CHIP_W_ADDRESS = TEXT_X + MEASURED.address + CHIP.padR; // ≈ 537 → x 740–1277
-const CHIP_W_TOKEN = TEXT_X + MEASURED.token + CHIP.padR; // ≈ 263 → x 740–1003
-
-/** Connector: token top-centre → under "IA" (line 2), then an underline across "IA". */
-const TOKEN_CX = CHIP.x + TEXT_X + MEASURED.token / 2;
-const IA = {left: COL_X + MEASURED.line2BeforeIA, w: MEASURED.ia};
+const L1 = {left: 150, capTop: 122, size: 104} as const;
+const COL_X = 704;
+const L2 = {left: COL_X, capTop: 290, size: 88} as const;
+const L2_BASELINE = L2.capTop + (TYPE.sora.baseline - TYPE.sora.capTop) * L2.size; // ≈ 354
+/** "A " and "IA" advances at Sora 700 88 px −0.04em (HarfBuzz widths at 72 px −0.03em rescaled). */
+const IA = {left: COL_X + 80, w: 90};
 const IA_CX = IA.left + IA.w / 2;
-const UNDER_Y = Math.round(L2_BASELINE + 0.16 * L2.size); // ≈ 460
-const CONNECTOR = `M ${TOKEN_CX.toFixed(1)} ${CHIP.y} C ${TOKEN_CX.toFixed(1)} ${CHIP.y - 30} ${IA_CX.toFixed(1)} ${UNDER_Y + 30} ${IA_CX.toFixed(1)} ${UNDER_Y}`;
+const UNDER_Y = Math.round(L2_BASELINE + 14);
 
-/** UBI: 780-px frame (k 0.867), feet anchor on (420, 930). */
-const UBI = {x: 420, y: 930, size: 780} as const;
+/** Redaction panel (canvas px). */
+const PANEL = {x: COL_X - 4, y: 400, w: 1080, h: 556, radius: 30} as const;
+const BAR_H = 58;
+const ROW = {top: 74, h: 104, gap: 16, inset: 18, radius: 20} as const;
+const ICON = {x: 40, size: 60} as const;
+const VALUE_X = 124;
+const GATE_X = 668; // panel-local x of the mask gate
+const TOKEN_X = 712;
+const FS = 44; // chip text, canvas px (≥ 44)
+
+type Row = {icon: 'mail' | 'phone' | 'id' | 'link'; value: string; token: string; flip: number};
+const FLIPS = [90, 98, 105, 113];
+
+/** UBI: 820-px frame, feet on (400, 985). */
+const UBI = {x: 400, y: 985, size: 820} as const;
 
 /* ------------------------------------------------------------------------ */
 /* Timing                                                                    */
@@ -64,177 +85,337 @@ const DRAW_END = 104;
 const BUILD = 105;
 
 /**
- * Composition camera (storyboard keys): 1.0 (slight life drift) → hard 1.08 at
- * f45 → 1.10 linear by f119 → 1.16 E.exit by f149. Scale origin (1435, 460): the
- * text column stays inside title-safe at 1.16 (right edge 1729 → 1776) and UBI
- * grows toward the left edge.
+ * Two cameras (parallax). Stage + UBI: 1.0 (drift) → hard 1.08 at f45 → 1.10
+ * by f119 → 1.16 E.exit by f149 (storyboard), origin on UBI's feet so he grows
+ * up and left. Type + panel: 1.0 → 1.02 at f45 → 1.025 → 1.04, origin at the
+ * canvas centre: everything stays inside title-safe at the end.
  */
-const ORIGIN = {x: 1435, y: 460};
-const camZoom = (f: number) => {
+const stageZoom = (f: number) => {
 	if (f < JUMP) return lerp(1, 1.008, f / (JUMP - 1));
 	if (f <= 119) return lerp(1.08, 1.1, (f - JUMP) / (119 - JUMP));
 	return lerp(1.1, 1.16, E.exit(clamp01((f - 119) / 30)));
+};
+const typeZoom = (f: number) => {
+	if (f < JUMP) return lerp(1, 1.003, f / (JUMP - 1));
+	if (f <= 119) return lerp(1.02, 1.025, (f - JUMP) / (119 - JUMP));
+	return lerp(1.025, 1.04, E.exit(clamp01((f - 119) / 30)));
 };
 
 /* ------------------------------------------------------------------------ */
 /* Pieces                                                                    */
 /* ------------------------------------------------------------------------ */
 
-const WindowGlyph: React.FC<{tint: string}> = ({tint}) => (
-	<svg width={28} height={28} viewBox="0 0 28 28" style={{display: 'block'}}>
-		<rect x={2} y={4} width={24} height={20} rx={4.5} fill="none" stroke={tint} strokeWidth={2} />
-		<line x1={2} y1={10.5} x2={26} y2={10.5} stroke={tint} strokeWidth={2} />
-		<circle cx={6.4} cy={7.3} r={1.1} fill={tint} />
-		<circle cx={9.8} cy={7.3} r={1.1} fill={tint} />
-	</svg>
-);
+const PANEL_BG = '#131c30';
+const ROW_BG = '#19243b';
+const INK = '#eef3fc';
+const INK3 = '#7f8dab';
+const TOKEN_INK = '#8ab4ff';
 
-const Chip: React.FC<{f: number; address: string; token: string}> = ({f, address, token}) => {
-	if (f < JUMP) return null;
-	// width morph (SNAPPY) on contact
-	const morph = f < CONTACT ? 0 : springAt(f, CONTACT, 'SNAPPY');
-	const w = lerp(CHIP_W_ADDRESS, CHIP_W_TOKEN, morph);
-	// state: panel-2 → volt 14 %
-	const st = ramp(f, CONTACT, CONTACT + 4, E.enter);
-	const bg = st <= 0 ? color.panel2 : `color-mix(in srgb, ${color.panel2} ${((1 - st) * 100).toFixed(1)}%, rgba(77, 141, 255, 0.14))`;
-	const border = st <= 0 ? 'rgba(255, 255, 255, 0.10)' : alpha(color.volt, lerp(0.1, 0.42, st));
-	const burst = f >= CONTACT ? 1 - ramp(f, CONTACT, CONTACT + 14, E.enter) : 0;
-	// marker sweep f76–88 (E.glide), fades into the chip's volt state on contact
-	const sweep = ramp(f, SWEEP, SWEEP_END, E.glide);
-	const markerO = f < CONTACT ? 1 : 1 - ramp(f, CONTACT, CONTACT + 2);
-	const edge = f >= SWEEP && f <= SWEEP_END + 2 ? 1 - ramp(f, SWEEP_END, SWEEP_END + 2) : 0;
-	// the address goes: blur 0 → 6 px, fade, squeeze toward the left over 4 f
-	// (f90 1 → f91 .45 → f92 .12 → f93 0: gone before the token is fully in)
-	const gone = f < CONTACT ? 0 : [0, 0.55, 0.88, 1][Math.min(3, f - CONTACT)];
-	// the token lands f92: blur 6 → 0, scale .94 → 1 (SNAPPY), opacity f90.5 → f92
-	const tokIn = f < CONTACT ? 0 : springAt(f, CONTACT, 'SNAPPY');
-	const tokO = ramp(f, CONTACT + 0.5, CONTACT + 2);
-	const tokSharp = ramp(f, CONTACT, CONTACT + 2, E.enter); // blur 6 → 0 by f92 (landed)
-	const markW = MEASURED.address + 16;
+/** lucide icons (mail, phone, id-card, link), stroke 2 in a 24 box. */
+const RowIcon: React.FC<{name: Row['icon']; size: number; stroke: string}> = ({name, size, stroke}) => {
+	const c = {fill: 'none', stroke, strokeWidth: 1.9, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const};
+	return (
+		<svg width={size} height={size} viewBox="0 0 24 24" style={{display: 'block'}}>
+			{name === 'mail' ? (
+				<>
+					<rect {...c} x="2" y="4" width="20" height="16" rx="2" />
+					<path {...c} d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+				</>
+			) : name === 'phone' ? (
+				<path
+					{...c}
+					d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"
+				/>
+			) : name === 'id' ? (
+				<>
+					<rect {...c} x="2" y="5" width="20" height="14" rx="2" />
+					<circle {...c} cx="8" cy="11" r="2" />
+					<path {...c} d="M5.17 16a3 3 0 0 1 5.66 0" />
+					<path {...c} d="M14 10h4" />
+					<path {...c} d="M14 14h4" />
+				</>
+			) : (
+				<>
+					<path {...c} d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+					<path {...c} d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+				</>
+			)}
+		</svg>
+	);
+};
+
+const textStyle = (weight: number, c: string): React.CSSProperties => ({
+	fontFamily: '"Inter", sans-serif',
+	fontWeight: weight,
+	fontSize: FS,
+	lineHeight: 1,
+	letterSpacing: '-0.012em',
+	color: c,
+	whiteSpace: 'nowrap',
+});
+
+const RowView: React.FC<{f: number; row: Row; i: number}> = ({f, row, i}) => {
+	const top = ROW.top + i * (ROW.h + ROW.gap);
+	const cy = ROW.h / 2;
+	// fill-in: rise + fade, 5 f apart from f8
+	const inAt = 8 + 5 * i;
+	const rin = springAt(f, inAt, 'SNAPPY');
+	const ro = ramp(f, inAt, inAt + 6);
+	const F = row.flip;
+	// marker (row 1: f76–88 like v1; rows 2–4: 6 f before the flip)
+	const m0 = i === 0 ? SWEEP + 4 : F - 7;
+	const m1 = i === 0 ? SWEEP_END : F - 1;
+	const sweep = ramp(f, m0, m1, E.glide);
+	const markerO = f < F ? 1 : 1 - ramp(f, F, F + 3);
+	// ghost: a copy of the value slides into the gate (clipped at the gate) over the last 7 f
+	const g = ramp(f, F - 7, F, E.push);
+	const ghostO = f < F - 7 || f > F + 1 ? 0 : Math.sin(Math.PI * clamp01((f - (F - 7)) / 9)) * 0.75;
+	// token: pops out of the gate on the flip (SNAPPY), blur 6 → 0 by F + 2
+	const tokIn = f < F ? 0 : springAt(f, F, 'SNAPPY');
+	const tokO = ramp(f, F, F + 2);
+	const tokSharp = ramp(f, F, F + 3, E.enter);
+	const flash = f >= F ? 1 - ramp(f, F, F + 16, E.glide) : 0;
+	const done = ramp(f, F, F + 5, E.enter);
+	// beat breath on the landed tokens (the build)
+	const breath = f >= 118 ? 0.5 + 0.5 * Math.cos((2 * Math.PI * (f - 120)) / 15) : 0;
+	const breathA = f >= 118 ? ramp(f, 118, 124) * breath : 0;
+	const markW = Math.min(520, 26 * row.value.length) + 20;
 	return (
 		<div
 			style={{
 				position: 'absolute',
-				left: CHIP.x,
-				top: CHIP.y,
-				width: w,
-				height: CHIP.h,
-				boxSizing: 'border-box',
-				borderRadius: CHIP.radius,
-				background: bg,
-				border: `1.5px solid ${border}`,
-				overflow: 'hidden',
-				boxShadow: [
-					'inset 0 1px 0 rgba(255,255,255,0.05)',
-					'0 10px 24px -8px rgba(0,0,0,0.55)',
-					burst > 0.01 ? `0 0 ${Math.round(44 * burst)}px ${alpha(color.volt, 0.35 * burst)}` : null,
-				]
-					.filter(Boolean)
-					.join(', '),
+				left: ROW.inset,
+				top,
+				width: PANEL.w - 2 * ROW.inset,
+				height: ROW.h,
+				borderRadius: ROW.radius,
+				background: ROW_BG,
+				boxShadow: `inset 0 1px 0 rgba(255,255,255,0.05), inset 0 0 0 1px rgba(140,170,230,${(0.1 + 0.25 * flash).toFixed(3)})`,
+				opacity: ro,
+				transform: rin < 0.999 ? `translateY(${(22 * (1 - rin)).toFixed(2)}px)` : undefined,
 			}}
 		>
-			<div style={{position: 'absolute', left: CHIP.padL - 1.5, top: (CHIP.h - CHIP.glyph) / 2 - 1.5}}>
-				<WindowGlyph tint={st > 0.5 ? color.volt : color.ink3} />
+			{/* icon tile */}
+			<div
+				style={{
+					position: 'absolute',
+					left: ICON.x - ROW.inset,
+					top: cy - ICON.size / 2,
+					width: ICON.size,
+					height: ICON.size,
+					borderRadius: 16,
+					background: '#22304c',
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'center',
+				}}
+			>
+				<RowIcon name={row.icon} size={32} stroke={mixHex('#aebbd6', TOKEN_INK, done)} />
 			</div>
-			{/* marker */}
-			{f >= SWEEP && markerO > 0.01 ? (
+			{/* marker behind the value */}
+			{f >= m0 && markerO > 0.01 ? (
 				<div
 					style={{
 						position: 'absolute',
-						left: TEXT_X - 8 - 1.5,
-						top: CHIP.h / 2 - 30 - 1.5,
+						left: VALUE_X - ROW.inset - 10,
+						top: cy - 32,
 						width: markW * sweep,
-						height: 60,
-						borderRadius: 10,
+						height: 64,
+						borderRadius: 12,
 						background: alpha(color.volt, 0.26),
 						opacity: markerO,
 					}}
-				>
-					{edge > 0.01 ? (
-						<div
-							style={{
-								position: 'absolute',
-								right: -1,
-								top: -6,
-								bottom: -6,
-								width: 3,
-								borderRadius: 2,
-								background: color.volt,
-								opacity: edge,
-								boxShadow: `0 0 12px ${alpha(color.volt, 0.6)}`,
-							}}
-						/>
-					) : null}
+				/>
+			) : null}
+			{/* the value: it stays (your data) */}
+			<div style={{position: 'absolute', left: VALUE_X - ROW.inset, top: cy - FS / 2, height: FS, display: 'flex', alignItems: 'center', ...textStyle(500, INK)}}>{row.value}</div>
+			{/* ghost copy sliding into the gate, clipped at it */}
+			{ghostO > 0.01 ? (
+				<div style={{position: 'absolute', left: 0, top: 0, width: GATE_X - ROW.inset, height: ROW.h, overflow: 'hidden'}}>
+					<div
+						style={{
+							position: 'absolute',
+							left: VALUE_X - ROW.inset + lerp(0, GATE_X - VALUE_X + 40, g),
+							top: cy - FS / 2,
+							height: FS,
+							display: 'flex',
+							alignItems: 'center',
+							...textStyle(500, TOKEN_INK),
+							opacity: ghostO,
+							filter: `blur(${(1 + 3 * g).toFixed(2)}px)`,
+						}}
+					>
+						{row.value}
+					</div>
 				</div>
 			) : null}
-			{/* address */}
-			{gone < 1 ? (
-				<div
-					style={{
-						position: 'absolute',
-						left: TEXT_X - 1.5,
-						top: -1.5,
-						height: CHIP.h,
-						display: 'flex',
-						alignItems: 'center',
-						fontFamily: '"Inter", sans-serif',
-						fontWeight: 500,
-						fontSize: 48,
-						lineHeight: 1,
-						letterSpacing: '-0.01em',
-						color: color.ink,
-						whiteSpace: 'nowrap',
-						opacity: 1 - gone,
-						filter: gone > 0 ? `blur(${(6 * gone).toFixed(2)}px)` : undefined,
-						transformOrigin: '0% 50%',
-						transform: gone > 0 ? `scaleX(${lerp(1, 0.8, gone).toFixed(4)})` : undefined,
-					}}
-				>
-					{address}
-				</div>
-			) : null}
-			{/* token */}
+			{/* right cell: empty slot → token */}
+			<div
+				style={{
+					position: 'absolute',
+					left: TOKEN_X - ROW.inset,
+					top: cy - 36,
+					height: 72,
+					width: PANEL.w - ROW.inset - 24 - TOKEN_X,
+					borderRadius: 16,
+					boxSizing: 'border-box',
+					border: `1.5px dashed rgba(140,170,230,${(0.22 * (1 - done)).toFixed(3)})`,
+				}}
+			/>
 			{tokO > 0 ? (
 				<div
 					style={{
 						position: 'absolute',
-						left: TEXT_X - 1.5,
-						top: -1.5,
-						height: CHIP.h,
+						left: TOKEN_X - ROW.inset,
+						top: cy - 36,
+						height: 72,
 						display: 'flex',
 						alignItems: 'center',
-						fontFamily: '"Inter", sans-serif',
-						fontWeight: 600,
-						fontSize: 48,
-						lineHeight: 1,
-						letterSpacing: '-0.01em',
-						color: color.volt,
-						whiteSpace: 'nowrap',
+						padding: '0 22px',
+						borderRadius: 16,
+						boxSizing: 'border-box',
+						background: `linear-gradient(${alpha(color.volt, 0.16 + 0.1 * flash + 0.06 * breathA)}, ${alpha(color.volt, 0.16 + 0.1 * flash + 0.06 * breathA)}), #0f1a33`,
+						boxShadow: `inset 0 0 0 1.5px ${alpha(color.volt, 0.45 + 0.3 * flash)}, 0 0 ${(12 + 30 * flash + 10 * breathA).toFixed(1)}px ${alpha(color.volt, 0.22 + 0.4 * flash + 0.12 * breathA)}`,
 						opacity: tokO,
 						filter: tokSharp < 1 ? `blur(${(6 * (1 - tokSharp)).toFixed(2)}px)` : undefined,
 						transformOrigin: '0% 50%',
-						transform: tokIn < 0.999 ? `scale(${lerp(0.94, 1, tokIn).toFixed(4)})` : undefined,
+						transform: tokIn < 0.999 ? `translateX(${(-24 * (1 - tokIn)).toFixed(2)}px) scale(${lerp(0.9, 1, tokIn).toFixed(4)})` : undefined,
+						...textStyle(600, TOKEN_INK),
 					}}
 				>
-					{token}
+					{row.token}
 				</div>
 			) : null}
 		</div>
 	);
 };
 
+/** The mask gate: a volt hairline down the rows with a chevron per row; arms f76–88, flashes per flip. */
+const Gate: React.FC<{f: number}> = ({f}) => {
+	const top = ROW.top - 6;
+	const bottom = ROW.top + 4 * ROW.h + 3 * ROW.gap + 6;
+	const arm = ramp(f, SWEEP, SWEEP_END, E.glide);
+	const idle = ramp(f, 14, 30) * 0.28;
+	return (
+		<>
+			<div
+				style={{
+					position: 'absolute',
+					left: GATE_X - 1.5,
+					top,
+					width: 3,
+					height: bottom - top,
+					borderRadius: 2,
+					background: `rgba(140,170,230,${idle.toFixed(3)})`,
+				}}
+			/>
+			{arm > 0 ? (
+				<div
+					style={{
+						position: 'absolute',
+						left: GATE_X - 1.5,
+						top,
+						width: 3,
+						height: (bottom - top) * arm,
+						borderRadius: 2,
+						background: color.volt,
+						boxShadow: `0 0 14px ${alpha(color.volt, 0.7)}, 0 0 36px ${alpha(color.volt, 0.35)}`,
+					}}
+				/>
+			) : null}
+			{FLIPS.map((F, i) => {
+				const cy = ROW.top + i * (ROW.h + ROW.gap) + ROW.h / 2;
+				const flash = f >= F - 1 ? 1 - ramp(f, F - 1, F + 12, E.glide) : 0;
+				const lit = Math.max(idle * 1.6, arm >= 1 ? 0.9 : 0, flash);
+				return (
+					<React.Fragment key={i}>
+						<svg width={26} height={26} viewBox="0 0 24 24" style={{position: 'absolute', left: GATE_X + 8, top: cy - 13, overflow: 'visible'}}>
+							<path d="m9 6 6 6-6 6" fill="none" stroke={f >= F ? TOKEN_INK : color.volt} strokeOpacity={lit} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
+						</svg>
+						{flash > 0.01 ? (
+							<div
+								style={{
+									position: 'absolute',
+									left: GATE_X - 60,
+									top: cy - 60,
+									width: 120,
+									height: 120,
+									borderRadius: '50%',
+									background: `radial-gradient(closest-side, ${alpha(color.volt, 0.55 * flash)} 0%, ${alpha(color.volt, 0.18 * flash)} 50%, transparent 100%)`,
+								}}
+							/>
+						) : null}
+					</React.Fragment>
+				);
+			})}
+		</>
+	);
+};
+
+const Panel: React.FC<{f: number; rows: Row[]}> = ({f, rows}) => {
+	const rise = springAt(f, 4, 'SMOOTH');
+	const o = ramp(f, 4, 14);
+	const float = Math.sin((2 * Math.PI * f) / 110) * 4;
+	const ry = lerp(-7, -4, clamp01(f / 149));
+	const rx = lerp(4, 2.5, clamp01(f / 149));
+	return (
+		<div style={{position: 'absolute', left: 0, top: 0, width: 1920, height: 1080, perspective: 2200, perspectiveOrigin: `${PANEL.x + PANEL.w / 2}px ${PANEL.y + PANEL.h / 2}px`}}>
+			<div
+				style={{
+					position: 'absolute',
+					left: PANEL.x,
+					top: PANEL.y + 40 * (1 - rise) + float,
+					width: PANEL.w,
+					height: PANEL.h,
+					opacity: o,
+					transform: `rotateX(${rx.toFixed(3)}deg) rotateY(${ry.toFixed(3)}deg)`,
+				}}
+			>
+				{/* ambient volt glow under the panel */}
+				<div style={{position: 'absolute', left: '-18%', right: '-18%', top: '-22%', bottom: '-30%', background: `radial-gradient(closest-side, ${alpha(color.volt, 0.3)} 0%, ${alpha(color.volt, 0.1)} 55%, transparent 100%)`}} />
+				{/* rim + shadow */}
+				<div
+					style={{
+						position: 'absolute',
+						inset: -1.5,
+						borderRadius: PANEL.radius + 1.5,
+						background: `linear-gradient(135deg, ${alpha(color.volt, 0.75)} 0%, rgba(77,141,255,0.18) 35%, rgba(77,141,255,0) 60%)`,
+						boxShadow: '0 22px 44px -10px rgba(0,0,0,0.6), 0 60px 120px -30px rgba(0,0,0,0.7)',
+					}}
+				/>
+				<div style={{position: 'absolute', inset: 0, borderRadius: PANEL.radius, background: PANEL_BG, overflow: 'hidden', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.10)'}}>
+					{/* title bar: neutral dots (platform-agnostic window) */}
+					<div style={{position: 'absolute', left: 0, right: 0, top: 0, height: BAR_H, borderBottom: '1px solid rgba(140,170,230,0.10)', background: 'rgba(255,255,255,0.02)'}}>
+						{[0, 1, 2].map((d) => (
+							<div key={d} style={{position: 'absolute', left: 28 + d * 26, top: BAR_H / 2 - 7, width: 14, height: 14, borderRadius: 7, background: '#3a4560'}} />
+						))}
+					</div>
+					{rows.map((r, i) => (
+						<RowView key={i} f={f} row={r} i={i} />
+					))}
+					<Gate f={f} />
+				</div>
+			</div>
+		</div>
+	);
+};
+
 const Connector: React.FC<{f: number}> = ({f}) => {
 	if (f < DRAW) return null;
+	// from the [email] token's top (panel row 1, right column) up under "IA"
+	const sx = PANEL.x + TOKEN_X + 70;
+	const sy = PANEL.y + ROW.top + 14;
+	const path = `M ${sx} ${sy} C ${sx} ${sy - 40} ${IA_CX} ${UNDER_Y + 44} ${IA_CX} ${UNDER_Y}`;
 	const p = ramp(f, DRAW, DRAW + 9, E.glide);
 	const u = ramp(f, DRAW + 8, DRAW_END, E.push);
 	const dot = springAt(f, DRAW, 'SNAPPY');
-	const ev = evolvePath(p, CONNECTOR);
-	const half = (IA.w / 2 + 4) * u;
+	const ev = evolvePath(p, path);
+	const half = (IA.w / 2 + 6) * u;
 	return (
 		<svg width={1920} height={1080} style={{position: 'absolute', left: 0, top: 0, overflow: 'visible'}}>
-			<path d={CONNECTOR} fill="none" stroke={color.volt} strokeWidth={2} strokeLinecap="round" strokeDasharray={ev.strokeDasharray} strokeDashoffset={ev.strokeDashoffset} />
-			<circle cx={TOKEN_CX} cy={CHIP.y} r={4 * Math.min(1.1, dot)} fill={color.volt} />
-			{u > 0 ? <line x1={IA_CX - half} y1={UNDER_Y} x2={IA_CX + half} y2={UNDER_Y} stroke={color.volt} strokeWidth={3} strokeLinecap="round" /> : null}
+			<path d={path} fill="none" stroke={color.volt} strokeWidth={3} strokeLinecap="round" strokeDasharray={ev.strokeDasharray} strokeDashoffset={ev.strokeDashoffset} style={{filter: `drop-shadow(0 0 6px ${alpha(color.volt, 0.7)})`}} />
+			<circle cx={sx} cy={sy} r={5 * Math.min(1.1, dot)} fill={color.volt} />
+			{u > 0 ? <line x1={IA_CX - half} y1={UNDER_Y} x2={IA_CX + half} y2={UNDER_Y} stroke={color.volt} strokeWidth={4} strokeLinecap="round" /> : null}
 		</svg>
 	);
 };
@@ -251,48 +432,64 @@ const S17Privacidade: React.FC = () => {
 	const line2a = cut >= 0 ? line2.slice(0, cut) : line2;
 	const line2b = cut >= 0 ? line2.slice(cut) : '';
 
-	const z = camZoom(f);
+	// fictional samples; the address and its token are the storyboard's copy, the rest follow redact.rs exactly
+	const rows: Row[] = [
+		{icon: 'mail', value: address, token, flip: FLIPS[0]},
+		{icon: 'phone', value: '(69) 99999-0000', token: '[telefone]', flip: FLIPS[1]},
+		{icon: 'id', value: '123.456.789-00', token: '[cpf]', flip: FLIPS[2]},
+		{icon: 'link', value: 'example.com/?ref=ana', token: 'example.com', flip: FLIPS[3]},
+	];
+
+	const zs = stageZoom(f);
+	const zt = typeZoom(f);
 	const build = ramp(f, BUILD, 149, E.enter);
-	const orbVolt = lerp(0.16, 0.24, build);
+	const orbVolt = lerp(0.2, 0.3, build);
 	const floor = 0.3 * ramp(f, BUILD, 149, E.glide);
 	const volt = ramp(f, DRAW + 6, DRAW_END + 2, E.enter); // "mínimo." turns volt as the line lands
 
-	const emphColor = volt <= 0 ? color.ink : volt >= 1 ? color.volt : `color-mix(in srgb, ${color.volt} ${(volt * 100).toFixed(1)}%, ${color.ink})`;
-
 	return (
 		<TransitionOut>
-			<AbsoluteFill style={{backgroundColor: color.canvas}}>
-				{/* composition camera */}
-				<AbsoluteFill style={{transform: `scale(${z.toFixed(5)})`, transformOrigin: `${ORIGIN.x}px ${ORIGIN.y}px`}}>
-					{/* storyboard in-half (blur-dissolve 6 f) on the background + UBI only */}
+			<AbsoluteFill style={{backgroundColor: '#0a0f20'}}>
+				<StageBase />
+				{/* stage + UBI camera (storyboard push) */}
+				<AbsoluteFill style={{transform: `scale(${zs.toFixed(5)})`, transformOrigin: `${UBI.x}px ${UBI.y}px`}}>
+					{/* storyboard in-half (blur-dissolve 6 f) on the stage lights + UBI only */}
 					<TransitionIn>
 						<Stage
 							seed="s17"
+							base="transparent"
 							orbs={[
-								{c: color.volt, x: 1560, y: 170, d: 1150, opacity: orbVolt},
-								{c: color.ember, x: 300, y: 960, d: 820, opacity: 0.07},
+								// the volt bloom sits behind UBI (the lit subject), off the volt "mínimo." (GUARD RULE)
+								{c: color.volt, x: 420, y: 560, d: 1100, opacity: orbVolt},
+								{c: color.ember, x: 260, y: 1000, d: 760, opacity: 0.1},
 							]}
 							floor={floor}
 							lineAlpha={0.5}
-							horizon={0.7}
+							horizon={0.72}
 							gridSpeed={0.6}
+							look={{
+								keyPool: {x: 0.5, y: 0.7, w: 0.95, h: 0.9, opacity: 0.4},
+								keyLight: {x: 0.21, y: 0.6, w: 0.34, h: 0.6, opacity: 0.17},
+							}}
 						/>
-						<UbiTrack segments={scene.ubiTrack} x={UBI.x} y={UBI.y} size={UBI.size} float={8} floatPeriod={126} floorGlow={0.3} shadow={0.4} />
+						<UbiTrack segments={scene.ubiTrack} x={UBI.x} y={UBI.y} size={UBI.size} float={8} floatPeriod={126} floorGlow={0.34} shadow={0.4} />
 					</TransitionIn>
+				</AbsoluteFill>
 
-					{/* type: crisp, outside the dissolve */}
-					<MaskLine frame={f} at={0} capTop={L1.capTop} left={COL_X} family="sora" size={L1.size} weight={700} tracking="-0.03em" color={color.ink} ariaLabel={line1}>
-						{line1}
+				{/* type + panel camera (parallax: moves less than the stage) */}
+				<AbsoluteFill style={{transform: `scale(${zt.toFixed(5)})`, transformOrigin: '960px 540px'}}>
+					<MaskLine frame={f} at={0} capTop={L1.capTop} left={L1.left} family="sora" size={L1.size} weight={700} tracking="-0.04em" color={color.ink} ariaLabel={line1}>
+						<span style={gradientFill(0)}>{line1}</span>
 					</MaskLine>
-					<MaskLine frame={f} at={LINE2} capTop={L2.capTop} left={COL_X} family="sora" size={L2.size} weight={700} tracking="-0.03em" color={color.ink} ariaLabel={line2}>
-						{line2a}
-						<span style={{color: emphColor}}>{line2b}</span>
+					<Panel f={f} rows={rows} />
+					<MaskLine frame={f} at={LINE2} capTop={L2.capTop} left={L2.left} family="sora" size={L2.size} weight={700} tracking="-0.04em" color={color.ink} ariaLabel={line2}>
+						<span style={gradientFill(0)}>{line2a}</span>
+						<span style={{...gradientFill(volt), filter: volt > 0.01 ? voltGlow(volt) : undefined}}>{line2b}</span>
 					</MaskLine>
-					<Chip f={f} address={address} token={token} />
 					<Connector f={f} />
 				</AbsoluteFill>
 
-				<Vignette strength={0.55} />
+				<Vignette strength={0.5} />
 				<FilmGrain opacity={0.045} seed="s17" />
 			</AbsoluteFill>
 		</TransitionOut>

@@ -1,29 +1,36 @@
 /**
  * s14-relatorio — S14 · abs 930–1034 (105 f) · features · bar 16.3 → 18.2
  *
- * Part A (f0–29): hard cut to a big tabular "17:59" on the orbs; f10–15 the last
- * three digits roll like an odometer (staggered 1 f, right to left, vertical
- * motion blur) and make contact on "18:00" at f15 (abs 945, beat 2): pulse
- * 1 → 1.05 → 1, volt, a glow breath.
- * Part B (f30–104): on the downbeat (abs 960) the clock flies up into the volt
- * kicker pill (SNAPPY 12 f, Sora → Inter crossfade in the last 5 f) while the
- * real Relatórios window rises (y +220 → 0, rotateX 20° → 6°, E.push 20 f) into
- * a wide on the IFRO report (f45), then punches in on "Copiar Markdown"
- * (E.push 12 f, arrives f57). The button is a vector re-set with the app's own
- * tokens (Button sm: 24 image px label, lucide Copy 28 px, line-2 border),
- * lifted 1.16 off the plane so its label reads at ≥ 36 px. Cursor arcs in, hover
- * f54 (the app's hover:bg-panel-2), CLICK f60 (abs 990, beat 3), the icon turns
- * into a mint check (draw-on 10 f), the "Markdown copiado" pill pops under the
- * button with a 1.5 px leader. The model name in both report meta lines is
- * patched; the rest of each meta line is re-composed from the capture's own
- * pixels ("Gerado 29/09 18:00" + "3h22 registradas · 6.120 tokens…").
+ * Part A (f0–29): hard cut to a big tabular "17:59" (Sora 700 240 px) on the
+ * stage; f10–15 the last three digits roll like an odometer (staggered 1 f,
+ * right to left, vertical motion blur) and make contact on "18:00" at f15
+ * (abs 945, beat 2): pulse 1 → 1.05 → 1, volt, a glow breath. Footlight pool
+ * under the clock + a light type guard (GUARD RULE).
+ * Part B (f30–104, v2): on the downbeat (abs 960) the clock flies up into the
+ * volt kicker pill (Inter 600 44 px, SNAPPY 12 f) while the real Relatórios
+ * window rises (y +220 → 0, rotateX 20° → 6°, E.push 20 f) into a wide on the
+ * IFRO report; "O relatório sai pronto." (Sora 700 120 px, "pronto." volt)
+ * f32–42. f45 (abs 975, beat) the report's activity table + its "Copiar
+ * Markdown" button LIFT out of the window as a big tilted card (LiftCard
+ * `lift`, crop x 1452–2600 y 376–882 at 1.36 comp px per image px: row text
+ * ≈ 35 px, the button label ≈ 33 → 36 px on hover), the window pulls back and
+ * steps behind it (camera 1.6 → 1.05, light blur), leaving an empty socket.
+ * The button is a vector re-set with the app's own tokens inside the card.
+ * Cursor arcs in, hover f54, CLICK f60 (abs 990, beat 3): press, shockwave,
+ * the icon becomes a mint check (draw-on 10 f), the card's rim goes mint and
+ * the "Markdown copiado" pill (Inter 600 44 px) pops above the button on a
+ * leader line. f66–104 hold: card float + drift + tilt settle, light sweep
+ * across the card, window drift. The model name in both report meta lines is
+ * patched (window + card); the window's meta line is re-composed from the
+ * capture's own pixels ("Gerado 29/09 18:00" + "3h22 registradas · …").
  */
 import React from 'react';
-import {AbsoluteFill, Easing} from 'remotion';
+import {AbsoluteFill} from 'remotion';
 import {measureText} from '@remotion/layout-utils';
 import {Screen, type ScreenConfig} from '../components/Screen';
-import {GUARD_OPACITY, guardFor} from '../components/Stage';
-import {mapWithGeometry, screenGeometry, type CameraKey} from '../components/screen-geometry';
+import {GUARD_OPACITY, guardFor, navyDim} from '../components/Stage';
+import {mapImageRect, type CameraKey} from '../components/screen-geometry';
+import {LiftCard, LiftHole, liftCardPose, type LiftCardProps} from '../components/LiftCard';
 import {alpha, color, font} from '../design/tokens';
 import {E, hotspot, Patches, springAt, storyboardPatches, TransitionIn, TransitionOut, useScene, useSceneFrame, type SfxCue} from '../shared';
 import {
@@ -34,15 +41,18 @@ import {
 	ClickRipple,
 	clamp01,
 	Crop,
-	cursorScale,
 	Finish,
 	H,
 	Headline,
 	Icon,
+	gradientFill,
+	voltGlow,
+	LightSweep,
 	lerp,
 	mixHex,
 	pressAt,
 	ramp,
+	Shockwave,
 	unitsOf,
 	W,
 } from './_parts/G5/common';
@@ -60,12 +70,10 @@ const CONTACT = 15;
 const MORPH = 30;
 const MORPH_END = 42;
 const RISE = 30;
-const PUNCH = 57;
 const CLICK = 60;
 const OK = 62;
 
 const BTN = hotspot(FILE, 'report-1-copy'); // 2282, 392, 288 × 64
-const LIFT = 1.16;
 const BADGE = hotspot(FILE, 'nav-revisao-badge');
 
 /* ------------------------------------------------------------------------ */
@@ -73,14 +81,14 @@ const BADGE = hotspot(FILE, 'nav-revisao-badge');
 /* ------------------------------------------------------------------------ */
 
 const CLOCK = {size: 240, cx: 960, cy: 470};
-const KICK = {left: 144, top: 88, h: 48, size: 40, padX: 20};
+const KICK = {left: 106, top: 44, h: 62, size: 44, padX: 26};
 /** v2 type guard behind the volt "18:00" (glyph box x 642–1296, y 369–557 at MORPH); fades with the big clock. */
 const CLOCK_GUARD = guardFor({x: CLOCK.cx, y: 463, w: 654, h: 188});
 
 /** One digit cell: rolls from `from` to `to` (new digit enters from below). */
-const Digit: React.FC<{from: string; to: string; p: number; v: number}> = ({from, to, p, v}) => {
+const Digit: React.FC<{from: string; to: string; p: number; v: number; fill: React.CSSProperties}> = ({from, to, p, v, fill}) => {
 	const h = CLOCK.size;
-	if (from === to) return <span style={{display: 'inline-block'}}>{to}</span>;
+	if (from === to) return <span style={{display: 'inline-block', ...fill}}>{to}</span>;
 	// vertical motion blur ∝ speed, released over the last 15 % so the digit is crisp at contact
 	const blur = Math.min(10, Math.abs(v) * h * 0.12) * clamp01((1 - p) / 0.15);
 	return (
@@ -101,8 +109,8 @@ const Digit: React.FC<{from: string; to: string; p: number; v: number}> = ({from
 					filter: blur > 0.5 ? `url(#s14-vblur-${Math.round(blur)})` : undefined,
 				}}
 			>
-				<span style={{display: 'block', height: h}}>{from}</span>
-				<span style={{display: 'block', height: h}}>{to}</span>
+				<span style={{display: 'block', height: h, ...fill}}>{from}</span>
+				<span style={{display: 'block', height: h, ...fill}}>{to}</span>
 			</span>
 		</span>
 	);
@@ -132,6 +140,8 @@ const Clock: React.FC<{f: number}> = ({f}) => {
 
 	const pulse = 1 + 0.05 * (ramp(f, CONTACT - 1, CONTACT + 2, E.push) - ramp(f, CONTACT + 2, CONTACT + 13, E.glide));
 	const voltT = ramp(f, CONTACT - 1, CONTACT);
+	// v2: top-lit fill (white → volt gradient at contact)
+	const fill = gradientFill(voltT);
 	const drift = 1 + 0.02 * ramp(f, 0, MORPH);
 
 	// morph to the kicker pill (SNAPPY 12 f)
@@ -187,21 +197,22 @@ const Clock: React.FC<{f: number}> = ({f}) => {
 						height: CLOCK.size,
 						letterSpacing: '-0.04em',
 						fontVariantNumeric: 'tabular-nums',
-						color: mixHex(color.ink, color.volt, voltT),
 						whiteSpace: 'nowrap',
 						display: 'flex',
+						// v2: glyph glow once volt (the top-lit fill is set per glyph: background-clip text does not reach into the rolling cells)
+						filter: voltT > 0.01 ? voltGlow(voltT * 0.8) : undefined,
 					}}
 				>
 					{cells.map((c, i) => {
 						const r = rolls.find((x) => x.i === i);
 						if (!r) return (
-							<span key={i} style={{display: 'inline-block'}}>
+							<span key={i} style={{display: 'inline-block', ...fill}}>
 								{c}
 							</span>
 						);
 						const p = prog(r.start, f);
 						const v = p - prog(r.start, f - 1);
-						return <Digit key={i} from={r.from} to={r.to} p={p} v={v} />;
+						return <Digit key={i} from={r.from} to={r.to} p={p} v={v} fill={fill} />;
 					})}
 				</div>
 			) : null}
@@ -251,15 +262,17 @@ const Clock: React.FC<{f: number}> = ({f}) => {
 /* Part B — the report                                                       */
 /* ------------------------------------------------------------------------ */
 
-const PUNCH_EASE = Easing.bezier(0.42, 0, 0.12, 1);
+const LIFT_AT = 45;
+const COMP = {width: W, height: H};
+/** v2 grade: a touch brighter than the default window grade (window + card share it, patches keep matching). */
+const GRADE_S14 = {brightness: 1.3, lift: 0.07};
 
 const CAMERA: CameraKey[] = [
-	{at: RISE, zoom: 1.35, focus: {x: 1672, y: 840}, anchor: {x: 1100, y: 640}, duration: 0},
-	{at: 45, zoom: 1.6, focus: {x: 1672, y: 840}, anchor: {x: 1100, y: 640}, duration: 15, easing: E.push},
-	// punch-in: leaves the wide at rest (the rise just settled), arrives hard — E.push from a standstill read as a 1-frame jump
-	{at: PUNCH, zoom: 2.6, focus: {x: 2426, y: 424}, anchor: {x: 1340, y: 600}, duration: 12, easing: PUNCH_EASE},
-	// hold: micro drift ×1.02 (float only; bitmap scale 1.33, @3x twin → 0.88)
-	{at: 104, zoom: 2.65, focus: {x: 2426, y: 424}, anchor: {x: 1340, y: 600}, duration: 44, easing: E.linear},
+	{at: RISE, zoom: 1.35, focus: {x: 1672, y: 840}, anchor: {x: 1000, y: 660}, duration: 0},
+	{at: LIFT_AT, zoom: 1.55, focus: {x: 1800, y: 760}, anchor: {x: 1000, y: 660}, duration: 15, easing: E.push},
+	// the card leaves: the window pulls back and steps behind it
+	{at: 66, zoom: 1.02, focus: {x: 1500, y: 820}, anchor: {x: 1010, y: 690}, duration: 21, easing: E.push},
+	{at: 104, zoom: 1.06, focus: {x: 1480, y: 820}, anchor: {x: 1010, y: 690}, duration: 38, easing: E.linear},
 ];
 
 const SHOT: ScreenConfig = {
@@ -268,15 +281,60 @@ const SHOT: ScreenConfig = {
 	rotateX: [
 		[RISE, 20],
 		[50, 6, E.push],
-		[PUNCH, 4, E.push],
+		[104, 8, E.glide],
 	],
-	rotateY: -3,
+	rotateY: [
+		[RISE, -3],
+		[104, -9, E.glide],
+	],
 	glow: false,
 	radius: 18,
+	dots: 'neutral',
+	grade: GRADE_S14,
 };
 
 /** Rise offset (screen space, applied outside the camera so the camera cannot cancel it). */
 const riseY = (f: number) => 220 * (1 - E.push(ramp(f, RISE, RISE + 20)));
+
+/** The lifted piece of the report: buttons strip, table header, rows 1–2 (Atividade · Minutos · Tipo). */
+const CROP = {x: 1452, y: 376, w: 1148, h: 506};
+const CARD_K = 1.36;
+const CARD_AT = {x: 1010, y: 704};
+const CARD: LiftCardProps = {
+	src: FILE,
+	rect: CROP,
+	at: LIFT_AT,
+	enter: 'lift',
+	spring: 'snappy',
+	from: (f) => {
+		const r = mapImageRect(SHOT, f, COMP, CROP);
+		return {...r, y: r.y + riseY(f)};
+	},
+	x: [
+		[LIFT_AT, CARD_AT.x],
+		[104, CARD_AT.x - 26],
+	],
+	y: CARD_AT.y,
+	width: [
+		[LIFT_AT, CROP.w * CARD_K],
+		[104, CROP.w * CARD_K * 1.025],
+	],
+	rotateX: [
+		[LIFT_AT, 11],
+		[104, 6, E.glide],
+	],
+	rotateY: [
+		[LIFT_AT, -12],
+		[104, -6, E.glide],
+	],
+	radius: 22,
+	float: 5,
+	floatPeriod: 80,
+	glow: 'volt',
+	glowOpacity: 0.42,
+	grade: GRADE_S14,
+	style: {zIndex: 30},
+};
 
 /** Meta lines: patch (storyboard) + the capture's own words minus the model name. */
 const META_DY = [0, 1262];
@@ -293,18 +351,19 @@ const MetaRecompose: React.FC = () => (
 	</>
 );
 
-/** The lifted "Copiar Markdown" button, vector re-set with the app's Button sm tokens. */
+/** The "Copiar Markdown" button, vector re-set with the app's Button sm tokens (image space, inside the card). */
 const CopyButton: React.FC<{f: number}> = ({f}) => {
-	const lift = lerp(1, LIFT, E.push(ramp(f, 45, PUNCH)));
 	const press = pressAt(f, CLICK);
 	const hover = ramp(f, 54, 58, E.enter);
-	const scale = lift * (1 - 0.04 * press);
+	const scale = (1 + 0.06 * hover) * (1 - 0.05 * press);
 	const flash = ramp(f, OK, OK + 2) * (1 - ramp(f, OK + 2, OK + 10, E.enter));
 	const iconOut = ramp(f, CLICK, CLICK + 3, E.exit);
 	const check = ramp(f, OK, OK + 10, E.push);
-	const bg = mixHex(mixHex(APP.panel, APP.panel2, hover), color.mint, 0.12 * flash);
-	const border = mixHex(APP.line2, color.mint, 0.55 * ramp(f, OK, OK + 6));
-	const shadowY = 4 + 14 * (lift - 1) / (LIFT - 1);
+	const ok = ramp(f, OK, OK + 6);
+	const bg = mixHex(mixHex(APP.panel, APP.panel2, hover), color.mint, 0.12 * flash + 0.06 * ok);
+	const border = mixHex(mixHex(APP.line2, color.volt, 0.8 * hover), color.mint, ok);
+	const ring = mixHex(color.volt, color.mint, ok);
+	const ringA = Math.max(0.55 * hover * (1 - ok), 0.6 * ok);
 	return (
 		<div
 			style={{
@@ -314,12 +373,11 @@ const CopyButton: React.FC<{f: number}> = ({f}) => {
 				width: BTN.w,
 				height: BTN.h,
 				transform: `scale(${scale.toFixed(4)})`,
-				// grows to the left (open card space), away from "Regenerar" 16 px to its right
-				transformOrigin: '100% 50%',
+				transformOrigin: '50% 50%',
 				boxSizing: 'border-box',
 				borderRadius: 16,
 				background: bg,
-				boxShadow: `inset 0 0 0 2px ${border}, 0 ${shadowY.toFixed(1)}px ${(12 + shadowY * 1.6).toFixed(1)}px -6px rgba(0,0,0,${(0.35 + 0.3 * (lift - 1) / (LIFT - 1)).toFixed(3)})`,
+				boxShadow: `inset 0 0 0 2px ${border}, 0 0 ${(22 * ringA).toFixed(1)}px ${(4 * ringA).toFixed(1)}px ${alpha(ring, 0.6 * ringA)}, 0 8px 18px -6px rgba(0,0,0,0.5)`,
 				display: 'flex',
 				alignItems: 'center',
 				paddingLeft: 22,
@@ -343,73 +401,45 @@ const CopyButton: React.FC<{f: number}> = ({f}) => {
 	);
 };
 
-/** Image-space spotlight on the lifted button (dim 0.62, volt outline ≈ 2.5 comp px). */
-const ButtonSpot: React.FC<{f: number; onScreen: number}> = ({f, onScreen}) => {
-	const d = ramp(f, 45, 57, E.enter);
-	if (d <= 0.001) return null;
-	const lift = lerp(1, LIFT, E.push(ramp(f, 45, PUNCH)));
-	const grow = BTN.w * (lift - 1);
-	const padY = 12 + (BTN.h * (lift - 1)) / 2;
-	const bw = 2.5 / Math.max(0.05, onScreen);
-	const gl = 26 / Math.max(0.05, onScreen);
-	const ok = ramp(f, OK, OK + 6);
-	const ring = mixHex(color.volt, color.mint, ok);
-	return (
-		<div
-			style={{
-				position: 'absolute',
-				left: BTN.x - grow - 12,
-				top: BTN.y - padY,
-				width: BTN.w + grow + 12 + 7,
-				height: BTN.h + padY * 2,
-				borderRadius: 26,
-				boxShadow: [
-					`0 0 0 ${bw}px ${alpha(ring, 0.9 * d)}`,
-					`0 0 ${gl}px ${gl * 0.25}px ${alpha(ring, 0.4 * d)}`,
-					`0 0 0 6000px rgba(6, 9, 16, ${(0.62 * d).toFixed(3)})`,
-				].join(', '),
-			}}
-		/>
-	);
-};
-
-/** "Markdown copiado": the app's own toast string as a mint callout pill under the button. */
-const Copied: React.FC<{f: number; x: number; top: number; text: string}> = ({f, x, top, text}) => {
+/** "Markdown copiado": the app's own toast string as a mint pill popping ABOVE the button on a leader line. */
+const Copied: React.FC<{f: number; x: number; bottom: number; text: string}> = ({f, x, bottom, text}) => {
 	if (f < OK) return null;
 	const line = ramp(f, OK, OK + 10, E.push);
 	const s = springAt(f, OK + 1, 'SNAPPY');
 	const o = ramp(f, OK + 1, OK + 4);
-	const L = 56;
-	const pillTop = top + L + 6;
+	const L = 34;
+	const pillH = 76;
+	const pillBottom = bottom - L - 4;
+	const bob = Math.sin(((f - OK) / 70) * Math.PI * 2) * 3 * ramp(f, OK + 10, OK + 20);
 	return (
 		<>
-			<div style={{position: 'absolute', left: x - 0.75, top, width: 1.5, height: L * line, background: alpha(color.ink3, 0.9), borderRadius: 1}} />
+			<div style={{position: 'absolute', left: x - 1, top: bottom - L * line, width: 2, height: L * line, background: alpha(color.mint, 0.8), borderRadius: 1}} />
 			<div
 				style={{
 					position: 'absolute',
 					left: x,
-					top: pillTop,
-					transform: `translateX(-50%) translateY(${((1 - s) * -10).toFixed(2)}px) scale(${lerp(0.92, 1, s).toFixed(4)})`,
-					transformOrigin: '50% 0%',
+					top: pillBottom - pillH + bob,
+					transform: `translateX(-50%) translateY(${((1 - s) * 14).toFixed(2)}px) scale(${lerp(0.86, 1, s).toFixed(4)})`,
+					transformOrigin: '50% 100%',
 					opacity: o,
-					height: 64,
-					padding: '0 30px 0 22px',
+					height: pillH,
+					padding: '0 36px 0 28px',
 					display: 'flex',
 					alignItems: 'center',
-					gap: 12,
+					gap: 14,
 					borderRadius: 999,
-					// solid under-layer so the pill reads over the dimmed UI, then the 16 % mint tint
-					background: `linear-gradient(${alpha(color.mint, 0.16)}, ${alpha(color.mint, 0.16)}), #0a0d16`,
-					boxShadow: `inset 0 0 0 1.5px ${alpha(color.mint, 0.45)}, 0 12px 28px -8px rgba(0,0,0,0.6)`,
+					// solid under-layer so the pill reads over anything, then the mint tint
+					background: `linear-gradient(${alpha(color.mint, 0.2)}, ${alpha(color.mint, 0.2)}), #0d1426`,
+					boxShadow: `inset 0 0 0 2px ${alpha(color.mint, 0.6)}, 0 0 28px ${alpha(color.mint, 0.3)}, 0 16px 32px -8px rgba(0,0,0,0.6)`,
 					fontFamily: font.text,
 					fontWeight: 600,
-					fontSize: 36,
+					fontSize: 44,
 					lineHeight: 1,
 					color: color.ink,
 					whiteSpace: 'nowrap',
 				}}
 			>
-				<Icon name="check" size={30} stroke={color.mint} strokeWidth={2.5} draw={ramp(f, OK + 2, OK + 10, E.push)} />
+				<Icon name="check" size={38} stroke={color.mint} strokeWidth={2.5} draw={ramp(f, OK + 2, OK + 10, E.push)} />
 				<span>{text}</span>
 			</div>
 		</>
@@ -418,51 +448,52 @@ const Copied: React.FC<{f: number; x: number; top: number; text: string}> = ({f,
 
 /* ------------------------------------------------------------------------ */
 
-const REST_IN = {x: 1750, y: 940};
-const REST_OUT = {x: 1700, y: 900};
+const REST_IN = {x: 1750, y: 960};
+const REST_OUT = {x: 1720, y: 940};
 /** Cursor tip on the label, left of centre (image px). */
-const TIP = {x: BTN.x + 120, y: BTN.y + 38};
+const TIP = {x: BTN.x + 150, y: BTN.y + 40};
 
 const S14Relatorio: React.FC = () => {
 	const scene = useScene();
 	const {frame: f} = useSceneFrame();
-	const comp = {width: W, height: H};
+	const fps = 30;
 	const kicker = scene.copy.find((c) => c.role === 'kicker')!;
 	const head = scene.copy.find((c) => c.role === 'headline')!;
 	const caption = scene.copy.find((c) => c.role === 'ui-caption')!;
 	if (kicker.text !== '18:00') throw new Error(`s14 kicker drift: ${kicker.text}`);
 	const units = unitsOf(head.text, [
-		{text: 'O\u00a0relatório', at: 32},
+		{text: 'O relatório', at: 32},
 		{text: 'sai', at: 34},
 		{text: 'pronto.', at: 36, volt: head.emphasis.includes('pronto.') ? 'pronto.' : undefined},
 	]);
 
 	const partB = f >= RISE;
 	const rise = riseY(f);
-	const g = screenGeometry(SHOT, f, comp);
-	const onScreen = g.k * g.scale * g.s0;
-	const toComp = (fr: number, p: {x: number; y: number}) => {
-		const q = mapWithGeometry(screenGeometry(SHOT, fr, comp), p);
-		return {x: q.x, y: q.y + riseY(fr)};
+
+	// image px of the capture → comp px ON THE CARD (ignores the card's tilt: the cursor tip and callout sit on the button)
+	const onCard = (fr: number, p: {x: number; y: number}) => {
+		const c = liftCardPose(CARD, fr, fps);
+		const k = c.k * c.s;
+		return {x: c.cx + (p.x - (CROP.x + CROP.w / 2)) * k, y: c.cy + (p.y - (CROP.y + CROP.h / 2)) * k, k};
 	};
 
 	// cursor
-	const tipAt = (fr: number) => toComp(fr, TIP);
+	const tipAt = (fr: number) => onCard(fr, TIP);
 	let cur = REST_IN;
-	if (f > 40 && f < 56) cur = arcPoint(REST_IN, tipAt(f), E.cursor(ramp(f, 40, 56)), 0.12);
+	if (f > 40 && f < 56) cur = arcPoint(REST_IN, tipAt(56), E.cursor(ramp(f, 40, 56)), 0.12);
 	else if (f >= 56 && f <= 66) cur = tipAt(f);
 	else if (f > 66) cur = arcPoint(tipAt(66), REST_OUT, E.cursor(ramp(f, 66, 80)), 0.12);
 	const press = pressAt(f, CLICK);
-	const cSize = 30 * cursorScale(g.k) * (1 - 0.15 * press);
+	const cSize = 30 * 1.4 * (1 - 0.15 * press);
 	const cOpacity = ramp(f, 34, 40, E.enter) * (1 - ramp(f, 78, 84, E.exit));
 	const clickPt = tipAt(CLICK);
 
-	// callout anchor: bottom-centre of the lifted button
-	const btnBottom = toComp(f, {x: BTN.x + BTN.w / 2 - (BTN.w * (LIFT - 1)) / 2, y: BTN.y + BTN.h / 2});
-	const halfH = (BTN.h / 2) * LIFT * onScreen;
+	// callout anchor: top-centre of the button on the card
+	const btnTop = onCard(f, {x: BTN.x + BTN.w / 2, y: BTN.y});
 
-	const scrim = ramp(f, RISE, RISE + 2);
+	const band = ramp(f, RISE, RISE + 2) * (1 - 0.55 * ramp(f, LIFT_AT + 4, 66, E.glide));
 	const poolUp = ramp(f, MORPH, MORPH_END + 6, E.glide);
+	const back = ramp(f, LIFT_AT + 2, 64, E.glide);
 
 	return (
 		<TransitionOut>
@@ -471,37 +502,58 @@ const S14Relatorio: React.FC = () => {
 					seed="s14"
 					ember={0.05}
 					look={{
-						// v2: the key pool is a footlight UNDER the volt 18:00 (not on it), then rises behind the report window
-						keyPool: {x: 0.5, y: lerp(0.8, 0.5, poolUp), w: lerp(0.86, 0.82, poolUp), h: lerp(0.64, 0.92, poolUp), opacity: 0.44},
-						keyLight: {x: 0.5, y: lerp(0.82, 0.5, poolUp), w: 0.5, h: lerp(0.4, 0.62, poolUp), opacity: 0.15},
+						// v2: the key pool is a footlight UNDER the volt 18:00 (not on it), then rises behind the report card
+						keyPool: {x: lerp(0.5, 0.54, poolUp), y: lerp(0.8, 0.62, poolUp), w: lerp(0.86, 0.82, poolUp), h: lerp(0.64, 0.92, poolUp), opacity: 0.44},
+						keyLight: {x: lerp(0.5, 0.54, poolUp), y: lerp(0.82, 0.64, poolUp), w: 0.5, h: lerp(0.4, 0.62, poolUp), opacity: 0.16},
 						guard: [{...CLOCK_GUARD, opacity: GUARD_OPACITY * (1 - poolUp)}] /* footlight falloff only (GUARD RULE) */,
 					}}
 				>
 					{partB ? (
-						<AbsoluteFill style={{transform: rise > 0.05 ? `translateY(${rise.toFixed(2)}px)` : undefined, opacity: ramp(f, RISE, RISE + 4)}}>
+						<AbsoluteFill
+							style={{
+								transform: rise > 0.05 ? `translateY(${rise.toFixed(2)}px)` : undefined,
+								opacity: ramp(f, RISE, RISE + 4),
+								filter: back > 0.01 ? `blur(${(2.5 * back).toFixed(2)}px)` : undefined,
+							}}
+						>
 							<Screen {...SHOT} style={{zIndex: 'auto'}}>
 								<Patches patches={storyboardPatches(scene, FILE)} />
 								<MetaRecompose />
 								{/* continuity: s13 just emptied the review queue — the sidebar's pending-count badge goes (nav colour) */}
 								<div style={{position: 'absolute', left: BADGE.x - 3, top: BADGE.y - 3, width: BADGE.w + 6, height: BADGE.h + 6, background: '#0a101c'}} />
-								<ButtonSpot f={f} onScreen={onScreen} />
-								<CopyButton f={f} />
+								<LiftHole rect={CROP} at={LIFT_AT} enter="lift" color={APP.panel} pad={4} feather={16} radius={20} socket={0.6} />
 							</Screen>
 						</AbsoluteFill>
 					) : null}
-					{scrim > 0.001 ? (
+					{band > 0.001 ? (
 						<AbsoluteFill
 							style={{
-								opacity: scrim,
-								background: 'linear-gradient(180deg, rgba(10,13,22,0.97) 0px, rgba(10,13,22,0.95) 250px, rgba(10,13,22,0.82) 290px, rgba(10,13,22,0) 390px)',
+								opacity: band,
+								background: `linear-gradient(180deg, ${navyDim(0.94)} 0px, ${navyDim(0.9)} 250px, ${navyDim(0.6)} 300px, ${navyDim(0)} 380px)`,
 							}}
 						/>
 					) : null}
-					<Clock f={f} />
-					{f >= 32 ? <Headline units={units} size={88} left={144} capTop={170} /> : null}
-					<Copied f={f} x={Math.round(btnBottom.x)} top={Math.round(btnBottom.y + halfH + 8)} text={caption.text} />
-					<ClickRipple x={clickPt.x} y={clickPt.y} at={CLICK} scale={cursorScale(g.k)} />
-					{f >= 34 ? <ArrowCursor x={cur.x} y={cur.y} size={cSize} opacity={cOpacity} /> : null}
+					{f >= LIFT_AT ? (
+						<LiftCard {...CARD} patches={storyboardPatches(scene, FILE)}>
+							{/* Regenerar's left edge peeks in at the crop's right side: card colour */}
+							<div style={{position: 'absolute', left: 2582, top: CROP.y, width: 40, height: 110, background: APP.panel}} />
+							{/* the card's own title, re-composed from the capture's pixels: the IFRO icon + "IFRO" and "Gerado 29/09 18:00" */}
+							<Crop src={FILE} rect={{x: 548, y: 382, w: 200, h: 84}} at={{x: CROP.x + 30, y: 382}} />
+							<Crop src={FILE} rect={{x: 648, y: 434, w: 244, h: 36}} at={{x: CROP.x + 132, y: 434}} />
+							<CopyButton f={f} />
+							<div style={{position: 'absolute', left: CROP.x, top: CROP.y, width: CROP.w, height: CROP.h, overflow: 'hidden'}}>
+								<LightSweep from={70} to={100} strength={0.1} />
+							</div>
+						</LiftCard>
+					) : null}
+					<AbsoluteFill style={{zIndex: 31, pointerEvents: 'none'}}>
+						<Clock f={f} />
+						{f >= 32 ? <Headline units={units} size={124} left={102} capTop={150} /> : null}
+						<Copied f={f} x={Math.round(btnTop.x)} bottom={Math.round(btnTop.y - 8)} text={caption.text} />
+						<Shockwave x={btnTop.x} y={btnTop.y + (BTN.h / 2) * btnTop.k} at={CLICK} radius={300} len={16} tint={color.mint} strength={0.8} />
+						<ClickRipple x={clickPt.x} y={clickPt.y} at={CLICK} scale={1.4} />
+						{f >= 34 ? <ArrowCursor x={cur.x} y={cur.y} size={cSize} opacity={cOpacity} /> : null}
+					</AbsoluteFill>
 					<Finish seed="s14" />
 				</Backdrop>
 			</TransitionIn>
