@@ -8,6 +8,18 @@
 // description_pt, description_en, hotspots:[{name, x, y, w, h}]}]). Hotspots are in image pixels
 // (CSS rect x DPR, clipped to the viewport). A partial run (names given) merges into the existing manifest.
 //
+// Hi-res twins (for camera zooms past bitmap scale 1.0):
+//
+//   node video/launch/tools/capture-ui.mjs --hires review-queue-selected settings-ai ...
+//
+// Names are PNG stems (a capture name such as `review` takes all of its files). Same viewport, clock, license,
+// theme and state; only the device scale factor goes x1.5 (DPR 2 -> 3), so the layout is the 2x layout and
+// the file is public/ui/<stem>@3x.png. The 2x PNGs and ui-manifest.json are NOT written: hotspots stay in the
+// 2x space (multiply by `scale` for the twin). Before a twin is written the privacy check below runs as for
+// any capture, and its hotspots (measured at DPR 3, divided by 1.5) must match the 2x manifest within
+// HIRES_TOLERANCE px, else nothing is written. Twins merge into public/ui/hires.json:
+// [{file, hires, scale, width, height}] (width/height = the twin's own pixel size = 2x size x scale).
+//
 // State: dark theme, pt-BR, a valid "ubiqX Mensal" license (?license=managed, so no license banner and the
 // "IA do Ubi" provider is selectable), clock fixed at Tue 2026-09-29 18:40 America/Sao_Paulo so the mock
 // day (08:00-17:55) reads as a finished work day.
@@ -29,7 +41,16 @@ const BASE = process.env.UI_URL ?? 'http://localhost:1420';
 const OUT = fileURLToPath(new URL('../public/ui/', import.meta.url));
 const EXEC = process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell';
 const NOW = new Date('2026-09-29T21:40:00Z'); // 18:40 in São Paulo
-const ONLY = process.argv.slice(2);
+const ARGS = process.argv.slice(2);
+/** --hires: shoot twins at 1.5x the capture's DPR into <stem>@<dpr>x.png (see the header). */
+const HIRES = ARGS.includes('--hires');
+const HIRES_FACTOR = HIRES ? 1.5 : 1;
+/** Max |2x hotspot - hi-res hotspot / factor| (2x image px) for a twin to count as the same layout. */
+const HIRES_TOLERANCE = 2;
+const ONLY = ARGS.filter((a) => !a.startsWith('--')).map((a) => a.replace(/\.png$/, ''));
+const unknownFlags = ARGS.filter((a) => a.startsWith('--') && a !== '--hires');
+if (unknownFlags.length) throw new Error(`unknown option(s): ${unknownFlags.join(', ')}`);
+if (HIRES && !ONLY.length) throw new Error('--hires needs the names of the captures to re-shoot');
 
 /* ------------------------------------------------------------------ */
 /* privacy: fictional stand-ins for the owner's data, and the scan      */
@@ -407,7 +428,7 @@ const query = ({ theme = 'dark', license = 'managed', extra = '' } = {}) => `?th
 async function newPage(browser, { theme = 'dark', width = 1440, height = 900, dpr = 2 } = {}) {
   const context = await browser.newContext({
     viewport: { width, height },
-    deviceScaleFactor: dpr,
+    deviceScaleFactor: dpr * HIRES_FACTOR, // --hires: same CSS layout, more pixels
     colorScheme: theme,
     reducedMotion: 'reduce',
     locale: 'pt-BR',
@@ -493,6 +514,7 @@ function hotspotsInPage(specs) {
 const manifest = [];
 
 async function capture(page, meta, specs, { omitBackground = false } = {}) {
+  if (HIRES) return captureHires(page, meta, specs, { omitBackground });
   const { out, missing } = await page.evaluate(hotspotsInPage, specs);
   const vp = page.viewportSize();
   const dpr = await page.evaluate(() => window.devicePixelRatio);
@@ -503,6 +525,52 @@ async function capture(page, meta, specs, { omitBackground = false } = {}) {
   manifest.push(entry);
   console.log(`✓ ${meta.file}  ${entry.width}x${entry.height}  ${out.length} hotspots${missing.length ? `  (absent: ${missing.join(', ')})` : ''}  privacy: 0 hits${fictional.length ? ` (fictional: ${fictional.join(', ')})` : ''}`);
   return entry;
+}
+
+/* hi-res twins ------------------------------------------------------ */
+
+const manifestPath = `${OUT}ui-manifest.json`;
+const hiresPath = `${OUT}hires.json`;
+/** The 2x manifest the twins must line up with (read-only in --hires mode). */
+const baseManifest = HIRES && existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : [];
+const hiresEntries = [];
+
+/** --hires: shoot one requested file at the raised DPR, after the privacy check and a layout check against the 2x hotspots. */
+async function captureHires(page, meta, specs, { omitBackground }) {
+  const stem = meta.file.replace(/\.png$/, '');
+  if (!HIRES_FILES.has(stem)) {
+    console.log(`  · ${meta.file}: not requested, skipped`);
+    return null;
+  }
+  const base = baseManifest.find((m) => m.file === meta.file);
+  if (!base) throw new Error(`hires: ${meta.file} has no 2x entry in ui-manifest.json (capture it without --hires first)`);
+  const { out } = await page.evaluate(hotspotsInPage, specs);
+  const vp = page.viewportSize();
+  const dpr = await page.evaluate(() => window.devicePixelRatio);
+  const scale = dpr / base.dpr;
+  const file = `${stem}@${dpr}x.png`;
+  const width = Math.round(vp.width * dpr);
+  const height = Math.round(vp.height * dpr);
+  if (Math.abs(width - base.width * scale) > 0.5 || Math.abs(height - base.height * scale) > 0.5)
+    throw new Error(`hires: ${file} is ${width}x${height}, expected ${base.width * scale}x${base.height * scale}`);
+  // same layout: every 2x hotspot is found again, at the same place (hi-res rect / scale)
+  const byName = new Map(out.map((h) => [h.name, h]));
+  const lost = base.hotspots.filter((h) => !byName.has(h.name)).map((h) => h.name);
+  let drift = 0;
+  let worst = '';
+  for (const h of base.hotspots) {
+    const t = byName.get(h.name);
+    if (!t) continue;
+    const d = Math.max(...['x', 'y', 'w', 'h'].map((k) => Math.abs(t[k] / scale - h[k])));
+    if (d > drift) [drift, worst] = [d, h.name];
+  }
+  if (lost.length || drift > HIRES_TOLERANCE)
+    throw new Error(`hires: ${file} layout differs from ${meta.file}: ${lost.length ? `hotspots lost: ${lost.join(', ')}; ` : ''}max drift ${drift.toFixed(2)} px (${worst})`);
+  const fictional = await privacyCheck(page, file);
+  await page.screenshot({ path: `${OUT}${file}`, fullPage: false, omitBackground });
+  hiresEntries.push({ file: meta.file, hires: file, scale, width, height });
+  console.log(`✓ ${file}  ${width}x${height}  DPR ${dpr} (x${scale} of ${meta.file})  layout: ${base.hotspots.length} hotspots, max drift ${drift.toFixed(2)} px (${worst || '-'})  privacy: 0 hits${fictional.length ? ` (fictional: ${fictional.join(', ')})` : ''}`);
+  return null;
 }
 
 const scrollTo = (page, css, block = 'center') =>
@@ -522,6 +590,7 @@ const scrollTo = (page, css, block = 'center') =>
 const CAPTURES = [
   {
     name: 'dashboard',
+    files: ['dashboard'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/', query(), 'ubi-hero');
@@ -531,6 +600,7 @@ const CAPTURES = [
   },
   {
     name: 'dashboard-light',
+    files: ['dashboard-light'],
     async run(b) {
       const { context, page } = await newPage(b, { theme: 'light' });
       await open(page, '/', query({ theme: 'light' }), 'ubi-hero');
@@ -540,6 +610,7 @@ const CAPTURES = [
   },
   {
     name: 'dashboard-nudge',
+    files: ['dashboard-nudge'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/', query({ extra: '&nudge=focus_prompt' }), 'ubi-hero');
@@ -551,6 +622,7 @@ const CAPTURES = [
   },
   {
     name: 'dashboard-session',
+    files: ['dashboard-session'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/', query({ extra: '&session=active' }), 'ubi-hero');
@@ -562,6 +634,7 @@ const CAPTURES = [
   },
   {
     name: 'dashboard-full',
+    files: ['dashboard-full'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/', query(), 'ubi-hero');
@@ -577,6 +650,7 @@ const CAPTURES = [
   },
   {
     name: 'timeline',
+    files: ['timeline'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/timeline', query(), 'page-timeline');
@@ -586,6 +660,7 @@ const CAPTURES = [
   },
   {
     name: 'timeline-selected',
+    files: ['timeline-selected', 'timeline-reclassify'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/timeline', query(), 'page-timeline');
@@ -608,6 +683,7 @@ const CAPTURES = [
   },
   {
     name: 'review',
+    files: ['review-queue-selected', 'review-after-assign'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/review', query(), 'page-review');
@@ -624,6 +700,7 @@ const CAPTURES = [
   },
   {
     name: 'review-details',
+    files: ['review-details'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/review', query(), 'page-review');
@@ -642,6 +719,7 @@ const CAPTURES = [
   },
   {
     name: 'review-confirm',
+    files: ['review-settled-expanded', 'review-confirmed'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/review', query(), 'page-review');
@@ -662,6 +740,7 @@ const CAPTURES = [
   },
   {
     name: 'review-done',
+    files: ['review-done'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/review', query(), 'page-review');
@@ -679,6 +758,7 @@ const CAPTURES = [
   },
   {
     name: 'reports',
+    files: ['reports', 'reports-generated'],
     async run(b) {
       const { context, page } = await newPage(b);
       // The seeded IFRO report carries stale=true ("Desatualizado" badge); a fresh report reads cleaner on video. Flip the flag in
@@ -707,6 +787,7 @@ const CAPTURES = [
   },
   {
     name: 'categories',
+    files: ['categories'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/categories', query(), 'page-categories');
@@ -716,6 +797,7 @@ const CAPTURES = [
   },
   {
     name: 'insights',
+    files: ['insights'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/insights', query(), 'page-insights');
@@ -730,6 +812,7 @@ const CAPTURES = [
   },
   {
     name: 'settings',
+    files: ['settings', 'settings-license', 'settings-ai', 'settings-ai-ubi'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/settings', query(), 'page-settings');
@@ -754,6 +837,7 @@ const CAPTURES = [
   },
   {
     name: 'focus',
+    files: ['focus'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/focus', query(), 'page-focus');
@@ -763,6 +847,7 @@ const CAPTURES = [
   },
   {
     name: 'focus-session',
+    files: ['focus-session'],
     async run(b) {
       const { context, page } = await newPage(b);
       await open(page, '/focus', query({ extra: '&session=active' }), 'page-focus');
@@ -774,6 +859,7 @@ const CAPTURES = [
   },
   ...[1, 2, 3, 4, 5, 6, 7].map((step) => ({
     name: `onboarding-${step}`,
+    files: [`onboarding-${step}-${['intro', 'ia', 'permissoes', 'categorias', 'horarios', 'visao', 'concluir'][step - 1]}`, ...(step === 2 ? ['onboarding-2-ia-managed'] : [])],
     async run(b) {
       const names = ['intro', 'ia', 'permissoes', 'categorias', 'horarios', 'visao', 'concluir'];
       const pt = ['boas-vindas e o que o ubiqX faz', 'como a IA é paga (IA do Ubi ou sua própria chave) e provedores', 'permissões do macOS', 'suas categorias', 'horários dos relatórios', 'política de capturas de tela (visão)', 'resumo e concluir'];
@@ -792,6 +878,7 @@ const CAPTURES = [
   })),
   {
     name: 'intervention',
+    files: ['intervention'],
     async run(b) {
       const { context, page } = await newPage(b, { width: 460, height: 188, dpr: 4 });
       await page.addInitScript(() => {
@@ -811,6 +898,12 @@ const CAPTURES = [
 
 /* ------------------------------------------------------------------ */
 
+/** --hires: the PNG stems to re-shoot. A name that is a file stem means that file only (`reports` is both a capture
+ * and a file: the file); any other capture name means all of its files. */
+const HIRES_FILES = new Set(
+  HIRES ? ONLY.flatMap((n) => (CAPTURES.some((c) => c.files.includes(n)) ? [n] : (CAPTURES.find((c) => c.name === n)?.files ?? []))) : [],
+);
+
 mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch({ executablePath: EXEC, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--lang=pt-BR'],
   // On Linux the <input type="time"> format follows the process locale, not the context locale: 18:00, not 06:00 PM.
@@ -818,8 +911,8 @@ const browser = await chromium.launch({ executablePath: EXEC, args: ['--use-angl
 });
 try {
   for (const c of CAPTURES) {
-    if (ONLY.length && !ONLY.includes(c.name)) continue;
-    console.log(`→ ${c.name}`);
+    if (HIRES ? !c.files.some((f) => HIRES_FILES.has(f)) : ONLY.length && !ONLY.includes(c.name)) continue;
+    console.log(`→ ${c.name}${HIRES ? ` (hi-res, DPR x${HIRES_FACTOR})` : ''}`);
     try {
       await c.run(browser);
     } catch (e) {
@@ -830,15 +923,30 @@ try {
   await browser.close();
 }
 
-const manifestPath = `${OUT}ui-manifest.json`;
-let merged = manifest;
-if (ONLY.length && existsSync(manifestPath)) {
-  const prev = JSON.parse(readFileSync(manifestPath, 'utf8'));
-  const fresh = new Set(manifest.map((m) => m.file));
-  merged = [...prev.filter((m) => !fresh.has(m.file)), ...manifest];
+if (HIRES) {
+  // the 2x PNGs and ui-manifest.json are left alone; the twins go to hires.json
+  const prev = existsSync(hiresPath) ? JSON.parse(readFileSync(hiresPath, 'utf8')) : [];
+  const fresh = new Set(hiresEntries.map((h) => h.file));
+  const merged = [...prev.filter((h) => !fresh.has(h.file)), ...hiresEntries];
+  if (hiresEntries.length) writeFileSync(hiresPath, `${JSON.stringify(merged, null, 2)}\n`);
+  console.log(`hires: ${hiresEntries.length} twins written, ${merged.length} entries → ${hiresPath}`);
+  const known = new Set(CAPTURES.flatMap((c) => [c.name, ...c.files]));
+  const unknown = ONLY.filter((n) => !known.has(n));
+  const shot = new Set(hiresEntries.map((h) => h.file.replace(/\.png$/, '')));
+  const lostFiles = [...HIRES_FILES].filter((f) => !shot.has(f));
+  if (unknown.length) console.error(`✗ unknown names: ${unknown.join(', ')}`);
+  if (lostFiles.length) console.error(`✗ no twin written for: ${lostFiles.join(', ')}`);
+  if (unknown.length || lostFiles.length) process.exitCode = 1;
+} else {
+  let merged = manifest;
+  if (ONLY.length && existsSync(manifestPath)) {
+    const prev = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const fresh = new Set(manifest.map((m) => m.file));
+    merged = [...prev.filter((m) => !fresh.has(m.file)), ...manifest];
+  }
+  writeFileSync(manifestPath, `${JSON.stringify(merged, null, 2)}\n`);
+  console.log(`manifest: ${merged.length} entries → ${manifestPath}`);
 }
-writeFileSync(manifestPath, `${JSON.stringify(merged, null, 2)}\n`);
-console.log(`manifest: ${merged.length} entries → ${manifestPath}`);
 
 console.log(`scrubbed modules: ${[...scrubbed].map(([p, n]) => `${p} (${n})`).join(', ') || 'none'}`);
 const leaks = privacyLog.filter((l) => l.hits.length);

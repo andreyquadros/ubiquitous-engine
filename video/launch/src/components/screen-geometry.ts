@@ -68,6 +68,14 @@ export type ScreenExit = 'sink' | 'zoom' | 'fade' | 'none';
 export type ScreenConfig = {
 	/** Screenshot path relative to public/ (e.g. "ui/dashboard.png"), or an absolute/remote URL. */
 	src: string;
+	/**
+	 * Hi-res bitmap. Default (undefined / true): when public/ui/<name>@3x.png is
+	 * shipped (listed in public/ui/hires.json), draw it instead of `src`. The
+	 * coordinate space (imageSize, camera rects, hotspots, children, cursor,
+	 * callouts) stays the 2x capture's. `false` = always draw `src`; a string =
+	 * draw that file (path under public/) as the hi-res bitmap.
+	 */
+	hires?: boolean | string;
 	/** Natural pixel size of the screenshot. Default {w: 2880, h: 1800}. MUST match the file. */
 	imageSize?: {w: number; h: number};
 	/** Rendered width of the window content in composition px (before camera). Default 1440. */

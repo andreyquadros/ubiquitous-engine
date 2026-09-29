@@ -3,6 +3,7 @@ import {AbsoluteFill, Img, staticFile, useCurrentFrame, useVideoConfig} from 're
 import {alpha, color, ease, layer, resolveColor, shadow} from '../design/tokens';
 import {progress} from '../design/motion';
 import {screenGeometry, type ScreenConfig, type ScreenGeometry, type SpotlightSpec} from './screen-geometry';
+import {useHires} from '../shared/ui';
 
 export type {ScreenConfig, CameraKey, SpotlightSpec, Rect, Point} from './screen-geometry';
 
@@ -49,6 +50,9 @@ export const Screen: React.FC<ScreenProps> = ({children, style, ...cfg}) => {
 	const r = (cfg.radius ?? 14) * (g.winW / 1440);
 	const glowColor = cfg.glow === false ? null : resolveColor(cfg.glow ?? 'volt');
 	const camK = g.k * g.scale;
+	// hi-res twin (same layout, drawn into the same box; coordinates stay in imageSize space)
+	const hires = useHires(cfg.hires === false || typeof cfg.hires === 'string' ? null : cfg.src);
+	const drawSrc = typeof cfg.hires === 'string' ? cfg.hires : hires ? `ui/${hires.hires}` : cfg.src;
 
 	return (
 		<AbsoluteFill style={{zIndex: layer.screen, pointerEvents: 'none', ...style}}>
@@ -99,7 +103,7 @@ export const Screen: React.FC<ScreenProps> = ({children, style, ...cfg}) => {
 							{cfg.chrome === 'none' ? null : <TitleBar height={g.titleH} title={cfg.title} />}
 							<div style={{position: 'absolute', left: 0, top: g.titleH, width: g.contentW, height: g.contentH, overflow: 'hidden'}}>
 								<Img
-									src={resolveSrc(cfg.src)}
+									src={resolveSrc(drawSrc)}
 									style={{position: 'absolute', left: 0, top: 0, width: g.contentW, height: g.contentH, display: 'block'}}
 								/>
 								{/* image-space overlay layer */}
