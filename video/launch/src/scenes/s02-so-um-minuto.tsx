@@ -192,7 +192,7 @@ const S02SoUmMinuto: React.FC = () => {
 		pulse = 1 + 0.05 * (1 - springAt(frame, LAND + 3, 'BOUNCY_SUBTLE'));
 		if (Math.abs(pulse - 1) < 0.0015 && frame > LAND + 12) pulse = 1;
 	}
-	const rose = ramp(frame, LAND, LAND + 3);
+	const rose = ramp(frame, LAND - 1, LAND + 2);
 	const numColor = mix(color.ink, color.rose, rose);
 	const underline = ramp(frame, LAND + 2, LAND + 14, E.glide);
 
