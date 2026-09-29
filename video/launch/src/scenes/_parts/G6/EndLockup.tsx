@@ -26,7 +26,7 @@ export const WM = (() => {
 })();
 
 /** Per-letter rise timing: letter i starts at LETTER0 + i (1-f stagger, style §3.4 "wordmark only"). */
-const LETTER0 = -3;
+const LETTER0 = -4;
 const LETTER_DUR = 10;
 
 export const Wordmark: React.FC<{frame: number}> = ({frame}) => {
@@ -70,7 +70,7 @@ export const Wordmark: React.FC<{frame: number}> = ({frame}) => {
 				</clipPath>
 				<linearGradient id="g6-glint" x1="0" y1="0" x2="1" y2="0">
 					<stop offset="0" stopColor="#fff" stopOpacity="0" />
-					<stop offset="0.5" stopColor="#fff" stopOpacity="0.2" />
+					<stop offset="0.5" stopColor="#fff" stopOpacity="0.3" />
 					<stop offset="1" stopColor="#fff" stopOpacity="0" />
 				</linearGradient>
 			</defs>

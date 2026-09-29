@@ -102,6 +102,11 @@ export type ScreenConfig = {
 	camera?: CameraKey[];
 	/** Window chrome: macOS title bar with traffic lights, or bare image. Default "mac". */
 	chrome?: 'mac' | 'none';
+	/**
+	 * Title-bar dots: "mac" traffic lights (default) or "neutral" #3a4560 dots
+	 * for platform-agnostic shots (style §S10; the storyboard's UI planes).
+	 */
+	dots?: 'mac' | 'neutral';
 	/** Optional centred title in the title bar. */
 	title?: string;
 	/** Window corner radius in composition px (at width 1440). Default 14. */

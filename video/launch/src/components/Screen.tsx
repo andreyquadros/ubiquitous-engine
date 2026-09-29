@@ -100,7 +100,7 @@ export const Screen: React.FC<ScreenProps> = ({children, style, ...cfg}) => {
 								boxShadow: shadow.window,
 							}}
 						>
-							{cfg.chrome === 'none' ? null : <TitleBar height={g.titleH} title={cfg.title} />}
+							{cfg.chrome === 'none' ? null : <TitleBar height={g.titleH} title={cfg.title} dots={cfg.dots} />}
 							<div style={{position: 'absolute', left: 0, top: g.titleH, width: g.contentW, height: g.contentH, overflow: 'hidden'}}>
 								<Img
 									src={resolveSrc(drawSrc)}
@@ -145,10 +145,10 @@ export const Screen: React.FC<ScreenProps> = ({children, style, ...cfg}) => {
 	);
 };
 
-const TitleBar: React.FC<{height: number; title?: string}> = ({height, title}) => {
+const TitleBar: React.FC<{height: number; title?: string; dots?: 'mac' | 'neutral'}> = ({height, title, dots = 'mac'}) => {
 	const d = Math.round(height * 0.32);
 	const gap = Math.round(d * 0.66);
-	const lights = ['#ff5f57', '#febc2e', '#28c840'];
+	const lights = dots === 'neutral' ? ['#3a4560', '#3a4560', '#3a4560'] : ['#ff5f57', '#febc2e', '#28c840'];
 	return (
 		<div
 			style={{
@@ -165,9 +165,9 @@ const TitleBar: React.FC<{height: number; title?: string}> = ({height, title}) =
 				gap,
 			}}
 		>
-			{lights.map((c) => (
+			{lights.map((c, i) => (
 				<div
-					key={c}
+					key={i}
 					style={{
 						width: d,
 						height: d,

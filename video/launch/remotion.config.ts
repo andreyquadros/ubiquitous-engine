@@ -49,12 +49,17 @@ Config.setVideoImageFormat('jpeg');
 Config.setJpegQuality(95);
 
 // Output: H.264 / yuv420p (plays everywhere: X/Twitter, LinkedIn, QuickTime).
-Config.setCodec('h264');
-Config.setPixelFormat('yuv420p');
-Config.setCrf(18);
+// REMOTION_AUDIO_ONLY=1 skips the video-only settings so an audio-only render
+// works: `REMOTION_AUDIO_ONLY=1 npx remotion render Launch out/mix.wav --codec=wav`.
+const AUDIO_ONLY = process.env.REMOTION_AUDIO_ONLY === '1';
+if (!AUDIO_ONLY) {
+	Config.setCodec('h264');
+	Config.setPixelFormat('yuv420p');
+	Config.setCrf(18);
+	Config.setX264Preset('medium');
+}
 // Tag + convert to BT.709 limited range (what X/Twitter, YouTube and QuickTime expect).
 Config.setColorSpace('bt709');
-Config.setX264Preset('medium');
 
 Config.setOverwriteOutput(true);
 Config.setDelayRenderTimeoutInMilliseconds(60_000);

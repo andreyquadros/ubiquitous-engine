@@ -198,7 +198,18 @@ const Apply: React.FC<{state: SplitState; children: SplitWrapperProps['children'
 		<TransitionCtx.Provider value={value}>
 			{inner}
 			{state.overlay && state.overlay.opacity > 0.001 ? (
-				<AbsoluteFill style={{background: state.overlay.color, opacity: state.overlay.opacity, pointerEvents: 'none'}} />
+				// Integrator: a light BURST rather than a flat veil. A uniform 0.35 #e8edf9 layer read as a
+				// grey wash on the drop frame; the radial falloff (full peak at the centre, ~30 % at the
+				// corners) plus a 'screen' blend adds light around the brand mark without greying the
+				// frame, and never approaches a pure-white frame (style §8 #21).
+				<AbsoluteFill
+					style={{
+						background: `radial-gradient(ellipse 62% 70% at 50% 48%, ${state.overlay.color} 0%, ${state.overlay.color}b3 38%, ${state.overlay.color}4d 100%)`,
+						opacity: state.overlay.opacity,
+						mixBlendMode: 'screen',
+						pointerEvents: 'none',
+					}}
+				/>
 			) : null}
 		</TransitionCtx.Provider>
 	);
