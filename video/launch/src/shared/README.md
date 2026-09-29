@@ -84,7 +84,8 @@ export default Scene;
 | `sfxInfo(ref)` | `{file, path, durationFrames, hitOffsetFrames, endIsDownbeat}`; resolves aliases (`click.wav` → `ui_click_1.wav`); throws on unknown names |
 | `placeCue(sceneStart, cue)` | absolute `{absStart, absEnd, absHit, volume}`; file starts at `abs hit − round(hit_offset_s × 30)` |
 | `MUSIC` | `{file: 'audio/music/music.wav', volume: BED, ducking: true, ducks: DUCKS, startFrame: 0}` — integrator-tunable |
-| `DUCKS`, `DUCK_ENVELOPE`, `duckGain(f)`, `musicVolume(f)` | storyboard ducks (−5 dB slams, −6 drop, −4 final hit; 1 f attack, 2 hold, 10 release) |
+| `DUCKS`, `DUCK_ENVELOPE`, `duckGain(f)`, `musicVolume(f)` | storyboard ducks (−5 dB slams, −6 drop, −4 final hit; 1 f attack, 2 hold, 10 release) plus the integrator's −2.5 dB dips under the clicks at 810, 990, 1080, 1200 |
+| `MIX_TRIMS`, `mixTrimDb(file)` | master-bus trims added to every cue's `gainDb` in `placeCue` (UI clicks +8, typing +10, ticks +9, pops/bloops +4, chimes +3, whips/whooshes +5, impacts −2…). The storyboard's levels assume a bed with headroom; music.wav is a finished −14 LUFS master. Scene modules keep the storyboard's gainDb. |
 
 Risers are placed by their END: `{ref: 'riser-2bar.wav', atFrame: 0, gainDb: -6}` in s04 plays abs 105–224.
 Music is skipped when `music.wav` is absent; an SFX whose file is missing is skipped too.
@@ -181,7 +182,7 @@ frame is the cut state):
 
 | type | out half | in half | options |
 |---|---|---|---|
-| `flash` | overlay ramps up | `#e8edf9` × 0.35 × E.exit(k) = 0.35 → 0 over f0–3 (E.push) | `color`, `peak` |
+| `flash` | overlay ramps up | `#e8edf9` × 0.35 × E.exit(k) = 0.35 → 0 over f0–3 (E.push), drawn as a radial burst (peak at the centre, 0 at the corners, `screen` blend) so it adds light instead of a grey veil | `color` (6-digit hex), `peak` |
 | `whip-left` | x 0 → −960 (E.exit), blur 0 → 40 | x +960 → 0 (E.push), blur 40 → 0 | `distance`, `blur` |
 | `blur-dissolve` | blur → 16, opacity → 0.25, scale → 1.03 (E.glide) | mirror | `dissolveBlur`, `dissolveFloor`, `dissolveScale` |
 | `match-cut` | untouched; `k`/`u` exposed | same | — |

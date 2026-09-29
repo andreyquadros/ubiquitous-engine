@@ -145,13 +145,42 @@ export type PlacedCue = {
 	volume: number;
 };
 
+/**
+ * MASTER-BUS TRIMS (integrator, first full cut). The storyboard's gainDb
+ * values follow style §7.2, which assumes a bed with headroom; the composed
+ * music.wav is a finished −14 LUFS master (dense, low crest factor), so at
+ * BED 0.5 the UI layer measured 15–30 dB under the music (clicks peaking at
+ * −19 dBFS against a −18 dBFS RMS bed, typing ticks at −29 dBFS: inaudible).
+ * These per-family trims are added to every cue's gainDb so the UI layer
+ * reads clearly while the impacts (already +8…+12 dB over the bed) come down
+ * a touch to leave headroom for a linear loudness pass. Keyed on the REAL
+ * file (aliases resolved). Scene modules keep the storyboard's gainDb.
+ */
+export const MIX_TRIMS: [RegExp, number][] = [
+	[/^ui_click_/, 8],
+	[/^type_/, 10],
+	[/^ui_tick_/, 9],
+	[/^key_down_/, 3],
+	[/^key_up_/, 6],
+	[/^ui_pop/, 4],
+	[/^bloop_/, 4],
+	[/^(shimmer|success_chime|ding)_/, 3],
+	[/^(whip|whoosh_in|whoosh_out|swoosh_long|sweep)_/, 5],
+	[/^glitch_/, 3],
+	[/^impact_/, -2],
+	[/^riser_/, 1],
+];
+
+/** Master-bus trim (dB) for a resolved SFX file name. */
+export const mixTrimDb = (file: string): number => MIX_TRIMS.find(([re]) => re.test(file))?.[1] ?? 0;
+
 /** Place a scene cue on the film timeline. */
 export const placeCue = (sceneStart: number, cue: SfxCue): PlacedCue => {
 	const info = sfxInfo(cue.ref);
 	const absHit = sceneStart + cue.atFrame;
 	const absStart = absHit - info.hitOffsetFrames;
 	const len = cue.maxFrames !== undefined ? Math.min(cue.maxFrames, info.durationFrames) : Math.ceil(info.durationFrames / (cue.playbackRate ?? 1));
-	return {cue, info, absStart, absEnd: absStart + len, absHit, volume: sfxVolume(cue.gainDb)};
+	return {cue, info, absStart, absEnd: absStart + len, absHit, volume: sfxVolume(cue.gainDb + mixTrimDb(info.file))};
 };
 
 /* ------------------------------------------------------------------------ */
@@ -180,6 +209,13 @@ export const DUCKS: Duck[] = [
 	{at: 540, depthDb: -5},
 	{at: 1035, depthDb: -5},
 	{at: 1380, depthDb: -4},
+	// Integrator: gentle −2.5 dB dips under the four "click → state change" beats. The
+	// music lands a stab / downbeat / pluck on each of these frames (810 peak stab + crash,
+	// 990 pluck, 1080 and 1200 bar downbeats) and masked the click.
+	{at: 810, depthDb: -2.5},
+	{at: 990, depthDb: -2.5},
+	{at: 1080, depthDb: -2.5},
+	{at: 1200, depthDb: -2.5},
 ];
 
 /** Duck envelope shape (frames). style.md §7.4: 1 f attack, 2 f hold, 10 f release. */

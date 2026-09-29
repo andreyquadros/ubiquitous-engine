@@ -104,6 +104,10 @@ Define the shot once as a `ScreenConfig` const and share it with overlays.
 | `camera` | `CameraKey[]` | — | see below |
 | `spotlights` | `SpotlightSpec[]` | — | `{rect, at, until?, fade?, dim?=0.62, color?, radius?=20, pad?=14, outline?}` (image px) |
 | `chrome` / `title` / `radius` | `'mac' \| 'none'` / string / px | mac / — / 14 | |
+| `dots` | `'mac' \| 'neutral'` | mac | title-bar dots: macOS traffic lights, or neutral `#3a4560` dots for platform-agnostic shots (style §S10) |
+
+> **Stacking:** Screen's outer layer has `zIndex: layer.screen` (20), so siblings rendered after it *without* a z-index (headlines, scrims, cursor, a 3D UBI) end up UNDER the window. Pass `style={{zIndex: 'auto'}}` (as every film scene does) or give the siblings a higher z-index. Also note that a camera key with `focus` re-centres on the projected pose, so `x`/`y` offsets and `enter: 'rise'` are cancelled while such a key is active; do rises with a screen-space wrapper.
+
 | `glow` | colour \| false | volt | ambient light under the window |
 | `enter` / `enterAt` / `enterDuration` | `'rise' \| 'zoom' \| 'fade' \| 'tilt' \| 'none'` | none / 0 / 30 | |
 | `exit` / `exitAt` / `exitDuration` | `'sink' \| 'zoom' \| 'fade' \| 'none'` | none / — / 18 | |

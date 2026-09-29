@@ -30,6 +30,9 @@ H.264 / yuv420p / BT.709 / CRF 18.
 | `npm run stills -- Launch 0,60,120-600:60` | many stills, one bundle + one browser (→ `out/stills/`), `--scale=0.5`, `--jpeg`, `--out=dir` |
 | `npm run bench -- Launch 30,300,900` | per-frame render cost probe (best of `--reps=3`) |
 | `npm run render` | final: `Launch` → `out/launch.mp4` |
+| `npm run render:audio` | PCM mix only (sample-exact): `Launch` → `out/audio/mix.wav` (`REMOTION_AUDIO_ONLY=1` skips the video-only config) |
+| `npm run master -- --video out/launch.mp4 --mix out/audio/mix.wav --out out/launch-master.mp4` | master: 4x-oversampled peak limiter → two-pass loudnorm −14 LUFS / −1 dBTP (linear) → AAC 320k, video copied, +faststart |
+| `npm run qa -- out/launch-master.mp4 out/review/vN` | contact sheets (every 10th frame, 4x3) + `audio.png` (waveform, spectrogram, levels, scene boundaries) |
 | `npm run render:draft` | review cut: half scale, CRF 26, veryfast, `draft` prop (disables MotionBlur) → `out/launch-draft.mp4` |
 | `npm run render:primitives` | the primitives reel → `out/primitives.mp4` |
 | `npm run typecheck` | `tsc --noEmit` |
