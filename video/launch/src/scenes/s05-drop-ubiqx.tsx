@@ -20,7 +20,7 @@ import React from 'react';
 import {AbsoluteFill, Easing} from 'remotion';
 import {color, font} from '../design/tokens';
 import {E, springAt, TransitionIn, TransitionOut, UbiTrack, useScene, useSceneFrame, type SfxCue} from '../shared';
-import {APP_GLOW, Backdrop, CARET, HERO_CARD, lerp, mixHex, ramp, shakeTransform, slamShake, UBI_MATCH, W, H} from './_parts/G2/common';
+import {APP_GLOW, Backdrop, CARET, HERO_CARD_GRADED, lerp, mixHex, ramp, shakeTransform, slamShake, UBI_MATCH, W, H} from './_parts/G2/common';
 import {AiPill, Wordmark} from './_parts/G2/Lockup';
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
@@ -136,7 +136,8 @@ const S05DropUbiqx: React.FC = () => {
 						<AbsoluteFill style={{transform: `${shakeTransform(shake) ?? ''} scale(${z.toFixed(5)})`, transformOrigin: '50% 50%'}}>
 							<Backdrop
 								seed="s05"
-								base={mixHex(color.canvas, HERO_CARD, tint)}
+								base={mixHex(color.canvas, HERO_CARD_GRADED, tint)}
+								look={{level: 1 - tint /* v2 stage fades out onto the hero-card colour for the match cut */}}
 								orbs={[
 									{c: color.volt, x: 966, y: 520, d: 1100, opacity: orbA * fade},
 									{c: color.ember, x: 1640, y: 900, d: 900, opacity: 0.07 * fade},

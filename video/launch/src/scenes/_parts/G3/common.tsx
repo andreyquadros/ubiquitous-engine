@@ -15,7 +15,7 @@
 import React from 'react';
 import {AbsoluteFill, interpolate} from 'remotion';
 import {noise2D} from '@remotion/noise';
-import {Grain} from '../../../components/Grain';
+import {StageBase, StageFinish, StageLights, type StageLook} from '../../../components/Stage';
 import {color, font} from '../../../design/tokens';
 import {springAt, type SpringName} from '../../../shared';
 
@@ -63,24 +63,22 @@ export const boxTopForBaseline = (m: {ascent: number; descent: number}, size: nu
 /* Stage                                                                     */
 /* ------------------------------------------------------------------------ */
 
-/** Canvas base (the UI planes of G3 fill the frame; the canvas shows only through scrims). */
-export const Stage: React.FC<{children?: React.ReactNode}> = ({children}) => (
-	<AbsoluteFill style={{backgroundColor: color.canvas, overflow: 'hidden'}}>{children}</AbsoluteFill>
+/**
+ * v2 stage under the G3 planes (navy gradient + light rig, components/Stage.tsx).
+ * The UI planes fill most of the frame; the stage shows around/through them
+ * and through the scrims. `look` moves the key pool etc. per scene.
+ */
+export const Stage: React.FC<{children?: React.ReactNode; seed?: string; look?: StageLook}> = ({children, seed = 'g3', look}) => (
+	<AbsoluteFill style={{backgroundColor: '#0a0f20', overflow: 'hidden'}}>
+		<StageBase />
+		<StageLights seed={seed} {...look} />
+		{children}
+	</AbsoluteFill>
 );
 
-/** Finishing layer over everything: a soft vignette (focus) + grain (dithers the dark gradients). */
+/** Finishing layer over everything: a soft vignette (v2: ≤ 0.35 alpha) + grain (dithers the gradients). */
 export const StageTop: React.FC<{seed: string; vignette?: number; grain?: number}> = ({seed, vignette = 0.42, grain = 0.04}) => (
-	<>
-		{vignette > 0 ? (
-			<AbsoluteFill
-				style={{
-					pointerEvents: 'none',
-					background: `radial-gradient(ellipse 90% 85% at 50% 50%, transparent 55%, rgba(3,5,10,${(0.75 * vignette).toFixed(3)}) 100%)`,
-				}}
-			/>
-		) : null}
-		{grain > 0 ? <Grain opacity={grain} seed={`${seed}-grain`} /> : null}
-	</>
+	<StageFinish vignette={vignette} grain={grain} seed={seed} />
 );
 
 /* ------------------------------------------------------------------------ */
@@ -244,7 +242,7 @@ export const DimMask: React.FC<{dim: number; holes: Hole[]; size?: {w: number; h
 	dim,
 	holes,
 	size = {w: 2880, h: 1800},
-	tint = '6,9,16',
+	tint = '10,16,36', // v2: navy tint (v1 '6,9,16')
 }) => {
 	if (dim <= 0.001) return null;
 	const full = holes.filter((h) => (h.open ?? 1) >= 0.999);

@@ -13,6 +13,7 @@ import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame} from 'remotion';
 import {noise2D} from '@remotion/noise';
 import {Grain} from '../../../components/Grain';
+import {StageBase, StageFinish, StageLights, STAGE, type StageLook} from '../../../components/Stage';
 import {alpha, color} from '../../../design/tokens';
 import {E} from '../../../shared/motion';
 
@@ -69,16 +70,21 @@ export const Stage: React.FC<{
 	lineAlpha?: number;
 	horizon?: number;
 	gridSpeed?: number;
+	/** Flat base instead of the v2 navy stage gradient. Default: the gradient. */
 	base?: string;
+	/** v2 stage rig overrides (components/Stage.tsx): key pool, pools, key light, aurora, level. */
+	look?: StageLook;
 	children?: React.ReactNode;
-}> = ({seed, orbs, floor = 0, lineAlpha = 0.5, horizon = 0.7, gridSpeed = 0.6, base = color.canvas, children}) => {
+}> = ({seed, orbs, floor = 0, lineAlpha = 0.5, horizon = 0.7, gridSpeed = 0.6, base, look, children}) => {
 	const frame = useCurrentFrame();
 	const t = frame * 0.004;
 	const cell = 110;
 	const scroll = (frame * gridSpeed) % cell;
 	const gc = color.volt;
 	return (
-		<AbsoluteFill style={{backgroundColor: base, overflow: 'hidden'}}>
+		<AbsoluteFill style={{backgroundColor: base ?? STAGE.bottom, overflow: 'hidden'}}>
+			{base ? null : <StageBase />}
+			<StageLights seed={seed} {...look} />
 			{/* soft stage light from the top: depth on every frame */}
 			<AbsoluteFill style={{background: `radial-gradient(ellipse 75% 55% at 50% -8%, ${alpha(color.volt, 0.08)} 0%, transparent 70%)`}} />
 			{orbs.map((o, i) => {
@@ -147,15 +153,8 @@ export const Stage: React.FC<{
 	);
 };
 
-export const Vignette: React.FC<{strength: number}> = ({strength}) =>
-	strength > 0 ? (
-		<AbsoluteFill
-			style={{
-				pointerEvents: 'none',
-				background: `radial-gradient(ellipse 85% 80% at 50% 50%, transparent 50%, rgba(3,5,10,${0.75 * strength}) 100%)`,
-			}}
-		/>
-	) : null;
+/** Vignette (v1 strength scale; v2 caps it at 0.35 alpha, components/Stage.tsx). */
+export const Vignette: React.FC<{strength: number}> = ({strength}) => <StageFinish vignette={strength} grain={0} />;
 
 export const FilmGrain: React.FC<{opacity: number; seed: string}> = ({opacity, seed}) => <Grain opacity={opacity} seed={`${seed}-grain`} />;
 

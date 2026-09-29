@@ -1,8 +1,8 @@
 import React from 'react';
 import {AbsoluteFill, useCurrentFrame, useVideoConfig} from 'remotion';
 import {noise2D} from '@remotion/noise';
-import {alpha, color, layer, resolveColor, type Accent} from '../design/tokens';
-import {Grain} from './Grain';
+import {alpha, layer, resolveColor, type Accent} from '../design/tokens';
+import {StageBase, StageFinish, StageLights, STAGE, type StageLook} from './Stage';
 
 export type OrbSpec = {
 	/** Palette accent or CSS colour. */
@@ -24,9 +24,12 @@ export type BackgroundProps = {
 	 * - `plain` — flat canvas with a faint top light, for maximum focus
 	 */
 	variant?: 'grid' | 'orbs' | 'plain';
-	/** Override the orb set. Default: volt top-left, ember bottom-right, faint volt centre. */
+	/**
+	 * Extra drifting orbs on top of the v2 stage rig (see <Stage>). Default: none
+	 * (the rig's volt key pool + indigo/ember pools light the stage).
+	 */
 	orbs?: OrbSpec[];
-	/** Global multiplier on orb opacity. Default 1. */
+	/** Global multiplier on orb opacity AND the stage lights. Default 1. */
 	orbIntensity?: number;
 	/** How far orbs drift, fraction of canvas width. Default 0.06. */
 	drift?: number;
@@ -40,23 +43,21 @@ export type BackgroundProps = {
 	gridSpeed?: number;
 	/** Horizon height as a fraction of canvas height (where the floor fades out). Default 0.68. */
 	horizon?: number;
-	/** Vignette strength 0–1. Default 0.6. */
+	/** Vignette strength 0–1 (v1 scale; 0.6+ maps to the v2 cap of 0.35 alpha). Default 0.6. */
 	vignette?: number;
-	/** Grain opacity (0 disables). Default 0.055. */
+	/** Grain opacity (0 disables). Default 0.042. */
 	grain?: number;
 	/** Noise seed — vary it so consecutive scenes don't drift identically. Default "bg". */
 	seed?: string;
-	/** Base colour. Default canvas. */
+	/** Flat base colour instead of the navy stage gradient. Default: the gradient. */
 	base?: string;
+	/** Stage rig overrides (key pool position, pools, key light, aurora, level). */
+	look?: StageLook;
 	/** Content rendered above the background but under the vignette + grain. */
 	children?: React.ReactNode;
 };
 
-const DEFAULT_ORBS: OrbSpec[] = [
-	{color: 'volt', x: 0.2, y: 0.22, size: 0.62, opacity: 0.28},
-	{color: 'ember', x: 0.86, y: 0.84, size: 0.5, opacity: 0.16},
-	{color: 'volt', x: 0.62, y: 0.5, size: 0.8, opacity: 0.08},
-];
+const NO_ORBS: OrbSpec[] = [];
 
 /**
  * Full-frame stage background. Deterministic (noise seeded by `seed`, grain
@@ -69,7 +70,7 @@ const DEFAULT_ORBS: OrbSpec[] = [
  */
 export const Background: React.FC<BackgroundProps> = ({
 	variant = 'orbs',
-	orbs = DEFAULT_ORBS,
+	orbs = NO_ORBS,
 	orbIntensity = 1,
 	drift = 0.06,
 	speed = 1,
@@ -78,9 +79,10 @@ export const Background: React.FC<BackgroundProps> = ({
 	gridSpeed = 2,
 	horizon = 0.68,
 	vignette = 0.6,
-	grain = 0.055,
+	grain = STAGE.grain,
 	seed = 'bg',
-	base = color.canvas,
+	base,
+	look,
 	children,
 }) => {
 	const frame = useCurrentFrame();
@@ -88,17 +90,15 @@ export const Background: React.FC<BackgroundProps> = ({
 	const t = frame * 0.004 * speed;
 	const gc = resolveColor(gridColor);
 	const showOrbs = variant !== 'plain';
+	// plain = maximum focus: the rig at 70 %, no aurora
+	const lookLevel = (look?.level ?? 1) * orbIntensity * (variant === 'plain' ? 0.7 : 1);
 	const cell = 110;
 	const scroll = (frame * gridSpeed) % cell;
 
 	return (
-		<AbsoluteFill style={{backgroundColor: base, overflow: 'hidden'}}>
-			{/* top light — gives every variant a sense of depth */}
-			<AbsoluteFill
-				style={{
-					background: `radial-gradient(ellipse 75% 55% at 50% -8%, ${alpha(color.volt, variant === 'plain' ? 0.1 : 0.14)} 0%, transparent 70%)`,
-				}}
-			/>
+		<AbsoluteFill style={{backgroundColor: base ?? STAGE.bottom, overflow: 'hidden'}}>
+			{base ? null : <StageBase />}
+			<StageLights seed={seed} speed={speed} {...look} aurora={variant === 'plain' ? 0 : look?.aurora} level={lookLevel} />
 
 			{showOrbs
 				? orbs.map((o, i) => {
@@ -172,16 +172,7 @@ export const Background: React.FC<BackgroundProps> = ({
 
 			{children ? <AbsoluteFill style={{zIndex: layer.content}}>{children}</AbsoluteFill> : null}
 
-			{vignette > 0 ? (
-				<AbsoluteFill
-					style={{
-						zIndex: layer.overlay,
-						pointerEvents: 'none',
-						background: `radial-gradient(ellipse 85% 80% at 50% 50%, transparent 50%, rgba(3,5,10,${0.75 * vignette}) 100%)`,
-					}}
-				/>
-			) : null}
-			{grain > 0 ? <Grain opacity={grain} seed={`${seed}-grain`} /> : null}
+			<StageFinish vignette={vignette} grain={grain} seed={seed} zIndex />
 		</AbsoluteFill>
 	);
 };

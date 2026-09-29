@@ -7,7 +7,7 @@
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import {noise2D} from '@remotion/noise';
-import {Grain} from '../../../components/Grain';
+import {StageBase, StageFinish, StageLights, STAGE, type StageLook} from '../../../components/Stage';
 import {alpha, color, font} from '../../../design/tokens';
 
 export const W = 1920;
@@ -45,9 +45,9 @@ export const shakeTransform = (s: {x: number; y: number; r: number}) =>
 	s.x === 0 && s.y === 0 && s.r === 0 ? undefined : `translate(${s.x.toFixed(2)}px, ${s.y.toFixed(2)}px) rotate(${s.r.toFixed(3)}deg)`;
 
 /* ------------------------------------------------------------------------ */
-/* Backdrop: canvas + drifting orbs (pure radial gradients) + vignette +     */
-/* grain — the same recipe and grain tile as <Background>, but with the      */
-/* problem act's exact orb set and no top light.                             */
+/* Backdrop: the v2 stage (navy gradient + key/indigo/ember pools + aurora + */
+/* key light, components/Stage.tsx) + the problem act's drifting orbs +      */
+/* vignette (≤ 0.35) + grain.                                                */
 /* ------------------------------------------------------------------------ */
 
 export type Orb = {c: string; x: number; y: number; size: number; opacity: number};
@@ -59,17 +59,38 @@ export const G1_ORBS: Orb[] = [
 	{c: color.volt, x: 0.5, y: 0.04, size: 0.72, opacity: 0.08},
 ];
 
+/**
+ * G1 stage rig: the key pool sits behind the headline + timesheet (upper
+ * centre), the problem act swaps the ember pool for a rose one.
+ */
+export const G1_LOOK: StageLook = {
+	keyPool: {x: 0.5, y: 0.42, w: 1.3, h: 1.45, opacity: 0.36},
+	pools: [
+		{color: STAGE.indigo, x: 0.86, y: 0.14, w: 0.78, opacity: 0.16},
+		{color: color.rose, x: 0.1, y: 0.94, w: 0.66, opacity: 0.1},
+	],
+	keyLight: {x: 0.5, y: 0.44, w: 0.8, h: 0.75, opacity: 0.12},
+};
+
 export const Backdrop: React.FC<{
 	orbs?: Orb[];
 	seed: string;
 	grain?: number;
 	vignette?: number;
+	/**
+	 * Stage rig overrides. Default: G1_LOOK, or lights OUT when `orbs` is empty
+	 * (s04, the designed silence: navy base + vignette + grain only).
+	 */
+	look?: StageLook;
 	children?: React.ReactNode;
-}> = ({orbs = G1_ORBS, seed, grain = 0.045, vignette = 0.6, children}) => {
+}> = ({orbs = G1_ORBS, seed, grain = 0.045, vignette = 0.6, look, children}) => {
 	const frame = useCurrentFrame();
 	const t = frame * 0.004;
+	const rig: StageLook = {...G1_LOOK, ...(orbs.length === 0 ? {level: 0} : null), ...look};
 	return (
-		<AbsoluteFill style={{backgroundColor: color.canvas, overflow: 'hidden'}}>
+		<AbsoluteFill style={{backgroundColor: STAGE.bottom, overflow: 'hidden'}}>
+			<StageBase />
+			<StageLights seed={seed} {...rig} />
 			{orbs.map((o, i) => {
 				const d = o.size * W;
 				// ≤ 0.3 px/f drift, ±3 % breathing
@@ -92,15 +113,7 @@ export const Backdrop: React.FC<{
 				);
 			})}
 			{children}
-			{vignette > 0 ? (
-				<AbsoluteFill
-					style={{
-						pointerEvents: 'none',
-						background: `radial-gradient(ellipse 85% 80% at 50% 50%, transparent 50%, rgba(3,5,10,${0.75 * vignette}) 100%)`,
-					}}
-				/>
-			) : null}
-			{grain > 0 ? <Grain opacity={grain} seed={`${seed}-grain`} /> : null}
+			<StageFinish vignette={vignette} grain={grain} seed={seed} />
 		</AbsoluteFill>
 	);
 };

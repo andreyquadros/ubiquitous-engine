@@ -15,7 +15,7 @@
 import React from 'react';
 import {AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame} from 'remotion';
 import {noise2D} from '@remotion/noise';
-import {Grain} from '../../../components/Grain';
+import {StageBase, StageFinish, StageLights, STAGE, type StageLook} from '../../../components/Stage';
 import type {Point, Rect} from '../../../components/screen-geometry';
 import {alpha, color, font} from '../../../design/tokens';
 import {E, springAt} from '../../../shared/motion';
@@ -74,14 +74,16 @@ export const APP = {
 /* Backdrop                                                                  */
 /* ------------------------------------------------------------------------ */
 
-export const Backdrop: React.FC<{seed: string; children?: React.ReactNode; grain?: number; vignette?: number; ember?: number; volt?: number}> = ({
-	seed,
-	children,
-	grain = 0.045,
-	vignette = 0.55,
-	ember = 0.06,
-	volt = 0.16,
-}) => {
+export const Backdrop: React.FC<{
+	seed: string;
+	children?: React.ReactNode;
+	grain?: number;
+	vignette?: number;
+	ember?: number;
+	volt?: number;
+	/** v2 stage rig overrides (components/Stage.tsx). */
+	look?: StageLook;
+}> = ({seed, children, ember = 0.06, volt = 0.16, look}) => {
 	const frame = useCurrentFrame();
 	const t = frame * 0.004;
 	const orbs = [
@@ -89,7 +91,9 @@ export const Backdrop: React.FC<{seed: string; children?: React.ReactNode; grain
 		{c: color.ember, x: 0.86, y: 0.9, d: 760, o: ember},
 	];
 	return (
-		<AbsoluteFill style={{backgroundColor: color.canvas, overflow: 'hidden'}}>
+		<AbsoluteFill style={{backgroundColor: STAGE.bottom, overflow: 'hidden'}}>
+			<StageBase />
+			<StageLights seed={seed} {...look} />
 			{orbs.map((o, i) => {
 				if (o.o <= 0) return null;
 				const nx = noise2D(`${seed}-ox-${i}`, t, i * 3.1) * 0.025 * W;
@@ -115,16 +119,9 @@ export const Backdrop: React.FC<{seed: string; children?: React.ReactNode; grain
 	);
 };
 
-/** Finishing layer (vignette + grain) — put it last. */
+/** Finishing layer (vignette, v2: ≤ 0.35 alpha + grain) — put it last. */
 export const Finish: React.FC<{seed: string; vignette?: number; grain?: number}> = ({seed, vignette = 0.55, grain = 0.045}) => (
-	<>
-		{vignette > 0 ? (
-			<AbsoluteFill
-				style={{pointerEvents: 'none', background: `radial-gradient(ellipse 85% 80% at 50% 50%, transparent 55%, rgba(3,5,10,${0.75 * vignette}) 100%)`}}
-			/>
-		) : null}
-		{grain > 0 ? <Grain opacity={grain} seed={`${seed}-grain`} /> : null}
-	</>
+	<StageFinish vignette={vignette} grain={grain} seed={seed} />
 );
 
 /* ------------------------------------------------------------------------ */

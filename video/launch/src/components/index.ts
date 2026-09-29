@@ -4,13 +4,34 @@
  */
 export {Background, type BackgroundProps, type OrbSpec} from './Background';
 export {KineticText, type KineticTextProps, type KineticMode, type KineticExit, type UnderlineSpec, type HighlightStyle} from './KineticText';
-export {Screen, useScreenGeometry, resolveSrc, type ScreenProps} from './Screen';
+export {Screen, useScreenGeometry, resolveSrc, SPOTLIGHT_DIM, WINDOW_SHADOW, GLASS_INSET, RIM_PX, rimBackground, type ScreenProps} from './Screen';
+export {
+	Stage,
+	StageBase,
+	StageLights,
+	StageFinish,
+	STAGE,
+	navyDim,
+	vignetteAlpha,
+	DEFAULT_KEY,
+	DEFAULT_POOLS,
+	DEFAULT_KEY_LIGHT,
+	type StageProps,
+	type StageLook,
+	type StagePool,
+	type StageKeyLight,
+} from './Stage';
 export {
 	screenGeometry,
 	mapImagePoint,
 	mapImageRect,
 	mapWithGeometry,
 	onScreenScale,
+	GRADE,
+	resolveGrade,
+	gradeFilter,
+	gradeHex,
+	type Grade,
 	type ScreenConfig,
 	type CameraKey,
 	type SpotlightSpec,

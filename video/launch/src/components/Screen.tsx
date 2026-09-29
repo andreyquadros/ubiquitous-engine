@@ -1,11 +1,22 @@
 import React, {createContext, useContext} from 'react';
 import {AbsoluteFill, Img, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
-import {alpha, color, ease, layer, resolveColor, shadow} from '../design/tokens';
+import {alpha, color, ease, layer, resolveColor} from '../design/tokens';
 import {progress} from '../design/motion';
-import {screenGeometry, type ScreenConfig, type ScreenGeometry, type SpotlightSpec} from './screen-geometry';
+import {gradeFilter, resolveGrade, screenGeometry, type ScreenConfig, type ScreenGeometry, type SpotlightSpec} from './screen-geometry';
+import {navyDim} from './Stage';
 import {useHires} from '../shared/ui';
 
-export type {ScreenConfig, CameraKey, SpotlightSpec, Rect, Point} from './screen-geometry';
+export type {ScreenConfig, CameraKey, SpotlightSpec, Rect, Point, Grade} from './screen-geometry';
+
+/** v2 window drop shadow: deeper and larger than v1's shadow.window. */
+export const WINDOW_SHADOW = '0 36px 70px -18px rgba(0,0,0,0.8), 0 90px 190px -30px rgba(0,0,0,0.85)';
+
+/** v2 rim light: 1.5 px border, volt ~0.7 at the top-left fading out, a white top highlight. */
+export const rimBackground = (c: string = color.volt) =>
+	`linear-gradient(135deg, ${alpha(c, 0.72)} 0%, ${alpha(c, 0.32)} 18%, rgba(255,255,255,0.10) 42%, rgba(255,255,255,0.03) 70%, rgba(255,255,255,0.06) 100%)`;
+export const RIM_PX = 1.5;
+/** Inset glass: hairline + a white top highlight (v2: brighter). */
+export const GLASS_INSET = 'inset 0 0 0 1px rgba(255,255,255,0.08), inset 0 1.5px 0 rgba(255,255,255,0.22)';
 
 export type ScreenProps = ScreenConfig & {
 	/**
@@ -53,6 +64,8 @@ export const Screen: React.FC<ScreenProps> = ({children, style, ...cfg}) => {
 	// hi-res twin (same layout, drawn into the same box; coordinates stay in imageSize space)
 	const hires = useHires(cfg.hires === false || typeof cfg.hires === 'string' ? null : cfg.src);
 	const drawSrc = typeof cfg.hires === 'string' ? cfg.hires : hires ? `ui/${hires.hires}` : cfg.src;
+	const grade = gradeFilter(resolveGrade(cfg.grade));
+	const rim = cfg.rim !== false;
 
 	return (
 		<AbsoluteFill style={{zIndex: layer.screen, pointerEvents: 'none', ...style}}>
@@ -77,19 +90,29 @@ export const Screen: React.FC<ScreenProps> = ({children, style, ...cfg}) => {
 							filter: g.blur > 0.2 ? `blur(${g.blur}px)` : undefined,
 						}}
 					>
-						{/* ambient glow under the window */}
+						{/* ambient glow under the window (v2: stronger) */}
 						{glowColor ? (
 							<div
 								style={{
 									position: 'absolute',
-									left: '-12%',
-									right: '-12%',
-									top: '-10%',
-									bottom: '-18%',
-									background: `radial-gradient(closest-side, ${alpha(glowColor, 0.22)} 0%, ${alpha(glowColor, 0.08)} 55%, transparent 100%)`,
+									left: '-14%',
+									right: '-14%',
+									top: '-12%',
+									bottom: '-22%',
+									background: `radial-gradient(closest-side, ${alpha(glowColor, 0.35)} 0%, ${alpha(glowColor, 0.13)} 55%, transparent 100%)`,
 								}}
 							/>
 						) : null}
+						{/* deep drop shadow + rim light, both BEHIND the opaque window box */}
+						<div
+							style={{
+								position: 'absolute',
+								inset: rim ? -RIM_PX : 0,
+								borderRadius: r + (rim ? RIM_PX : 0),
+								background: rim ? rimBackground(glowColor ?? color.volt) : undefined,
+								boxShadow: WINDOW_SHADOW,
+							}}
+						/>
 						<div
 							style={{
 								position: 'absolute',
@@ -97,34 +120,49 @@ export const Screen: React.FC<ScreenProps> = ({children, style, ...cfg}) => {
 								borderRadius: r,
 								overflow: 'hidden',
 								background: color.panel,
-								boxShadow: shadow.window,
 							}}
 						>
 							{cfg.chrome === 'none' ? null : <TitleBar height={g.titleH} title={cfg.title} dots={cfg.dots} />}
 							<div style={{position: 'absolute', left: 0, top: g.titleH, width: g.contentW, height: g.contentH, overflow: 'hidden'}}>
-								<Img
-									src={resolveSrc(drawSrc)}
-									style={{position: 'absolute', left: 0, top: 0, width: g.contentW, height: g.contentH, display: 'block'}}
-								/>
-								{/* image-space overlay layer */}
-								<div
-									style={{
-										position: 'absolute',
-										left: 0,
-										top: 0,
-										width: g.imgW,
-										height: g.imgH,
-										transformOrigin: '0 0',
-										transform: `scale(${g.s0})`,
-									}}
-								>
-									<GeometryContext.Provider value={g}>
-										{children}
-										{(cfg.spotlights ?? []).map((s, i) => (
+								{/* graded layer: the bitmap AND the image-space children, together (patches keep matching) */}
+								<div style={{position: 'absolute', left: 0, top: 0, width: g.contentW, height: g.contentH, filter: grade || undefined}}>
+									<Img
+										src={resolveSrc(drawSrc)}
+										style={{position: 'absolute', left: 0, top: 0, width: g.contentW, height: g.contentH, display: 'block'}}
+									/>
+									{/* image-space overlay layer */}
+									<div
+										style={{
+											position: 'absolute',
+											left: 0,
+											top: 0,
+											width: g.imgW,
+											height: g.imgH,
+											transformOrigin: '0 0',
+											transform: `scale(${g.s0})`,
+										}}
+									>
+										<GeometryContext.Provider value={g}>{children}</GeometryContext.Provider>
+									</div>
+								</div>
+								{/* spotlights: ungraded, above the graded layer (image space) */}
+								{cfg.spotlights && cfg.spotlights.length > 0 ? (
+									<div
+										style={{
+											position: 'absolute',
+											left: 0,
+											top: 0,
+											width: g.imgW,
+											height: g.imgH,
+											transformOrigin: '0 0',
+											transform: `scale(${g.s0})`,
+										}}
+									>
+										{cfg.spotlights.map((s, i) => (
 											<Spotlight key={i} spec={s} frame={frame} onScreen={camK * g.s0} />
 										))}
-									</GeometryContext.Provider>
-								</div>
+									</div>
+								) : null}
 							</div>
 							{/* glass: hairline + top highlight */}
 							<div
@@ -132,7 +170,7 @@ export const Screen: React.FC<ScreenProps> = ({children, style, ...cfg}) => {
 									position: 'absolute',
 									inset: 0,
 									borderRadius: r,
-									boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.09), inset 0 1px 0 rgba(255,255,255,0.12)`,
+									boxShadow: GLASS_INSET,
 									pointerEvents: 'none',
 								}}
 							/>
@@ -198,6 +236,9 @@ const TitleBar: React.FC<{height: number; title?: string; dots?: 'mac' | 'neutra
 	);
 };
 
+/** v2 default spotlight dim (v1: 0.62 black) — "the rest steps back", navy tinted. */
+export const SPOTLIGHT_DIM = 0.38;
+
 const Spotlight: React.FC<{spec: SpotlightSpec; frame: number; onScreen: number}> = ({spec, frame, onScreen}) => {
 	const fade = spec.fade ?? 10;
 	const pin = progress(frame, spec.at, fade, ease.settle);
@@ -208,7 +249,7 @@ const Spotlight: React.FC<{spec: SpotlightSpec; frame: number; onScreen: number}
 	const c = resolveColor(spec.color ?? 'volt');
 	// keep the outline ~2.5 composition px regardless of zoom
 	const bw = 2.5 / Math.max(0.05, onScreen);
-	const glowPx = 26 / Math.max(0.05, onScreen);
+	const glowPx = 34 / Math.max(0.05, onScreen);
 	const grow = 1 + (1 - pin) * 0.06;
 	return (
 		<div
@@ -222,8 +263,8 @@ const Spotlight: React.FC<{spec: SpotlightSpec; frame: number; onScreen: number}
 				transform: `scale(${grow})`,
 				boxShadow: [
 					spec.outline === false ? null : `0 0 0 ${bw}px ${alpha(c, 0.95 * v)}`,
-					spec.outline === false ? null : `0 0 ${glowPx}px ${glowPx * 0.25}px ${alpha(c, 0.55 * v)}`,
-					`0 0 0 6000px rgba(6, 9, 16, ${(spec.dim ?? 0.62) * v})`,
+					spec.outline === false ? null : `0 0 ${glowPx}px ${glowPx * 0.3}px ${alpha(c, 0.78 * v)}`,
+					`0 0 0 6000px ${navyDim((spec.dim ?? SPOTLIGHT_DIM) * v)}`,
 				]
 					.filter(Boolean)
 					.join(', '),

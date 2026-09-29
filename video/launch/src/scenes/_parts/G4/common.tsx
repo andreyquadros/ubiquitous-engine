@@ -18,9 +18,10 @@
 import React, {createContext, useContext} from 'react';
 import {AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {noise2D} from '@remotion/noise';
-import {Grain} from '../../../components/Grain';
-import {mapWithGeometry, screenGeometry, type Point, type Rect, type ScreenConfig, type ScreenGeometry} from '../../../components/screen-geometry';
-import {alpha, color, font, shadow} from '../../../design/tokens';
+import {navyDim, StageBase, StageFinish, StageLights, STAGE, type StageLook} from '../../../components/Stage';
+import {GLASS_INSET, RIM_PX, rimBackground, WINDOW_SHADOW} from '../../../components/Screen';
+import {gradeFilter, mapWithGeometry, resolveGrade, screenGeometry, type Point, type Rect, type ScreenConfig, type ScreenGeometry} from '../../../components/screen-geometry';
+import {alpha, color, font} from '../../../design/tokens';
 import {E, springAt} from '../../../shared/motion';
 import {useHires} from '../../../shared/ui';
 
@@ -74,12 +75,13 @@ export const UI = {
 /* Backdrop                                                                  */
 /* ------------------------------------------------------------------------ */
 
-export const Backdrop: React.FC<{seed: string; children?: React.ReactNode; grain?: number; vignette?: number; ember?: number}> = ({
+export const Backdrop: React.FC<{seed: string; children?: React.ReactNode; grain?: number; vignette?: number; ember?: number; look?: StageLook}> = ({
 	seed,
 	children,
 	grain = 0.045,
 	vignette = 0.55,
 	ember = 0.06,
+	look,
 }) => {
 	const frame = useCurrentFrame();
 	const t = frame * 0.004;
@@ -88,7 +90,9 @@ export const Backdrop: React.FC<{seed: string; children?: React.ReactNode; grain
 		{c: color.ember, x: 0.86, y: 0.9, d: 760, o: ember},
 	];
 	return (
-		<AbsoluteFill style={{backgroundColor: color.canvas, overflow: 'hidden'}}>
+		<AbsoluteFill style={{backgroundColor: STAGE.bottom, overflow: 'hidden'}}>
+			<StageBase />
+			<StageLights seed={seed} {...look} />
 			{orbs.map((o, i) => {
 				const nx = noise2D(`${seed}-ox-${i}`, t, i * 3.1) * 0.025 * W;
 				const ny = noise2D(`${seed}-oy-${i}`, t, i * 7.7) * 0.018 * W;
@@ -109,12 +113,7 @@ export const Backdrop: React.FC<{seed: string; children?: React.ReactNode; grain
 				);
 			})}
 			{children}
-			{vignette > 0 ? (
-				<AbsoluteFill
-					style={{pointerEvents: 'none', background: `radial-gradient(ellipse 85% 80% at 50% 50%, transparent 55%, rgba(3,5,10,${0.75 * vignette}) 100%)`}}
-				/>
-			) : null}
-			{grain > 0 ? <Grain opacity={grain} seed={`${seed}-grain`} /> : null}
+			<StageFinish vignette={vignette} grain={grain} seed={seed} />
 		</AbsoluteFill>
 	);
 };
@@ -174,6 +173,8 @@ export const G4Plane: React.FC<G4PlaneProps> = ({layers, children, blur = 0, bri
 	const {width, height} = useVideoConfig();
 	const g = screenGeometry({...cfg, src: layers[0]?.src ?? ''}, frame, {width, height});
 	const r = (cfg.radius ?? 14) * (g.winW / 1440);
+	const grade = gradeFilter(resolveGrade(cfg.grade));
+	const rim = cfg.rim !== false;
 	const filters = [blur > 0.2 ? `blur(${blur.toFixed(2)}px)` : '', Math.abs(brightness - 1) > 0.002 ? `brightness(${brightness.toFixed(3)})` : '']
 		.filter(Boolean)
 		.join(' ');
@@ -200,14 +201,27 @@ export const G4Plane: React.FC<G4PlaneProps> = ({layers, children, blur = 0, bri
 								transform: `translateY(${g.bob}px) rotateX(${g.rx}deg) rotateY(${g.ry}deg) rotateZ(${g.rz}deg) scale(${g.scale})`,
 							}}
 						>
-							<div style={{position: 'absolute', inset: 0, borderRadius: r, overflow: 'hidden', background: color.panel, boxShadow: shadow.window}}>
+							{/* v2: deep drop shadow + rim light behind the opaque window box (same as <Screen>) */}
+							<div
+								style={{
+									position: 'absolute',
+									inset: rim ? -RIM_PX : 0,
+									borderRadius: r + (rim ? RIM_PX : 0),
+									background: rim ? rimBackground() : undefined,
+									boxShadow: WINDOW_SHADOW,
+								}}
+							/>
+							<div style={{position: 'absolute', inset: 0, borderRadius: r, overflow: 'hidden', background: color.panel}}>
 								<TitleBar height={g.titleH} />
 								<div style={{position: 'absolute', left: 0, top: g.titleH, width: g.contentW, height: g.contentH, overflow: 'hidden'}}>
-									{layers.map((l, i) => (
-										<LayerImg key={`${l.src}-${i}`} layer={l} g={g} />
-									))}
-									<div style={{position: 'absolute', left: 0, top: 0, width: g.imgW, height: g.imgH, transformOrigin: '0 0', transform: `scale(${g.s0})`}}>
-										<GeoCtx.Provider value={g}>{children}</GeoCtx.Provider>
+									{/* v2 grade: capture layers AND image-space children together (patches keep matching) */}
+									<div style={{position: 'absolute', left: 0, top: 0, width: g.contentW, height: g.contentH, filter: grade || undefined}}>
+										{layers.map((l, i) => (
+											<LayerImg key={`${l.src}-${i}`} layer={l} g={g} />
+										))}
+										<div style={{position: 'absolute', left: 0, top: 0, width: g.imgW, height: g.imgH, transformOrigin: '0 0', transform: `scale(${g.s0})`}}>
+											<GeoCtx.Provider value={g}>{children}</GeoCtx.Provider>
+										</div>
 									</div>
 								</div>
 								<div
@@ -215,7 +229,7 @@ export const G4Plane: React.FC<G4PlaneProps> = ({layers, children, blur = 0, bri
 										position: 'absolute',
 										inset: 0,
 										borderRadius: r,
-										boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
+										boxShadow: GLASS_INSET,
 									}}
 								/>
 							</div>
@@ -275,7 +289,7 @@ export const GlideSpot: React.FC<{rect: Rect; dim: number; outline?: number; pad
 	if (dim <= 0.001 && outline <= 0.001) return null;
 	const onScreen = g ? g.k * g.scale * g.s0 : 1;
 	const bw = 2.5 / Math.max(0.05, onScreen);
-	const glowPx = 26 / Math.max(0.05, onScreen);
+	const glowPx = 34 / Math.max(0.05, onScreen);
 	return (
 		<div
 			style={{
@@ -287,8 +301,8 @@ export const GlideSpot: React.FC<{rect: Rect; dim: number; outline?: number; pad
 				borderRadius: radius,
 				boxShadow: [
 					outline > 0.001 ? `0 0 0 ${bw}px ${alpha(color.volt, 0.95 * outline)}` : null,
-					outline > 0.001 ? `0 0 ${glowPx}px ${glowPx * 0.25}px ${alpha(color.volt, 0.45 * outline)}` : null,
-					`0 0 0 6000px rgba(6, 9, 16, ${dim})`,
+					outline > 0.001 ? `0 0 ${glowPx}px ${glowPx * 0.3}px ${alpha(color.volt, 0.7 * outline)}` : null,
+					`0 0 0 6000px ${navyDim(dim)}`,
 				]
 					.filter(Boolean)
 					.join(', '),

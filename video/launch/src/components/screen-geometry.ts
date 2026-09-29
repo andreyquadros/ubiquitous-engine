@@ -46,7 +46,7 @@ export type SpotlightSpec = {
 	until?: number;
 	/** Fade duration in frames. Default 10. */
 	fade?: number;
-	/** Darkness outside the rect, 0–1. Default 0.62. */
+	/** Darkness outside the rect (navy tint), 0–1. Default 0.38 (v1: 0.62). */
 	dim?: number;
 	/** Outline/glow colour (palette name or CSS). Default volt. */
 	color?: string;
@@ -129,6 +129,50 @@ export type ScreenConfig = {
 	exitDuration?: number;
 	/** Frame at which a diagonal light sheen sweeps across the glass. */
 	sheenAt?: number;
+	/**
+	 * v2 colour grade of the window CONTENT (bitmap + image-space children
+	 * together, so patches sampled from the ungraded capture still match).
+	 * Default on: brightness 1.15, contrast 1.05, saturate 1.15. `false` = off.
+	 */
+	grade?: boolean | Grade;
+	/** v2 rim light (volt top-left gradient border + white top highlight). Default true. */
+	rim?: boolean;
+};
+
+/** A CSS colour grade (filter functions, applied in this order). */
+export type Grade = {brightness?: number; contrast?: number; saturate?: number};
+
+/** The v2 window grade (brief/v2-look.md §3 "UI windows"). */
+export const GRADE: Required<Grade> = {brightness: 1.15, contrast: 1.05, saturate: 1.15};
+
+/** Resolve a `grade` prop to a full grade, or null when off. */
+export const resolveGrade = (g: boolean | Grade | undefined): Required<Grade> | null =>
+	g === false ? null : g === undefined || g === true ? GRADE : {...GRADE, ...g};
+
+/** CSS `filter` string of a grade ('' for null). */
+export const gradeFilter = (g: Required<Grade> | null): string =>
+	g ? `brightness(${g.brightness}) contrast(${g.contrast}) saturate(${g.saturate})` : '';
+
+/**
+ * The colour a flat #rrggbb becomes under a grade (sRGB maths of the CSS
+ * filter functions, as Chrome applies them). Use it for anything OUTSIDE a
+ * graded window that must match a colour inside it (e.g. s05's tint to the
+ * hero-card colour before the s06 match cut).
+ */
+export const gradeHex = (hex: string, g: Required<Grade> | null = GRADE): string => {
+	const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+	if (!g) return hex;
+	const cl = (v: number) => Math.max(0, Math.min(1, v));
+	let [r, gg, b] = c.map((v) => cl(v * g.brightness));
+	[r, gg, b] = [r, gg, b].map((v) => cl((v - 0.5) * g.contrast + 0.5));
+	const s = g.saturate;
+	const m = [
+		[0.213 + 0.787 * s, 0.715 - 0.715 * s, 0.072 - 0.072 * s],
+		[0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s],
+		[0.213 - 0.213 * s, 0.715 - 0.715 * s, 0.072 + 0.928 * s],
+	];
+	const out = m.map((row) => cl(row[0] * r + row[1] * gg + row[2] * b));
+	return '#' + out.map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
 };
 
 export const DEFAULT_IMAGE = {w: 2880, h: 1800};

@@ -7,7 +7,8 @@
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame} from 'remotion';
 import {noise2D} from '@remotion/noise';
-import {Grain} from '../../../components/Grain';
+import {StageBase, StageFinish, StageLights, STAGE, type StageLook} from '../../../components/Stage';
+import {gradeHex} from '../../../components/screen-geometry';
 import {alpha, color} from '../../../design/tokens';
 
 export const W = 1920;
@@ -37,6 +38,12 @@ export const mixHex = (a: string, b: string, t: number) => {
  * (image px 2230–2780 × 280–960 all read #0c1220; the storyboard's estimate was #0d1424).
  */
 export const HERO_CARD = '#0c1220';
+/**
+ * v2: the hero-card colour as it reads INSIDE the graded <Screen> (brightness 1.15,
+ * contrast 1.05, saturate 1.15 → #070f23). s05 tints its stage to THIS so the
+ * s05 → s06 match cut still matches; patches inside the Screen keep HERO_CARD.
+ */
+export const HERO_CARD_GRADED = gradeHex(HERO_CARD);
 
 /** The volt caret of s03/s04 (G1: 4 × 56 px on (960, 520)). */
 export const CARET = {x: 960, y: 520, w: 4, h: 56} as const;
@@ -81,7 +88,14 @@ export const shakeTransform = (s: {x: number; y: number; r: number}) =>
 export type Orb = {c: string; x: number; y: number; /** diameter px */ d: number; opacity: number};
 
 export type BackdropProps = {
+	/**
+	 * Flat colour UNDER the v2 navy stage gradient. It shows through only as the
+	 * stage level (`look.level`) drops below 1 — s05 fades the stage out onto the
+	 * hero-card colour for the match cut. Default STAGE.bottom.
+	 */
 	base?: string;
+	/** v2 stage rig overrides (components/Stage.tsx): key pool, pools, key light, aurora, level. */
+	look?: StageLook;
 	orbs?: Orb[];
 	/** Grid floor presence 0–1 (layer opacity of lines + horizon). */
 	floor?: number;
@@ -98,13 +112,15 @@ export type BackdropProps = {
 };
 
 /**
- * Canvas + drifting orbs + optional perspective grid floor + vignette + grain.
- * Same recipe as <Background> (and G1's Backdrop), but every level is a
- * number the scene can animate per frame (the drop's orb bloom, the floor
- * fade-in on the downbeat, the tint to the hero-card colour for the match cut).
+ * v2 stage (navy gradient + light rig, components/Stage.tsx) + the scene's
+ * drifting orbs + optional perspective grid floor + vignette (≤ 0.35) + grain.
+ * Every level is a number the scene can animate per frame (the drop's orb
+ * bloom, the floor fade-in on the downbeat, the tint to the hero-card colour
+ * for the match cut: pass `base` = the tint and `look.level` = 1 − tint).
  */
 export const Backdrop: React.FC<BackdropProps> = ({
-	base = color.canvas,
+	base = STAGE.bottom,
+	look,
 	orbs = [],
 	floor = 0,
 	lineAlpha = 0.5,
@@ -123,6 +139,8 @@ export const Backdrop: React.FC<BackdropProps> = ({
 	const gc = color.volt;
 	return (
 		<AbsoluteFill style={{backgroundColor: base, overflow: 'hidden'}}>
+			<StageBase opacity={look?.level ?? 1} />
+			<StageLights seed={seed} {...look} />
 			{topLight > 0 ? (
 				<AbsoluteFill
 					style={{background: `radial-gradient(ellipse 75% 55% at 50% -8%, ${alpha(color.volt, 0.12 * topLight)} 0%, transparent 70%)`}}
@@ -191,15 +209,7 @@ export const Backdrop: React.FC<BackdropProps> = ({
 				</AbsoluteFill>
 			) : null}
 			{children}
-			{vignette > 0 ? (
-				<AbsoluteFill
-					style={{
-						pointerEvents: 'none',
-						background: `radial-gradient(ellipse 85% 80% at 50% 50%, transparent 50%, rgba(3,5,10,${0.75 * vignette}) 100%)`,
-					}}
-				/>
-			) : null}
-			{grain > 0 ? <Grain opacity={grain} seed={`${seed}-grain`} /> : null}
+			<StageFinish vignette={vignette} grain={grain} seed={seed} />
 		</AbsoluteFill>
 	);
 };
