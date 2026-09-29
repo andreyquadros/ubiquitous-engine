@@ -26,11 +26,14 @@ import {alpha, color} from '../design/tokens';
 import {E, hotspot, springAt, storyboardCamera, TransitionIn, TransitionOut, UbiClip, UBI_ANCHORS, ubiFrameIndex, useScene, useSceneFrame, type SfxCue} from '../shared';
 import {arcPoint, ArrowCursor, Backdrop, ClickRipple, Crop, Finish, Headline, lerp, LightSweep, pressAt, ramp, Shockwave, unitsOf} from './_parts/G5/common';
 
+/** The headline lands here (abs 1065, a beat); its tick is on the same frame. */
+const TICK = 30;
+
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
 export const sfx: SfxCue[] = [
 	{ref: 'impact_soft_2.wav', atFrame: 0, gainDb: -2, note: 'Window slam; bed duck −5 dB.'},
 	{ref: 'glitch_2.wav', atFrame: 2, gainDb: -18, note: 'The blocked tab is gone.'},
-	{ref: 'ui_tick_2.wav', atFrame: 30, gainDb: -22, note: 'v2: the headline “Foco que se defende.” lands (beat, abs 1065).'},
+	{ref: 'ui_tick_2.wav', atFrame: TICK, gainDb: -22, note: 'v2: the headline “Foco que se defende.” lands (beat, abs 1065).'},
 	{ref: 'click.wav', atFrame: 45, gainDb: -12, note: 'Ok, foco!'},
 ];
 
@@ -211,12 +214,13 @@ const S15Foco: React.FC = () => {
 		if (c.text !== 'Não! Foque na sua produtividade.' && c.text !== 'Ok, foco!') throw new Error(`s15 copy drift: ${c.text}`);
 	}
 	const units = unitsOf(HEADLINE, [
-		// v2 review: the line lands ON f30 (abs 1065: the tick and the beat). SNAPPY reaches s 0.96 / volt 1 / blur 0.3
-		// six frames after `at`, so "defende." starts at 24 (grey and in flight at f27–28, volt and settled on f30);
-		// the lead words start closer to it (21/23) so the whole line arrives as one gesture, not three
-		{text: 'Foco', at: 21},
-		{text: 'que se', at: 23},
-		{text: 'defende.', at: 24, volt: 'defende.'},
+		// G5 fix: the line lands ON f30 (abs 1065: the tick and the beat). v1/v2 staggered the words to land one by one
+		// (Foco f26, que se f28, defende. f30), which reads as "landed" ≈ 1062. Now the starts stagger (22/23/24) but
+		// every word's spring is time-stretched to CONVERGE on f30: at f29 all three are 2.4–3 px short (volt 0.86–0.91),
+		// at f30 all are settled (≤ 1.1 px, volt 1). The tick transient is on f30 (+0.08 f).
+		{text: 'Foco', at: 22, land: TICK},
+		{text: 'que se', at: 23, land: TICK},
+		{text: 'defende.', at: 24, land: TICK, volt: 'defende.'},
 	]);
 
 	// backdrop: Foco page on the Bloqueios card (storyboard backdrop key), −12 px drift, glitch jolt f2–4

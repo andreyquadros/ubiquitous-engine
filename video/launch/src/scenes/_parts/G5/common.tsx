@@ -140,6 +140,12 @@ export type HeadUnit = {
 	at: number;
 	/** Trailing part of the unit that turns volt as it lands (e.g. "pronto." or "Ubi."). */
 	volt?: string;
+	/**
+	 * Optional landing frame. By default a unit lands 6 f after `at` (SNAPPY: s 0.96, volt 1, blur 0.3). With `land`,
+	 * the unit's spring is time-stretched so it lands exactly there: staggered starts that CONVERGE on one frame
+	 * (s15: the whole line lands on the beat with its tick, not word by word before it).
+	 */
+	land?: number;
 };
 
 /** Throws if the units don't rebuild the storyboard string byte-exact. */
@@ -203,9 +209,12 @@ export const Headline: React.FC<{units: HeadUnit[]; size: number; left: number; 
 						</React.Fragment>
 					);
 				}
-				const s = springAt(frame, u.at, 'SNAPPY');
-				const o = clamp01((frame - u.at + 1) / 6);
-				const settled = frame >= u.at + 14;
+				// time stretch: 1 by default (lands at + 6); with `land`, (land − at) / 6
+				const k = u.land !== undefined && u.land > u.at ? (u.land - u.at) / 6 : 1;
+				const lf = u.at + (frame - u.at) / k;
+				const s = springAt(lf, u.at, 'SNAPPY');
+				const o = clamp01((lf - u.at + 1) / 6);
+				const settled = lf >= u.at + 14;
 				const ty = settled ? 0 : 28 * (1 - s);
 				const blur = settled ? 0 : 8 * clamp01(1 - s);
 				const v = u.volt ? clamp01((s - 0.55) / 0.4) : 0;
