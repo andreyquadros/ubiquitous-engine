@@ -25,7 +25,7 @@ H.264 / yuv420p / BT.709 / CRF 18.
 | command | what |
 |---|---|
 | `npm run studio` | Remotion Studio on http://localhost:1460 |
-| `npm run compositions` | list compositions (`Launch`, `Primitives`) |
+| `npm run compositions` | list compositions (`Launch`, `Primitives`, scenes `S01`..`S18`, act groups `G1`..`G6`) |
 | `npm run still -- Launch out/launch-0120.png --frame=120` | one still via the CLI |
 | `npm run stills -- Launch 0,60,120-600:60` | many stills, one bundle + one browser (→ `out/stills/`), `--scale=0.5`, `--jpeg`, `--out=dir` |
 | `npm run bench -- Launch 30,300,900` | per-frame render cost probe (best of `--reps=3`) |
@@ -56,19 +56,27 @@ public/
   _demo/          assets used only by the Primitives reel
 src/
   index.ts        registerRoot
-  Root.tsx        compositions: Launch (TIMELINE), Primitives
-  timeline.ts     master TIMELINE (scene slots, frames on the beat grid)
+  Root.tsx        compositions: Launch, Primitives, S01..S18, G1..G6
+  storyboard.ts   typed brief/storyboard.json (SCENES, sceneById…)
+  timeline.ts     TOTAL / TIMELINE / GROUPS derived from the storyboard
+  scenes/         one module per storyboard scene (+ index.ts registry)
+  shared/         scene API: audio, beats, hotspots, hi-res, UbiClip, split transitions — see shared/README.md
   design/         tokens.ts (palette, type, grid, springs, easings), motion.ts, fonts.ts, env.ts
   components/     primitive library — see src/components/README.md
-  compositions/   Launch.tsx (scene registry), Primitives.tsx (demo reel)
+  compositions/   Film.tsx (scenes + master audio), Launch.tsx, Primitives.tsx (demo reel)
 tools/            stills.mjs, bench.mjs, make-grain.py
 out/              renders (gitignored)
 ```
 
-## Adding a scene
+## Scenes (the spine)
 
-1. Build it from primitives in `src/scenes/<Name>.tsx` (frames local to the scene).
-2. Register it in `SCENES` in `src/compositions/Launch.tsx`.
-3. Add its slot to `TIMELINE.scenes` in `src/timeline.ts` (`from` / `durationInFrames` on the beat grid);
-   the `Launch` duration follows automatically.
-4. Check it: `npm run stills -- Launch <frames>` and read the PNGs; then `npm run render:draft`.
+The film is specified in `brief/storyboard.json` (source of truth; `python3 tools/validate-storyboard.py`).
+`src/storyboard.ts` types it, `src/timeline.ts` derives `TOTAL`/`GROUPS` from it, and
+`src/compositions/Film.tsx` mounts every scene as an absolute `<Sequence>` plus one master audio layer
+(music + every scene's SFX cues at absolute frames). See **`src/shared/README.md`** for the scene API
+(storyboard access, hotspots, hi-res captures, UBI clips, split transitions, audio/beat helpers).
+
+1. Replace the stub in `src/scenes/<scene-id>.tsx` (default export = the scene, frames scene-relative;
+   `export const sfx: SfxCue[]` = its cues, hit frames scene-relative).
+2. Check it alone: `node tools/stills.mjs S07 "0,30,59" --jpeg`, then with its neighbours: the act group
+   (`G1`..`G6`) and `npm run render:draft`.

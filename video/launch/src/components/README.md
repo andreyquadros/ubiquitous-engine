@@ -95,6 +95,7 @@ Define the shot once as a `ScreenConfig` const and share it with overlays.
 |---|---|---|---|
 | `src` | string | — | path under `public/` (`'ui/dashboard.png'`) or URL |
 | `imageSize` | `{w, h}` | 2880x1800 | **must match the file** |
+| `hires` | boolean \| string | auto | draws `public/ui/<name>@3x.png` when shipped (`public/ui/hires.json`); all coordinates stay in `imageSize` space. `false` = never, string = that bitmap |
 | `width` | px | 1440 | rendered content width before camera |
 | `x`, `y`, `scale` | Keyframed | 0, 0, 1 | window centre offset / extra scale |
 | `rotateX`, `rotateY`, `rotateZ` | Keyframed (deg) | 0 | +X = top leans away, +Y = right side leans away |
