@@ -1,0 +1,7010 @@
+[
+  {
+    "file": "dashboard.png",
+    "route": "/#/",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Hoje: nota de foco 88, frase do dia, estatísticas e o Ubi falando; linha do tempo do dia e gráficos.",
+    "description_en": "Today: focus score dial, headline sentence, stats and UBI speaking; day track and charts.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 370,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 370,
+        "h": 40
+      },
+      {
+        "name": "daynav",
+        "x": 2328,
+        "y": 116,
+        "w": 504,
+        "h": 72
+      },
+      {
+        "name": "hero",
+        "x": 512,
+        "y": 236,
+        "w": 2320,
+        "h": 752
+      },
+      {
+        "name": "focus-dial",
+        "x": 578,
+        "y": 428,
+        "w": 368,
+        "h": 368
+      },
+      {
+        "name": "focus-score",
+        "x": 686,
+        "y": 515,
+        "w": 153,
+        "h": 118
+      },
+      {
+        "name": "headline",
+        "x": 1010,
+        "y": 422,
+        "w": 1040,
+        "h": 144
+      },
+      {
+        "name": "review-cta",
+        "x": 1010,
+        "y": 598,
+        "w": 536,
+        "h": 80
+      },
+      {
+        "name": "uncategorized-note",
+        "x": 1570,
+        "y": 622,
+        "w": 242,
+        "h": 32
+      },
+      {
+        "name": "stats-row",
+        "x": 1010,
+        "y": 718,
+        "w": 1172,
+        "h": 84
+      },
+      {
+        "name": "stat-tempo-produtivo",
+        "x": 1010,
+        "y": 718,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "stat-distracoes",
+        "x": 1315,
+        "y": 718,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "stat-maior-foco",
+        "x": 1620,
+        "y": 718,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "stat-trocas-hora",
+        "x": 1925,
+        "y": 718,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "ubi",
+        "x": 2246,
+        "y": 286,
+        "w": 520,
+        "h": 652
+      },
+      {
+        "name": "ubi-robot",
+        "x": 2306,
+        "y": 458,
+        "w": 400,
+        "h": 480
+      },
+      {
+        "name": "ubi-speech-bubble",
+        "x": 2246,
+        "y": 286,
+        "w": 520,
+        "h": 156
+      },
+      {
+        "name": "day-track-card",
+        "x": 512,
+        "y": 1028,
+        "w": 2320,
+        "h": 359
+      },
+      {
+        "name": "day-track",
+        "x": 554,
+        "y": 1178,
+        "w": 2236,
+        "h": 68
+      },
+      {
+        "name": "day-track-legend",
+        "x": 554,
+        "y": 1312,
+        "w": 2236,
+        "h": 33
+      },
+      {
+        "name": "card-tempo-por-categoria",
+        "x": 512,
+        "y": 1427,
+        "w": 943,
+        "h": 373,
+        "clipped": true
+      },
+      {
+        "name": "card-foco-por-hora",
+        "x": 1495,
+        "y": 1427,
+        "w": 747,
+        "h": 373,
+        "clipped": true
+      },
+      {
+        "name": "card-apps-mais-usados",
+        "x": 2282,
+        "y": 1427,
+        "w": 550,
+        "h": 373,
+        "clipped": true
+      }
+    ]
+  },
+  {
+    "file": "dashboard-light.png",
+    "route": "/#/",
+    "theme": "light",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Hoje no tema claro.",
+    "description_en": "Today dashboard, light theme.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 370,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 370,
+        "h": 40
+      },
+      {
+        "name": "daynav",
+        "x": 2328,
+        "y": 116,
+        "w": 504,
+        "h": 72
+      },
+      {
+        "name": "hero",
+        "x": 512,
+        "y": 236,
+        "w": 2320,
+        "h": 752
+      },
+      {
+        "name": "focus-dial",
+        "x": 578,
+        "y": 428,
+        "w": 368,
+        "h": 368
+      },
+      {
+        "name": "focus-score",
+        "x": 686,
+        "y": 515,
+        "w": 153,
+        "h": 118
+      },
+      {
+        "name": "headline",
+        "x": 1010,
+        "y": 422,
+        "w": 1040,
+        "h": 144
+      },
+      {
+        "name": "review-cta",
+        "x": 1010,
+        "y": 598,
+        "w": 536,
+        "h": 80
+      },
+      {
+        "name": "uncategorized-note",
+        "x": 1570,
+        "y": 622,
+        "w": 242,
+        "h": 32
+      },
+      {
+        "name": "stats-row",
+        "x": 1010,
+        "y": 718,
+        "w": 1172,
+        "h": 84
+      },
+      {
+        "name": "stat-tempo-produtivo",
+        "x": 1010,
+        "y": 718,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "stat-distracoes",
+        "x": 1315,
+        "y": 718,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "stat-maior-foco",
+        "x": 1620,
+        "y": 718,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "stat-trocas-hora",
+        "x": 1925,
+        "y": 718,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "ubi",
+        "x": 2246,
+        "y": 286,
+        "w": 520,
+        "h": 652
+      },
+      {
+        "name": "ubi-robot",
+        "x": 2306,
+        "y": 458,
+        "w": 400,
+        "h": 480
+      },
+      {
+        "name": "ubi-speech-bubble",
+        "x": 2246,
+        "y": 286,
+        "w": 520,
+        "h": 156
+      },
+      {
+        "name": "day-track-card",
+        "x": 512,
+        "y": 1028,
+        "w": 2320,
+        "h": 359
+      },
+      {
+        "name": "day-track",
+        "x": 554,
+        "y": 1178,
+        "w": 2236,
+        "h": 68
+      },
+      {
+        "name": "day-track-legend",
+        "x": 554,
+        "y": 1312,
+        "w": 2236,
+        "h": 33
+      },
+      {
+        "name": "card-tempo-por-categoria",
+        "x": 512,
+        "y": 1427,
+        "w": 943,
+        "h": 373,
+        "clipped": true
+      },
+      {
+        "name": "card-foco-por-hora",
+        "x": 1495,
+        "y": 1427,
+        "w": 747,
+        "h": 373,
+        "clipped": true
+      },
+      {
+        "name": "card-apps-mais-usados",
+        "x": 2282,
+        "y": 1427,
+        "w": 550,
+        "h": 373,
+        "clipped": true
+      }
+    ]
+  },
+  {
+    "file": "dashboard-nudge.png",
+    "route": "/#/?nudge=focus_prompt",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Hoje com o Ubi sugerindo foco: \"Muitas janelas\" e o campo para a tarefa.",
+    "description_en": "Today with UBI nudging: \"A lot of windows\" focus prompt with a task field.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 370,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 370,
+        "h": 40
+      },
+      {
+        "name": "daynav",
+        "x": 2328,
+        "y": 116,
+        "w": 504,
+        "h": 72
+      },
+      {
+        "name": "hero",
+        "x": 512,
+        "y": 236,
+        "w": 2320,
+        "h": 1004
+      },
+      {
+        "name": "focus-dial",
+        "x": 578,
+        "y": 554,
+        "w": 368,
+        "h": 368
+      },
+      {
+        "name": "focus-score",
+        "x": 686,
+        "y": 641,
+        "w": 153,
+        "h": 118
+      },
+      {
+        "name": "headline",
+        "x": 1010,
+        "y": 548,
+        "w": 1040,
+        "h": 144
+      },
+      {
+        "name": "review-cta",
+        "x": 1010,
+        "y": 724,
+        "w": 536,
+        "h": 80
+      },
+      {
+        "name": "uncategorized-note",
+        "x": 1570,
+        "y": 748,
+        "w": 242,
+        "h": 32
+      },
+      {
+        "name": "stats-row",
+        "x": 1010,
+        "y": 844,
+        "w": 1092,
+        "h": 84
+      },
+      {
+        "name": "stat-tempo-produtivo",
+        "x": 1010,
+        "y": 844,
+        "w": 237,
+        "h": 84
+      },
+      {
+        "name": "stat-distracoes",
+        "x": 1295,
+        "y": 844,
+        "w": 237,
+        "h": 84
+      },
+      {
+        "name": "stat-maior-foco",
+        "x": 1580,
+        "y": 844,
+        "w": 237,
+        "h": 84
+      },
+      {
+        "name": "stat-trocas-hora",
+        "x": 1865,
+        "y": 844,
+        "w": 237,
+        "h": 84
+      },
+      {
+        "name": "ubi",
+        "x": 2166,
+        "y": 286,
+        "w": 600,
+        "h": 904
+      },
+      {
+        "name": "ubi-robot",
+        "x": 2266,
+        "y": 710,
+        "w": 400,
+        "h": 480
+      },
+      {
+        "name": "focus-prompt",
+        "x": 2166,
+        "y": 286,
+        "w": 600,
+        "h": 904
+      },
+      {
+        "name": "focus-prompt-bubble",
+        "x": 2166,
+        "y": 286,
+        "w": 600,
+        "h": 408
+      },
+      {
+        "name": "focus-prompt-input",
+        "x": 2192,
+        "y": 448,
+        "w": 548,
+        "h": 64
+      },
+      {
+        "name": "focus-prompt-submit",
+        "x": 2468,
+        "y": 608,
+        "w": 272,
+        "h": 64
+      },
+      {
+        "name": "day-track-card",
+        "x": 512,
+        "y": 1280,
+        "w": 2320,
+        "h": 359
+      },
+      {
+        "name": "day-track",
+        "x": 554,
+        "y": 1430,
+        "w": 2236,
+        "h": 68
+      },
+      {
+        "name": "day-track-legend",
+        "x": 554,
+        "y": 1564,
+        "w": 2236,
+        "h": 33
+      },
+      {
+        "name": "card-tempo-por-categoria",
+        "x": 512,
+        "y": 1679,
+        "w": 943,
+        "h": 121,
+        "clipped": true
+      },
+      {
+        "name": "card-foco-por-hora",
+        "x": 1495,
+        "y": 1679,
+        "w": 747,
+        "h": 121,
+        "clipped": true
+      },
+      {
+        "name": "card-apps-mais-usados",
+        "x": 2282,
+        "y": 1679,
+        "w": 550,
+        "h": 121,
+        "clipped": true
+      }
+    ]
+  },
+  {
+    "file": "dashboard-session.png",
+    "route": "/#/?session=active",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Hoje com uma sessão de foco em andamento (contagem regressiva no herói).",
+    "description_en": "Today with a running focus session (countdown line in the hero).",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco-dot",
+        "x": 402,
+        "y": 810,
+        "w": 12,
+        "h": 12
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 370,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 370,
+        "h": 40
+      },
+      {
+        "name": "daynav",
+        "x": 2328,
+        "y": 116,
+        "w": 504,
+        "h": 72
+      },
+      {
+        "name": "hero",
+        "x": 512,
+        "y": 236,
+        "w": 2320,
+        "h": 752
+      },
+      {
+        "name": "focus-dial",
+        "x": 578,
+        "y": 428,
+        "w": 368,
+        "h": 368
+      },
+      {
+        "name": "focus-score",
+        "x": 686,
+        "y": 515,
+        "w": 153,
+        "h": 118
+      },
+      {
+        "name": "headline",
+        "x": 1010,
+        "y": 356,
+        "w": 1040,
+        "h": 144
+      },
+      {
+        "name": "review-cta",
+        "x": 1010,
+        "y": 532,
+        "w": 536,
+        "h": 80
+      },
+      {
+        "name": "uncategorized-note",
+        "x": 1570,
+        "y": 556,
+        "w": 242,
+        "h": 32
+      },
+      {
+        "name": "stats-row",
+        "x": 1010,
+        "y": 784,
+        "w": 1172,
+        "h": 84
+      },
+      {
+        "name": "stat-tempo-produtivo",
+        "x": 1010,
+        "y": 784,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "stat-distracoes",
+        "x": 1315,
+        "y": 784,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "stat-maior-foco",
+        "x": 1620,
+        "y": 784,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "stat-trocas-hora",
+        "x": 1925,
+        "y": 784,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "ubi",
+        "x": 2246,
+        "y": 286,
+        "w": 520,
+        "h": 652
+      },
+      {
+        "name": "ubi-robot",
+        "x": 2306,
+        "y": 458,
+        "w": 400,
+        "h": 480
+      },
+      {
+        "name": "ubi-speech-bubble",
+        "x": 2246,
+        "y": 286,
+        "w": 520,
+        "h": 156
+      },
+      {
+        "name": "session-line",
+        "x": 1010,
+        "y": 644,
+        "w": 1172,
+        "h": 100
+      },
+      {
+        "name": "session-countdown",
+        "x": 1912,
+        "y": 674,
+        "w": 80,
+        "h": 40
+      },
+      {
+        "name": "day-track-card",
+        "x": 512,
+        "y": 1028,
+        "w": 2320,
+        "h": 359
+      },
+      {
+        "name": "day-track",
+        "x": 554,
+        "y": 1178,
+        "w": 2236,
+        "h": 68
+      },
+      {
+        "name": "day-track-legend",
+        "x": 554,
+        "y": 1312,
+        "w": 2236,
+        "h": 33
+      },
+      {
+        "name": "card-tempo-por-categoria",
+        "x": 512,
+        "y": 1427,
+        "w": 943,
+        "h": 373,
+        "clipped": true
+      },
+      {
+        "name": "card-foco-por-hora",
+        "x": 1495,
+        "y": 1427,
+        "w": 747,
+        "h": 373,
+        "clipped": true
+      },
+      {
+        "name": "card-apps-mais-usados",
+        "x": 2282,
+        "y": 1427,
+        "w": 550,
+        "h": 373,
+        "clipped": true
+      }
+    ]
+  },
+  {
+    "file": "dashboard-full.png",
+    "route": "/#/",
+    "theme": "dark",
+    "width": 2880,
+    "height": 2340,
+    "dpr": 2,
+    "description_pt": "Hoje, página inteira (para panorâmica vertical): herói, linha do tempo, gráficos e cartão do Ubi.",
+    "description_en": "Today, full page (for a vertical pan): hero, day track, charts and UBI card.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 2340
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 2224,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 370,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 370,
+        "h": 40
+      },
+      {
+        "name": "daynav",
+        "x": 2328,
+        "y": 116,
+        "w": 504,
+        "h": 72
+      },
+      {
+        "name": "hero",
+        "x": 512,
+        "y": 236,
+        "w": 2320,
+        "h": 752
+      },
+      {
+        "name": "focus-dial",
+        "x": 578,
+        "y": 428,
+        "w": 368,
+        "h": 368
+      },
+      {
+        "name": "focus-score",
+        "x": 686,
+        "y": 515,
+        "w": 153,
+        "h": 118
+      },
+      {
+        "name": "headline",
+        "x": 1010,
+        "y": 422,
+        "w": 1040,
+        "h": 144
+      },
+      {
+        "name": "review-cta",
+        "x": 1010,
+        "y": 598,
+        "w": 536,
+        "h": 80
+      },
+      {
+        "name": "uncategorized-note",
+        "x": 1570,
+        "y": 622,
+        "w": 242,
+        "h": 32
+      },
+      {
+        "name": "stats-row",
+        "x": 1010,
+        "y": 718,
+        "w": 1172,
+        "h": 84
+      },
+      {
+        "name": "stat-tempo-produtivo",
+        "x": 1010,
+        "y": 718,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "stat-distracoes",
+        "x": 1315,
+        "y": 718,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "stat-maior-foco",
+        "x": 1620,
+        "y": 718,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "stat-trocas-hora",
+        "x": 1925,
+        "y": 718,
+        "w": 257,
+        "h": 84
+      },
+      {
+        "name": "ubi",
+        "x": 2246,
+        "y": 286,
+        "w": 520,
+        "h": 652
+      },
+      {
+        "name": "ubi-robot",
+        "x": 2306,
+        "y": 458,
+        "w": 400,
+        "h": 480
+      },
+      {
+        "name": "ubi-speech-bubble",
+        "x": 2246,
+        "y": 286,
+        "w": 520,
+        "h": 156
+      },
+      {
+        "name": "day-track-card",
+        "x": 512,
+        "y": 1028,
+        "w": 2320,
+        "h": 359
+      },
+      {
+        "name": "day-track",
+        "x": 554,
+        "y": 1178,
+        "w": 2236,
+        "h": 68
+      },
+      {
+        "name": "day-track-legend",
+        "x": 554,
+        "y": 1312,
+        "w": 2236,
+        "h": 33
+      },
+      {
+        "name": "card-tempo-por-categoria",
+        "x": 512,
+        "y": 1427,
+        "w": 943,
+        "h": 544
+      },
+      {
+        "name": "card-foco-por-hora",
+        "x": 1495,
+        "y": 1427,
+        "w": 747,
+        "h": 544
+      },
+      {
+        "name": "card-apps-mais-usados",
+        "x": 2282,
+        "y": 1427,
+        "w": 550,
+        "h": 544
+      },
+      {
+        "name": "ubi-card",
+        "x": 512,
+        "y": 2011,
+        "w": 2320,
+        "h": 249
+      }
+    ]
+  },
+  {
+    "file": "review-queue-selected.png",
+    "route": "/#/review",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Revisão: fila do que o Ubi não resolveu, primeira linha selecionada; à direita, categorias numeradas 1–9.",
+    "description_en": "Review: the queue of what UBI could not settle, first row selected; numbered categories 1–9 on the right.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 1184,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 1184,
+        "h": 40
+      },
+      {
+        "name": "daynav",
+        "x": 1976,
+        "y": 116,
+        "w": 504,
+        "h": 72
+      },
+      {
+        "name": "classify-now-button",
+        "x": 2496,
+        "y": 116,
+        "w": 336,
+        "h": 72
+      },
+      {
+        "name": "queue-card",
+        "x": 512,
+        "y": 236,
+        "w": 1533,
+        "h": 1318
+      },
+      {
+        "name": "queue-list",
+        "x": 514,
+        "y": 238,
+        "w": 1529,
+        "h": 1232
+      },
+      {
+        "name": "queue-row-1",
+        "x": 514,
+        "y": 238,
+        "w": 1529,
+        "h": 224
+      },
+      {
+        "name": "queue-row-2",
+        "x": 514,
+        "y": 462,
+        "w": 1529,
+        "h": 112
+      },
+      {
+        "name": "queue-row-3",
+        "x": 514,
+        "y": 574,
+        "w": 1529,
+        "h": 112
+      },
+      {
+        "name": "queue-row-1-app",
+        "x": 634,
+        "y": 258,
+        "w": 441,
+        "h": 40
+      },
+      {
+        "name": "queue-row-1-category",
+        "x": 1349,
+        "y": 270,
+        "w": 222,
+        "h": 48
+      },
+      {
+        "name": "queue-row-active",
+        "x": 514,
+        "y": 238,
+        "w": 1529,
+        "h": 224
+      },
+      {
+        "name": "queue-row-active-hint",
+        "x": 634,
+        "y": 398,
+        "w": 1377,
+        "h": 40
+      },
+      {
+        "name": "assign-card",
+        "x": 2085,
+        "y": 236,
+        "w": 747,
+        "h": 650
+      },
+      {
+        "name": "assign-card-title",
+        "x": 2127,
+        "y": 278,
+        "w": 416,
+        "h": 40
+      },
+      {
+        "name": "assign-picker",
+        "x": 2115,
+        "y": 386,
+        "w": 687,
+        "h": 360
+      },
+      {
+        "name": "assign-option-1",
+        "x": 2115,
+        "y": 386,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-2",
+        "x": 2115,
+        "y": 458,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-3",
+        "x": 2115,
+        "y": 530,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-4",
+        "x": 2115,
+        "y": 602,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-5",
+        "x": 2115,
+        "y": 674,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-key-1",
+        "x": 2746,
+        "y": 402,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-2",
+        "x": 2746,
+        "y": 474,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-3",
+        "x": 2746,
+        "y": 546,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-4",
+        "x": 2746,
+        "y": 618,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-5",
+        "x": 2746,
+        "y": 690,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "keys-legend",
+        "x": 2127,
+        "y": 778,
+        "w": 663,
+        "h": 66
+      },
+      {
+        "name": "settled-header",
+        "x": 514,
+        "y": 1472,
+        "w": 1529,
+        "h": 80
+      }
+    ]
+  },
+  {
+    "file": "review-after-assign.png",
+    "route": "/#/review",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Revisão logo após apertar \"1\": o grupo saiu da fila, a próxima linha foi selecionada e o toast confirma.",
+    "description_en": "Review right after pressing \"1\": the group left the queue, the next row is selected, a toast confirms.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 1172,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 1172,
+        "h": 40
+      },
+      {
+        "name": "daynav",
+        "x": 1976,
+        "y": 116,
+        "w": 504,
+        "h": 72
+      },
+      {
+        "name": "classify-now-button",
+        "x": 2496,
+        "y": 116,
+        "w": 336,
+        "h": 72
+      },
+      {
+        "name": "queue-card",
+        "x": 512,
+        "y": 236,
+        "w": 1533,
+        "h": 1206
+      },
+      {
+        "name": "queue-list",
+        "x": 514,
+        "y": 238,
+        "w": 1529,
+        "h": 1120
+      },
+      {
+        "name": "queue-row-1",
+        "x": 514,
+        "y": 238,
+        "w": 1529,
+        "h": 224
+      },
+      {
+        "name": "queue-row-2",
+        "x": 514,
+        "y": 462,
+        "w": 1529,
+        "h": 112
+      },
+      {
+        "name": "queue-row-3",
+        "x": 514,
+        "y": 574,
+        "w": 1529,
+        "h": 112
+      },
+      {
+        "name": "queue-row-1-app",
+        "x": 634,
+        "y": 258,
+        "w": 441,
+        "h": 40
+      },
+      {
+        "name": "queue-row-1-category",
+        "x": 1349,
+        "y": 270,
+        "w": 222,
+        "h": 48
+      },
+      {
+        "name": "queue-row-active",
+        "x": 514,
+        "y": 238,
+        "w": 1529,
+        "h": 224
+      },
+      {
+        "name": "queue-row-active-hint",
+        "x": 634,
+        "y": 398,
+        "w": 1377,
+        "h": 40
+      },
+      {
+        "name": "assign-card",
+        "x": 2085,
+        "y": 236,
+        "w": 747,
+        "h": 860
+      },
+      {
+        "name": "assign-card-title",
+        "x": 2127,
+        "y": 278,
+        "w": 416,
+        "h": 40
+      },
+      {
+        "name": "assign-picker",
+        "x": 2115,
+        "y": 386,
+        "w": 687,
+        "h": 360
+      },
+      {
+        "name": "assign-option-1",
+        "x": 2115,
+        "y": 386,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-2",
+        "x": 2115,
+        "y": 458,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-3",
+        "x": 2115,
+        "y": 530,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-4",
+        "x": 2115,
+        "y": 602,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-5",
+        "x": 2115,
+        "y": 674,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-key-1",
+        "x": 2746,
+        "y": 402,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-2",
+        "x": 2746,
+        "y": 474,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-3",
+        "x": 2746,
+        "y": 546,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-4",
+        "x": 2746,
+        "y": 618,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-5",
+        "x": 2746,
+        "y": 690,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "keys-legend",
+        "x": 2127,
+        "y": 778,
+        "w": 663,
+        "h": 178
+      },
+      {
+        "name": "settled-header",
+        "x": 514,
+        "y": 1360,
+        "w": 1529,
+        "h": 80
+      },
+      {
+        "name": "last-suggestions",
+        "x": 2127,
+        "y": 778,
+        "w": 663,
+        "h": 178
+      },
+      {
+        "name": "toast",
+        "x": 2168,
+        "y": 1608,
+        "w": 680,
+        "h": 160
+      }
+    ]
+  },
+  {
+    "file": "review-details.png",
+    "route": "/#/review",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Revisão com os detalhes do grupo abertos (blocos e captura).",
+    "description_en": "Review with the group details open (blocks and screenshot).",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "queue-card",
+        "x": 512,
+        "y": 0,
+        "w": 1533,
+        "h": 1752,
+        "clipped": true
+      },
+      {
+        "name": "queue-list",
+        "x": 514,
+        "y": 0,
+        "w": 1529,
+        "h": 1668,
+        "clipped": true
+      },
+      {
+        "name": "queue-row-3",
+        "x": 514,
+        "y": 0,
+        "w": 1529,
+        "h": 98,
+        "clipped": true
+      },
+      {
+        "name": "queue-row-active",
+        "x": 514,
+        "y": 546,
+        "w": 1529,
+        "h": 898
+      },
+      {
+        "name": "queue-row-active-hint",
+        "x": 634,
+        "y": 706,
+        "w": 1377,
+        "h": 40
+      },
+      {
+        "name": "assign-card",
+        "x": 2085,
+        "y": 92,
+        "w": 747,
+        "h": 650
+      },
+      {
+        "name": "assign-card-title",
+        "x": 2127,
+        "y": 134,
+        "w": 458,
+        "h": 40
+      },
+      {
+        "name": "assign-picker",
+        "x": 2115,
+        "y": 242,
+        "w": 687,
+        "h": 360
+      },
+      {
+        "name": "assign-option-1",
+        "x": 2115,
+        "y": 242,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-2",
+        "x": 2115,
+        "y": 314,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-3",
+        "x": 2115,
+        "y": 386,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-4",
+        "x": 2115,
+        "y": 458,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-5",
+        "x": 2115,
+        "y": 530,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-key-1",
+        "x": 2746,
+        "y": 258,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-2",
+        "x": 2746,
+        "y": 330,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-3",
+        "x": 2746,
+        "y": 402,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-4",
+        "x": 2698,
+        "y": 474,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-5",
+        "x": 2746,
+        "y": 546,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "keys-legend",
+        "x": 2127,
+        "y": 634,
+        "w": 663,
+        "h": 66
+      },
+      {
+        "name": "settled-header",
+        "x": 514,
+        "y": 1670,
+        "w": 1529,
+        "h": 80
+      },
+      {
+        "name": "block-details",
+        "x": 634,
+        "y": 770,
+        "w": 1377,
+        "h": 650
+      },
+      {
+        "name": "block-card-1",
+        "x": 634,
+        "y": 818,
+        "w": 1377,
+        "h": 260
+      }
+    ]
+  },
+  {
+    "file": "review-settled-expanded.png",
+    "route": "/#/review",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Revisão: \"Classificados neste dia\" aberto, com o botão \"Confirmar os N\" para aceitar tudo de uma vez.",
+    "description_en": "Review: \"Classified this day\" expanded, with the \"Confirm all N\" button.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "queue-card",
+        "x": 512,
+        "y": 0,
+        "w": 1533,
+        "h": 1800,
+        "clipped": true
+      },
+      {
+        "name": "queue-list",
+        "x": 514,
+        "y": 0,
+        "w": 1529,
+        "h": 314,
+        "clipped": true
+      },
+      {
+        "name": "assign-card",
+        "x": 2085,
+        "y": 92,
+        "w": 747,
+        "h": 650
+      },
+      {
+        "name": "assign-card-title",
+        "x": 2127,
+        "y": 134,
+        "w": 416,
+        "h": 40
+      },
+      {
+        "name": "assign-picker",
+        "x": 2115,
+        "y": 242,
+        "w": 687,
+        "h": 360
+      },
+      {
+        "name": "assign-option-1",
+        "x": 2115,
+        "y": 242,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-2",
+        "x": 2115,
+        "y": 314,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-3",
+        "x": 2115,
+        "y": 386,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-4",
+        "x": 2115,
+        "y": 458,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-5",
+        "x": 2115,
+        "y": 530,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-key-1",
+        "x": 2746,
+        "y": 258,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-2",
+        "x": 2746,
+        "y": 330,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-3",
+        "x": 2746,
+        "y": 402,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-4",
+        "x": 2746,
+        "y": 474,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-5",
+        "x": 2746,
+        "y": 546,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "keys-legend",
+        "x": 2127,
+        "y": 634,
+        "w": 663,
+        "h": 66
+      },
+      {
+        "name": "settled-header",
+        "x": 514,
+        "y": 316,
+        "w": 1529,
+        "h": 112
+      },
+      {
+        "name": "confirm-bar",
+        "x": 514,
+        "y": 430,
+        "w": 1529,
+        "h": 96
+      },
+      {
+        "name": "confirm-all-button",
+        "x": 1785,
+        "y": 446,
+        "w": 226,
+        "h": 64
+      },
+      {
+        "name": "reviewed-list",
+        "x": 514,
+        "y": 526,
+        "w": 1529,
+        "h": 1274,
+        "clipped": true
+      },
+      {
+        "name": "reviewed-row-1",
+        "x": 514,
+        "y": 528,
+        "w": 1529,
+        "h": 114
+      }
+    ]
+  },
+  {
+    "file": "review-confirmed.png",
+    "route": "/#/review",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Revisão depois de \"Confirmar os N\": tudo confirmado, toast de sucesso.",
+    "description_en": "Review after \"Confirm all\": everything confirmed, success toast.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "queue-card",
+        "x": 512,
+        "y": 0,
+        "w": 1533,
+        "h": 1800,
+        "clipped": true
+      },
+      {
+        "name": "queue-list",
+        "x": 514,
+        "y": 0,
+        "w": 1529,
+        "h": 314,
+        "clipped": true
+      },
+      {
+        "name": "assign-card",
+        "x": 2085,
+        "y": 92,
+        "w": 747,
+        "h": 650
+      },
+      {
+        "name": "assign-card-title",
+        "x": 2127,
+        "y": 134,
+        "w": 416,
+        "h": 40
+      },
+      {
+        "name": "assign-picker",
+        "x": 2115,
+        "y": 242,
+        "w": 687,
+        "h": 360
+      },
+      {
+        "name": "assign-option-1",
+        "x": 2115,
+        "y": 242,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-2",
+        "x": 2115,
+        "y": 314,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-3",
+        "x": 2115,
+        "y": 386,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-4",
+        "x": 2115,
+        "y": 458,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-5",
+        "x": 2115,
+        "y": 530,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-key-1",
+        "x": 2746,
+        "y": 258,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-2",
+        "x": 2746,
+        "y": 330,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-3",
+        "x": 2746,
+        "y": 402,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-4",
+        "x": 2746,
+        "y": 474,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-5",
+        "x": 2746,
+        "y": 546,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "keys-legend",
+        "x": 2127,
+        "y": 634,
+        "w": 663,
+        "h": 66
+      },
+      {
+        "name": "settled-header",
+        "x": 514,
+        "y": 316,
+        "w": 1529,
+        "h": 112
+      },
+      {
+        "name": "reviewed-list",
+        "x": 514,
+        "y": 430,
+        "w": 1529,
+        "h": 1370,
+        "clipped": true
+      },
+      {
+        "name": "reviewed-row-1",
+        "x": 514,
+        "y": 432,
+        "w": 1529,
+        "h": 114
+      },
+      {
+        "name": "toast",
+        "x": 2168,
+        "y": 1608,
+        "w": 680,
+        "h": 160
+      }
+    ]
+  },
+  {
+    "file": "review-done.png",
+    "route": "/#/review",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Revisão zerada: fila vazia, o Ubi comemora; o selo da Revisão some da barra lateral.",
+    "description_en": "Review done: empty queue, UBI celebrates; the Review badge leaves the sidebar.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 598,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 598,
+        "h": 40
+      },
+      {
+        "name": "daynav",
+        "x": 1976,
+        "y": 116,
+        "w": 504,
+        "h": 72
+      },
+      {
+        "name": "classify-now-button",
+        "x": 2496,
+        "y": 116,
+        "w": 336,
+        "h": 72
+      },
+      {
+        "name": "queue-card",
+        "x": 512,
+        "y": 236,
+        "w": 1533,
+        "h": 967
+      },
+      {
+        "name": "assign-card",
+        "x": 2085,
+        "y": 236,
+        "w": 747,
+        "h": 860
+      },
+      {
+        "name": "assign-card-title",
+        "x": 2127,
+        "y": 278,
+        "w": 416,
+        "h": 40
+      },
+      {
+        "name": "assign-picker",
+        "x": 2115,
+        "y": 386,
+        "w": 687,
+        "h": 360
+      },
+      {
+        "name": "assign-option-1",
+        "x": 2115,
+        "y": 386,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-2",
+        "x": 2115,
+        "y": 458,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-3",
+        "x": 2115,
+        "y": 530,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-4",
+        "x": 2115,
+        "y": 602,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-option-5",
+        "x": 2115,
+        "y": 674,
+        "w": 687,
+        "h": 72
+      },
+      {
+        "name": "assign-key-1",
+        "x": 2746,
+        "y": 402,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-2",
+        "x": 2746,
+        "y": 474,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-3",
+        "x": 2746,
+        "y": 546,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-4",
+        "x": 2746,
+        "y": 618,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "assign-key-5",
+        "x": 2746,
+        "y": 690,
+        "w": 40,
+        "h": 40
+      },
+      {
+        "name": "keys-legend",
+        "x": 2127,
+        "y": 778,
+        "w": 663,
+        "h": 178
+      },
+      {
+        "name": "settled-header",
+        "x": 514,
+        "y": 1121,
+        "w": 1529,
+        "h": 80
+      },
+      {
+        "name": "last-suggestions",
+        "x": 2127,
+        "y": 778,
+        "w": 663,
+        "h": 178
+      },
+      {
+        "name": "review-done",
+        "x": 514,
+        "y": 238,
+        "w": 1529,
+        "h": 881
+      },
+      {
+        "name": "review-done-ubi",
+        "x": 1147,
+        "y": 334,
+        "w": 264,
+        "h": 409
+      }
+    ]
+  },
+  {
+    "file": "reports.png",
+    "route": "/#/reports",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Relatórios: relatório diário gerado pela IA por categoria (resumo, destaques e itens com horário).",
+    "description_en": "Reports: AI-written daily report per category (summary, highlights and timed items).",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 932,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 932,
+        "h": 40
+      },
+      {
+        "name": "tabs",
+        "x": 2536,
+        "y": 112,
+        "w": 296,
+        "h": 76
+      },
+      {
+        "name": "report-card-1",
+        "x": 512,
+        "y": 348,
+        "w": 2320,
+        "h": 1222
+      },
+      {
+        "name": "report-card-2",
+        "x": 512,
+        "y": 1610,
+        "w": 2320,
+        "h": 190,
+        "clipped": true
+      },
+      {
+        "name": "report-1-title",
+        "x": 650,
+        "y": 382,
+        "w": 1608,
+        "h": 48
+      },
+      {
+        "name": "report-1-meta",
+        "x": 650,
+        "y": 434,
+        "w": 1608,
+        "h": 32
+      },
+      {
+        "name": "report-1-summary",
+        "x": 554,
+        "y": 580,
+        "w": 866,
+        "h": 584
+      },
+      {
+        "name": "report-1-summary-heading",
+        "x": 554,
+        "y": 580,
+        "w": 866,
+        "h": 48
+      },
+      {
+        "name": "report-1-highlights",
+        "x": 554,
+        "y": 1188,
+        "w": 866,
+        "h": 92
+      },
+      {
+        "name": "report-1-items",
+        "x": 1468,
+        "y": 590,
+        "w": 1322,
+        "h": 938
+      },
+      {
+        "name": "report-1-item-1",
+        "x": 1468,
+        "y": 590,
+        "w": 1322,
+        "h": 146
+      },
+      {
+        "name": "report-1-regenerate",
+        "x": 2586,
+        "y": 392,
+        "w": 204,
+        "h": 64
+      },
+      {
+        "name": "report-1-copy",
+        "x": 2282,
+        "y": 392,
+        "w": 288,
+        "h": 64
+      },
+      {
+        "name": "report-2-title",
+        "x": 650,
+        "y": 1644,
+        "w": 1608,
+        "h": 48
+      }
+    ]
+  },
+  {
+    "file": "reports-generated.png",
+    "route": "/#/reports",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Relatórios logo após \"Regenerar\": relatório novo e toast \"Relatório gerado\".",
+    "description_en": "Reports right after \"Regenerate\": fresh report and a \"Report generated\" toast.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 932,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 932,
+        "h": 40
+      },
+      {
+        "name": "tabs",
+        "x": 2536,
+        "y": 112,
+        "w": 296,
+        "h": 76
+      },
+      {
+        "name": "report-card-1",
+        "x": 512,
+        "y": 348,
+        "w": 2320,
+        "h": 1452,
+        "clipped": true
+      },
+      {
+        "name": "report-1-title",
+        "x": 650,
+        "y": 382,
+        "w": 1608,
+        "h": 48
+      },
+      {
+        "name": "report-1-meta",
+        "x": 650,
+        "y": 434,
+        "w": 1608,
+        "h": 32
+      },
+      {
+        "name": "report-1-summary",
+        "x": 554,
+        "y": 580,
+        "w": 866,
+        "h": 536
+      },
+      {
+        "name": "report-1-summary-heading",
+        "x": 554,
+        "y": 580,
+        "w": 866,
+        "h": 48
+      },
+      {
+        "name": "report-1-highlights",
+        "x": 554,
+        "y": 1140,
+        "w": 866,
+        "h": 144
+      },
+      {
+        "name": "report-1-items",
+        "x": 1468,
+        "y": 590,
+        "w": 1322,
+        "h": 1210,
+        "clipped": true
+      },
+      {
+        "name": "report-1-item-1",
+        "x": 1468,
+        "y": 590,
+        "w": 1322,
+        "h": 146
+      },
+      {
+        "name": "report-1-regenerate",
+        "x": 2586,
+        "y": 392,
+        "w": 204,
+        "h": 64
+      },
+      {
+        "name": "report-1-copy",
+        "x": 2282,
+        "y": 392,
+        "w": 288,
+        "h": 64
+      },
+      {
+        "name": "toast",
+        "x": 2168,
+        "y": 1464,
+        "w": 680,
+        "h": 128
+      }
+    ]
+  },
+  {
+    "file": "categories.png",
+    "route": "/#/categories",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Categorias: lista à esquerda e editor (descrição, palavras-chave, relatório) à direita.",
+    "description_en": "Categories: list on the left, editor (description, keywords, report) on the right.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 1516,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 1516,
+        "h": 40
+      },
+      {
+        "name": "categories-list-card",
+        "x": 512,
+        "y": 236,
+        "w": 747,
+        "h": 844
+      },
+      {
+        "name": "category-item-1",
+        "x": 530,
+        "y": 307,
+        "w": 711,
+        "h": 95
+      },
+      {
+        "name": "category-item-2",
+        "x": 530,
+        "y": 402,
+        "w": 711,
+        "h": 95
+      },
+      {
+        "name": "category-item-3",
+        "x": 530,
+        "y": 498,
+        "w": 711,
+        "h": 95
+      },
+      {
+        "name": "category-editor",
+        "x": 1299,
+        "y": 236,
+        "w": 1533,
+        "h": 1564,
+        "clipped": true
+      },
+      {
+        "name": "category-editor-title",
+        "x": 1469,
+        "y": 280,
+        "w": 1321,
+        "h": 56
+      }
+    ]
+  },
+  {
+    "file": "insights.png",
+    "route": "/#/insights",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Insights: horas da semana por categoria, nota de foco e o conselho do Ubi gerado por IA.",
+    "description_en": "Insights: weekly hours by category, focus score and UBI’s AI advice.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 440,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 440,
+        "h": 40
+      },
+      {
+        "name": "stat-tempo-produtivo",
+        "x": 512,
+        "y": 236,
+        "w": 556,
+        "h": 204
+      },
+      {
+        "name": "stat-score-medio",
+        "x": 1100,
+        "y": 236,
+        "w": 556,
+        "h": 204
+      },
+      {
+        "name": "stat-maior-foco",
+        "x": 1688,
+        "y": 236,
+        "w": 556,
+        "h": 204
+      },
+      {
+        "name": "stat-trocas-hora",
+        "x": 2276,
+        "y": 236,
+        "w": 556,
+        "h": 204
+      },
+      {
+        "name": "card-horas-semana",
+        "x": 512,
+        "y": 480,
+        "w": 1337,
+        "h": 680
+      },
+      {
+        "name": "weekly-chart",
+        "x": 554,
+        "y": 630,
+        "w": 1252,
+        "h": 440
+      },
+      {
+        "name": "card-pontuacao",
+        "x": 1889,
+        "y": 480,
+        "w": 943,
+        "h": 680
+      },
+      {
+        "name": "card-score-foco",
+        "x": 1889,
+        "y": 480,
+        "w": 943,
+        "h": 680
+      },
+      {
+        "name": "card-recomendacoes",
+        "x": 512,
+        "y": 1200,
+        "w": 1337,
+        "h": 600,
+        "clipped": true
+      },
+      {
+        "name": "advice-generate",
+        "x": 1523,
+        "y": 1242,
+        "w": 284,
+        "h": 64
+      },
+      {
+        "name": "advice-list",
+        "x": 1114,
+        "y": 1382,
+        "w": 693,
+        "h": 418,
+        "clipped": true
+      },
+      {
+        "name": "card-o-que-o-ubi-disse",
+        "x": 1889,
+        "y": 1200,
+        "w": 943,
+        "h": 600,
+        "clipped": true
+      },
+      {
+        "name": "ubi",
+        "x": 554,
+        "y": 1382,
+        "w": 520,
+        "h": 418,
+        "clipped": true
+      },
+      {
+        "name": "ubi-speech-bubble",
+        "x": 554,
+        "y": 1382,
+        "w": 520,
+        "h": 116
+      }
+    ]
+  },
+  {
+    "file": "settings.png",
+    "route": "/#/settings",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Configurações: navegação por seções e o topo (Geral, Licença).",
+    "description_en": "Settings: section navigation and the top (General, License).",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 416,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 416,
+        "h": 40
+      },
+      {
+        "name": "sections-nav",
+        "x": 512,
+        "y": 236,
+        "w": 544,
+        "h": 836
+      },
+      {
+        "name": "section-nav-geral",
+        "x": 512,
+        "y": 236,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-licenca",
+        "x": 512,
+        "y": 320,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-ia",
+        "x": 512,
+        "y": 404,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-rastreamento",
+        "x": 512,
+        "y": 488,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-privacidade",
+        "x": 512,
+        "y": 572,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-relatorios",
+        "x": 512,
+        "y": 656,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-ubi",
+        "x": 512,
+        "y": 740,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-atualizacoes",
+        "x": 512,
+        "y": 824,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-permissoes",
+        "x": 512,
+        "y": 908,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-sobre",
+        "x": 512,
+        "y": 992,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-geral",
+        "x": 1104,
+        "y": 236,
+        "w": 1728,
+        "h": 326
+      },
+      {
+        "name": "section-licenca",
+        "x": 1104,
+        "y": 602,
+        "w": 1728,
+        "h": 1131
+      },
+      {
+        "name": "license-status-pill",
+        "x": 2470,
+        "y": 636,
+        "w": 320,
+        "h": 54
+      },
+      {
+        "name": "license-plan",
+        "x": 1146,
+        "y": 846,
+        "w": 1644,
+        "h": 132
+      },
+      {
+        "name": "license-key-form",
+        "x": 1146,
+        "y": 1018,
+        "w": 1644,
+        "h": 300
+      },
+      {
+        "name": "license-usage-bar",
+        "x": 1146,
+        "y": 1400,
+        "w": 1644,
+        "h": 119
+      },
+      {
+        "name": "license-managed-note",
+        "x": 1146,
+        "y": 1559,
+        "w": 1644,
+        "h": 132
+      },
+      {
+        "name": "section-ia",
+        "x": 1104,
+        "y": 1773,
+        "w": 1728,
+        "h": 27,
+        "clipped": true
+      }
+    ]
+  },
+  {
+    "file": "settings-license.png",
+    "route": "/#/settings (Licença)",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Configurações › Licença: ubiqX Mensal com a IA do Ubi, validade e uso do mês.",
+    "description_en": "Settings › License: ubiqX Monthly with UBI’s AI, expiry and monthly usage.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "sections-nav",
+        "x": 512,
+        "y": 76,
+        "w": 544,
+        "h": 836
+      },
+      {
+        "name": "section-nav-geral",
+        "x": 512,
+        "y": 76,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-licenca",
+        "x": 512,
+        "y": 160,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-ia",
+        "x": 512,
+        "y": 244,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-rastreamento",
+        "x": 512,
+        "y": 328,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-privacidade",
+        "x": 512,
+        "y": 412,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-relatorios",
+        "x": 512,
+        "y": 496,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-ubi",
+        "x": 512,
+        "y": 580,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-atualizacoes",
+        "x": 512,
+        "y": 664,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-permissoes",
+        "x": 512,
+        "y": 748,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-sobre",
+        "x": 512,
+        "y": 832,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-geral",
+        "x": 1104,
+        "y": 0,
+        "w": 1728,
+        "h": 68,
+        "clipped": true
+      },
+      {
+        "name": "section-licenca",
+        "x": 1104,
+        "y": 108,
+        "w": 1728,
+        "h": 1131
+      },
+      {
+        "name": "license-status-pill",
+        "x": 2470,
+        "y": 142,
+        "w": 320,
+        "h": 54
+      },
+      {
+        "name": "license-plan",
+        "x": 1146,
+        "y": 352,
+        "w": 1644,
+        "h": 132
+      },
+      {
+        "name": "license-key-form",
+        "x": 1146,
+        "y": 524,
+        "w": 1644,
+        "h": 300
+      },
+      {
+        "name": "license-usage-bar",
+        "x": 1146,
+        "y": 906,
+        "w": 1644,
+        "h": 119
+      },
+      {
+        "name": "license-managed-note",
+        "x": 1146,
+        "y": 1065,
+        "w": 1644,
+        "h": 132
+      },
+      {
+        "name": "section-ia",
+        "x": 1104,
+        "y": 1279,
+        "w": 1728,
+        "h": 521,
+        "clipped": true
+      },
+      {
+        "name": "ai-status-pill",
+        "x": 2632,
+        "y": 1313,
+        "w": 158,
+        "h": 54
+      },
+      {
+        "name": "provider-picker",
+        "x": 1146,
+        "y": 1583,
+        "w": 874,
+        "h": 84
+      },
+      {
+        "name": "provider-anthropic",
+        "x": 1156,
+        "y": 1593,
+        "w": 320,
+        "h": 64
+      },
+      {
+        "name": "provider-openai",
+        "x": 1480,
+        "y": 1593,
+        "w": 148,
+        "h": 64
+      },
+      {
+        "name": "provider-xai",
+        "x": 1632,
+        "y": 1593,
+        "w": 162,
+        "h": 64
+      },
+      {
+        "name": "provider-ia-do-ubi",
+        "x": 1798,
+        "y": 1593,
+        "w": 212,
+        "h": 64
+      },
+      {
+        "name": "provider-active",
+        "x": 1156,
+        "y": 1593,
+        "w": 320,
+        "h": 64
+      },
+      {
+        "name": "api-key-form",
+        "x": 1146,
+        "y": 1751,
+        "w": 1644,
+        "h": 49,
+        "clipped": true
+      }
+    ]
+  },
+  {
+    "file": "settings-ai.png",
+    "route": "/#/settings (IA)",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Configurações › IA: escolha do provedor (Anthropic, OpenAI, xAI, IA do Ubi), chave e modelos.",
+    "description_en": "Settings › AI: provider choice (Anthropic, OpenAI, xAI, UBI’s AI), key and models.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "sections-nav",
+        "x": 512,
+        "y": 76,
+        "w": 544,
+        "h": 836
+      },
+      {
+        "name": "section-nav-geral",
+        "x": 512,
+        "y": 76,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-licenca",
+        "x": 512,
+        "y": 160,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-ia",
+        "x": 512,
+        "y": 244,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-rastreamento",
+        "x": 512,
+        "y": 328,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-privacidade",
+        "x": 512,
+        "y": 412,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-relatorios",
+        "x": 512,
+        "y": 496,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-ubi",
+        "x": 512,
+        "y": 580,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-atualizacoes",
+        "x": 512,
+        "y": 664,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-permissoes",
+        "x": 512,
+        "y": 748,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-sobre",
+        "x": 512,
+        "y": 832,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-licenca",
+        "x": 1104,
+        "y": 0,
+        "w": 1728,
+        "h": 67,
+        "clipped": true
+      },
+      {
+        "name": "license-managed-note",
+        "x": 1146,
+        "y": 0,
+        "w": 1644,
+        "h": 25,
+        "clipped": true
+      },
+      {
+        "name": "section-ia",
+        "x": 1104,
+        "y": 107,
+        "w": 1728,
+        "h": 1586
+      },
+      {
+        "name": "ai-status-pill",
+        "x": 2632,
+        "y": 141,
+        "w": 158,
+        "h": 54
+      },
+      {
+        "name": "provider-picker",
+        "x": 1146,
+        "y": 411,
+        "w": 874,
+        "h": 84
+      },
+      {
+        "name": "provider-anthropic",
+        "x": 1156,
+        "y": 421,
+        "w": 320,
+        "h": 64
+      },
+      {
+        "name": "provider-openai",
+        "x": 1480,
+        "y": 421,
+        "w": 148,
+        "h": 64
+      },
+      {
+        "name": "provider-xai",
+        "x": 1632,
+        "y": 421,
+        "w": 162,
+        "h": 64
+      },
+      {
+        "name": "provider-ia-do-ubi",
+        "x": 1798,
+        "y": 421,
+        "w": 212,
+        "h": 64
+      },
+      {
+        "name": "provider-active",
+        "x": 1156,
+        "y": 421,
+        "w": 320,
+        "h": 64
+      },
+      {
+        "name": "api-key-form",
+        "x": 1146,
+        "y": 579,
+        "w": 1644,
+        "h": 300
+      },
+      {
+        "name": "model-fields",
+        "x": 1146,
+        "y": 961,
+        "w": 1644,
+        "h": 312
+      }
+    ]
+  },
+  {
+    "file": "settings-ai-ubi.png",
+    "route": "/#/settings (IA)",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Configurações › IA com a \"IA do Ubi\" selecionada (sem chave: a licença é a credencial).",
+    "description_en": "Settings › AI with \"UBI’s AI\" selected (no key: the license is the credential).",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "sections-nav",
+        "x": 512,
+        "y": 76,
+        "w": 544,
+        "h": 836
+      },
+      {
+        "name": "section-nav-geral",
+        "x": 512,
+        "y": 76,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-licenca",
+        "x": 512,
+        "y": 160,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-ia",
+        "x": 512,
+        "y": 244,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-rastreamento",
+        "x": 512,
+        "y": 328,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-privacidade",
+        "x": 512,
+        "y": 412,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-relatorios",
+        "x": 512,
+        "y": 496,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-ubi",
+        "x": 512,
+        "y": 580,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-atualizacoes",
+        "x": 512,
+        "y": 664,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-permissoes",
+        "x": 512,
+        "y": 748,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-nav-sobre",
+        "x": 512,
+        "y": 832,
+        "w": 544,
+        "h": 80
+      },
+      {
+        "name": "section-licenca",
+        "x": 1104,
+        "y": 0,
+        "w": 1728,
+        "h": 67,
+        "clipped": true
+      },
+      {
+        "name": "license-managed-note",
+        "x": 1146,
+        "y": 0,
+        "w": 1644,
+        "h": 25,
+        "clipped": true
+      },
+      {
+        "name": "section-ia",
+        "x": 1104,
+        "y": 107,
+        "w": 1728,
+        "h": 1418
+      },
+      {
+        "name": "ai-status-pill",
+        "x": 2632,
+        "y": 141,
+        "w": 158,
+        "h": 54
+      },
+      {
+        "name": "provider-picker",
+        "x": 1146,
+        "y": 411,
+        "w": 874,
+        "h": 84
+      },
+      {
+        "name": "provider-anthropic",
+        "x": 1156,
+        "y": 421,
+        "w": 320,
+        "h": 64
+      },
+      {
+        "name": "provider-openai",
+        "x": 1480,
+        "y": 421,
+        "w": 148,
+        "h": 64
+      },
+      {
+        "name": "provider-xai",
+        "x": 1632,
+        "y": 421,
+        "w": 162,
+        "h": 64
+      },
+      {
+        "name": "provider-ia-do-ubi",
+        "x": 1798,
+        "y": 421,
+        "w": 212,
+        "h": 64
+      },
+      {
+        "name": "provider-active",
+        "x": 1798,
+        "y": 421,
+        "w": 212,
+        "h": 64
+      },
+      {
+        "name": "api-key-form",
+        "x": 1146,
+        "y": 579,
+        "w": 1644,
+        "h": 100
+      },
+      {
+        "name": "model-fields",
+        "x": 1146,
+        "y": 761,
+        "w": 1644,
+        "h": 312
+      }
+    ]
+  },
+  {
+    "file": "focus.png",
+    "route": "/#/focus",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Foco: iniciar sessão, alvos bloqueados (YouTube, Instagram, Discord…) e intervenções de hoje.",
+    "description_en": "Focus: start a session, blocked targets (YouTube, Instagram, Discord…) and today’s interventions.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 784,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 784,
+        "h": 40
+      },
+      {
+        "name": "session-card",
+        "x": 512,
+        "y": 236,
+        "w": 1533,
+        "h": 471
+      },
+      {
+        "name": "session-start-button",
+        "x": 1827,
+        "y": 593,
+        "w": 176,
+        "h": 72
+      },
+      {
+        "name": "session-task-input",
+        "x": 554,
+        "y": 446,
+        "w": 1449,
+        "h": 72
+      },
+      {
+        "name": "targets-card",
+        "x": 512,
+        "y": 747,
+        "w": 1533,
+        "h": 651
+      },
+      {
+        "name": "targets-list",
+        "x": 554,
+        "y": 1001,
+        "w": 1449,
+        "h": 355
+      },
+      {
+        "name": "target-1",
+        "x": 554,
+        "y": 1001,
+        "w": 1449,
+        "h": 119
+      },
+      {
+        "name": "target-2",
+        "x": 554,
+        "y": 1120,
+        "w": 1449,
+        "h": 119
+      },
+      {
+        "name": "target-3",
+        "x": 554,
+        "y": 1239,
+        "w": 1449,
+        "h": 117
+      },
+      {
+        "name": "interventions-list",
+        "x": 554,
+        "y": 1588,
+        "w": 1449,
+        "h": 212,
+        "clipped": true
+      },
+      {
+        "name": "focus-options",
+        "x": 2085,
+        "y": 236,
+        "w": 747,
+        "h": 1564,
+        "clipped": true
+      }
+    ]
+  },
+  {
+    "file": "focus-session.png",
+    "route": "/#/focus?session=active",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Foco com sessão em andamento: tarefa, contagem regressiva e alvos protegidos.",
+    "description_en": "Focus with a running session: task, countdown and guarded targets.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco-dot",
+        "x": 402,
+        "y": 810,
+        "w": 12,
+        "h": 12
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 784,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 784,
+        "h": 40
+      },
+      {
+        "name": "session-card",
+        "x": 512,
+        "y": 236,
+        "w": 1533,
+        "h": 304
+      },
+      {
+        "name": "session-task",
+        "x": 554,
+        "y": 398,
+        "w": 1171,
+        "h": 56
+      },
+      {
+        "name": "session-countdown",
+        "x": 1773,
+        "y": 418,
+        "w": 230,
+        "h": 80
+      },
+      {
+        "name": "targets-card",
+        "x": 512,
+        "y": 580,
+        "w": 1533,
+        "h": 651
+      },
+      {
+        "name": "targets-list",
+        "x": 554,
+        "y": 834,
+        "w": 1449,
+        "h": 355
+      },
+      {
+        "name": "target-1",
+        "x": 554,
+        "y": 834,
+        "w": 1449,
+        "h": 119
+      },
+      {
+        "name": "target-2",
+        "x": 554,
+        "y": 953,
+        "w": 1449,
+        "h": 119
+      },
+      {
+        "name": "target-3",
+        "x": 554,
+        "y": 1072,
+        "w": 1449,
+        "h": 117
+      },
+      {
+        "name": "interventions-list",
+        "x": 554,
+        "y": 1421,
+        "w": 1449,
+        "h": 379,
+        "clipped": true
+      },
+      {
+        "name": "focus-options",
+        "x": 2085,
+        "y": 236,
+        "w": 747,
+        "h": 1564,
+        "clipped": true
+      }
+    ]
+  },
+  {
+    "file": "onboarding-1-intro.png",
+    "route": "/#/onboarding?onboarding=1&step=1",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Onboarding, passo 1 de 7: boas-vindas e o que o ubiqX faz.",
+    "description_en": "Onboarding, step 1 of 7.",
+    "hotspots": [
+      {
+        "name": "rail",
+        "x": 0,
+        "y": 0,
+        "w": 720,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 718,
+        "h": 72
+      },
+      {
+        "name": "ubi",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 554
+      },
+      {
+        "name": "ubi-robot",
+        "x": 183,
+        "y": 352,
+        "w": 352,
+        "h": 422
+      },
+      {
+        "name": "ubi-speech-bubble",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 116
+      },
+      {
+        "name": "steps-list",
+        "x": 0,
+        "y": 822,
+        "w": 718,
+        "h": 616
+      },
+      {
+        "name": "step-1",
+        "x": 48,
+        "y": 822,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-2",
+        "x": 48,
+        "y": 910,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-3",
+        "x": 48,
+        "y": 998,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-4",
+        "x": 48,
+        "y": 1086,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-5",
+        "x": 48,
+        "y": 1174,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-6",
+        "x": 48,
+        "y": 1262,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-7",
+        "x": 48,
+        "y": 1350,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-active",
+        "x": 48,
+        "y": 822,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "eyebrow",
+        "x": 1120,
+        "y": 88,
+        "w": 146,
+        "h": 32
+      },
+      {
+        "name": "title",
+        "x": 1120,
+        "y": 148,
+        "w": 1360,
+        "h": 64
+      },
+      {
+        "name": "lead",
+        "x": 1120,
+        "y": 228,
+        "w": 1116,
+        "h": 96
+      },
+      {
+        "name": "content",
+        "x": 1120,
+        "y": 76,
+        "w": 1360,
+        "h": 1122
+      },
+      {
+        "name": "footer-bar",
+        "x": 720,
+        "y": 1646,
+        "w": 2160,
+        "h": 154
+      },
+      {
+        "name": "continue-button",
+        "x": 2592,
+        "y": 1680,
+        "w": 208,
+        "h": 88
+      },
+      {
+        "name": "back-button",
+        "x": 800,
+        "y": 1688,
+        "w": 182,
+        "h": 72
+      },
+      {
+        "name": "content-list",
+        "x": 1120,
+        "y": 372,
+        "w": 1360,
+        "h": 826
+      }
+    ]
+  },
+  {
+    "file": "onboarding-2-ia.png",
+    "route": "/#/onboarding?onboarding=1&step=2",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Onboarding, passo 2 de 7: como a IA é paga (IA do Ubi ou sua própria chave) e provedores.",
+    "description_en": "Onboarding, step 2 of 7.",
+    "hotspots": [
+      {
+        "name": "rail",
+        "x": 0,
+        "y": 0,
+        "w": 720,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 718,
+        "h": 72
+      },
+      {
+        "name": "ubi",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 554
+      },
+      {
+        "name": "ubi-robot",
+        "x": 183,
+        "y": 352,
+        "w": 352,
+        "h": 422
+      },
+      {
+        "name": "ubi-speech-bubble",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 116
+      },
+      {
+        "name": "steps-list",
+        "x": 0,
+        "y": 822,
+        "w": 718,
+        "h": 616
+      },
+      {
+        "name": "step-1",
+        "x": 48,
+        "y": 822,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-2",
+        "x": 48,
+        "y": 910,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-3",
+        "x": 48,
+        "y": 998,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-4",
+        "x": 48,
+        "y": 1086,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-5",
+        "x": 48,
+        "y": 1174,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-6",
+        "x": 48,
+        "y": 1262,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-7",
+        "x": 48,
+        "y": 1350,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-active",
+        "x": 48,
+        "y": 910,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "eyebrow",
+        "x": 1120,
+        "y": 88,
+        "w": 146,
+        "h": 32
+      },
+      {
+        "name": "title",
+        "x": 1120,
+        "y": 148,
+        "w": 1360,
+        "h": 64
+      },
+      {
+        "name": "lead",
+        "x": 1120,
+        "y": 228,
+        "w": 1116,
+        "h": 96
+      },
+      {
+        "name": "content",
+        "x": 1120,
+        "y": 76,
+        "w": 1360,
+        "h": 1724,
+        "clipped": true
+      },
+      {
+        "name": "footer-bar",
+        "x": 720,
+        "y": 1646,
+        "w": 2160,
+        "h": 154
+      },
+      {
+        "name": "continue-button",
+        "x": 2592,
+        "y": 1680,
+        "w": 208,
+        "h": 88
+      },
+      {
+        "name": "back-button",
+        "x": 800,
+        "y": 1688,
+        "w": 182,
+        "h": 72
+      },
+      {
+        "name": "plan-cards",
+        "x": 1120,
+        "y": 372,
+        "w": 1360,
+        "h": 372
+      },
+      {
+        "name": "plan-card-managed",
+        "x": 1120,
+        "y": 372,
+        "w": 668,
+        "h": 372
+      },
+      {
+        "name": "plan-card-own",
+        "x": 1812,
+        "y": 372,
+        "w": 668,
+        "h": 372
+      },
+      {
+        "name": "provider-cards",
+        "x": 1120,
+        "y": 784,
+        "w": 1360,
+        "h": 578
+      },
+      {
+        "name": "provider-card-claude",
+        "x": 1120,
+        "y": 784,
+        "w": 437,
+        "h": 578
+      },
+      {
+        "name": "provider-card-gpt",
+        "x": 1581,
+        "y": 784,
+        "w": 437,
+        "h": 578
+      },
+      {
+        "name": "provider-card-grok",
+        "x": 2043,
+        "y": 784,
+        "w": 437,
+        "h": 578
+      }
+    ]
+  },
+  {
+    "file": "onboarding-2-ia-managed.png",
+    "route": "/#/onboarding?onboarding=1&step=2",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Onboarding, passo 2: cartão \"IA do Ubi\" escolhido, licença mensal ativa.",
+    "description_en": "Onboarding step 2: \"UBI’s AI\" card picked, monthly license active.",
+    "hotspots": [
+      {
+        "name": "rail",
+        "x": 0,
+        "y": 0,
+        "w": 720,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 718,
+        "h": 72
+      },
+      {
+        "name": "ubi",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 554
+      },
+      {
+        "name": "ubi-robot",
+        "x": 183,
+        "y": 352,
+        "w": 352,
+        "h": 422
+      },
+      {
+        "name": "ubi-speech-bubble",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 116
+      },
+      {
+        "name": "steps-list",
+        "x": 0,
+        "y": 822,
+        "w": 718,
+        "h": 616
+      },
+      {
+        "name": "step-1",
+        "x": 48,
+        "y": 822,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-2",
+        "x": 48,
+        "y": 910,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-3",
+        "x": 48,
+        "y": 998,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-4",
+        "x": 48,
+        "y": 1086,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-5",
+        "x": 48,
+        "y": 1174,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-6",
+        "x": 48,
+        "y": 1262,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-7",
+        "x": 48,
+        "y": 1350,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-active",
+        "x": 48,
+        "y": 910,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "eyebrow",
+        "x": 1120,
+        "y": 88,
+        "w": 146,
+        "h": 32
+      },
+      {
+        "name": "title",
+        "x": 1120,
+        "y": 148,
+        "w": 1360,
+        "h": 64
+      },
+      {
+        "name": "lead",
+        "x": 1120,
+        "y": 228,
+        "w": 1116,
+        "h": 96
+      },
+      {
+        "name": "content",
+        "x": 1120,
+        "y": 76,
+        "w": 1360,
+        "h": 906
+      },
+      {
+        "name": "footer-bar",
+        "x": 720,
+        "y": 1646,
+        "w": 2160,
+        "h": 154
+      },
+      {
+        "name": "continue-button",
+        "x": 2592,
+        "y": 1680,
+        "w": 208,
+        "h": 88
+      },
+      {
+        "name": "back-button",
+        "x": 800,
+        "y": 1688,
+        "w": 182,
+        "h": 72
+      },
+      {
+        "name": "plan-cards",
+        "x": 1120,
+        "y": 372,
+        "w": 1360,
+        "h": 610
+      },
+      {
+        "name": "plan-card-managed",
+        "x": 1120,
+        "y": 372,
+        "w": 668,
+        "h": 610
+      },
+      {
+        "name": "plan-card-own",
+        "x": 1812,
+        "y": 372,
+        "w": 668,
+        "h": 610
+      },
+      {
+        "name": "managed-panel",
+        "x": 1154,
+        "y": 776,
+        "w": 600,
+        "h": 172
+      }
+    ]
+  },
+  {
+    "file": "onboarding-3-permissoes.png",
+    "route": "/#/onboarding?onboarding=1&step=3",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Onboarding, passo 3 de 7: permissões do macOS.",
+    "description_en": "Onboarding, step 3 of 7.",
+    "hotspots": [
+      {
+        "name": "rail",
+        "x": 0,
+        "y": 0,
+        "w": 720,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 718,
+        "h": 72
+      },
+      {
+        "name": "ubi",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 554
+      },
+      {
+        "name": "ubi-robot",
+        "x": 183,
+        "y": 352,
+        "w": 352,
+        "h": 422
+      },
+      {
+        "name": "ubi-speech-bubble",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 116
+      },
+      {
+        "name": "steps-list",
+        "x": 0,
+        "y": 822,
+        "w": 718,
+        "h": 616
+      },
+      {
+        "name": "step-1",
+        "x": 48,
+        "y": 822,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-2",
+        "x": 48,
+        "y": 910,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-3",
+        "x": 48,
+        "y": 998,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-4",
+        "x": 48,
+        "y": 1086,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-5",
+        "x": 48,
+        "y": 1174,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-6",
+        "x": 48,
+        "y": 1262,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-7",
+        "x": 48,
+        "y": 1350,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-active",
+        "x": 48,
+        "y": 998,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "eyebrow",
+        "x": 1120,
+        "y": 88,
+        "w": 146,
+        "h": 32
+      },
+      {
+        "name": "title",
+        "x": 1120,
+        "y": 148,
+        "w": 1360,
+        "h": 64
+      },
+      {
+        "name": "lead",
+        "x": 1120,
+        "y": 228,
+        "w": 1116,
+        "h": 96
+      },
+      {
+        "name": "content",
+        "x": 1120,
+        "y": 76,
+        "w": 1360,
+        "h": 1012
+      },
+      {
+        "name": "footer-bar",
+        "x": 720,
+        "y": 1646,
+        "w": 2160,
+        "h": 154
+      },
+      {
+        "name": "continue-button",
+        "x": 2592,
+        "y": 1680,
+        "w": 208,
+        "h": 88
+      },
+      {
+        "name": "back-button",
+        "x": 800,
+        "y": 1688,
+        "w": 182,
+        "h": 72
+      }
+    ]
+  },
+  {
+    "file": "onboarding-4-categorias.png",
+    "route": "/#/onboarding?onboarding=1&step=4",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Onboarding, passo 4 de 7: suas categorias.",
+    "description_en": "Onboarding, step 4 of 7.",
+    "hotspots": [
+      {
+        "name": "rail",
+        "x": 0,
+        "y": 0,
+        "w": 720,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 718,
+        "h": 72
+      },
+      {
+        "name": "ubi",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 554
+      },
+      {
+        "name": "ubi-robot",
+        "x": 183,
+        "y": 352,
+        "w": 352,
+        "h": 422
+      },
+      {
+        "name": "ubi-speech-bubble",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 116
+      },
+      {
+        "name": "steps-list",
+        "x": 0,
+        "y": 822,
+        "w": 718,
+        "h": 616
+      },
+      {
+        "name": "step-1",
+        "x": 48,
+        "y": 822,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-2",
+        "x": 48,
+        "y": 910,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-3",
+        "x": 48,
+        "y": 998,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-4",
+        "x": 48,
+        "y": 1086,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-5",
+        "x": 48,
+        "y": 1174,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-6",
+        "x": 48,
+        "y": 1262,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-7",
+        "x": 48,
+        "y": 1350,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-active",
+        "x": 48,
+        "y": 1086,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "eyebrow",
+        "x": 1120,
+        "y": 88,
+        "w": 146,
+        "h": 32
+      },
+      {
+        "name": "title",
+        "x": 1120,
+        "y": 148,
+        "w": 1360,
+        "h": 64
+      },
+      {
+        "name": "lead",
+        "x": 1120,
+        "y": 228,
+        "w": 1116,
+        "h": 144
+      },
+      {
+        "name": "content",
+        "x": 1120,
+        "y": 76,
+        "w": 1360,
+        "h": 1724,
+        "clipped": true
+      },
+      {
+        "name": "footer-bar",
+        "x": 720,
+        "y": 1646,
+        "w": 2160,
+        "h": 154
+      },
+      {
+        "name": "continue-button",
+        "x": 2592,
+        "y": 1680,
+        "w": 208,
+        "h": 88
+      },
+      {
+        "name": "back-button",
+        "x": 800,
+        "y": 1688,
+        "w": 182,
+        "h": 72
+      }
+    ]
+  },
+  {
+    "file": "onboarding-6-visao.png",
+    "route": "/#/onboarding?onboarding=1&step=6",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Onboarding, passo 6 de 7: política de capturas de tela (visão).",
+    "description_en": "Onboarding, step 6 of 7.",
+    "hotspots": [
+      {
+        "name": "rail",
+        "x": 0,
+        "y": 0,
+        "w": 720,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 718,
+        "h": 72
+      },
+      {
+        "name": "ubi",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 554
+      },
+      {
+        "name": "ubi-robot",
+        "x": 183,
+        "y": 352,
+        "w": 352,
+        "h": 422
+      },
+      {
+        "name": "ubi-speech-bubble",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 116
+      },
+      {
+        "name": "steps-list",
+        "x": 0,
+        "y": 822,
+        "w": 718,
+        "h": 616
+      },
+      {
+        "name": "step-1",
+        "x": 48,
+        "y": 822,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-2",
+        "x": 48,
+        "y": 910,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-3",
+        "x": 48,
+        "y": 998,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-4",
+        "x": 48,
+        "y": 1086,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-5",
+        "x": 48,
+        "y": 1174,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-6",
+        "x": 48,
+        "y": 1262,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-7",
+        "x": 48,
+        "y": 1350,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-active",
+        "x": 48,
+        "y": 1262,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "eyebrow",
+        "x": 1120,
+        "y": 88,
+        "w": 146,
+        "h": 32
+      },
+      {
+        "name": "title",
+        "x": 1120,
+        "y": 148,
+        "w": 1360,
+        "h": 64
+      },
+      {
+        "name": "lead",
+        "x": 1120,
+        "y": 228,
+        "w": 1116,
+        "h": 96
+      },
+      {
+        "name": "content",
+        "x": 1120,
+        "y": 76,
+        "w": 1360,
+        "h": 856
+      },
+      {
+        "name": "footer-bar",
+        "x": 720,
+        "y": 1646,
+        "w": 2160,
+        "h": 154
+      },
+      {
+        "name": "continue-button",
+        "x": 2592,
+        "y": 1680,
+        "w": 208,
+        "h": 88
+      },
+      {
+        "name": "back-button",
+        "x": 800,
+        "y": 1688,
+        "w": 182,
+        "h": 72
+      }
+    ]
+  },
+  {
+    "file": "onboarding-7-concluir.png",
+    "route": "/#/onboarding?onboarding=1&step=7",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Onboarding, passo 7 de 7: resumo e concluir.",
+    "description_en": "Onboarding, step 7 of 7.",
+    "hotspots": [
+      {
+        "name": "rail",
+        "x": 0,
+        "y": 0,
+        "w": 720,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 718,
+        "h": 72
+      },
+      {
+        "name": "ubi",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 554
+      },
+      {
+        "name": "ubi-robot",
+        "x": 183,
+        "y": 352,
+        "w": 352,
+        "h": 422
+      },
+      {
+        "name": "ubi-speech-bubble",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 116
+      },
+      {
+        "name": "steps-list",
+        "x": 0,
+        "y": 822,
+        "w": 718,
+        "h": 616
+      },
+      {
+        "name": "step-1",
+        "x": 48,
+        "y": 822,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-2",
+        "x": 48,
+        "y": 910,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-3",
+        "x": 48,
+        "y": 998,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-4",
+        "x": 48,
+        "y": 1086,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-5",
+        "x": 48,
+        "y": 1174,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-6",
+        "x": 48,
+        "y": 1262,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-7",
+        "x": 48,
+        "y": 1350,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-active",
+        "x": 48,
+        "y": 1350,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "eyebrow",
+        "x": 1120,
+        "y": 88,
+        "w": 146,
+        "h": 32
+      },
+      {
+        "name": "title",
+        "x": 1120,
+        "y": 148,
+        "w": 1360,
+        "h": 64
+      },
+      {
+        "name": "lead",
+        "x": 1120,
+        "y": 228,
+        "w": 1116,
+        "h": 96
+      },
+      {
+        "name": "content",
+        "x": 1120,
+        "y": 76,
+        "w": 1360,
+        "h": 1176
+      },
+      {
+        "name": "footer-bar",
+        "x": 720,
+        "y": 1646,
+        "w": 2160,
+        "h": 154
+      },
+      {
+        "name": "continue-button",
+        "x": 2562,
+        "y": 1680,
+        "w": 238,
+        "h": 88
+      },
+      {
+        "name": "back-button",
+        "x": 800,
+        "y": 1688,
+        "w": 182,
+        "h": 72
+      },
+      {
+        "name": "finish-ai-summary",
+        "x": 1120,
+        "y": 372,
+        "w": 1360,
+        "h": 220
+      }
+    ]
+  },
+  {
+    "file": "intervention.png",
+    "route": "/#/intervention?id=test",
+    "theme": "dark",
+    "width": 1840,
+    "height": 752,
+    "dpr": 4,
+    "description_pt": "Janela de intervenção (460×188, fundo transparente): o Ubi fechou uma distração e explica por quê.",
+    "description_en": "Intervention window (460×188, transparent background): UBI closed a distraction and says why.",
+    "hotspots": [
+      {
+        "name": "panel",
+        "x": 0,
+        "y": 0,
+        "w": 1840,
+        "h": 752
+      },
+      {
+        "name": "ubi",
+        "x": 68,
+        "y": 76,
+        "w": 480,
+        "h": 576
+      },
+      {
+        "name": "message",
+        "x": 612,
+        "y": 216,
+        "w": 1160,
+        "h": 152
+      },
+      {
+        "name": "target-badge",
+        "x": 612,
+        "y": 432,
+        "w": 304,
+        "h": 80
+      },
+      {
+        "name": "ok-button",
+        "x": 1400,
+        "y": 408,
+        "w": 372,
+        "h": 128
+      }
+    ]
+  },
+  {
+    "file": "timeline.png",
+    "route": "/#/timeline",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Timeline: cada bloco do dia com app, título, categoria, confiança e origem.",
+    "description_en": "Timeline: every block of the day with app, title, category, confidence and source.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "page-title",
+        "x": 512,
+        "y": 76,
+        "w": 1106,
+        "h": 64
+      },
+      {
+        "name": "page-subtitle",
+        "x": 512,
+        "y": 148,
+        "w": 1106,
+        "h": 40
+      },
+      {
+        "name": "daynav",
+        "x": 1838,
+        "y": 116,
+        "w": 504,
+        "h": 72
+      },
+      {
+        "name": "add-manual-button",
+        "x": 2358,
+        "y": 116,
+        "w": 474,
+        "h": 72
+      },
+      {
+        "name": "filters-row",
+        "x": 512,
+        "y": 236,
+        "w": 2320,
+        "h": 72
+      },
+      {
+        "name": "timeline-list",
+        "x": 514,
+        "y": 342,
+        "w": 2316,
+        "h": 1458,
+        "clipped": true
+      },
+      {
+        "name": "block-1",
+        "x": 514,
+        "y": 423,
+        "w": 2316,
+        "h": 208
+      },
+      {
+        "name": "block-2",
+        "x": 514,
+        "y": 631,
+        "w": 2316,
+        "h": 208
+      },
+      {
+        "name": "block-3",
+        "x": 514,
+        "y": 839,
+        "w": 2316,
+        "h": 168
+      }
+    ]
+  },
+  {
+    "file": "timeline-selected.png",
+    "route": "/#/timeline",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Timeline com um bloco selecionado (WhatsApp: conversa com a equipe da AgroTech, precisa de revisão).",
+    "description_en": "Timeline with one block selected (WhatsApp chat with the AgroTech team, needs review).",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "timeline-list",
+        "x": 514,
+        "y": 0,
+        "w": 2316,
+        "h": 1800,
+        "clipped": true
+      },
+      {
+        "name": "selected-block",
+        "x": 514,
+        "y": 834,
+        "w": 2316,
+        "h": 208
+      },
+      {
+        "name": "selected-block-rail",
+        "x": 730,
+        "y": 854,
+        "w": 6,
+        "h": 168
+      },
+      {
+        "name": "selected-block-title",
+        "x": 848,
+        "y": 850,
+        "w": 142,
+        "h": 40
+      },
+      {
+        "name": "selected-block-time",
+        "x": 554,
+        "y": 850,
+        "w": 152,
+        "h": 176
+      },
+      {
+        "name": "selected-block-description",
+        "x": 848,
+        "y": 930,
+        "w": 1862,
+        "h": 32
+      },
+      {
+        "name": "selected-block-category",
+        "x": 848,
+        "y": 978,
+        "w": 222,
+        "h": 48
+      },
+      {
+        "name": "selected-block-badges",
+        "x": 848,
+        "y": 978,
+        "w": 1862,
+        "h": 48
+      }
+    ]
+  },
+  {
+    "file": "timeline-reclassify.png",
+    "route": "/#/timeline",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Timeline: bloco selecionado com o seletor \"Reclassificar\" aberto.",
+    "description_en": "Timeline: selected block with the reclassify category picker open.",
+    "hotspots": [
+      {
+        "name": "sidebar",
+        "x": 0,
+        "y": 0,
+        "w": 464,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 462,
+        "h": 112
+      },
+      {
+        "name": "nav-hoje",
+        "x": 24,
+        "y": 188,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-timeline",
+        "x": 24,
+        "y": 272,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao",
+        "x": 24,
+        "y": 356,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-revisao-badge",
+        "x": 376,
+        "y": 378,
+        "w": 38,
+        "h": 36
+      },
+      {
+        "name": "nav-relatorios",
+        "x": 24,
+        "y": 440,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-categorias",
+        "x": 24,
+        "y": 524,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-insights",
+        "x": 24,
+        "y": 608,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-configuracoes",
+        "x": 24,
+        "y": 692,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "nav-foco",
+        "x": 24,
+        "y": 776,
+        "w": 414,
+        "h": 80
+      },
+      {
+        "name": "tracker-pill",
+        "x": 24,
+        "y": 1684,
+        "w": 414,
+        "h": 92
+      },
+      {
+        "name": "timeline-list",
+        "x": 514,
+        "y": 0,
+        "w": 2316,
+        "h": 1800,
+        "clipped": true
+      },
+      {
+        "name": "selected-block",
+        "x": 514,
+        "y": 834,
+        "w": 2316,
+        "h": 208
+      },
+      {
+        "name": "selected-block-rail",
+        "x": 730,
+        "y": 854,
+        "w": 6,
+        "h": 168
+      },
+      {
+        "name": "selected-block-title",
+        "x": 848,
+        "y": 850,
+        "w": 142,
+        "h": 40
+      },
+      {
+        "name": "selected-block-time",
+        "x": 554,
+        "y": 850,
+        "w": 152,
+        "h": 176
+      },
+      {
+        "name": "selected-block-description",
+        "x": 848,
+        "y": 930,
+        "w": 1862,
+        "h": 32
+      },
+      {
+        "name": "selected-block-category",
+        "x": 848,
+        "y": 978,
+        "w": 222,
+        "h": 48
+      },
+      {
+        "name": "selected-block-badges",
+        "x": 848,
+        "y": 978,
+        "w": 1862,
+        "h": 48
+      },
+      {
+        "name": "reclassify-popover",
+        "x": 848,
+        "y": 1038,
+        "w": 448,
+        "h": 441
+      },
+      {
+        "name": "reclassify-list",
+        "x": 862,
+        "y": 1105,
+        "w": 420,
+        "h": 360
+      }
+    ]
+  },
+  {
+    "file": "onboarding-5-horarios.png",
+    "route": "/#/onboarding?onboarding=1&step=5",
+    "theme": "dark",
+    "width": 2880,
+    "height": 1800,
+    "dpr": 2,
+    "description_pt": "Onboarding, passo 5 de 7: horários dos relatórios.",
+    "description_en": "Onboarding, step 5 of 7.",
+    "hotspots": [
+      {
+        "name": "rail",
+        "x": 0,
+        "y": 0,
+        "w": 720,
+        "h": 1800
+      },
+      {
+        "name": "brand-wordmark",
+        "x": 0,
+        "y": 76,
+        "w": 718,
+        "h": 72
+      },
+      {
+        "name": "ubi",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 554
+      },
+      {
+        "name": "ubi-robot",
+        "x": 183,
+        "y": 352,
+        "w": 352,
+        "h": 422
+      },
+      {
+        "name": "ubi-speech-bubble",
+        "x": 99,
+        "y": 220,
+        "w": 520,
+        "h": 116
+      },
+      {
+        "name": "steps-list",
+        "x": 0,
+        "y": 822,
+        "w": 718,
+        "h": 616
+      },
+      {
+        "name": "step-1",
+        "x": 48,
+        "y": 822,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-2",
+        "x": 48,
+        "y": 910,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-3",
+        "x": 48,
+        "y": 998,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-4",
+        "x": 48,
+        "y": 1086,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-5",
+        "x": 48,
+        "y": 1174,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-6",
+        "x": 48,
+        "y": 1262,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-7",
+        "x": 48,
+        "y": 1350,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "step-active",
+        "x": 48,
+        "y": 1174,
+        "w": 622,
+        "h": 88
+      },
+      {
+        "name": "eyebrow",
+        "x": 1120,
+        "y": 88,
+        "w": 146,
+        "h": 32
+      },
+      {
+        "name": "title",
+        "x": 1120,
+        "y": 148,
+        "w": 1360,
+        "h": 64
+      },
+      {
+        "name": "lead",
+        "x": 1120,
+        "y": 228,
+        "w": 1116,
+        "h": 48
+      },
+      {
+        "name": "content",
+        "x": 1120,
+        "y": 76,
+        "w": 1360,
+        "h": 874
+      },
+      {
+        "name": "footer-bar",
+        "x": 720,
+        "y": 1646,
+        "w": 2160,
+        "h": 154
+      },
+      {
+        "name": "continue-button",
+        "x": 2592,
+        "y": 1680,
+        "w": 208,
+        "h": 88
+      },
+      {
+        "name": "back-button",
+        "x": 800,
+        "y": 1688,
+        "w": 182,
+        "h": 72
+      }
+    ]
+  }
+]

@@ -1,0 +1,11 @@
+node_modules/
+out/
+.remotion/
+build/
+*.log
+
+# UBI frame sequences are ~220 MB of PNGs and fully regenerable:
+#   node tools/ubi-render/render.mjs   (then verify.py --update-manifest and optimize.py)
+# The manifest and the stills stay tracked.
+public/ubi/*/
+!public/ubi/stills/

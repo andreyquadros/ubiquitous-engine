@@ -1,0 +1,341 @@
+[
+  {
+    "file": "ai/anthropic.svg",
+    "kind": "logo",
+    "name": "Anthropic",
+    "colored": false,
+    "license": "CC0-1.0 (simple-icons 16.33.0)",
+    "source": "npm:simple-icons@16.33.0 icons/anthropic.svg = https://github.com/simple-icons/simple-icons/blob/5828a6df55f0afded88fce0b94ce801903ddefe8/icons/anthropic.svg",
+    "note": "Anthropic wordmark-A glyph (brand colour #191919: monochrome brand). Trademark of its owner; used only nominatively to state compatibility. style.md S20 and facts.md 5.18 forbid provider logos on screen (names as plain text only). Kept for reference or a possible brief change; do not place in scenes without sign-off."
+  },
+  {
+    "file": "ai/claude.svg",
+    "kind": "logo",
+    "name": "Claude",
+    "colored": false,
+    "license": "CC0-1.0 (simple-icons 16.33.0)",
+    "source": "npm:simple-icons@16.33.0 icons/claude.svg = https://github.com/simple-icons/simple-icons/blob/5828a6df55f0afded88fce0b94ce801903ddefe8/icons/claude.svg",
+    "note": "Claude spark. Trademark of its owner; used only nominatively to state compatibility. style.md S20 and facts.md 5.18 forbid provider logos on screen (names as plain text only). Kept for reference or a possible brief change; do not place in scenes without sign-off."
+  },
+  {
+    "file": "ai/claude-color.svg",
+    "kind": "logo",
+    "name": "Claude",
+    "colored": true,
+    "license": "MIT (lobehub/lobe-icons 1.95.1)",
+    "source": "npm:@lobehub/icons-static-svg@1.95.1 icons/claude-color.svg = https://github.com/lobehub/lobe-icons/blob/49a2130df7bfa5eb1b088261bff20a37e2967789/packages/static-svg/icons/claude-color.svg",
+    "note": "Claude spark in brand terracotta #D97757. Trademark of its owner; used only nominatively to state compatibility. style.md S20 and facts.md 5.18 forbid provider logos on screen (names as plain text only). Kept for reference or a possible brief change; do not place in scenes without sign-off."
+  },
+  {
+    "file": "ai/openai.svg",
+    "kind": "logo",
+    "name": "OpenAI",
+    "colored": false,
+    "license": "MIT (lobehub/lobe-icons 1.95.1)",
+    "source": "npm:@lobehub/icons-static-svg@1.95.1 icons/openai.svg = https://github.com/lobehub/lobe-icons/blob/49a2130df7bfa5eb1b088261bff20a37e2967789/packages/static-svg/icons/openai.svg",
+    "note": "OpenAI blossom (absent from simple-icons since v11; monochrome brand). Trademark of its owner; used only nominatively to state compatibility. style.md S20 and facts.md 5.18 forbid provider logos on screen (names as plain text only). Kept for reference or a possible brief change; do not place in scenes without sign-off."
+  },
+  {
+    "file": "ai/xai.svg",
+    "kind": "logo",
+    "name": "xAI",
+    "colored": false,
+    "license": "MIT (lobehub/lobe-icons 1.95.1)",
+    "source": "npm:@lobehub/icons-static-svg@1.95.1 icons/xai.svg = https://github.com/lobehub/lobe-icons/blob/49a2130df7bfa5eb1b088261bff20a37e2967789/packages/static-svg/icons/xai.svg",
+    "note": "xAI slashed-X mark (the upstream file's <title> says 'Grok'; it is the xAI mark). Trademark of its owner; used only nominatively to state compatibility. style.md S20 and facts.md 5.18 forbid provider logos on screen (names as plain text only). Kept for reference or a possible brief change; do not place in scenes without sign-off."
+  },
+  {
+    "file": "ai/grok.svg",
+    "kind": "logo",
+    "name": "Grok",
+    "colored": false,
+    "license": "MIT (lobehub/lobe-icons 1.95.1)",
+    "source": "npm:@lobehub/icons-static-svg@1.95.1 icons/grok.svg = https://github.com/lobehub/lobe-icons/blob/49a2130df7bfa5eb1b088261bff20a37e2967789/packages/static-svg/icons/grok.svg",
+    "note": "Grok orbit mark (monochrome brand). Trademark of its owner; used only nominatively to state compatibility. style.md S20 and facts.md 5.18 forbid provider logos on screen (names as plain text only). Kept for reference or a possible brief change; do not place in scenes without sign-off."
+  },
+  {
+    "file": "os/apple.svg",
+    "kind": "os",
+    "name": "Apple (macOS)",
+    "colored": false,
+    "license": "CC0-1.0 (simple-icons 16.33.0)",
+    "source": "npm:simple-icons@16.33.0 icons/apple.svg = https://github.com/simple-icons/simple-icons/blob/5828a6df55f0afded88fce0b94ce801903ddefe8/icons/apple.svg",
+    "note": "Apple logo — use for macOS. Trademark of its owner; used only nominatively to state compatibility."
+  },
+  {
+    "file": "os/macos-wordmark.svg",
+    "kind": "os",
+    "name": "macOS wordmark",
+    "colored": false,
+    "license": "CC0-1.0 (simple-icons 16.33.0)",
+    "source": "npm:simple-icons@16.33.0 icons/macos.svg = https://github.com/simple-icons/simple-icons/blob/5828a6df55f0afded88fce0b94ce801903ddefe8/icons/macos.svg",
+    "note": "Lower-case 'macOS' wordmark; viewBox cropped to the ink. Trademark of its owner; used only nominatively to state compatibility."
+  },
+  {
+    "file": "os/windows.svg",
+    "kind": "os",
+    "name": "Windows",
+    "colored": false,
+    "license": "MIT (twbs/icons 1.13.1)",
+    "source": "npm:bootstrap-icons@1.13.1 icons/windows.svg = https://github.com/twbs/icons/blob/ce0e49dd063243118a115f17ad1fe1fe7576d552/icons/windows.svg",
+    "note": "Windows 10-style perspective four-pane flag (simple-icons removed Microsoft/Windows logos). Trademark of its owner; used only nominatively to state compatibility."
+  },
+  {
+    "file": "os/windows11.svg",
+    "kind": "os",
+    "name": "Windows 11",
+    "colored": false,
+    "license": "MIT (devicons/devicon 2.17.0)",
+    "source": "npm:devicon@2.17.0 icons/windows11/windows11-original.svg = https://github.com/devicons/devicon/blob/54cfe13ac10eaa1ef817a343ab0a9437eb3c2e08/icons/windows11/windows11-original.svg",
+    "note": "Windows 11 flat four-square mark, recoloured to currentColor. Trademark of its owner; used only nominatively to state compatibility."
+  },
+  {
+    "file": "os/windows11-color.svg",
+    "kind": "os",
+    "name": "Windows 11",
+    "colored": true,
+    "license": "MIT (devicons/devicon 2.17.0)",
+    "source": "npm:devicon@2.17.0 icons/windows11/windows11-original.svg = https://github.com/devicons/devicon/blob/54cfe13ac10eaa1ef817a343ab0a9437eb3c2e08/icons/windows11/windows11-original.svg",
+    "note": "Windows 11 mark in #0078D4. Trademark of its owner; used only nominatively to state compatibility."
+  },
+  {
+    "file": "os/linux.svg",
+    "kind": "os",
+    "name": "Linux (Tux)",
+    "colored": false,
+    "license": "CC0-1.0 (simple-icons 16.33.0)",
+    "source": "npm:simple-icons@16.33.0 icons/linux.svg = https://github.com/simple-icons/simple-icons/blob/5828a6df55f0afded88fce0b94ce801903ddefe8/icons/linux.svg",
+    "note": "Tux silhouette. Trademark of its owner; used only nominatively to state compatibility."
+  },
+  {
+    "file": "os/linux-color.svg",
+    "kind": "os",
+    "name": "Linux (Tux)",
+    "colored": true,
+    "license": "MIT (devicons/devicon 2.17.0)",
+    "source": "npm:devicon@2.17.0 icons/linux/linux-original.svg = https://github.com/devicons/devicon/blob/54cfe13ac10eaa1ef817a343ab0a9437eb3c2e08/icons/linux/linux-original.svg",
+    "note": "Full-colour Tux (gradients, ~190 KB). Trademark of its owner; used only nominatively to state compatibility."
+  },
+  {
+    "file": "social/x.svg",
+    "kind": "logo",
+    "name": "X (social network)",
+    "colored": false,
+    "license": "CC0-1.0 (simple-icons 16.33.0)",
+    "source": "npm:simple-icons@16.33.0 icons/x.svg = https://github.com/simple-icons/simple-icons/blob/5828a6df55f0afded88fce0b94ce801903ddefe8/icons/x.svg",
+    "note": "The X social network logo — NOT xAI or Grok. No ubiqX handle is documented in facts.md; no current use. Trademark of its owner; used only nominatively to state compatibility."
+  },
+  {
+    "file": "fonts/sora-latin-wght-normal.woff2",
+    "kind": "font",
+    "name": "Sora Variable (latin, wght 100–800)",
+    "colored": false,
+    "license": "OFL-1.1",
+    "source": "npm:@fontsource-variable/sora@5.3.0 files/sora-latin-wght-normal.woff2"
+  },
+  {
+    "file": "fonts/sora-latin-ext-wght-normal.woff2",
+    "kind": "font",
+    "name": "Sora Variable (latin-ext, wght 100–800)",
+    "colored": false,
+    "license": "OFL-1.1",
+    "source": "npm:@fontsource-variable/sora@5.3.0 files/sora-latin-ext-wght-normal.woff2"
+  },
+  {
+    "file": "fonts/inter-latin-wght-normal.woff2",
+    "kind": "font",
+    "name": "Inter Variable (latin, wght 100–900)",
+    "colored": false,
+    "license": "OFL-1.1",
+    "source": "npm:@fontsource-variable/inter@5.3.0 files/inter-latin-wght-normal.woff2"
+  },
+  {
+    "file": "fonts/inter-latin-ext-wght-normal.woff2",
+    "kind": "font",
+    "name": "Inter Variable (latin-ext, wght 100–900)",
+    "colored": false,
+    "license": "OFL-1.1",
+    "source": "npm:@fontsource-variable/inter@5.3.0 files/inter-latin-ext-wght-normal.woff2"
+  },
+  {
+    "file": "fonts/InterVariable.woff2",
+    "kind": "font",
+    "name": "Inter Variable 4.1, full glyph set (opsz 14–32, wght 100–900; arrows, check marks)",
+    "colored": false,
+    "license": "OFL-1.1",
+    "source": "https://raw.githubusercontent.com/rsms/inter/e3a3d4c57d5ecc01453a575621882a384c1995a3/docs/font-files/InterVariable.woff2 (tag v4.1)"
+  },
+  {
+    "file": "fonts/SoraVariable.woff2",
+    "kind": "font",
+    "name": "Sora Variable, full glyph set (wght 100–800)",
+    "colored": false,
+    "license": "OFL-1.1",
+    "source": "https://raw.githubusercontent.com/google/fonts/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/sora/Sora%5Bwght%5D.ttf, re-wrapped as woff2 (fontTools; outlines unchanged)"
+  },
+  {
+    "file": "fonts/OFL-Sora.txt",
+    "kind": "font",
+    "name": "Sora license (SIL OFL 1.1)",
+    "colored": false,
+    "license": "OFL-1.1",
+    "source": "https://raw.githubusercontent.com/google/fonts/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/sora/OFL.txt"
+  },
+  {
+    "file": "fonts/OFL-Inter.txt",
+    "kind": "font",
+    "name": "Inter license (SIL OFL 1.1)",
+    "colored": false,
+    "license": "OFL-1.1",
+    "source": "https://raw.githubusercontent.com/google/fonts/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/inter/OFL.txt"
+  },
+  {
+    "file": "fonts/fonts.css",
+    "kind": "font",
+    "name": "@font-face declarations for the files above",
+    "colored": false,
+    "license": "OFL-1.1 (fonts)"
+  },
+  {
+    "file": "fonts/OFL-Inter-rsms.txt",
+    "kind": "font",
+    "name": "Inter 4.1 license as shipped by rsms/inter (SIL OFL 1.1)",
+    "colored": false,
+    "license": "OFL-1.1",
+    "source": "https://raw.githubusercontent.com/rsms/inter/e3a3d4c57d5ecc01453a575621882a384c1995a3/LICENSE.txt"
+  },
+  {
+    "file": "ubiqx-mark.svg",
+    "kind": "brand",
+    "name": "ubiqX mark (UBI head)",
+    "colored": true,
+    "license": "First-party ubiqX asset (this repository, MIT; see LICENSE)",
+    "source": "apps/desktop/src/components/layout/Sidebar.tsx BrandMark",
+    "note": "Also the mark for the managed 'IA do Ubi' provider option."
+  },
+  {
+    "file": "ubiqx-mark-tile.svg",
+    "kind": "brand",
+    "name": "ubiqX mark on the sidebar tile",
+    "colored": true,
+    "license": "First-party ubiqX asset (this repository, MIT; see LICENSE)",
+    "source": "Sidebar.tsx BrandMark wrapper (panel-2 fill, line-2 border, radius 10)"
+  },
+  {
+    "file": "ubiqx-wordmark.svg",
+    "kind": "brand",
+    "name": "ubiqX wordmark (semibold, as in the app sidebar)",
+    "colored": true,
+    "license": "First-party ubiqX asset (this repository, MIT; see LICENSE); glyph outlines from Sora (OFL-1.1)",
+    "source": "outlined from https://raw.githubusercontent.com/google/fonts/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/sora/Sora%5Bwght%5D.ttf",
+    "note": "Sora 600, tracking -0.02em, kerned with HarfBuzz; ink box, baseline at y=759.0 of 959.0. To match Sora at font-size S px, render at height 0.9590*S px.",
+    "metrics": {
+      "unitsPerEm": 1000,
+      "viewBox": [
+        0,
+        0,
+        2916.0,
+        959
+      ],
+      "baselineY": 759,
+      "capHeight": 730,
+      "xHeight": 534
+    }
+  },
+  {
+    "file": "ubiqx-wordmark-mono.svg",
+    "kind": "brand",
+    "name": "ubiqX wordmark (semibold, monochrome currentColor)",
+    "colored": false,
+    "license": "First-party ubiqX asset (this repository, MIT; see LICENSE); glyph outlines from Sora (OFL-1.1)",
+    "source": "outlined from https://raw.githubusercontent.com/google/fonts/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/sora/Sora%5Bwght%5D.ttf",
+    "note": "Sora 600, tracking -0.02em, kerned with HarfBuzz; ink box, baseline at y=759.0 of 959.0. To match Sora at font-size S px, render at height 0.9590*S px.",
+    "metrics": {
+      "unitsPerEm": 1000,
+      "viewBox": [
+        0,
+        0,
+        2916.0,
+        959
+      ],
+      "baselineY": 759,
+      "capHeight": 730,
+      "xHeight": 534
+    }
+  },
+  {
+    "file": "ubiqx-wordmark-bold.svg",
+    "kind": "brand",
+    "name": "ubiqX wordmark (bold, style.md §4.2 wordmark spec)",
+    "colored": true,
+    "license": "First-party ubiqX asset (this repository, MIT; see LICENSE); glyph outlines from Sora (OFL-1.1)",
+    "source": "outlined from https://raw.githubusercontent.com/google/fonts/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/sora/Sora%5Bwght%5D.ttf",
+    "note": "Sora 700, tracking -0.03em, kerned with HarfBuzz; ink box, baseline at y=769.0 of 969.0. To match Sora at font-size S px, render at height 0.9690*S px.",
+    "metrics": {
+      "unitsPerEm": 1000,
+      "viewBox": [
+        0,
+        0,
+        2917.0,
+        969
+      ],
+      "baselineY": 769,
+      "capHeight": 730,
+      "xHeight": 534
+    }
+  },
+  {
+    "file": "ubiqx-wordmark-bold-mono.svg",
+    "kind": "brand",
+    "name": "ubiqX wordmark (bold, monochrome currentColor)",
+    "colored": false,
+    "license": "First-party ubiqX asset (this repository, MIT; see LICENSE); glyph outlines from Sora (OFL-1.1)",
+    "source": "outlined from https://raw.githubusercontent.com/google/fonts/23e54b51ddffbc7713c583748e3bd86f62b1fa4a/ofl/sora/Sora%5Bwght%5D.ttf",
+    "note": "Sora 700, tracking -0.03em, kerned with HarfBuzz; ink box, baseline at y=769.0 of 969.0. To match Sora at font-size S px, render at height 0.9690*S px.",
+    "metrics": {
+      "unitsPerEm": 1000,
+      "viewBox": [
+        0,
+        0,
+        2917.0,
+        969
+      ],
+      "baselineY": 769,
+      "capHeight": 730,
+      "xHeight": 534
+    }
+  },
+  {
+    "file": "favicon-128.png",
+    "kind": "brand",
+    "name": "App icon 128 px",
+    "colored": true,
+    "license": "First-party ubiqX asset (this repository, MIT; see LICENSE)",
+    "source": "site/public/favicon-128.png"
+  },
+  {
+    "file": "apple-touch-icon.png",
+    "kind": "brand",
+    "name": "App icon 180 px",
+    "colored": true,
+    "license": "First-party ubiqX asset (this repository, MIT; see LICENSE)",
+    "source": "site/public/apple-touch-icon.png"
+  },
+  {
+    "file": "og.png",
+    "kind": "brand",
+    "name": "Open Graph card 1200×630",
+    "colored": true,
+    "license": "First-party ubiqX asset (this repository, MIT; see LICENSE)",
+    "source": "site/public/og.png",
+    "note": "Reference only: its fine print says 'Tudo fica no seu Mac', which is macOS-only and contradicts facts.md (three platforms §3.16; cloud AI §5.3). Do not show it on screen."
+  },
+  {
+    "file": "ubi-hero.png",
+    "kind": "brand",
+    "name": "UBI hero render 880×1056",
+    "colored": true,
+    "license": "First-party ubiqX asset (this repository, MIT; see LICENSE)",
+    "source": "site/public/ubi-hero.png"
+  }
+]

@@ -1,0 +1,1086 @@
+{
+  "fps": 30,
+  "size": [
+    900,
+    900
+  ],
+  "format": "PNG RGBA, straight (un-premultiplied) alpha, sRGB; transparent background",
+  "frame_naming": "public/<dir>/NNNN.png, 4 digits from 0000; use staticFile(`${dir}/${String(i).padStart(4, \"0\")}.png`)",
+  "source_model": "apps/desktop/public/ubi/Ubi.glb (== site/public/ubi/Ubi.glb), 21-bone rig, 8 clips",
+  "look": "Matches the product (Ubi3d.tsx / UbiHero3d.tsx): MeshStandardMaterial from the GLB, RoomEnvironment IBL x0.8, white key 1.6, volt #4d8dff fill from below and rim, ACES Filmic, exposure 1.05, sRGB. No whole-body float or floor glow is baked in — add float (e.g. translateY sin, 4.2 s, ~8 px) and a volt floor glow in the composition if wanted.",
+  "rendering": "three r186, headless Chromium + SwiftShader WebGL, MSAA 4x at 2x supersampling, downsampled in a premultiplied 2D canvas; deterministic clip time i/30 s",
+  "skin_repair": {
+    "applied": {
+      "HandR": {
+        "ShoulderR": 250
+      },
+      "HandL": {}
+    },
+    "note": "Video-only fix at load time (the product GLB is untouched): 250 vertices of the right thumb tip are weighted 100 % to Shoulder.R in Ubi.glb (they cross rig_ubi.py's arm-region cut), so whenever the right arm moves the thumb stretches into a white bar pinned to the shoulder (very visible in Wave). Vertices within 0.22 of a hand bone whose dominant bone is not part of that arm are given to the hand."
+  },
+  "camera": {
+    "ty": 1.2988085440940922,
+    "d": 6.327100691153155,
+    "fov": 30,
+    "pitchDeg": 3.576334374997352,
+    "position": [
+      0,
+      1.6934822415394843,
+      6.314779159126273
+    ],
+    "target": [
+      0,
+      1.2988085440940922,
+      0
+    ],
+    "note": "One camera for every clip, turntable and look: cuts between sequences never jump. UBI stands on the same ground line in every frame; x = 0 is the frame centre.",
+    "padding": 0.08,
+    "ground_y_px": 789.7,
+    "silhouette_union_px": {
+      "x0": 216.4,
+      "y0": 72,
+      "x1": 664.8,
+      "y1": 828
+    }
+  },
+  "anchors_px": {
+    "Head": [
+      418.9,
+      443.9
+    ],
+    "Neck": [
+      423.5,
+      475.5
+    ],
+    "Chest": [
+      428.1,
+      556.7
+    ],
+    "Hips": [
+      428.2,
+      669.1
+    ],
+    "Orb": [
+      592,
+      423.8
+    ],
+    "HandR": [
+      299.3,
+      494.7
+    ],
+    "HandL": [
+      576.6,
+      524.6
+    ],
+    "headCenter": [
+      449.3,
+      302.8
+    ],
+    "headTop": [
+      449.3,
+      160.9
+    ],
+    "ground": [
+      450,
+      789.7
+    ]
+  },
+  "anchors_note": "Pixel positions [x, y] in the clip frame on Idle frame 0 (same camera for all sequences): headCenter/headTop = centre/top of the helmet shell (point speech bubbles here), Head/Neck/Chest/Hips/HandL/HandR/Orb = joint pivots (Head is the neck-top pivot), ground = floor point under the body centre. The soles reach ~7 px below ground (feet_bottom_y_px) because the camera looks slightly down.",
+  "compositing_tips": [
+    "Everything shares one camera: keep the <Img> at the same position/scale and UBI stays planted (feet_bottom_y_px); x = 0 of the model is the frame centre. Jump is the only clip that leaves the ground.",
+    "Loops (idle, excited, worried, sleep, turntable) wrap cleanly: frame = i % frames.",
+    "Idle does NOT pass through the rest pose that yes/no/wave/jump start and end on (see continuity_vs_idle_frame0): a hard cut idle -> wave pops slightly. Either cut on a beat with a scale/position change (hides it), or use the *-from-idle / idle-to-* sequences, whose first_frame_equals / last_frame_equals say where they splice in.",
+    "Splicing: an Idle segment of N frames that must END on idle frame 119 starts at idle frame (120 - N % 120) % 120. Then play e.g. wave-from-idle (its frame 0 == idle frame 0), then continue with idle from frame last_frame_equals.frame + 1 (idle-to-* continue the mood loop the same way).",
+    "turntable[0] and look[0] equal idle frame 0: they splice after idle frame 119 too.",
+    "Add life in the composition: slow float (translateY ~6-10 px, 4.2 s sine), a soft volt (#4d8dff) elliptical floor glow under the feet and a subtle shadow; the renders carry none of these."
+  ],
+  "clips": [
+    {
+      "name": "idle",
+      "dir": "ubi/idle",
+      "pattern": "ubi/idle/{frame:04d}.png",
+      "frames": 120,
+      "duration_s": 4,
+      "loopable": true,
+      "description": "Breathing idle: chest rise, slight weight shift, micro head sway (<= 4 deg), orb bobbing and orbiting near the left hand.",
+      "best_use": "Default presence. Hold UBI beside headlines, UI shots or the end card; loop it under any other element.",
+      "source": {
+        "clip": "Idle",
+        "clip_duration_s": 4,
+        "retime": 1
+      },
+      "bytes": 29699119,
+      "bbox_union_px": [
+        255,
+        157,
+        626,
+        799
+      ],
+      "min_margin_px": 100,
+      "loop_seam_check": {
+        "last_to_first_diff": 0.663,
+        "max_step_diff": 0.69
+      }
+    },
+    {
+      "name": "yes",
+      "dir": "ubi/yes",
+      "pattern": "ubi/yes/{frame:04d}.png",
+      "frames": 38,
+      "duration_s": 1.2667,
+      "loopable": false,
+      "description": "Two approving nods (head pitch), starts and ends on the rest pose.",
+      "best_use": "Agreement beat: a checkmark, \"Confirmar os N\", a positive stat or a feature that \"just works\".",
+      "source": {
+        "clip": "Yes",
+        "clip_duration_s": 1.2083,
+        "retime": 1
+      },
+      "bytes": 9337236,
+      "bbox_union_px": [
+        262,
+        158,
+        621,
+        797
+      ],
+      "min_margin_px": 102
+    },
+    {
+      "name": "no",
+      "dir": "ubi/no",
+      "pattern": "ubi/no/{frame:04d}.png",
+      "frames": 38,
+      "duration_s": 1.2667,
+      "loopable": false,
+      "description": "Two head shakes (yaw +/-12 deg), starts and ends on the rest pose.",
+      "best_use": "Problem framing: \"sem planilha\", \"sem cronometro manual\", \"sem digitar horas\" — say no to the old way.",
+      "source": {
+        "clip": "No",
+        "clip_duration_s": 1.2083,
+        "retime": 1
+      },
+      "bytes": 9386710,
+      "bbox_union_px": [
+        262,
+        160,
+        622,
+        797
+      ],
+      "min_margin_px": 102
+    },
+    {
+      "name": "wave",
+      "dir": "ubi/wave",
+      "pattern": "ubi/wave/{frame:04d}.png",
+      "frames": 61,
+      "duration_s": 2.0333,
+      "loopable": false,
+      "description": "Right forearm waves outwards, head tilts; starts and ends on the rest pose.",
+      "best_use": "Intro \"Oi, eu sou o UBI\" or the goodbye on the end card / CTA.",
+      "source": {
+        "clip": "Wave",
+        "clip_duration_s": 2,
+        "retime": 1
+      },
+      "bytes": 15205046,
+      "bbox_union_px": [
+        215,
+        158,
+        621,
+        797
+      ],
+      "min_margin_px": 102
+    },
+    {
+      "name": "jump",
+      "dir": "ubi/jump",
+      "pattern": "ubi/jump/{frame:04d}.png",
+      "frames": 31,
+      "duration_s": 1.0333,
+      "loopable": false,
+      "description": "Crouch, jump (~0.2 units), land with squash; starts and ends on the rest pose.",
+      "best_use": "Celebration hit on a downbeat: launch reveal, \"relatorio pronto\", price reveal.",
+      "source": {
+        "clip": "Jump",
+        "clip_duration_s": 1,
+        "retime": 1
+      },
+      "bytes": 7680275,
+      "bbox_union_px": [
+        258,
+        72,
+        628,
+        811
+      ],
+      "min_margin_px": 72
+    },
+    {
+      "name": "excited",
+      "dir": "ubi/excited",
+      "pattern": "ubi/excited/{frame:04d}.png",
+      "frames": 36,
+      "duration_s": 1.2,
+      "loopable": true,
+      "description": "Small bounces, pumping arms, fast orbiting orb (the \"Empolgado\" mood).",
+      "best_use": "High-energy loop: focus score >= 85, feature montage peaks, the CTA.",
+      "source": {
+        "clip": "Excited",
+        "clip_duration_s": 1.2083,
+        "retime": 1.0069
+      },
+      "bytes": 8939860,
+      "bbox_union_px": [
+        240,
+        143,
+        631,
+        797
+      ],
+      "min_margin_px": 102,
+      "loop_seam_check": {
+        "last_to_first_diff": 3.997,
+        "max_step_diff": 4.034
+      }
+    },
+    {
+      "name": "worried",
+      "dir": "ubi/worried",
+      "pattern": "ubi/worried/{frame:04d}.png",
+      "frames": 45,
+      "duration_s": 1.5,
+      "loopable": true,
+      "description": "Shoulders raised, quick 4 Hz tremble in head and chest, orb pulled close (the \"Preocupado\" mood).",
+      "best_use": "Problem framing: context switching, distractions, a budget alert at 80 %.",
+      "source": {
+        "clip": "Worried",
+        "clip_duration_s": 1.5,
+        "retime": 1
+      },
+      "bytes": 11058300,
+      "bbox_union_px": [
+        273,
+        176,
+        646,
+        797
+      ],
+      "min_margin_px": 102,
+      "loop_seam_check": {
+        "last_to_first_diff": 1.268,
+        "max_step_diff": 1.388
+      }
+    },
+    {
+      "name": "sleep",
+      "dir": "ubi/sleep",
+      "pattern": "ubi/sleep/{frame:04d}.png",
+      "frames": 120,
+      "duration_s": 4,
+      "loopable": true,
+      "description": "Chest slumped ~12 deg, head down and to the side, slow breathing, orb low (the \"Descansando\" mood).",
+      "best_use": "Idle time / no activity / after hours; a calm beat before the reveal (\"acorda\" -> Jump).",
+      "source": {
+        "clip": "Sleep",
+        "clip_duration_s": 4,
+        "retime": 1
+      },
+      "bytes": 28558018,
+      "bbox_union_px": [
+        263,
+        226,
+        623,
+        797
+      ],
+      "min_margin_px": 102,
+      "loop_seam_check": {
+        "last_to_first_diff": 0.224,
+        "max_step_diff": 0.224
+      }
+    },
+    {
+      "name": "turntable",
+      "dir": "ubi/turntable",
+      "pattern": "ubi/turntable/{frame:04d}.png",
+      "frames": 120,
+      "duration_s": 4,
+      "loopable": true,
+      "description": "Slow 360 deg turntable on the idle pose (Idle keeps breathing underneath), constant angular speed.",
+      "best_use": "Mascot reveal / \"conheca o UBI\" showcase; slow it down or use a slice for a parallax-like turn.",
+      "source": {
+        "clip": "Idle",
+        "rotation": "360 deg about the vertical axis, counter-clockwise seen from above (UBI turns to his left = viewer's right first)"
+      },
+      "bytes": 26209026,
+      "bbox_union_px": [
+        222,
+        148,
+        664,
+        827
+      ],
+      "min_margin_px": 72,
+      "loop_seam_check": {
+        "last_to_first_diff": 3.142,
+        "max_step_diff": 4.4
+      }
+    },
+    {
+      "name": "look",
+      "dir": "ubi/look",
+      "pattern": "ubi/look/{frame:04d}.png",
+      "frames": 90,
+      "duration_s": 3,
+      "loopable": false,
+      "description": "Head glances: center -> viewer's left (0.2 s) -> center (0.95 s) -> viewer's right (1.45 s) -> up-right toward a speech bubble (2.05 s, settled by ~2.5 s).",
+      "best_use": "UBI \"reads\" the UI left and right, then looks up-right at a speech bubble — place the bubble above-right of the head (see anchors.Head). Frames 75-89 hold the bubble glance.",
+      "source": {
+        "clip": "Idle",
+        "look_keys": [
+          {
+            "t": 0,
+            "yaw": 0,
+            "pitch": 0
+          },
+          {
+            "t": 0.2,
+            "yaw": -38,
+            "pitch": -3
+          },
+          {
+            "t": 0.95,
+            "yaw": 0,
+            "pitch": 0
+          },
+          {
+            "t": 1.45,
+            "yaw": 38,
+            "pitch": -3
+          },
+          {
+            "t": 2.05,
+            "yaw": 28,
+            "pitch": 22
+          }
+        ],
+        "easing": "exponential, rate 8/s (app's LOOK_DAMPING)"
+      },
+      "bytes": 21619750,
+      "look_deg": [
+        {
+          "yaw": 0,
+          "pitch": 0
+        },
+        {
+          "yaw": 0,
+          "pitch": 0
+        },
+        {
+          "yaw": 0,
+          "pitch": 0
+        },
+        {
+          "yaw": 0,
+          "pitch": 0
+        },
+        {
+          "yaw": 0,
+          "pitch": 0
+        },
+        {
+          "yaw": 0,
+          "pitch": 0
+        },
+        {
+          "yaw": -8.8947,
+          "pitch": -0.7022
+        },
+        {
+          "yaw": -15.7074,
+          "pitch": -1.2401
+        },
+        {
+          "yaw": -20.9255,
+          "pitch": -1.652
+        },
+        {
+          "yaw": -24.9222,
+          "pitch": -1.9675
+        },
+        {
+          "yaw": -27.9833,
+          "pitch": -2.2092
+        },
+        {
+          "yaw": -30.3279,
+          "pitch": -2.3943
+        },
+        {
+          "yaw": -32.1237,
+          "pitch": -2.5361
+        },
+        {
+          "yaw": -33.4992,
+          "pitch": -2.6447
+        },
+        {
+          "yaw": -34.5527,
+          "pitch": -2.7278
+        },
+        {
+          "yaw": -35.3596,
+          "pitch": -2.7915
+        },
+        {
+          "yaw": -35.9777,
+          "pitch": -2.8403
+        },
+        {
+          "yaw": -36.451,
+          "pitch": -2.8777
+        },
+        {
+          "yaw": -36.8136,
+          "pitch": -2.9063
+        },
+        {
+          "yaw": -37.0913,
+          "pitch": -2.9283
+        },
+        {
+          "yaw": -37.304,
+          "pitch": -2.9451
+        },
+        {
+          "yaw": -37.4669,
+          "pitch": -2.9579
+        },
+        {
+          "yaw": -37.5917,
+          "pitch": -2.9678
+        },
+        {
+          "yaw": -37.6873,
+          "pitch": -2.9753
+        },
+        {
+          "yaw": -37.7605,
+          "pitch": -2.9811
+        },
+        {
+          "yaw": -37.8165,
+          "pitch": -2.9855
+        },
+        {
+          "yaw": -37.8595,
+          "pitch": -2.9889
+        },
+        {
+          "yaw": -37.8924,
+          "pitch": -2.9915
+        },
+        {
+          "yaw": -37.9176,
+          "pitch": -2.9935
+        },
+        {
+          "yaw": -29.0421,
+          "pitch": -2.2928
+        },
+        {
+          "yaw": -22.2442,
+          "pitch": -1.7561
+        },
+        {
+          "yaw": -17.0375,
+          "pitch": -1.3451
+        },
+        {
+          "yaw": -13.0495,
+          "pitch": -1.0302
+        },
+        {
+          "yaw": -9.995,
+          "pitch": -0.7891
+        },
+        {
+          "yaw": -7.6554,
+          "pitch": -0.6044
+        },
+        {
+          "yaw": -5.8635,
+          "pitch": -0.4629
+        },
+        {
+          "yaw": -4.491,
+          "pitch": -0.3546
+        },
+        {
+          "yaw": -3.4398,
+          "pitch": -0.2716
+        },
+        {
+          "yaw": -2.6346,
+          "pitch": -0.208
+        },
+        {
+          "yaw": -2.0179,
+          "pitch": -0.1593
+        },
+        {
+          "yaw": -1.5456,
+          "pitch": -0.122
+        },
+        {
+          "yaw": -1.1838,
+          "pitch": -0.0935
+        },
+        {
+          "yaw": -0.9067,
+          "pitch": -0.0716
+        },
+        {
+          "yaw": -0.6945,
+          "pitch": -0.0548
+        },
+        {
+          "yaw": 8.3628,
+          "pitch": -0.7442
+        },
+        {
+          "yaw": 15.3,
+          "pitch": -1.2722
+        },
+        {
+          "yaw": 20.6134,
+          "pitch": -1.6766
+        },
+        {
+          "yaw": 24.6831,
+          "pitch": -1.9864
+        },
+        {
+          "yaw": 27.8002,
+          "pitch": -2.2237
+        },
+        {
+          "yaw": 30.1877,
+          "pitch": -2.4054
+        },
+        {
+          "yaw": 32.0164,
+          "pitch": -2.5446
+        },
+        {
+          "yaw": 33.417,
+          "pitch": -2.6512
+        },
+        {
+          "yaw": 34.4897,
+          "pitch": -2.7328
+        },
+        {
+          "yaw": 35.3114,
+          "pitch": -2.7954
+        },
+        {
+          "yaw": 35.9407,
+          "pitch": -2.8433
+        },
+        {
+          "yaw": 36.4227,
+          "pitch": -2.8799
+        },
+        {
+          "yaw": 36.7919,
+          "pitch": -2.908
+        },
+        {
+          "yaw": 37.0747,
+          "pitch": -2.9296
+        },
+        {
+          "yaw": 37.2913,
+          "pitch": -2.9461
+        },
+        {
+          "yaw": 37.4572,
+          "pitch": -2.9587
+        },
+        {
+          "yaw": 37.5842,
+          "pitch": -2.9684
+        },
+        {
+          "yaw": 37.6816,
+          "pitch": -2.9758
+        },
+        {
+          "yaw": 35.4154,
+          "pitch": 2.8704
+        },
+        {
+          "yaw": 33.6796,
+          "pitch": 7.3481
+        },
+        {
+          "yaw": 32.3502,
+          "pitch": 10.7777
+        },
+        {
+          "yaw": 31.3319,
+          "pitch": 13.4045
+        },
+        {
+          "yaw": 30.552,
+          "pitch": 15.4165
+        },
+        {
+          "yaw": 29.9547,
+          "pitch": 16.9575
+        },
+        {
+          "yaw": 29.4971,
+          "pitch": 18.1378
+        },
+        {
+          "yaw": 29.1467,
+          "pitch": 19.0418
+        },
+        {
+          "yaw": 28.8783,
+          "pitch": 19.7342
+        },
+        {
+          "yaw": 28.6727,
+          "pitch": 20.2646
+        },
+        {
+          "yaw": 28.5152,
+          "pitch": 20.6708
+        },
+        {
+          "yaw": 28.3946,
+          "pitch": 20.9819
+        },
+        {
+          "yaw": 28.3023,
+          "pitch": 21.2202
+        },
+        {
+          "yaw": 28.2315,
+          "pitch": 21.4028
+        },
+        {
+          "yaw": 28.1773,
+          "pitch": 21.5426
+        },
+        {
+          "yaw": 28.1358,
+          "pitch": 21.6496
+        },
+        {
+          "yaw": 28.104,
+          "pitch": 21.7316
+        },
+        {
+          "yaw": 28.0797,
+          "pitch": 21.7945
+        },
+        {
+          "yaw": 28.061,
+          "pitch": 21.8426
+        },
+        {
+          "yaw": 28.0467,
+          "pitch": 21.8794
+        },
+        {
+          "yaw": 28.0358,
+          "pitch": 21.9076
+        },
+        {
+          "yaw": 28.0274,
+          "pitch": 21.9293
+        },
+        {
+          "yaw": 28.021,
+          "pitch": 21.9458
+        },
+        {
+          "yaw": 28.0161,
+          "pitch": 21.9585
+        },
+        {
+          "yaw": 28.0123,
+          "pitch": 21.9682
+        },
+        {
+          "yaw": 28.0094,
+          "pitch": 21.9757
+        },
+        {
+          "yaw": 28.0072,
+          "pitch": 21.9814
+        },
+        {
+          "yaw": 28.0055,
+          "pitch": 21.9857
+        }
+      ],
+      "bbox_union_px": [
+        255,
+        157,
+        635,
+        799
+      ],
+      "min_margin_px": 100
+    },
+    {
+      "name": "wave-from-idle",
+      "dir": "ubi/wave-from-idle",
+      "pattern": "ubi/wave-from-idle/{frame:04d}.png",
+      "frames": 71,
+      "duration_s": 2.3667,
+      "loopable": false,
+      "description": "Wave spliced into Idle like the app plays it: 10-frame cross-fade Idle -> Wave, the full Wave, then a 10-frame cross-fade into a restarted Idle. Right forearm waves outwards, head tilts; starts and ends on the rest pose.",
+      "best_use": "Intro \"Oi, eu sou o UBI\" or the goodbye on the end card / CTA. Use this one inside a longer Idle shot: play idle up to its frame 119, then this, then continue idle from frame 11.",
+      "source": {
+        "clip": "Wave",
+        "base": "Idle",
+        "crossfade_frames": 10,
+        "easing": "smoothstep"
+      },
+      "bytes": 17645642,
+      "first_frame_equals": {
+        "clip": "idle",
+        "frame": 0
+      },
+      "last_frame_equals": {
+        "clip": "idle",
+        "frame": 10
+      },
+      "bbox_union_px": [
+        215,
+        158,
+        624,
+        797
+      ],
+      "min_margin_px": 102
+    },
+    {
+      "name": "yes-from-idle",
+      "dir": "ubi/yes-from-idle",
+      "pattern": "ubi/yes-from-idle/{frame:04d}.png",
+      "frames": 48,
+      "duration_s": 1.6,
+      "loopable": false,
+      "description": "Yes spliced into Idle like the app plays it: 10-frame cross-fade Idle -> Yes, the full Yes, then a 10-frame cross-fade into a restarted Idle. Two approving nods (head pitch), starts and ends on the rest pose.",
+      "best_use": "Agreement beat: a checkmark, \"Confirmar os N\", a positive stat or a feature that \"just works\". Use this one inside a longer Idle shot: play idle up to its frame 119, then this, then continue idle from frame 11.",
+      "source": {
+        "clip": "Yes",
+        "base": "Idle",
+        "crossfade_frames": 10,
+        "easing": "smoothstep"
+      },
+      "bytes": 11792309,
+      "first_frame_equals": {
+        "clip": "idle",
+        "frame": 0
+      },
+      "last_frame_equals": {
+        "clip": "idle",
+        "frame": 10
+      },
+      "bbox_union_px": [
+        262,
+        158,
+        624,
+        797
+      ],
+      "min_margin_px": 102
+    },
+    {
+      "name": "no-from-idle",
+      "dir": "ubi/no-from-idle",
+      "pattern": "ubi/no-from-idle/{frame:04d}.png",
+      "frames": 48,
+      "duration_s": 1.6,
+      "loopable": false,
+      "description": "No spliced into Idle like the app plays it: 10-frame cross-fade Idle -> No, the full No, then a 10-frame cross-fade into a restarted Idle. Two head shakes (yaw +/-12 deg), starts and ends on the rest pose.",
+      "best_use": "Problem framing: \"sem planilha\", \"sem cronometro manual\", \"sem digitar horas\" — say no to the old way. Use this one inside a longer Idle shot: play idle up to its frame 119, then this, then continue idle from frame 11.",
+      "source": {
+        "clip": "No",
+        "base": "Idle",
+        "crossfade_frames": 10,
+        "easing": "smoothstep"
+      },
+      "bytes": 11848391,
+      "first_frame_equals": {
+        "clip": "idle",
+        "frame": 0
+      },
+      "last_frame_equals": {
+        "clip": "idle",
+        "frame": 10
+      },
+      "bbox_union_px": [
+        262,
+        160,
+        624,
+        797
+      ],
+      "min_margin_px": 102
+    },
+    {
+      "name": "jump-from-idle",
+      "dir": "ubi/jump-from-idle",
+      "pattern": "ubi/jump-from-idle/{frame:04d}.png",
+      "frames": 41,
+      "duration_s": 1.3667,
+      "loopable": false,
+      "description": "Jump spliced into Idle like the app plays it: 10-frame cross-fade Idle -> Jump, the full Jump, then a 10-frame cross-fade into a restarted Idle. Crouch, jump (~0.2 units), land with squash; starts and ends on the rest pose.",
+      "best_use": "Celebration hit on a downbeat: launch reveal, \"relatorio pronto\", price reveal. Use this one inside a longer Idle shot: play idle up to its frame 119, then this, then continue idle from frame 11.",
+      "source": {
+        "clip": "Jump",
+        "base": "Idle",
+        "crossfade_frames": 10,
+        "easing": "smoothstep"
+      },
+      "bytes": 10156438,
+      "first_frame_equals": {
+        "clip": "idle",
+        "frame": 0
+      },
+      "last_frame_equals": {
+        "clip": "idle",
+        "frame": 10
+      },
+      "bbox_union_px": [
+        259,
+        72,
+        626,
+        807
+      ],
+      "min_margin_px": 72
+    },
+    {
+      "name": "idle-to-excited",
+      "dir": "ubi/idle-to-excited",
+      "pattern": "ubi/idle-to-excited/{frame:04d}.png",
+      "frames": 11,
+      "duration_s": 0.3667,
+      "loopable": false,
+      "description": "11-frame cross-fade from Idle into the Excited loop (mood change, as the app's Rig.setMood does).",
+      "best_use": "Mood switch inside one shot: idle up to its frame 119, then this, then loop excited starting at its frame 11.",
+      "source": {
+        "clip": "Excited",
+        "base": "Idle",
+        "crossfade_frames": 10,
+        "easing": "smoothstep"
+      },
+      "bytes": 2703388,
+      "first_frame_equals": {
+        "clip": "idle",
+        "frame": 0
+      },
+      "last_frame_equals": {
+        "clip": "excited",
+        "frame": 10
+      },
+      "bbox_union_px": [
+        250,
+        145,
+        626,
+        797
+      ],
+      "min_margin_px": 102
+    },
+    {
+      "name": "idle-to-worried",
+      "dir": "ubi/idle-to-worried",
+      "pattern": "ubi/idle-to-worried/{frame:04d}.png",
+      "frames": 11,
+      "duration_s": 0.3667,
+      "loopable": false,
+      "description": "11-frame cross-fade from Idle into the Worried loop (mood change, as the app's Rig.setMood does).",
+      "best_use": "Mood switch inside one shot: idle up to its frame 119, then this, then loop worried starting at its frame 11.",
+      "source": {
+        "clip": "Worried",
+        "base": "Idle",
+        "crossfade_frames": 10,
+        "easing": "smoothstep"
+      },
+      "bytes": 2700983,
+      "first_frame_equals": {
+        "clip": "idle",
+        "frame": 0
+      },
+      "last_frame_equals": {
+        "clip": "worried",
+        "frame": 10
+      },
+      "bbox_union_px": [
+        262,
+        162,
+        646,
+        797
+      ],
+      "min_margin_px": 102
+    },
+    {
+      "name": "idle-to-sleep",
+      "dir": "ubi/idle-to-sleep",
+      "pattern": "ubi/idle-to-sleep/{frame:04d}.png",
+      "frames": 11,
+      "duration_s": 0.3667,
+      "loopable": false,
+      "description": "11-frame cross-fade from Idle into the Sleep loop (mood change, as the app's Rig.setMood does).",
+      "best_use": "Mood switch inside one shot: idle up to its frame 119, then this, then loop sleep starting at its frame 11.",
+      "source": {
+        "clip": "Sleep",
+        "base": "Idle",
+        "crossfade_frames": 10,
+        "easing": "smoothstep"
+      },
+      "bytes": 2663046,
+      "first_frame_equals": {
+        "clip": "idle",
+        "frame": 0
+      },
+      "last_frame_equals": {
+        "clip": "sleep",
+        "frame": 10
+      },
+      "bbox_union_px": [
+        262,
+        162,
+        624,
+        797
+      ],
+      "min_margin_px": 102
+    }
+  ],
+  "stills": [
+    {
+      "name": "front",
+      "file": "ubi/stills/front.png",
+      "size": [
+        1400,
+        1400
+      ],
+      "rotation_y_deg": 0,
+      "pose": "Idle @ 0s",
+      "description": "Front view, rest/idle pose.",
+      "bytes": 626584,
+      "bbox_px": [
+        359,
+        120,
+        1012,
+        1253
+      ]
+    },
+    {
+      "name": "three-quarter-left",
+      "file": "ubi/stills/three-quarter-left.png",
+      "size": [
+        1400,
+        1400
+      ],
+      "rotation_y_deg": -35,
+      "pose": "Idle @ 0s",
+      "description": "3/4 view, body turned 35 deg so UBI faces the viewer's LEFT (put him on the right side of the frame, facing the content).",
+      "bytes": 660950,
+      "bbox_px": [
+        303,
+        115,
+        1066,
+        1249
+      ]
+    },
+    {
+      "name": "three-quarter-right",
+      "file": "ubi/stills/three-quarter-right.png",
+      "size": [
+        1400,
+        1400
+      ],
+      "rotation_y_deg": 35,
+      "pose": "Idle @ 0s",
+      "description": "3/4 view, body turned 35 deg so UBI faces the viewer's RIGHT (put him on the left side of the frame, facing the content).",
+      "bytes": 515262,
+      "bbox_px": [
+        408,
+        118,
+        954,
+        1287
+      ]
+    },
+    {
+      "name": "wave-front",
+      "file": "ubi/stills/wave-front.png",
+      "size": [
+        1400,
+        1400
+      ],
+      "rotation_y_deg": 0,
+      "pose": "Wave @ 0.933s",
+      "description": "Front view at the peak of the Wave (= wave frame 28): forearm swung out, head tilted. Bonus for the greeting / end card.",
+      "bytes": 639414,
+      "bbox_px": [
+        275,
+        112,
+        1007,
+        1253
+      ]
+    }
+  ],
+  "stills_camera": {
+    "ty": 1.1533033742802554,
+    "d": 5.502818285447695,
+    "fov": 30,
+    "pitchDeg": 3.576334374997352,
+    "position": [
+      0,
+      1.4965597479498718,
+      5.49210197871386
+    ],
+    "target": [
+      0,
+      1.1533033742802554,
+      0
+    ],
+    "ground_y_px": 1239.4,
+    "silhouette_px": {
+      "x0": 275,
+      "y0": 112,
+      "x1": 1066.6,
+      "y1": 1288
+    }
+  },
+  "total_bytes": 229645747,
+  "generated_by": "video/launch/tools/ubi-render/render.mjs",
+  "idle_frame0_bbox_px": [
+    262,
+    162,
+    624,
+    797
+  ],
+  "feet_bottom_y_px": 797,
+  "continuity_vs_idle_frame0": {
+    "idle[0] vs yes[first]": 2.0921,
+    "idle[0] vs yes[last]": 2.0921,
+    "idle[0] vs no[first]": 2.0921,
+    "idle[0] vs no[last]": 2.0921,
+    "idle[0] vs wave[first]": 2.0921,
+    "idle[0] vs wave[last]": 2.0921,
+    "idle[0] vs jump[first]": 2.0921,
+    "idle[0] vs jump[last]": 2.0921,
+    "idle[0] vs turntable[first]": 0.0,
+    "idle[0] vs turntable[last]": 3.1417,
+    "idle[0] vs look[first]": 0.0,
+    "idle[0] vs look[last]": 9.2214,
+    "idle[0] vs excited[first]": 3.2552,
+    "idle[0] vs excited[last]": 4.8327,
+    "idle[0] vs worried[first]": 9.3463,
+    "idle[0] vs worried[last]": 9.2261,
+    "idle[0] vs sleep[first]": 12.9205,
+    "idle[0] vs sleep[last]": 12.9038
+  }
+}
