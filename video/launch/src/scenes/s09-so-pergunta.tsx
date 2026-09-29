@@ -4,7 +4,7 @@
  * Revisão, v2: the queue only holds what the chain could not settle.
  *  f0  (abs 585) hard cut, rows 1–4 of the real Revisão page (the selected
  *      Calendário group + three Finder groups, "Sem categoria · 0 % · pendente"),
- *      zoom 2.4 (row titles ≈ 35 px), rx 4° ry −6°, micro push ×1.02 over the hold.
+ *      zoom 2.44 (row titles ≈ 35 px), rx 4° ry −6°, micro push ×1.02 over the hold.
  *      The window fades out at comp y ≈ 740–820 into the lit navy stage, where
  *      the headline sits on a footlight.
  *  f2–16  "Só pergunta o que não sabe." 116 px, word stagger (5 units, "o que"
@@ -87,7 +87,7 @@ const PendingPulse: React.FC<{f: number}> = ({f}) => (
 );
 
 /* ---- camera: shot A (rows 1–4) → jump-cut shot B (closer) → E.glide span to the picker ---- */
-const A = {zoom: 2.4, focus: {x: 1280, y: 518}, anchor: {x: 960, y: 400}};
+const A = {zoom: 2.44, focus: {x: 1280, y: 518}, anchor: {x: 960, y: 400}};
 const B = {zoom: 2.65, focus: {x: 1287, y: 530}, anchor: {x: 960, y: 398}};
 const JUMP = 30;
 const GLIDE = 44;

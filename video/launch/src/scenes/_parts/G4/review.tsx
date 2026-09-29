@@ -46,16 +46,16 @@ export const PICKER: Rect = {x: 2106, y: 380, w: 704, h: 372};
 /** The picker's lift, s09 frames. */
 export const PICKER_AT = 56;
 
-/** Pose of the lifted picker (canvas px): 880 wide → option labels ≈ 36 px, IFRO row on top. */
+/** Pose of the lifted picker (canvas px): 900 wide (k 1.28) → option labels (29 image px) ≈ 37 px, IFRO row on top. */
 export const pickerLift = (at: number, from: LiftCardProps['from']): Omit<LiftCardProps, 'src'> => ({
 	rect: PICKER,
 	at,
 	enter: 'lift',
 	spring: 'smooth',
 	from,
-	x: 1428,
+	x: 1420,
 	y: 372,
-	width: 880,
+	width: 900,
 	rotateX: 7,
 	rotateY: -9,
 	rotateZ: 0,

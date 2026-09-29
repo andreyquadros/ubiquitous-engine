@@ -240,7 +240,7 @@ const S11EEleAprende: React.FC = () => {
 	const pickerKids = (
 		<>
 			{tint > 0.001 ? (
-				// the pressed option takes the selected state: a volt-filled row (flash on the press, then settles)
+				// the pressed option takes the selected state: a volt-filled row; its icon tile + label are re-set on top
 				<div
 					style={{
 						position: 'absolute',
@@ -251,11 +251,10 @@ const S11EEleAprende: React.FC = () => {
 						borderRadius: 14,
 						background: `linear-gradient(180deg, rgba(92,154,255,${(0.8 * tint + 0.15 * flash).toFixed(3)}), rgba(61,124,240,${(0.72 * tint + 0.15 * flash).toFixed(3)}))`,
 						boxShadow: `inset 0 1.5px 0 rgba(255,255,255,${(0.35 * tint).toFixed(3)}), 0 0 ${(26 + 30 * flash).toFixed(1)}px rgba(77,141,255,${(0.45 * tint + 0.3 * flash).toFixed(3)})`,
-						mixBlendMode: 'normal',
 					}}
 				/>
 			) : null}
-			{tint > 0.001 ? <IfroLabel opacity={tint} /> : null}
+			{tint > 0.001 ? <IfroSelected opacity={tint} /> : null}
 			<LitChip opacity={chipLit} label={KEY_LABEL} />
 		</>
 	);
@@ -296,18 +295,20 @@ const S11EEleAprende: React.FC = () => {
 								{pickerKids}
 							</LiftCard>
 						</AbsoluteFill>
-						{/* s10's key light fades out as the key leaves */}
-						<AbsoluteFill
-							style={{
-								opacity: 1 - ramp(f, 0, 10, E.enter),
-								background: `radial-gradient(ellipse 34% 44% at 50% 50%, ${alpha('#cfe0ff', 0.2)} 0%, ${alpha(color.volt, 0.16)} 45%, ${alpha(color.volt, 0)} 100%)`,
-							}}
-						/>
+						{/* s10's key light travels with the key into the chip and dies into the IFRO row's glow */}
+						{f < MORPH + 8 ? (
+							<AbsoluteFill
+								style={{
+									opacity: 1 - ramp(f, MORPH - 2, MORPH + 7, E.enter),
+									background: `radial-gradient(ellipse ${lerp(34, 9, m).toFixed(2)}% ${lerp(44, 14, m).toFixed(2)}% at ${((pose.cx / 1920) * 100).toFixed(2)}% ${((pose.cy / 1080) * 100).toFixed(2)}%, ${alpha('#cfe0ff', 0.2)} 0%, ${alpha(color.volt, 0.16)} 45%, ${alpha(color.volt, 0)} 100%)`,
+								}}
+							/>
+						) : null}
 						{/* left scrim under the headline (navy, v2) */}
 						<AbsoluteFill
 							style={{
 								opacity: ramp(f, 8, 18, E.enter),
-								background: `linear-gradient(90deg, ${SCRIM(0.86)} 0px, ${SCRIM(0.8)} 620px, ${SCRIM(0.36)} 900px, ${SCRIM(0)} 1060px)`,
+								background: `linear-gradient(90deg, ${SCRIM(0.92)} 0px, ${SCRIM(0.84)} 620px, ${SCRIM(0.36)} 900px, ${SCRIM(0)} 1060px)`,
 							}}
 						/>
 						<RuleSparks f={f} card={rule} fps={fps} />
@@ -315,7 +316,7 @@ const S11EEleAprende: React.FC = () => {
 							<Sweep f={f} rect={RULE} />
 						</LiftCard>
 						{f < MORPH ? <KeyCap3D pose={pose} label={KEY_LABEL} /> : null}
-						<V2Headline f={f} lines={lines} size={120} left={104} capTops={[388, 540]} />
+						<V2Headline f={f} lines={lines} size={124} left={100} capTops={[384, 540]} />
 					</Backdrop>
 				)}
 			</TransitionIn>
@@ -346,10 +347,32 @@ const LitChip: React.FC<{opacity: number; label: string}> = ({opacity, label}) =
 		</div>
 	);
 
-/** The IFRO option's icon + label, re-drawn above the volt fill (a crop of the capture, so the type is the app's). */
-const IfroLabel: React.FC<{opacity: number}> = ({opacity}) => (
-	<div style={{position: 'absolute', left: 0, top: 0, width: 2880, height: 1800, clipPath: insetOf({x: 2124, y: IFRO_ROW.y + 10, w: 200, h: IFRO_ROW.h - 20}), opacity}}>
-		<CaptureImg src={REVIEW_FILE} />
+/**
+ * The IFRO option re-set above its volt fill: the icon tile is a rounded crop of the capture (x 2132–2180, y 400–446), the label is
+ * vector type (Inter 500, 29 image px, like the app), white, vertically centred in the 72-px row.
+ */
+const IfroSelected: React.FC<{opacity: number}> = ({opacity}) => (
+	<div style={{position: 'absolute', left: 0, top: 0, width: 2880, height: 1800, opacity}}>
+		<div style={{position: 'absolute', left: 0, top: 0, width: 2880, height: 1800, clipPath: `${insetOf({x: 2132, y: 400, w: 48, h: 46}).slice(0, -1)} round 10px)`}}>
+			<CaptureImg src={REVIEW_FILE} />
+		</div>
+		<div
+			style={{
+				position: 'absolute',
+				left: 2199,
+				top: IFRO_ROW.y,
+				height: IFRO_ROW.h,
+				display: 'flex',
+				alignItems: 'center',
+				fontFamily: font.text,
+				fontWeight: 500,
+				fontSize: 29,
+				color: '#ffffff',
+				letterSpacing: '0.005em',
+			}}
+		>
+			IFRO
+		</div>
 	</div>
 );
 

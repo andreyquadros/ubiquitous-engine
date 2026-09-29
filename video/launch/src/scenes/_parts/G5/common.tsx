@@ -1,5 +1,5 @@
 /**
- * G5 (s14–s16) shared parts. Scene-local — not shared code.
+ * G5 (s12–s15) shared parts. Scene-local — not shared code.
  *
  *  - helpers: ramp / lerp / clamp01 / mixHex / arcPoint (same maths as G4's, so
  *    cursor arcs bend the same way across the film)
@@ -7,7 +7,10 @@
  *    used by every vector re-set so it matches the captures pixel for pixel
  *  - <Backdrop>: canvas + two slow orbs + vignette + grain (G2/G4 recipe)
  *  - <Headline>: the S03 word stagger (SNAPPY, y 28 → 0, blur 8 → 0, opacity 6 f)
- *    at an exact cap-top, emphasis as a volt sub-span of a unit
+ *    at an exact cap-top, emphasis as a volt sub-span of a unit; v2 fill: top-lit
+ *    white gradient, the volt word a volt gradient with a soft glow (G3's recipe)
+ *  - <Shockwave> / <LightSweep>: click impact ring and a diagonal light pass
+ *  - widenLegend(): the keys-legend patch grown to the whole legend line (G4's)
  *  - <ArrowCursor> / <ClickRipple> / cursorScale(): style S13 pointer (G4 recipe)
  *  - <Crop>: an image-space bitmap crop (from the @3x twin when shipped)
  *  - lucide icon paths (KeyRound, Copy, Check) as inline SVG, stroke in image px
@@ -146,12 +149,31 @@ export const unitsOf = (text: string, units: HeadUnit[]): HeadUnit[] => {
 	return units;
 };
 
-export const Headline: React.FC<{units: HeadUnit[]; size: number; left: number; capTop: number; tracking?: string}> = ({
+/** v2 headline fill (G3's recipe): top-lit white, or a volt gradient for the emphasis. */
+export const INK_TOP = '#ffffff';
+export const INK_BOTTOM = '#c3cde0';
+export const VOLT_TOP = '#8ab4ff';
+export const gradientFill = (volt = 0): React.CSSProperties => ({
+	backgroundImage: `linear-gradient(180deg, ${mixHex(INK_TOP, VOLT_TOP, volt)} 18%, ${mixHex(INK_BOTTOM, color.volt, volt)} 92%)`,
+	WebkitBackgroundClip: 'text',
+	backgroundClip: 'text',
+	color: 'transparent',
+	WebkitTextFillColor: 'transparent',
+});
+/** Soft volt glow behind a volt word (drop-shadow follows the glyphs). */
+export const voltGlow = (a: number) => `drop-shadow(0 0 18px rgba(77,141,255,${(0.45 * a).toFixed(3)}))`;
+/** Contact shadow under display type so it holds on busy UI (subtle, navy). */
+const TYPE_SHADOW = 'drop-shadow(0 4px 18px rgba(6,10,24,0.55))';
+
+export const Headline: React.FC<{units: HeadUnit[]; size: number; left: number; capTop: number; tracking?: string; weight?: number; gradient?: boolean; style?: React.CSSProperties}> = ({
 	units,
 	size,
 	left,
 	capTop,
-	tracking = '-0.03em',
+	tracking = '-0.04em',
+	weight = 700,
+	gradient = true,
+	style,
 }) => {
 	const frame = useCurrentFrame();
 	return (
@@ -161,20 +183,22 @@ export const Headline: React.FC<{units: HeadUnit[]; size: number; left: number; 
 				left,
 				top: Math.round(capTop - SORA_CAP * size),
 				fontFamily: font.display,
-				fontWeight: 700,
+				fontWeight: weight,
 				fontSize: size,
 				lineHeight: 1,
 				letterSpacing: tracking,
 				color: color.ink,
 				whiteSpace: 'nowrap',
 				pointerEvents: 'none',
+				filter: gradient ? TYPE_SHADOW : undefined,
+				...style,
 			}}
 		>
 			{units.map((u, i) => {
 				if (frame < u.at) {
 					return (
 						<React.Fragment key={i}>
-							<span style={{display: 'inline-block', opacity: 0}}>{u.text.replace(/ /g, ' ')}</span>
+							<span style={{display: 'inline-block', opacity: 0}}>{u.text.replace(/ /g, '\u00a0')}</span>
 							{i < units.length - 1 ? ' ' : null}
 						</React.Fragment>
 					);
@@ -186,6 +210,7 @@ export const Headline: React.FC<{units: HeadUnit[]; size: number; left: number; 
 				const blur = settled ? 0 : 8 * clamp01(1 - s);
 				const v = u.volt ? clamp01((s - 0.55) / 0.4) : 0;
 				const lead = u.volt ? u.text.slice(0, u.text.length - u.volt.length) : u.text;
+				const blurF = blur > 0.15 ? `blur(${blur.toFixed(2)}px)` : '';
 				return (
 					<React.Fragment key={i}>
 						<span
@@ -193,11 +218,13 @@ export const Headline: React.FC<{units: HeadUnit[]; size: number; left: number; 
 								display: 'inline-block',
 								opacity: o,
 								transform: Math.abs(ty) > 0.05 ? `translateY(${ty.toFixed(2)}px)` : undefined,
-								filter: blur > 0.15 ? `blur(${blur.toFixed(2)}px)` : undefined,
+								filter: blurF || undefined,
 							}}
 						>
-							{lead.replace(/ /g, ' ')}
-							{u.volt ? <span style={{color: mixHex(color.ink, color.volt, v)}}>{u.volt}</span> : null}
+							{lead ? <span style={gradient ? gradientFill(0) : undefined}>{lead.replace(/ /g, '\u00a0')}</span> : null}
+							{u.volt ? (
+								<span style={gradient ? {...gradientFill(v), filter: v > 0.01 ? voltGlow(v) : undefined} : {color: mixHex(color.ink, color.volt, v)}}>{u.volt}</span>
+							) : null}
 						</span>
 						{i < units.length - 1 ? ' ' : null}
 					</React.Fragment>
@@ -335,3 +362,85 @@ export const Icon: React.FC<{
 		</svg>
 	);
 };
+
+/* ------------------------------------------------------------------------ */
+/* Impact + light                                                            */
+/* ------------------------------------------------------------------------ */
+
+/** Click shockwave: a thin ring + soft disc expanding from (x, y) over `len` frames (screen space). */
+export const Shockwave: React.FC<{x: number; y: number; at: number; radius?: number; len?: number; tint?: string; strength?: number}> = ({
+	x,
+	y,
+	at,
+	radius = 360,
+	len = 16,
+	tint = color.volt,
+	strength = 1,
+}) => {
+	const frame = useCurrentFrame();
+	const d = frame - at;
+	if (d < 0 || d > len) return null;
+	const t = clamp01(d / len);
+	const r = radius * E.push(t);
+	const fade = (1 - t) * strength;
+	return (
+		<>
+			<div
+				style={{
+					position: 'absolute',
+					left: x - r,
+					top: y - r,
+					width: r * 2,
+					height: r * 2,
+					borderRadius: '50%',
+					background: `radial-gradient(closest-side, ${alpha(tint, 0)} 55%, ${alpha(tint, 0.16 * fade)} 88%, ${alpha(tint, 0)} 100%)`,
+				}}
+			/>
+			<div
+				style={{
+					position: 'absolute',
+					left: x - r,
+					top: y - r,
+					width: r * 2,
+					height: r * 2,
+					borderRadius: '50%',
+					boxSizing: 'border-box',
+					border: `${lerp(4, 1, t).toFixed(2)}px solid ${alpha(tint, 0.75 * fade)}`,
+					boxShadow: `0 0 ${(24 * fade).toFixed(1)}px ${alpha(tint, 0.5 * fade)}`,
+				}}
+			/>
+		</>
+	);
+};
+
+/**
+ * A diagonal light pass (screen blend) across a box: a soft white band that
+ * travels from left to right between frames `from` and `to`. Use inside the
+ * element it lights (position: absolute, clipped by the parent).
+ */
+export const LightSweep: React.FC<{from: number; to: number; strength?: number; angle?: number; width?: number}> = ({from, to, strength = 0.14, angle = 105, width = 22}) => {
+	const frame = useCurrentFrame();
+	if (frame < from || frame > to) return null;
+	const t = E.glide(ramp(frame, from, to));
+	const c = lerp(-30, 130, t);
+	const env = Math.sin(Math.PI * t);
+	return (
+		<div
+			style={{
+				position: 'absolute',
+				inset: 0,
+				pointerEvents: 'none',
+				mixBlendMode: 'screen',
+				background: `linear-gradient(${angle}deg, transparent ${(c - width).toFixed(1)}%, rgba(207,224,255,${(strength * env).toFixed(3)}) ${c.toFixed(1)}%, transparent ${(c + width).toFixed(1)}%)`,
+			}}
+		/>
+	);
+};
+
+/**
+ * The storyboard's keys-legend patches (x 2136, h 32) leave the left edge of the first key box and the bottom
+ * 3 px of every key box visible (measured on the @3x twins: the boxes span x 2128–2786 and 39 px in height).
+ * Grow them to the whole legend line so no key-box fragments peek out (same rule as G4). Others pass through.
+ */
+export const widenLegend = <T extends {rect: Rect; covers?: string}>(patches: T[]): T[] =>
+	patches.map((p) => (/keys legend/.test(p.covers ?? '') ? {...p, rect: {x: 2118, y: p.rect.y - 4, w: 2800 - 2118, h: p.rect.h + 10}} : p));
