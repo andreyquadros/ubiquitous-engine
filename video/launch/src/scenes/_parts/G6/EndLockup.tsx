@@ -3,8 +3,11 @@
  * rise + glint + decaying volt bloom), the "AI" pill, the CTA pill and the
  * platform row with monochrome OS glyphs.
  *
- * Geometry (storyboard s18): wordmark drawn 165 px tall (Sora ≈ 170 px),
- * x 501–998; its x-height band is centred on the lockup row y 432.
+ * Geometry v2 (brief/v2-scenes.md G6): wordmark drawn 205 px tall (1.24× the
+ * storyboard's 165), x 432–1049; its x-height band is centred on the lockup row
+ * y 358. AI pill Sora 600 64 px. Group (wordmark · pill · UBI 560) centred on
+ * x 960. Tagline Inter 500 66 px, CTA label Sora 600 74 px, OS row Inter 500
+ * 54 px with 46-px glyphs; the lowest glyph ends at y ≈ 927 (bottom 120 px clear).
  */
 import React from 'react';
 import {color} from '../../../design/tokens';
@@ -13,13 +16,13 @@ import {clamp01, lerp, ramp, W} from './common';
 import {OS_GLYPHS} from './os-glyphs';
 import {WM_BASELINE, WM_LETTERS, WM_VIEWBOX, WM_XHEIGHT_TOP} from './wordmark-paths';
 
-export const ROW_Y = 432;
+export const ROW_Y = 358;
 
 export const WM = (() => {
-	const h = 165;
+	const h = 205;
 	const k = h / WM_VIEWBOX.h;
 	const w = WM_VIEWBOX.w * k;
-	const left = 501;
+	const left = 432;
 	// x-height band (221 → 769) centred on the row
 	const top = ROW_Y - ((WM_XHEIGHT_TOP + WM_BASELINE) / 2) * k;
 	return {h, k, w, left, top, right: left + w, baseline: top + WM_BASELINE * k};
@@ -84,8 +87,8 @@ export const Wordmark: React.FC<{frame: number}> = ({frame}) => {
 	);
 };
 
-/** "AI" pill: Sora 600 52 px, volt on volt 14 %, radius 999, padding 0.2em 0.5em; masked rise after the X. */
-export const AI_PILL = {size: 52, gap: 24, left: WM.left + WM.w + 24} as const;
+/** "AI" pill: Sora 600 64 px, volt on volt 14 %, radius 999, padding 0.2em 0.5em; masked rise after the X. */
+export const AI_PILL = {size: 64, gap: 28, left: WM.left + WM.w + 28} as const;
 
 export const AiPill: React.FC<{frame: number}> = ({frame}) => {
 	const at = LETTER0 + 5;
@@ -123,14 +126,15 @@ export const AiPill: React.FC<{frame: number}> = ({frame}) => {
 /* CTA pill                                                                  */
 /* ------------------------------------------------------------------------ */
 
-export const CTA = {cy: 740, size: 44, padY: 22, padX: 44, lineH: 48} as const;
+export const CTA = {cy: 728, size: 74, padY: 24, padX: 66, lineH: 84} as const;
 
 /**
- * "Baixe em ubiqx.com.br": Sora 600 44 px #0a0d16 on volt (6.1:1), radius 999,
- * padding 22 × 44 → 92 px tall, centred on y 720. Pops with BOUNCY_SUBTLE (the
- * shot's one bouncy element); a light sheen crosses it on `sheenAt`.
+ * "Baixe em ubiqx.com.br": Sora 600 74 px #0a0d16 on volt (6.1:1), radius 999,
+ * padding 24 × 66 → 132 px tall, centred on y 728. Pops with BOUNCY_SUBTLE (the
+ * shot's one bouncy element); a light sheen crosses it on `sheenAt`; v2: its
+ * volt glow breathes on the bar (`breatheFrom`, period 60 f) through the hold.
  */
-export const CtaPill: React.FC<{frame: number; at: number; sheenAt: number; text: string}> = ({frame, at, sheenAt, text}) => {
+export const CtaPill: React.FC<{frame: number; at: number; sheenAt: number; text: string; breatheFrom?: number}> = ({frame, at, sheenAt, text, breatheFrom}) => {
 	if (frame < at) return null;
 	const s = springAt(frame, at, 'BOUNCY_SUBTLE');
 	const o = ramp(frame, at, at + 3);
@@ -138,6 +142,8 @@ export const CtaPill: React.FC<{frame: number; at: number; sheenAt: number; text
 	const sheen = ramp(frame, sheenAt, sheenAt + 20, E.glide);
 	const showSheen = sheen > 0 && sheen < 1;
 	const h = CTA.lineH + 2 * CTA.padY;
+	// bar breath (peaks on the downbeats: period 60 f from `breatheFrom`)
+	const b = breatheFrom === undefined || frame < breatheFrom ? 0 : ramp(frame, breatheFrom, breatheFrom + 12) * (0.5 + 0.5 * Math.cos((2 * Math.PI * (frame - breatheFrom)) / 60));
 	return (
 		<div style={{position: 'absolute', left: 0, width: W, top: CTA.cy - h / 2, height: h, display: 'flex', justifyContent: 'center'}}>
 			<div
@@ -151,7 +157,7 @@ export const CtaPill: React.FC<{frame: number; at: number; sheenAt: number; text
 					overflow: 'hidden',
 					opacity: o,
 					transform: Math.abs(scale - 1) > 0.0005 ? `scale(${scale.toFixed(4)})` : undefined,
-					boxShadow: `inset 0 1px 0 rgba(255,255,255,0.28), 0 1px 0 rgba(255,255,255,0.05), 0 14px 36px -10px rgba(77, 141, 255, ${(0.35 * o).toFixed(3)}), 0 10px 24px -8px rgba(0,0,0,0.55)`,
+					boxShadow: `inset 0 1px 0 rgba(255,255,255,0.28), 0 1px 0 rgba(255,255,255,0.05), 0 14px 36px -10px rgba(77, 141, 255, ${(0.35 * o).toFixed(3)}), 0 0 ${(34 + 26 * b).toFixed(1)}px rgba(77, 141, 255, ${(0.1 + 0.2 * b).toFixed(3)}), 0 10px 24px -8px rgba(0,0,0,0.55)`,
 				}}
 			>
 				<div
@@ -175,7 +181,7 @@ export const CtaPill: React.FC<{frame: number; at: number; sheenAt: number; text
 							position: 'absolute',
 							top: -20,
 							bottom: -20,
-							width: 140,
+							width: 220,
 							left: `${lerp(-25, 110, sheen)}%`,
 							transform: 'skewX(-20deg)',
 							background: 'linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.32) 50%, rgba(255,255,255,0) 100%)',
@@ -191,7 +197,7 @@ export const CtaPill: React.FC<{frame: number; at: number; sheenAt: number; text
 /* Platform row                                                              */
 /* ------------------------------------------------------------------------ */
 
-export const ROW = {cy: 850, size: 36, glyph: 30, glyphGap: 12, sepGap: 22} as const;
+export const ROW = {cy: 900, size: 54, glyph: 46, glyphGap: 16, sepGap: 30} as const;
 
 const Glyph: React.FC<{name: keyof typeof OS_GLYPHS; size: number; fill: string}> = ({name, size, fill}) => {
 	const g = OS_GLYPHS[name];
@@ -207,8 +213,8 @@ const Glyph: React.FC<{name: keyof typeof OS_GLYPHS; size: number; fill: string}
 };
 
 /**
- * "macOS · Windows · Linux": Inter 500 36 px ink-2 with 30-px monochrome glyphs,
- * centred on y 850. Items rise y 16 → 0, blur 6 → 0, opacity 0 → 1 (E.enter
+ * "macOS · Windows · Linux": Inter 500 54 px ink-2 with 46-px monochrome glyphs,
+ * centred on y 900. Items rise y 16 → 0, blur 6 → 0, opacity 0 → 1 (E.enter
  * 14 f), 3 f apart from `at` (style S20).
  */
 export const PlatformRow: React.FC<{frame: number; at: number; text: string}> = ({frame, at, text}) => {
@@ -273,4 +279,4 @@ export const PlatformRow: React.FC<{frame: number; at: number; text: string}> = 
 	);
 };
 
-export const TAGLINE = {capTop: 610, size: 48} as const;
+export const TAGLINE = {capTop: 568, size: 66} as const;

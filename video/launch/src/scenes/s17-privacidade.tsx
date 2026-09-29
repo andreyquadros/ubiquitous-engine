@@ -51,7 +51,7 @@ const COL_X = 704;
 const L2 = {left: COL_X, capTop: 290, size: 88} as const;
 const L2_BASELINE = L2.capTop + (TYPE.sora.baseline - TYPE.sora.capTop) * L2.size; // ≈ 354
 /** "A " and "IA" advances at Sora 700 88 px −0.04em (HarfBuzz widths at 72 px −0.03em rescaled). */
-const IA = {left: COL_X + 80, w: 90};
+const IA = {left: COL_X + 88, w: 90};
 const IA_CX = IA.left + IA.w / 2;
 const UNDER_Y = Math.round(L2_BASELINE + 14);
 
@@ -79,7 +79,6 @@ const JUMP = 45;
 const LINE2 = 60;
 const SWEEP = 76;
 const SWEEP_END = 88;
-const CONTACT = 90;
 const DRAW = 92;
 const DRAW_END = 104;
 const BUILD = 105;
@@ -108,7 +107,6 @@ const typeZoom = (f: number) => {
 const PANEL_BG = '#131c30';
 const ROW_BG = '#19243b';
 const INK = '#eef3fc';
-const INK3 = '#7f8dab';
 const TOKEN_INK = '#8ab4ff';
 
 /** lucide icons (mail, phone, id-card, link), stroke 2 in a 24 box. */

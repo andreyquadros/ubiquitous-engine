@@ -1,7 +1,7 @@
 /**
  * s14-relatorio — S14 · abs 930–1034 (105 f) · features · bar 16.3 → 18.2
  *
- * Part A (f0–29): hard cut to a big tabular "17:59" (Sora 700 240 px) on the
+ * Part A (f0–29): hard cut to a big tabular "17:59" (Sora 700 290 px, v1 240) on the
  * stage; f10–15 the last three digits roll like an odometer (staggered 1 f,
  * right to left, vertical motion blur) and make contact on "18:00" at f15
  * (abs 945, beat 2): pulse 1 → 1.05 → 1, volt, a glow breath. Footlight pool
@@ -12,14 +12,14 @@
  * IFRO report; "O relatório sai pronto." (Sora 700 120 px, "pronto." volt)
  * f32–42. f45 (abs 975, beat) the report's activity table + its "Copiar
  * Markdown" button LIFT out of the window as a big tilted card (LiftCard
- * `lift`, crop x 1452–2600 y 376–882 at 1.36 comp px per image px: row text
- * ≈ 35 px, the button label ≈ 33 → 36 px on hover), the window pulls back and
+ * `lift`, crop x 1452–2600 y 376–882 at 1.42 comp px per image px: row text
+ * ≈ 37 px, the button label ≈ 34 → 36 px on hover), the window pulls back and
  * steps behind it (camera 1.6 → 1.05, light blur), leaving an empty socket.
  * The button is a vector re-set with the app's own tokens inside the card.
  * Cursor arcs in, hover f54, CLICK f60 (abs 990, beat 3): press, shockwave,
  * the icon becomes a mint check (draw-on 10 f), the card's rim goes mint and
- * the "Markdown copiado" pill (Inter 600 44 px) pops above the button on a
- * leader line. f66–104 hold: card float + drift + tilt settle, light sweep
+ * the "Markdown copiado" pill (Inter 600 44 px) pops out to the left of the
+ * button on a short leader, in the card's header strip. f66–104 hold: card float + drift + tilt settle, light sweep
  * across the card, window drift. The model name in both report meta lines is
  * patched (window + card); the window's meta line is re-composed from the
  * capture's own pixels ("Gerado 29/09 18:00" + "3h22 registradas · …").
@@ -46,6 +46,7 @@ import {
 	Headline,
 	Icon,
 	gradientFill,
+	VOLT_TOP,
 	voltGlow,
 	LightSweep,
 	lerp,
@@ -61,6 +62,7 @@ import {
 export const sfx: SfxCue[] = [
 	{ref: 'ding_1.wav', atFrame: 15, gainDb: -12, note: '18:00 lands (E6); rhymes with s06’s ding.'},
 	{ref: 'whoosh-soft.wav', atFrame: 36, gainDb: -14, note: 'Report window rises; loudest point ≈ fastest frame of the rise.'},
+	{ref: 'whoosh_in_3.wav', atFrame: 53, gainDb: -22, note: 'v2: the report card lifts out of the window (SNAPPY, lands ≈ f53).'},
 	{ref: 'click.wav', atFrame: 60, gainDb: -12, note: 'Copiar Markdown.'},
 	{ref: 'success_chime_2.wav', atFrame: 63, gainDb: -14, note: 'Mint check.'},
 ];
@@ -80,10 +82,10 @@ const BADGE = hotspot(FILE, 'nav-revisao-badge');
 /* Part A — the clock                                                        */
 /* ------------------------------------------------------------------------ */
 
-const CLOCK = {size: 240, cx: 960, cy: 470};
+const CLOCK = {size: 290, cx: 960, cy: 470};
 const KICK = {left: 106, top: 44, h: 62, size: 44, padX: 26};
-/** v2 type guard behind the volt "18:00" (glyph box x 642–1296, y 369–557 at MORPH); fades with the big clock. */
-const CLOCK_GUARD = guardFor({x: CLOCK.cx, y: 463, w: 654, h: 188});
+/** v2 type guard behind the volt "18:00" (glyph box ≈ x 565–1355, y 348–576 at 290 px); fades with the big clock. */
+const CLOCK_GUARD = guardFor({x: CLOCK.cx, y: 462, w: 790, h: 228});
 
 /** One digit cell: rolls from `from` to `to` (new digit enters from below). */
 const Digit: React.FC<{from: string; to: string; p: number; v: number; fill: React.CSSProperties}> = ({from, to, p, v, fill}) => {
@@ -225,7 +227,9 @@ const Clock: React.FC<{f: number}> = ({f}) => {
 						width: pillW,
 						height: KICK.h,
 						borderRadius: 999,
-						background: alpha(color.volt, 0.14 * clamp01(pillBg)),
+						// a pill is a surface (GUARD RULE 4): its own navy backing under the 14 % volt tint
+						background: `linear-gradient(${alpha(color.volt, 0.14)}, ${alpha(color.volt, 0.14)}), rgba(10,16,36,0.88)`,
+						opacity: clamp01(pillBg),
 						transform: pillBg < 0.999 ? `scale(${lerp(0.7, 1, pillBg).toFixed(4)})` : undefined,
 						transformOrigin: '50% 50%',
 					}}
@@ -248,7 +252,7 @@ const Clock: React.FC<{f: number}> = ({f}) => {
 						fontSize: KICK.size,
 						lineHeight: 1,
 						fontVariantNumeric: 'tabular-nums',
-						color: color.volt,
+						color: mixHex(color.volt, VOLT_TOP, 0.45),
 					}}
 				>
 					18:00
@@ -298,8 +302,8 @@ const riseY = (f: number) => 220 * (1 - E.push(ramp(f, RISE, RISE + 20)));
 
 /** The lifted piece of the report: buttons strip, table header, rows 1–2 (Atividade · Minutos · Tipo). */
 const CROP = {x: 1452, y: 376, w: 1148, h: 506};
-const CARD_K = 1.36;
-const CARD_AT = {x: 1010, y: 704};
+const CARD_K = 1.42;
+const CARD_AT = {x: 1010, y: 700};
 const CARD: LiftCardProps = {
 	src: FILE,
 	rect: CROP,
@@ -331,7 +335,7 @@ const CARD: LiftCardProps = {
 	float: 5,
 	floatPeriod: 80,
 	glow: 'volt',
-	glowOpacity: 0.42,
+	glowOpacity: 0.6,
 	grade: GRADE_S14,
 	style: {zIndex: 30},
 };
@@ -401,26 +405,25 @@ const CopyButton: React.FC<{f: number}> = ({f}) => {
 	);
 };
 
-/** "Markdown copiado": the app's own toast string as a mint pill popping ABOVE the button on a leader line. */
-const Copied: React.FC<{f: number; x: number; bottom: number; text: string}> = ({f, x, bottom, text}) => {
+/** "Markdown copiado": the app's own toast string as a mint pill popping out to the LEFT of the button, on a short leader, in the card's empty header strip. */
+const Copied: React.FC<{f: number; right: number; cy: number; text: string}> = ({f, right, cy, text}) => {
 	if (f < OK) return null;
-	const line = ramp(f, OK, OK + 10, E.push);
+	const line = ramp(f, OK, OK + 8, E.push);
 	const s = springAt(f, OK + 1, 'SNAPPY');
 	const o = ramp(f, OK + 1, OK + 4);
-	const L = 34;
+	const L = 30;
 	const pillH = 76;
-	const pillBottom = bottom - L - 4;
 	const bob = Math.sin(((f - OK) / 70) * Math.PI * 2) * 3 * ramp(f, OK + 10, OK + 20);
 	return (
 		<>
-			<div style={{position: 'absolute', left: x - 1, top: bottom - L * line, width: 2, height: L * line, background: alpha(color.mint, 0.8), borderRadius: 1}} />
+			<div style={{position: 'absolute', left: right - L * line, top: cy - 1, width: L * line, height: 2, background: alpha(color.mint, 0.8), borderRadius: 1}} />
 			<div
 				style={{
 					position: 'absolute',
-					left: x,
-					top: pillBottom - pillH + bob,
-					transform: `translateX(-50%) translateY(${((1 - s) * 14).toFixed(2)}px) scale(${lerp(0.86, 1, s).toFixed(4)})`,
-					transformOrigin: '50% 100%',
+					left: right - L - 4,
+					top: cy - pillH / 2 + bob,
+					transform: `translateX(-100%) translateX(${((1 - s) * 16).toFixed(2)}px) scale(${lerp(0.86, 1, s).toFixed(4)})`,
+					transformOrigin: '100% 50%',
 					opacity: o,
 					height: pillH,
 					padding: '0 36px 0 28px',
@@ -488,10 +491,11 @@ const S14Relatorio: React.FC = () => {
 	const cOpacity = ramp(f, 34, 40, E.enter) * (1 - ramp(f, 78, 84, E.exit));
 	const clickPt = tipAt(CLICK);
 
-	// callout anchor: top-centre of the button on the card
+	// callout anchor: left-middle of the button on the card; shockwave from its centre
+	const btnLeft = onCard(f, {x: BTN.x, y: BTN.y + BTN.h / 2});
 	const btnTop = onCard(f, {x: BTN.x + BTN.w / 2, y: BTN.y});
 
-	const band = ramp(f, RISE, RISE + 2) * (1 - 0.55 * ramp(f, LIFT_AT + 4, 66, E.glide));
+	const band = ramp(f, RISE, RISE + 2) * (1 - 0.6 * ramp(f, LIFT_AT, 58, E.glide));
 	const poolUp = ramp(f, MORPH, MORPH_END + 6, E.glide);
 	const back = ramp(f, LIFT_AT + 2, 64, E.glide);
 
@@ -503,8 +507,8 @@ const S14Relatorio: React.FC = () => {
 					ember={0.05}
 					look={{
 						// v2: the key pool is a footlight UNDER the volt 18:00 (not on it), then rises behind the report card
-						keyPool: {x: lerp(0.5, 0.54, poolUp), y: lerp(0.8, 0.62, poolUp), w: lerp(0.86, 0.82, poolUp), h: lerp(0.64, 0.92, poolUp), opacity: 0.44},
-						keyLight: {x: lerp(0.5, 0.54, poolUp), y: lerp(0.82, 0.64, poolUp), w: 0.5, h: lerp(0.4, 0.62, poolUp), opacity: 0.16},
+						keyPool: {x: lerp(0.5, 0.54, poolUp), y: lerp(0.82, 0.62, poolUp), w: lerp(0.92, 0.82, poolUp), h: lerp(0.66, 0.92, poolUp), opacity: lerp(0.55, 0.46, poolUp)},
+						keyLight: {x: lerp(0.5, 0.54, poolUp), y: lerp(0.86, 0.64, poolUp), w: lerp(0.6, 0.5, poolUp), h: lerp(0.4, 0.62, poolUp), opacity: lerp(0.22, 0.16, poolUp)},
 						guard: [{...CLOCK_GUARD, opacity: GUARD_OPACITY * (1 - poolUp)}] /* footlight falloff only (GUARD RULE) */,
 					}}
 				>
@@ -529,7 +533,7 @@ const S14Relatorio: React.FC = () => {
 						<AbsoluteFill
 							style={{
 								opacity: band,
-								background: `linear-gradient(180deg, ${navyDim(0.94)} 0px, ${navyDim(0.9)} 250px, ${navyDim(0.6)} 300px, ${navyDim(0)} 380px)`,
+								background: `linear-gradient(180deg, ${navyDim(0.88)} 0px, ${navyDim(0.84)} 250px, ${navyDim(0.55)} 300px, ${navyDim(0)} 380px)`,
 							}}
 						/>
 					) : null}
@@ -538,8 +542,15 @@ const S14Relatorio: React.FC = () => {
 							{/* Regenerar's left edge peeks in at the crop's right side: card colour */}
 							<div style={{position: 'absolute', left: 2582, top: CROP.y, width: 40, height: 110, background: APP.panel}} />
 							{/* the card's own title, re-composed from the capture's pixels: the IFRO icon + "IFRO" and "Gerado 29/09 18:00" */}
-							<Crop src={FILE} rect={{x: 548, y: 382, w: 200, h: 84}} at={{x: CROP.x + 30, y: 382}} />
-							<Crop src={FILE} rect={{x: 648, y: 434, w: 244, h: 36}} at={{x: CROP.x + 132, y: 434}} />
+							{/* (crossfaded from the window's own meta line during the lift's first frames, so the card starts identical to the window) */}
+							<div style={{position: 'absolute', inset: 0, opacity: 1 - ramp(f, LIFT_AT, LIFT_AT + 6)}}>
+								<MetaRecompose />
+							</div>
+							<div style={{position: 'absolute', inset: 0, opacity: ramp(f, LIFT_AT, LIFT_AT + 6)}}>
+								<div style={{position: 'absolute', left: CROP.x, top: 380, width: 820, height: 92, background: APP.panel}} />
+								<Crop src={FILE} rect={{x: 548, y: 382, w: 200, h: 84}} at={{x: CROP.x + 30, y: 382}} />
+								<Crop src={FILE} rect={{x: 648, y: 434, w: 244, h: 36}} at={{x: CROP.x + 132, y: 434}} />
+							</div>
 							<CopyButton f={f} />
 							<div style={{position: 'absolute', left: CROP.x, top: CROP.y, width: CROP.w, height: CROP.h, overflow: 'hidden'}}>
 								<LightSweep from={70} to={100} strength={0.1} />
@@ -549,7 +560,7 @@ const S14Relatorio: React.FC = () => {
 					<AbsoluteFill style={{zIndex: 31, pointerEvents: 'none'}}>
 						<Clock f={f} />
 						{f >= 32 ? <Headline units={units} size={124} left={102} capTop={150} /> : null}
-						<Copied f={f} x={Math.round(btnTop.x)} bottom={Math.round(btnTop.y - 8)} text={caption.text} />
+						<Copied f={f} right={Math.round(btnLeft.x - 10)} cy={Math.round(btnLeft.y)} text={caption.text} />
 						<Shockwave x={btnTop.x} y={btnTop.y + (BTN.h / 2) * btnTop.k} at={CLICK} radius={300} len={16} tint={color.mint} strength={0.8} />
 						<ClickRipple x={clickPt.x} y={clickPt.y} at={CLICK} scale={1.4} />
 						{f >= 34 ? <ArrowCursor x={cur.x} y={cur.y} size={cSize} opacity={cOpacity} /> : null}

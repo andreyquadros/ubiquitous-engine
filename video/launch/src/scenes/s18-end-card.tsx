@@ -16,7 +16,7 @@
 import React from 'react';
 import {AbsoluteFill} from 'remotion';
 import {DirectionalBlur} from '../components/Transitions';
-import {guardFor} from '../components/Stage';
+import {guardFor, STAGE} from '../components/Stage';
 import {color} from '../design/tokens';
 import {E, springAt, TransitionIn, TransitionOut, UbiTrack, useSceneFrame, type SfxCue} from '../shared';
 import {FilmGrain, lerp, MaskLine, ramp, Stage, Vignette} from './_parts/G6/common';
@@ -30,8 +30,13 @@ export const sfx: SfxCue[] = [
 	{ref: 'bloop_1.wav', atFrame: 15, gainDb: -12, note: 'UBI lands on the lockup.'},
 ];
 
-/** UBI: 560-px frame, box left 1031 → feet anchor (450, 797) on (1311, 540), the lockup's floor line. */
-const UBI = {size: 560, x: 1031 + 450 * (560 / 900), y: 540} as const;
+/**
+ * UBI: 560-px frame (as v1), box left 1100 → body x ≈ 1263–1488, closing the
+ * v2 lockup group (wordmark 432–1049 · AI pill · UBI) centred on x 960; feet
+ * anchor (450, 797) on (1380, 485): the lockup's floor line, 27 px under the
+ * wordmark's descender (v1 spacing). Head top ≈ y 87 (title-safe).
+ */
+const UBI = {size: 560, x: 1100 + 450 * (560 / 900), y: 485} as const;
 
 /**
  * Fall from fully above the frame (offset −620: the soles are 80 px above the
@@ -50,15 +55,17 @@ const fallOffset = (f: number) => {
 const fallSpeed = (f: number) => Math.abs(fallOffset(f) - fallOffset(f - 1));
 
 /**
- * v2 type guard (glyph box from a still at f100): the lockup "ubiqX [AI]"
- * (x 501–1199, y 341–512). Round 2: the light (key pool, key light, volt orb)
+ * v2 type guard: only the VOLT glyphs of the lockup, the "X" + the AI pill
+ * (x 885–1215, y 270–458; centre 1050, 364). A guard over the whole lockup
+ * darkened the stage behind the white "ubiq" (donut 1.31 at x 700); the white
+ * letters need no guard. Round 2: the light (key pool, key light, volt orb)
  * sits behind UBI, so the lockup and the CTA pill are on its falloff; the guard
  * only trims it (GUARD RULE, components/Stage.tsx). Short horizontal feather so
  * its core stays clear of the pool. The CTA pill needs no guard any more.
  */
-const END_GUARDS = [guardFor({x: 850, y: 428, w: 698, h: 172}, {padX: 0.2 * 698})];
-/** The light behind UBI (his body centre ≈ (1311, 360)). */
-const UBI_LIGHT = {x: 1330, y: 360};
+const END_GUARDS = [guardFor({x: 1050, y: 364, w: 330, h: 188}, {padX: 0.12 * 330, padY: 0.9 * 188, opacity: 0.6})];
+/** The light behind UBI (his body centre ≈ (1375, 290)). */
+const UBI_LIGHT = {x: 1392, y: 290};
 
 const S18EndCard: React.FC = () => {
 	const {frame: f, scene} = useSceneFrame();
@@ -85,7 +92,7 @@ const S18EndCard: React.FC = () => {
 	return (
 		<TransitionOut>
 			<TransitionIn>
-				<AbsoluteFill style={{backgroundColor: color.canvas}}>
+				<AbsoluteFill style={{backgroundColor: STAGE.bottom}}>
 					{/* background drift (the only camera move; type stays at scale 1) */}
 					<AbsoluteFill style={{transform: `scale(${drift.toFixed(5)})`, transformOrigin: '50% 45%'}}>
 						<Stage
@@ -103,7 +110,7 @@ const S18EndCard: React.FC = () => {
 								guard: END_GUARDS /* trims the light's falloff under the volt X + AI pill (≥ 4.5:1) */,
 								// the key pool and the white-blue key light sit behind UBI (the lit subject); the type is on their falloff
 								keyPool: {x: UBI_LIGHT.x / 1920, y: UBI_LIGHT.y / 1080, w: 0.52, h: 0.9},
-								keyLight: {x: 0.69, y: 0.34, w: 0.34, h: 0.56, opacity: 0.17},
+								keyLight: {x: UBI_LIGHT.x / 1920, y: 0.28, w: 0.34, h: 0.56, opacity: 0.17},
 							}}
 						/>
 					</AbsoluteFill>
@@ -182,7 +189,7 @@ const S18EndCard: React.FC = () => {
 					>
 						{tagline}
 					</MaskLine>
-					<CtaPill frame={f} at={12} sheenAt={120} text={cta} />
+					<CtaPill frame={f} at={12} sheenAt={120} text={cta} breatheFrom={60} />
 					<PlatformRow frame={f} at={18} text={platforms} />
 
 					<Vignette strength={0.55} />

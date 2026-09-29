@@ -271,9 +271,9 @@ const S13NadaEmDuvida: React.FC = () => {
 									width: inApp.w * 3.2,
 									height: inApp.w * 2.6,
 									borderRadius: '50%',
-									opacity: ramp(f, 2, MATCH, E.enter) * (1 - ramp(f, MATCH, MATCH + 6)),
+									opacity: (0.45 + 0.55 * ramp(f, 0, MATCH, E.enter)) * (1 - ramp(f, MATCH, MATCH + 6)),
 									mixBlendMode: 'screen',
-									background: 'radial-gradient(closest-side, rgba(170,200,255,0.34) 0%, rgba(77,141,255,0.14) 50%, rgba(77,141,255,0) 100%)',
+									background: 'radial-gradient(closest-side, rgba(175,205,255,0.48) 0%, rgba(90,150,255,0.2) 50%, rgba(77,141,255,0) 100%)',
 								}}
 							/>
 						) : null}

@@ -51,7 +51,7 @@ import {
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
 export const sfx: SfxCue[] = [
-	{ref: 'whoosh_in_3.wav', atFrame: 9, gainDb: -22, note: 'v2: “Confirmar os 19” lifts out of its bar toward the camera (lands ≈ f9–10).'},
+	{ref: 'whoosh_in_3.wav', atFrame: 10, gainDb: -22, note: 'v2: “Confirmar os 19” lifts out of its bar toward the camera (lands ≈ f10).'},
 	{ref: 'click.wav', atFrame: 30, gainDb: -12, note: 'Confirmar os 19.'},
 	{ref: 'shimmer_1.wav', atFrame: 33, gainDb: -14, note: 'All badges flip to “você” (C+3).'},
 	{ref: 'ui_pop_1.wav', atFrame: 44, gainDb: -20, note: 'v2: the button card lands in row 1’s “você” badge.'},
@@ -320,15 +320,15 @@ const S12UmClique: React.FC = () => {
 						<div
 							style={{
 								position: 'absolute',
-								left: pose.cx - 900,
-								top: pose.cy - 520,
-								width: 1800,
-								height: 1040,
+								left: pose.cx - 1050,
+								top: pose.cy - 600,
+								width: 2100,
+								height: 1200,
 								borderRadius: '50%',
 								opacity: spill,
 								mixBlendMode: 'screen',
 								pointerEvents: 'none',
-								background: `radial-gradient(closest-side, rgba(150,190,255,0.30) 0%, rgba(77,141,255,0.14) 45%, rgba(77,141,255,0) 100%)`,
+								background: `radial-gradient(closest-side, rgba(165,200,255,0.5) 0%, rgba(120,168,255,0.3) 38%, rgba(77,141,255,0) 100%)`,
 							}}
 						/>
 					) : null}

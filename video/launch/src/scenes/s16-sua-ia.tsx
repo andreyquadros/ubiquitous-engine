@@ -249,7 +249,7 @@ const S16SuaIa: React.FC = () => {
 		],
 		radius: 18,
 		// set-back context window: a brighter grade (it is lit by the stage key; the small print is blurred + patched)
-		grade: {brightness: 1.32, lift: 0.08},
+		grade: {brightness: 1.4, lift: 0.09},
 	};
 	const patches = [...storyboardPatches(scene, file), ...V2_PATCHES.filter((p) => p.file === file)];
 
@@ -273,7 +273,7 @@ const S16SuaIa: React.FC = () => {
 		floatPeriod: 90,
 		drift: {x: -0.1, y: 0},
 		radius: 24,
-		glowOpacity: 0.55,
+		glowOpacity: 0.85,
 		grade: {brightness: 1.26, lift: 0.07},
 		patches,
 	};
@@ -320,8 +320,14 @@ const S16SuaIa: React.FC = () => {
 					}}
 				>
 					<TransitionIn>
-						{/* the window, set back: a touch of depth blur */}
-						<AbsoluteFill style={{filter: 'blur(1.2px)'}}>
+						{/* the window, set back: a touch of depth blur; it falls off into the stage under the type */}
+						<AbsoluteFill
+							style={{
+								filter: 'blur(1.2px)',
+								WebkitMaskImage: 'linear-gradient(180deg, #000 0px, #000 600px, rgba(0,0,0,0.55) 760px, rgba(0,0,0,0.35) 1080px)',
+								maskImage: 'linear-gradient(180deg, #000 0px, #000 600px, rgba(0,0,0,0.55) 760px, rgba(0,0,0,0.35) 1080px)',
+							}}
+						>
 							<Screen {...shot} style={{zIndex: 'auto'}}>
 								{patches.map((p, i) => (
 									<div key={i} style={{position: 'absolute', left: p.rect.x - 2, top: p.rect.y - 2, width: p.rect.w + 4, height: p.rect.h + 4, background: p.color}} />
@@ -332,20 +338,36 @@ const S16SuaIa: React.FC = () => {
 							</Screen>
 						</AbsoluteFill>
 						{/* navy falloff under the type (the stage, not a black band) */}
-						<AbsoluteFill style={{background: `linear-gradient(180deg, ${navyDim(0)} 580px, ${navyDim(0.5)} 700px, ${navyDim(0.55)} 1080px)`}} />
+						<AbsoluteFill style={{background: `linear-gradient(180deg, ${navyDim(0)} 600px, ${navyDim(0.3)} 720px, ${navyDim(0.36)} 1080px)`}} />
+						{/* the lifted card lights the window under it: a volt/white-blue spill (screen), growing with the lift */}
+						<AbsoluteFill style={{zIndex: 29, pointerEvents: 'none'}}>
+							<div
+								style={{
+									position: 'absolute',
+									left: pose.cx - 980,
+									top: pose.cy - 300 + 40,
+									width: 1960,
+									height: 600,
+									borderRadius: '50%',
+									mixBlendMode: 'screen',
+									opacity: pose.lift,
+									background: 'radial-gradient(closest-side, rgba(128,170,255,0.56) 0%, rgba(96,146,255,0.32) 40%, rgba(77,141,255,0.1) 72%, rgba(77,141,255,0) 100%)',
+								}}
+							/>
+						</AbsoluteFill>
 						<LiftCard {...cardProps} style={{zIndex: 30}}>
 							<Picker f={f} />
 						</LiftCard>
 						<AbsoluteFill style={{zIndex: 31}}>
-							<Shockwave x={clickPt.x} y={clickPt.y} at={CLICK} radius={260} len={18} squash={0.55} strength={0.9} />
+							<Shockwave x={clickPt.x} y={clickPt.y} at={CLICK} radius={190} len={16} squash={0.5} strength={0.85} />
 							<ClickRipple x={clickPt.x} y={clickPt.y} at={CLICK} scale={1.4} />
 							{f >= 2 ? <ArrowCursor x={cur.x} y={cur.y} size={cSize} opacity={cOpacity} /> : null}
 						</AbsoluteFill>
 					</TransitionIn>
 				</Stage>
 			</TransitionOut>
-			<Headline units={line1} size={116} left={136} capTop={706} />
-			{f >= 48 ? <Headline units={line2} size={116} left={136} capTop={848} /> : null}
+			<Headline units={line1} size={132} left={128} capTop={690} />
+			{f >= 48 ? <Headline units={line2} size={132} left={128} capTop={852} /> : null}
 			<Vignette strength={0.5} />
 			<FilmGrain opacity={0.045} seed="s16" />
 		</AbsoluteFill>
