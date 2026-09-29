@@ -237,7 +237,7 @@ export const G4Plane: React.FC<G4PlaneProps> = ({layers, children, blur = 0, bri
 					</AbsoluteFill>
 				</AbsoluteFill>
 			</AbsoluteFill>
-			{dim > 0.001 ? <AbsoluteFill style={{background: color.canvas, opacity: dim}} /> : null}
+			{dim > 0.001 ? <AbsoluteFill style={{background: STAGE.bottom /* v2: the stage's navy (v1 canvas) */, opacity: dim}} /> : null}
 		</AbsoluteFill>
 	);
 };

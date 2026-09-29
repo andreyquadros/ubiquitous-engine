@@ -14,6 +14,7 @@
 import React from 'react';
 import {useCurrentFrame} from 'remotion';
 import type {CameraKey, SpotlightSpec} from '../components/screen-geometry';
+import {v2Dim} from '../components/Stage';
 import type {Keyframe} from '../design/motion';
 import type {SceneSpec, StoryboardCameraKey, StoryboardPatch} from '../storyboard';
 import {easeByName, E} from './motion';
@@ -77,7 +78,8 @@ export const storyboardCamera = (
 
 /**
  * Screen `spotlights` for a scene (optionally only those of one capture).
- * Hotspot names are resolved from ui-manifest.json.
+ * Hotspot names are resolved from ui-manifest.json. v2: the board's dims were
+ * tuned for v1's black 0.62 spotlight; they are mapped with `v2Dim` (0.62 → 0.38).
  */
 export const storyboardSpotlights = (scene: SceneSpec, file?: string): SpotlightSpec[] =>
 	scene.spotlights
@@ -86,7 +88,7 @@ export const storyboardSpotlights = (scene: SceneSpec, file?: string): Spotlight
 			rect: s.rect ?? hotspot(s.file, s.hotspot ?? ''),
 			at: s.from,
 			until: s.to,
-			dim: s.dim,
+			dim: s.dim === undefined ? undefined : v2Dim(s.dim),
 		}));
 
 /** The scene's claim-safety patches for one capture. */

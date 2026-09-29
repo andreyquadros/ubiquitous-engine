@@ -133,7 +133,8 @@ hotspots, `Screen` children, `Cursor`, `Callout` and patches all stay in the 288
   `focus` → `anchor`, arrival `atFrame`; "hard/hold/arrives…" = cut, explicit `duration` = travel before
   `atFrame`, otherwise travel from the previous key (linear drifts, spans). Omit `file` to keep one camera
   across a capture swap (s12). `layer` selects s15's "backdrop" / "subject".
-- `storyboardSpotlights(scene, file?)` → Screen `spotlights` (hotspot names resolved).
+- `storyboardSpotlights(scene, file?)` → Screen `spotlights` (hotspot names resolved). v2: the board's dims
+  (tuned for v1's 0.62 black) are mapped with `v2Dim` (0.62 → 0.38, navy tint) — see components/README "Stage".
 - `storyboardPatches(scene, file)` + `<Patches patches={…}/>` as a **Screen child**: the solid claim-safety
   rects (key legends, model lines, counts) drawn on frames `from ≤ f ≤ to` with a 2 px bleed.
   The validator only passes if these are on screen.

@@ -12,6 +12,7 @@ export {
 	StageFinish,
 	STAGE,
 	navyDim,
+	v2Dim,
 	vignetteAlpha,
 	DEFAULT_KEY,
 	DEFAULT_POOLS,
@@ -62,6 +63,7 @@ export {
 	type FlashCutProps,
 	type BlurDissolveProps,
 } from './Transitions';
+export {LiftCard, liftCardPose, type LiftCardProps, type LiftCardEnter, type LiftCardExit} from './LiftCard';
 export {Grain, type GrainProps} from './Grain';
 export {Glow, type GlowProps} from './Glow';
 export {MotionBlur, type MotionBlurProps} from './MotionBlur';

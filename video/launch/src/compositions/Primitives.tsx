@@ -23,7 +23,9 @@ import {
 	Grain,
 	KeyCombo,
 	KineticText,
+	LiftCard,
 	LogoRow,
+	mapImageRect,
 	maskWipe,
 	MotionBlur,
 	Screen,
@@ -392,6 +394,43 @@ const EndDemo = () => (
 	</Background>
 );
 
+/* v2: Screen grade + rim, spotlight, and a LiftCard lifting the focus ring off the dashboard */
+const LIFT_SHOT: ScreenConfig = {
+	src: 'ui/dashboard.png',
+	rotateX: 6,
+	rotateY: -8,
+	x: -140,
+	scale: 0.9,
+	float: 4,
+	spotlights: [{rect: {x: 578, y: 428, w: 368, h: 368}, at: 10, radius: 184}],
+};
+const RING = {x: 560, y: 410, w: 404, h: 404};
+const LiftDemo = () => {
+	const frame = useCurrentFrame();
+	return (
+		<Background seed="lift">
+			<Screen {...LIFT_SHOT} style={{zIndex: 'auto'}} />
+			<LiftCard
+				src="ui/dashboard.png"
+				rect={RING}
+				x={1380}
+				y={500}
+				scale={1.5}
+				at={14}
+				enter="lift"
+				from={mapImageRect(LIFT_SHOT, 14, {width: 1920, height: 1080}, RING)}
+				rotateX={[[14, 8], [75, 4]]}
+				rotateY={[[14, -12], [75, -6]]}
+				drift={{x: -0.2, y: 0}}
+				glow="mint"
+				radius={28}
+				style={{zIndex: 30}}
+			/>
+			<Label n={16} name={`v2 look · Stage · Screen grade + rim · LiftCard (f${frame})`} />
+		</Background>
+	);
+};
+
 /* ---------------------------------------------------------------- reel */
 
 export const PRIMITIVE_SEGMENTS: {name: string; frames: number; C: React.FC}[] = [
@@ -410,6 +449,7 @@ export const PRIMITIVE_SEGMENTS: {name: string; frames: number; C: React.FC}[] =
 	{name: 'transitions', frames: TRANSITIONS_LEN, C: TransitionsDemo},
 	{name: 'motionblur', frames: 40, C: BlurGlowDemo},
 	{name: 'end', frames: 75, C: EndDemo},
+	{name: 'lift', frames: 75, C: LiftDemo},
 ];
 
 export const PRIMITIVES_DURATION = PRIMITIVE_SEGMENTS.reduce((a, s) => a + s.frames, 0);

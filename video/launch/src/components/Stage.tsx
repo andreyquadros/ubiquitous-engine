@@ -32,6 +32,12 @@ export const STAGE = {
 	grain: 0.042,
 } as const;
 
+/** v2 default spotlight dim (v1: 0.62 black): "the rest steps back", navy tinted. */
+export const SPOTLIGHT_DIM = 0.38;
+
+/** Map a v1 dim level (tuned against 0.62 black) to v2 (0.62 → 0.38, proportional). */
+export const v2Dim = (v1: number) => (v1 * SPOTLIGHT_DIM) / 0.62;
+
 /** rgba() of the navy dim tint (spotlights, scrims). */
 export const navyDim = (a: number) => `rgba(10, 16, 36, ${Math.max(0, Math.min(1, a)).toFixed(3)})`;
 

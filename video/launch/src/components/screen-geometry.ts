@@ -132,7 +132,7 @@ export type ScreenConfig = {
 	/**
 	 * v2 colour grade of the window CONTENT (bitmap + image-space children
 	 * together, so patches sampled from the ungraded capture still match).
-	 * Default on: brightness 1.15, contrast 1.05, saturate 1.15. `false` = off.
+	 * Default on: brightness 1.2, contrast 1.05, saturate 1.15. `false` = off.
 	 */
 	grade?: boolean | Grade;
 	/** v2 rim light (volt top-left gradient border + white top highlight). Default true. */
@@ -143,7 +143,7 @@ export type ScreenConfig = {
 export type Grade = {brightness?: number; contrast?: number; saturate?: number};
 
 /** The v2 window grade (brief/v2-look.md §3 "UI windows"). */
-export const GRADE: Required<Grade> = {brightness: 1.15, contrast: 1.05, saturate: 1.15};
+export const GRADE: Required<Grade> = {brightness: 1.2, contrast: 1.05, saturate: 1.15};
 
 /** Resolve a `grade` prop to a full grade, or null when off. */
 export const resolveGrade = (g: boolean | Grade | undefined): Required<Grade> | null =>

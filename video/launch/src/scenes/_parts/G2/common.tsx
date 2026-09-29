@@ -39,8 +39,8 @@ export const mixHex = (a: string, b: string, t: number) => {
  */
 export const HERO_CARD = '#0c1220';
 /**
- * v2: the hero-card colour as it reads INSIDE the graded <Screen> (brightness 1.15,
- * contrast 1.05, saturate 1.15 → #070f23). s05 tints its stage to THIS so the
+ * v2: the hero-card colour as it reads INSIDE the graded <Screen> (brightness 1.2,
+ * contrast 1.05, saturate 1.15 → #081025). s05 tints its stage to THIS so the
  * s05 → s06 match cut still matches; patches inside the Screen keep HERO_CARD.
  */
 export const HERO_CARD_GRADED = gradeHex(HERO_CARD);

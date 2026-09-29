@@ -3,7 +3,9 @@ import {AbsoluteFill, Img, staticFile, useCurrentFrame, useVideoConfig} from 're
 import {alpha, color, ease, layer, resolveColor} from '../design/tokens';
 import {progress} from '../design/motion';
 import {gradeFilter, resolveGrade, screenGeometry, type ScreenConfig, type ScreenGeometry, type SpotlightSpec} from './screen-geometry';
-import {navyDim} from './Stage';
+import {navyDim, SPOTLIGHT_DIM} from './Stage';
+
+export {SPOTLIGHT_DIM};
 import {useHires} from '../shared/ui';
 
 export type {ScreenConfig, CameraKey, SpotlightSpec, Rect, Point, Grade} from './screen-geometry';
@@ -235,9 +237,6 @@ const TitleBar: React.FC<{height: number; title?: string; dots?: 'mac' | 'neutra
 		</div>
 	);
 };
-
-/** v2 default spotlight dim (v1: 0.62 black) — "the rest steps back", navy tinted. */
-export const SPOTLIGHT_DIM = 0.38;
 
 const Spotlight: React.FC<{spec: SpotlightSpec; frame: number; onScreen: number}> = ({spec, frame, onScreen}) => {
 	const fade = spec.fade ?? 10;

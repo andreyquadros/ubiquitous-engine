@@ -23,24 +23,60 @@ delay, 'snappy'|'smooth'|'subtleBounce')`, `staggerDelay(i, n, each, order)`.
 
 ---
 
-## Background
+## Stage (v2 look) + Background
 
-Deep canvas + drifting volt/ember light orbs, optional perspective grid floor,
-vignette and film grain. Wrap a scene in it (children render above the orbs,
-under vignette + grain).
+`brief/v2-look.md` §3: every backdrop in the film is built from `src/components/Stage.tsx`
+(the group backdrops in `src/scenes/_parts/G1..G6/common.tsx` and `<Background>` all use it).
+
+| layer | what |
+|---|---|
+| `<StageBase opacity?>` | navy vertical gradient `#0f1730 → #0a0f20` (`STAGE.top/bottom`), never black |
+| `<StageLights {...look} seed>` | volt **key pool** behind the subject (0.38), **indigo** `#6c5cff` (light only, never UI/type) + ember pools (0.12–0.16), a slow **aurora** sweep (two diagonal bands, one pass ≈ 12 s), and the white-blue **key light** `#cfe0ff` (0.14) right behind the subject |
+| `<StageFinish vignette grain seed>` | vignette (v1 strength scale: `vignetteAlpha(s)` = 0.35 × s / 0.6, capped at **0.35**) + grain (default 0.042) |
+| `<Stage {...look}>` | all three with children between lights and finish |
+
+`StageLook` (accepted as `look` by every group backdrop and `<Background>`):
+
+| prop | default | notes |
+|---|---|---|
+| `level` | 1 | multiplier on every light; 0 = lights out (base only). G1 `orbs={[]}` (s04) → 0 |
+| `keyPool` | `{x: .5, y: .48, w: 1.15, h: 1.3, opacity: .38}` | fractions of the canvas; **move it behind the subject of the shot** (`keyPool: {x: .7, y: .45}`) or `false` |
+| `pools` | indigo TR 0.16, ember BL 0.12 | `StagePool[]` `{color, x, y, w, h?, opacity, drift?}` |
+| `keyLight` | `{x: .5, y: .48, w: .62, h: .78, opacity: .14}` | put it right behind the window / card / headline |
+| `aurora` / `speed` | 1 / 1 | |
+
+All pure CSS gradients, normal alpha compositing (no blend modes, no filters) — measured cost ≈ 0.
+
+Helpers: `navyDim(a)` → `rgba(10, 16, 36, a)` (use it for every dim/scrim instead of black),
+`SPOTLIGHT_DIM` (0.38), `v2Dim(v1)` (maps a v1 dim tuned against 0.62 black: 0.62 → 0.38),
+`vignetteAlpha(strength)`, `STAGE` palette.
+
+```tsx
+<Stage seed="s09" keyPool={{x: 0.62, y: 0.55}} keyLight={{x: 0.62, y: 0.52}}>
+  <Screen {...shot} style={{zIndex: 'auto'}} />
+</Stage>
+// group backdrops keep their v1 props and take `look` on top:
+<Backdrop seed="s13" ember={0.07} look={{keyPool: {x: 0.3, y: 0.55}, keyLight: {x: 0.3, y: 0.55}}}>…</Backdrop>
+```
+
+### Background
+
+Stage rig + optional extra drifting orbs, optional perspective grid floor, vignette and film grain. Wrap a
+scene in it (children render above the lights, under vignette + grain).
 
 | prop | type | default | notes |
 |---|---|---|---|
-| `variant` | `'orbs' \| 'grid' \| 'plain'` | `'orbs'` | `grid` adds a floor receding to a glowing horizon |
-| `orbs` | `OrbSpec[]` | volt TL, ember BR, faint volt centre | `{color, x, y, size, opacity}` (fractions of canvas) |
-| `orbIntensity` | number | 1 | global multiplier |
+| `variant` | `'orbs' \| 'grid' \| 'plain'` | `'orbs'` | `grid` adds a floor receding to a glowing horizon; `plain` = rig at 70 %, no aurora |
+| `orbs` | `OrbSpec[]` | none | extra `{color, x, y, size, opacity}` (fractions of canvas) on top of the rig |
+| `orbIntensity` | number | 1 | multiplier on orbs and the rig |
+| `look` | `StageLook` | — | see Stage |
 | `drift` / `speed` | number | 0.06 / 1 | wander distance (fraction of width) / speed |
 | `gridColor` / `gridOpacity` / `gridSpeed` | accent / 0–1 / px per frame | volt / 0.3 / 2 | floor lines scroll toward viewer |
 | `horizon` | 0–1 | 0.68 | where the floor fades out |
-| `vignette` | 0–1 | 0.6 | |
-| `grain` | 0–1 | 0.055 | 0 disables (use when you add a global `<Grain/>`) |
-| `seed` | string | `'bg'` | vary per scene so orbs don't drift identically |
-| `base` | CSS colour | canvas | |
+| `vignette` | 0–1 | 0.6 | v1 strength scale, mapped to ≤ 0.35 alpha |
+| `grain` | 0–1 | 0.042 | 0 disables (use when you add a global `<Grain/>`) |
+| `seed` | string | `'bg'` | vary per scene so lights don't drift identically |
+| `base` | CSS colour | navy gradient | a flat base instead of the gradient |
 
 ```tsx
 <Background variant="grid" seed="hero">
@@ -102,7 +138,9 @@ Define the shot once as a `ScreenConfig` const and share it with overlays.
 | `perspective` | px | 2400 | smaller = more dramatic |
 | `float` / `floatPeriod` | px / frames | 0 / 120 | gentle bob |
 | `camera` | `CameraKey[]` | — | see below |
-| `spotlights` | `SpotlightSpec[]` | — | `{rect, at, until?, fade?, dim?=0.62, color?, radius?=20, pad?=14, outline?}` (image px) |
+| `spotlights` | `SpotlightSpec[]` | — | `{rect, at, until?, fade?, dim?=0.38, color?, radius?=20, pad?=14, outline?}` (image px). v2: navy tint `rgba(10,16,36,…)`, default dim 0.38 (v1 0.62 black), stronger outline glow; drawn ungraded above the graded content |
+| `grade` | boolean \| `{brightness, contrast, saturate}` | on: 1.2 / 1.05 / 1.15 | v2 grade of the window CONTENT: the bitmap **and** the image-space children are graded together, so patches sampled from the ungraded capture still match. For a colour OUTSIDE the window that must match one inside it use `gradeHex(hex)` (s05's hero-card tint → `HERO_CARD_GRADED`) |
+| `rim` | boolean | true | v2 rim light: 1.5 px gradient border (volt ≈ 0.7 top-left → transparent) + a white top highlight; the drop shadow is deeper/larger (`WINDOW_SHADOW`) and the ambient `glow` is 0.35 |
 | `chrome` / `title` / `radius` | `'mac' \| 'none'` / string / px | mac / — / 14 | |
 | `dots` | `'mac' \| 'neutral'` | mac | title-bar dots: macOS traffic lights, or neutral `#3a4560` dots for platform-agnostic shots (style §S10) |
 
@@ -139,6 +177,41 @@ const shot: ScreenConfig = {
 Geometry helpers (for custom overlays): `mapImagePoint(cfg, frame, {width, height}, {x, y})`,
 `mapImageRect(...)`, `screenGeometry(...)`, hook `useImageToComp(cfg)` (in Cursor.tsx),
 and `useScreenGeometry()` inside Screen children.
+
+## LiftCard (v2)
+
+Lifts one element of a UI capture out of the screenshot as a floating 3D card (brief §3 "Depth: lift
+cards": the 88 ring, a review row, "Confirmar os 19", the provider pills, the redaction chip).
+`rect` is in the capture's **2x image px** (hotspots work: `hotspot('ui/dashboard.png', 'focus-dial')`);
+the `@3x` twin is drawn when shipped. The card is graded like the window. **Claim-safety patches inside the
+crop must be re-applied as `children`** (image px of the full capture, same as `<Screen>` children).
+
+| prop | type | default | notes |
+|---|---|---|---|
+| `src` / `rect` / `imageSize` / `hires` | | — / — / 2880x1800 / auto | crop source |
+| `x`, `y` | Keyframed | — | card centre, comp px |
+| `scale` | Keyframed | 1.4 | relative to the element's size in a 1440-wide Screen at zoom 1 (brief: 1.2–1.6) |
+| `width` | Keyframed | — | explicit on-canvas width (overrides `scale`) |
+| `rotateX` / `rotateY` / `rotateZ` | Keyframed (deg) | 8 / −10 / 0 | brief: 6–14° |
+| `at` / `enter` / `spring` | frame / `'lift' \| 'rise' \| 'pop' \| 'fade' \| 'none'` / preset | 0 / rise / smooth (pop: subtleBounce) | `lift` flies from `from` (the element's comp rect in the window at `at`: `mapImageRect(shot, at, {width: 1920, height: 1080}, rect)`) to the target pose, shadow + glow growing with it |
+| `exitAt` / `exit` / `exitDuration` | frame / `'sink' \| 'drop' \| 'fade' \| 'none'` / 12 | — | `drop` flies back into `from` |
+| `float` / `floatPeriod` | px / frames | 5 / 96 | sine bob |
+| `drift` | `{x, y}` px per frame | — | parallax against the window's camera |
+| `glow` / `glowOpacity` | accent \| false / 0–1 | volt / 0.35 | coloured light under the card |
+| `rim` / `shadow` / `radius` / `perspective` | | true / 1 / 16 / 1600 | |
+| `grade` / `opacity` / `style` | | on / 1 / — | pass `style={{zIndex: 30}}` to sit above a Screen |
+
+`liftCardPose(props, frame, fps)` returns the pose (`cx, cy, w, h, k, rx, ry…`) to glue a cursor or callout.
+
+```tsx
+const RING = hotspot('ui/dashboard.png', 'focus-dial');
+<Screen {...shot} style={{zIndex: 'auto'}} />
+<LiftCard src="ui/dashboard.png" rect={RING} x={1380} y={500} scale={1.5}
+  at={14} enter="lift" from={mapImageRect(shot, 14, {width: 1920, height: 1080}, RING)}
+  rotateX={[[14, 8], [75, 4]]} rotateY={[[14, -12], [75, -6]]} drift={{x: -0.2, y: 0}} glow="mint" style={{zIndex: 30}} />
+```
+
+Primitives reel segment `lift` (frames 1057–1131) shows it live.
 
 ## Cursor
 
