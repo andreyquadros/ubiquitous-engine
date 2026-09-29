@@ -31,12 +31,12 @@ export const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 export const ramp = (frame: number, a: number, b: number, easing?: (t: number) => number) =>
 	b <= a ? (frame >= a ? 1 : 0) : interpolate(frame, [a, b], [0, 1], {...CLAMP, easing});
 
-/** Mix two #rrggbb colours → rgb(). */
+/** Mix two #rrggbb colours → #rrggbb (chainable). */
 export const mixHex = (a: string, b: string, t: number) => {
 	const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
 	const pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16));
 	const c = pa.map((v, i) => Math.round(v + (pb[i] - v) * clamp01(t)));
-	return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+	return `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 };
 
 /** Point on a quadratic arc from a to b (control point `bend` × distance off the chord, left-hand normal — G4's bend). */

@@ -19,7 +19,7 @@
  * pixels ("Gerado 29/09 18:00" + "3h22 registradas · 6.120 tokens…").
  */
 import React from 'react';
-import {AbsoluteFill} from 'remotion';
+import {AbsoluteFill, Easing} from 'remotion';
 import {measureText} from '@remotion/layout-utils';
 import {Screen, type ScreenConfig} from '../components/Screen';
 import {mapWithGeometry, screenGeometry, type CameraKey} from '../components/screen-geometry';
@@ -65,6 +65,7 @@ const OK = 62;
 
 const BTN = hotspot(FILE, 'report-1-copy'); // 2282, 392, 288 × 64
 const LIFT = 1.16;
+const BADGE = hotspot(FILE, 'nav-revisao-badge');
 
 /* ------------------------------------------------------------------------ */
 /* Part A — the clock                                                        */
@@ -77,7 +78,8 @@ const KICK = {left: 144, top: 88, h: 48, size: 40, padX: 20};
 const Digit: React.FC<{from: string; to: string; p: number; v: number}> = ({from, to, p, v}) => {
 	const h = CLOCK.size;
 	if (from === to) return <span style={{display: 'inline-block'}}>{to}</span>;
-	const blur = Math.min(10, Math.abs(v) * h * 0.18);
+	// vertical motion blur ∝ speed, released over the last 15 % so the digit is crisp at contact
+	const blur = Math.min(10, Math.abs(v) * h * 0.12) * clamp01((1 - p) / 0.15);
 	return (
 		<span
 			style={{
@@ -118,15 +120,15 @@ const VBlurDefs: React.FC = () => (
 const Clock: React.FC<{f: number}> = ({f}) => {
 	// odometer: right to left, contact on f15
 	const rolls = [
-		{i: 4, from: '9', to: '0', start: 9},
-		{i: 3, from: '5', to: '0', start: 10},
-		{i: 1, from: '7', to: '8', start: 11},
+		{i: 4, from: '9', to: '0', start: 8},
+		{i: 3, from: '5', to: '0', start: 9},
+		{i: 1, from: '7', to: '8', start: 10},
 	];
 	const cells = ['1', '7', ':', '5', '9'];
 	const prog = (start: number, fr: number) => E.glide(clamp01((fr - start) / (CONTACT - start)));
 
 	const pulse = 1 + 0.05 * (ramp(f, CONTACT - 1, CONTACT + 2, E.push) - ramp(f, CONTACT + 2, CONTACT + 13, E.glide));
-	const voltT = ramp(f, CONTACT - 1, CONTACT + 1);
+	const voltT = ramp(f, CONTACT - 1, CONTACT);
 	const drift = 1 + 0.02 * ramp(f, 0, MORPH);
 
 	// morph to the kicker pill (SNAPPY 12 f)
@@ -140,8 +142,8 @@ const Clock: React.FC<{f: number}> = ({f}) => {
 	const cx = lerp(CLOCK.cx, tx, m);
 	const cy = lerp(CLOCK.cy, ty, m);
 	const sc = Math.exp(lerp(0, Math.log(endScale), m)) * (f < MORPH ? pulse * drift : lerp(drift, 1, clamp01(m)));
-	const bigO = 1 - ramp(f, MORPH_END - 6, MORPH_END - 1);
-	const pillO = ramp(f, MORPH_END - 7, MORPH_END - 2);
+	const bigO = 1 - ramp(f, MORPH_END - 5, MORPH_END - 1);
+	const pillO = ramp(f, MORPH_END - 5, MORPH_END - 1);
 	const pillBg = f < MORPH ? 0 : springAt(f, MORPH + 3, 'SNAPPY', 10);
 
 	// glow breath behind the clock at contact
@@ -245,10 +247,13 @@ const Clock: React.FC<{f: number}> = ({f}) => {
 /* Part B — the report                                                       */
 /* ------------------------------------------------------------------------ */
 
+const PUNCH_EASE = Easing.bezier(0.42, 0, 0.12, 1);
+
 const CAMERA: CameraKey[] = [
 	{at: RISE, zoom: 1.35, focus: {x: 1672, y: 840}, anchor: {x: 1100, y: 640}, duration: 0},
 	{at: 45, zoom: 1.6, focus: {x: 1672, y: 840}, anchor: {x: 1100, y: 640}, duration: 15, easing: E.push},
-	{at: PUNCH, zoom: 2.6, focus: {x: 2426, y: 424}, anchor: {x: 1340, y: 600}, duration: 12, easing: E.push},
+	// punch-in: leaves the wide at rest (the rise just settled), arrives hard — E.push from a standstill read as a 1-frame jump
+	{at: PUNCH, zoom: 2.6, focus: {x: 2426, y: 424}, anchor: {x: 1340, y: 600}, duration: 12, easing: PUNCH_EASE},
 	// hold: micro drift ×1.02 (float only; bitmap scale 1.33, @3x twin → 0.88)
 	{at: 104, zoom: 2.65, focus: {x: 2426, y: 424}, anchor: {x: 1340, y: 600}, duration: 44, easing: E.linear},
 ];
@@ -305,7 +310,8 @@ const CopyButton: React.FC<{f: number}> = ({f}) => {
 				width: BTN.w,
 				height: BTN.h,
 				transform: `scale(${scale.toFixed(4)})`,
-				transformOrigin: '50% 50%',
+				// grows to the left (open card space), away from "Regenerar" 16 px to its right
+				transformOrigin: '100% 50%',
 				boxSizing: 'border-box',
 				borderRadius: 16,
 				background: bg,
@@ -338,8 +344,8 @@ const ButtonSpot: React.FC<{f: number; onScreen: number}> = ({f, onScreen}) => {
 	const d = ramp(f, 45, 57, E.enter);
 	if (d <= 0.001) return null;
 	const lift = lerp(1, LIFT, E.push(ramp(f, 45, PUNCH)));
-	const padX = 14 + (BTN.w * (lift - 1)) / 2;
-	const padY = 14 + (BTN.h * (lift - 1)) / 2;
+	const grow = BTN.w * (lift - 1);
+	const padY = 12 + (BTN.h * (lift - 1)) / 2;
 	const bw = 2.5 / Math.max(0.05, onScreen);
 	const gl = 26 / Math.max(0.05, onScreen);
 	const ok = ramp(f, OK, OK + 6);
@@ -348,14 +354,14 @@ const ButtonSpot: React.FC<{f: number; onScreen: number}> = ({f, onScreen}) => {
 		<div
 			style={{
 				position: 'absolute',
-				left: BTN.x - padX,
+				left: BTN.x - grow - 12,
 				top: BTN.y - padY,
-				width: BTN.w + padX * 2,
+				width: BTN.w + grow + 12 + 7,
 				height: BTN.h + padY * 2,
 				borderRadius: 26,
 				boxShadow: [
-					`0 0 0 ${bw}px ${ring.replace('rgb(', 'rgba(').replace(')', `, ${(0.9 * d).toFixed(3)})`)}`,
-					`0 0 ${gl}px ${gl * 0.25}px ${ring.replace('rgb(', 'rgba(').replace(')', `, ${(0.4 * d).toFixed(3)})`)}`,
+					`0 0 0 ${bw}px ${alpha(ring, 0.9 * d)}`,
+					`0 0 ${gl}px ${gl * 0.25}px ${alpha(ring, 0.4 * d)}`,
 					`0 0 0 6000px rgba(6, 9, 16, ${(0.62 * d).toFixed(3)})`,
 				].join(', '),
 			}}
@@ -389,7 +395,7 @@ const Copied: React.FC<{f: number; x: number; top: number; text: string}> = ({f,
 					gap: 12,
 					borderRadius: 999,
 					// solid under-layer so the pill reads over the dimmed UI, then the 16 % mint tint
-					background: `linear-gradient(${alpha(color.mint, 0.16)}, ${alpha(color.mint, 0.16)}), rgba(10,13,22,0.92)`,
+					background: `linear-gradient(${alpha(color.mint, 0.16)}, ${alpha(color.mint, 0.16)}), #0a0d16`,
 					boxShadow: `inset 0 0 0 1.5px ${alpha(color.mint, 0.45)}, 0 12px 28px -8px rgba(0,0,0,0.6)`,
 					fontFamily: font.text,
 					fontWeight: 600,
@@ -411,7 +417,7 @@ const Copied: React.FC<{f: number; x: number; top: number; text: string}> = ({f,
 const REST_IN = {x: 1750, y: 940};
 const REST_OUT = {x: 1700, y: 900};
 /** Cursor tip on the label, left of centre (image px). */
-const TIP = {x: BTN.x + 150, y: BTN.y + 36};
+const TIP = {x: BTN.x + 120, y: BTN.y + 38};
 
 const S14Relatorio: React.FC = () => {
 	const scene = useScene();
@@ -448,10 +454,10 @@ const S14Relatorio: React.FC = () => {
 	const clickPt = tipAt(CLICK);
 
 	// callout anchor: bottom-centre of the lifted button
-	const btnBottom = toComp(f, {x: BTN.x + BTN.w / 2, y: BTN.y + BTN.h / 2});
+	const btnBottom = toComp(f, {x: BTN.x + BTN.w / 2 - (BTN.w * (LIFT - 1)) / 2, y: BTN.y + BTN.h / 2});
 	const halfH = (BTN.h / 2) * LIFT * onScreen;
 
-	const scrim = ramp(f, RISE, RISE + 8, E.enter);
+	const scrim = ramp(f, RISE, RISE + 2);
 
 	return (
 		<TransitionOut>
@@ -459,9 +465,11 @@ const S14Relatorio: React.FC = () => {
 				<Backdrop seed="s14" ember={0.05}>
 					{partB ? (
 						<AbsoluteFill style={{transform: rise > 0.05 ? `translateY(${rise.toFixed(2)}px)` : undefined, opacity: ramp(f, RISE, RISE + 4)}}>
-							<Screen {...SHOT}>
+							<Screen {...SHOT} style={{zIndex: 'auto'}}>
 								<Patches patches={storyboardPatches(scene, FILE)} />
 								<MetaRecompose />
+								{/* continuity: s13 just emptied the review queue — the sidebar's pending-count badge goes (nav colour) */}
+								<div style={{position: 'absolute', left: BADGE.x - 3, top: BADGE.y - 3, width: BADGE.w + 6, height: BADGE.h + 6, background: '#0a101c'}} />
 								<ButtonSpot f={f} onScreen={onScreen} />
 								<CopyButton f={f} />
 							</Screen>
@@ -471,7 +479,7 @@ const S14Relatorio: React.FC = () => {
 						<AbsoluteFill
 							style={{
 								opacity: scrim,
-								background: 'linear-gradient(180deg, rgba(10,13,22,0.94) 0px, rgba(10,13,22,0.9) 270px, rgba(10,13,22,0) 380px)',
+								background: 'linear-gradient(180deg, rgba(10,13,22,0.97) 0px, rgba(10,13,22,0.95) 250px, rgba(10,13,22,0.82) 290px, rgba(10,13,22,0) 390px)',
 							}}
 						/>
 					) : null}
