@@ -881,8 +881,11 @@ async fn generated_text_follows_the_settings_language() {
     assert_eq!(h.handle.settings().language, "en");
     assert_eq!(h.handle.settings().ui_language(), UiLanguage::En);
 
-    // Report and payload label in English.
-    BlockRepo::insert(h.store.as_ref(), &pending_block("p1", 30)).unwrap();
+    // Report and payload label in English. The rule has to exist before the block does: the
+    // classify worker's first tick fires at start-up, and on a slow Windows runner it landed
+    // between the two inserts, sent p1 to the (fake) AI before the rule could match it, and left
+    // a classification payload ahead of the report's -- so the payload no longer started with
+    // "[report]".
     RuleRepo::upsert(
         h.store.as_ref(),
         &Rule {
@@ -900,6 +903,7 @@ async fn generated_text_follows_the_settings_language() {
         },
     )
     .unwrap();
+    BlockRepo::insert(h.store.as_ref(), &pending_block("p1", 30)).unwrap();
     h.handle.classify_now().await.unwrap();
     let report = h.handle.generate_report(today, "cat-ifro").await.unwrap();
     assert!(
