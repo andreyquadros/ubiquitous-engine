@@ -11,6 +11,14 @@
 // State: dark theme, pt-BR, a valid "ubiqX Mensal" license (?license=managed, so no license banner and the
 // "IA do Ubi" provider is selectable), clock fixed at Tue 2026-09-29 18:40 America/Sao_Paulo so the mock
 // day (08:00-17:55) reads as a finished work day.
+//
+// Privacy: the desktop mock (apps/desktop/src/lib/mock.ts) seeds the product owner's real data: his Gmail
+// address in the inbox window titles, his user name in the data/export folders, his GitHub handle in the
+// site/repo/release URLs, plus a realistic SEI process number. The file on disk is product code and stays
+// untouched: every /src/ module Vite serves is rewritten on the fly (context.route) so the mock is born
+// with fictional equivalents (see SCRUB). Before each screenshot the DOM (text, HTML, form values, inline
+// SVG "screenshots") and the mock state are scanned for e-mail addresses and the owner's name; any hit
+// aborts that capture (no PNG is written) and the run exits non-zero.
 
 import pw from '/home/user/ubiquitous-engine/site/node_modules/playwright/index.js';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -22,6 +30,134 @@ const OUT = fileURLToPath(new URL('../public/ui/', import.meta.url));
 const EXEC = process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell';
 const NOW = new Date('2026-09-29T21:40:00Z'); // 18:40 in São Paulo
 const ONLY = process.argv.slice(2);
+
+/* ------------------------------------------------------------------ */
+/* privacy: fictional stand-ins for the owner's data, and the scan      */
+/* ------------------------------------------------------------------ */
+
+const FICTIONAL = {
+  email: 'ana.souza@example.com', // RFC 2606 reserved domain: cannot belong to anyone
+  user: 'ana', // home-folder user name
+  githubOwner: 'example',
+  site: 'https://ubiqx.com.br/', // the brand site (brief/facts.md)
+  seiProcess: '12345.000042/2026-00', // same shape as a real NUP, clearly not one
+};
+const FICTIONAL_EMAILS = new Set([FICTIONAL.email]);
+/** The owner's name as it appears in the mock (e-mail local part, user name, GitHub handle). */
+const OWNER_RE = /andrey|quadros/gi;
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}/g;
+/** `ubi@2x.png` and friends look like e-mail addresses to EMAIL_RE; they are asset names. */
+const ASSET_TLD = /\.(?:png|jpe?g|webp|avif|gif|svg|glb|gltf|hdr|m?js|tsx?|css|json|woff2?|ttf|otf|wasm)$/i;
+
+/** Applied, in order, to the text of every JS/TS module Vite serves from /src/ (the mock, providers.ts, Settings.tsx). */
+const SCRUB = [
+  // Gmail window titles: "Caixa de entrada (12) - <owner address> - Gmail"
+  [EMAIL_RE, (m) => (ASSET_TLD.test(m) || FICTIONAL_EMAILS.has(m.toLowerCase()) ? m : FICTIONAL.email)],
+  // data_dir per OS and the export path: /Users/<u>/…, /home/<u>/…, C:\\Users\\<u>\\…
+  [/(Users|home)((?:\\{1,4}|\/))andrey\b/g, `$1$2${FICTIONAL.user}`],
+  // SITE_URL (providers.ts), REPO_URL (Settings.tsx), RELEASE_BASE (mock.ts)
+  [/https:\/\/andreyquadros\.github\.io\/ubiquitous-engine\/?/g, FICTIONAL.site],
+  [/github\.com\/andreyquadros\/ubiquitous-engine/g, `github.com/${FICTIONAL.githubOwner}/ubiqx`],
+  // the SEI process in the timeline title and the IFRO report
+  [/23243\.001234\/2026-11/g, FICTIONAL.seiProcess],
+];
+const SCRUB_NEEDLE = /@|andrey|quadros|23243\.001234/i;
+/** module path → replacements made (logged once at the end). */
+const scrubbed = new Map();
+
+function scrubSource(text) {
+  let count = 0;
+  for (const [re, to] of SCRUB) {
+    text = text.replace(re, (...args) => {
+      const out = typeof to === 'function' ? to(args[0]) : args[0].replace(new RegExp(re.source, re.flags.replace('g', '')), to);
+      if (out !== args[0]) count += 1;
+      return out;
+    });
+  }
+  return { text, count };
+}
+
+const SRC_MODULE = /^\/src\/.+\.(?:[cm]?[jt]sx?)$/;
+
+/** Rewrites the served source of /src/ modules so the mock never holds the owner's data, not even for the first render. */
+async function installScrub(context) {
+  const origin = new URL(BASE).origin;
+  await context.route(
+    (url) => url.origin === origin && SRC_MODULE.test(url.pathname),
+    async (route) => {
+      // Never throw from here (an unhandled rejection kills the whole run); a module that cannot be fetched
+      // is aborted, so the page fails loudly instead of rendering unscrubbed source.
+      let response;
+      let body;
+      for (let attempt = 1; !response; attempt++) {
+        try {
+          response = await route.fetch();
+          body = await response.text();
+        } catch (e) {
+          response = undefined;
+          if (attempt >= 4) {
+            console.warn(`  ! ${route.request().url()}: ${e.message.split('\n')[0]} (gave up)`);
+            return route.abort().catch(() => {});
+          }
+          await new Promise((r) => setTimeout(r, 250 * attempt));
+        }
+      }
+      if (!SCRUB_NEEDLE.test(body)) return route.fulfill({ response, body }).catch(() => {});
+      const scrubResult = scrubSource(body);
+      const { count } = scrubResult;
+      // the inline source map embeds the original file (base64): drop it from the rewritten modules
+      const text = count ? scrubResult.text.replace(/\n\/\/# sourceMappingURL=data:[^\n]*/g, '') : scrubResult.text;
+      const path = new URL(route.request().url()).pathname;
+      if (count) scrubbed.set(path, count);
+      const left = [...new Set([...text.matchAll(OWNER_RE)].map((m) => m[0]))];
+      if (left.length) console.warn(`  ! ${path} still mentions ${left.join(', ')} after the scrub`);
+      return route.fulfill({ response, body: text }).catch(() => {});
+    },
+  );
+}
+
+/** Everything a viewer (or a zoom) could read, plus the whole HTML and the mock state. Runs in the page. */
+async function privacyCorpusInPage() {
+  const html = document.documentElement.outerHTML;
+  const parts = [document.title, document.body?.innerText ?? '', html];
+  for (const el of document.querySelectorAll('input, textarea, select')) parts.push(el.value ?? '');
+  // placeholder "screenshots" are SVGs inlined as base64 data URIs
+  for (const m of html.matchAll(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/g)) {
+    try {
+      parts.push(new TextDecoder().decode(Uint8Array.from(atob(m[1]), (c) => c.charCodeAt(0))));
+    } catch {
+      /* not decodable: the HTML scan still covers it */
+    }
+  }
+  let state = '';
+  try {
+    const mock = await import('/src/lib/mock.ts');
+    state = JSON.stringify(mock.__mock.state(), (_k, v) => (v instanceof Map ? Object.fromEntries(v) : v));
+  } catch (e) {
+    state = `!mock state unavailable: ${e}`;
+  }
+  return { dom: parts.join('\n'), state };
+}
+
+/** E-mail addresses that are not the fictional ones, and any trace of the owner's name. */
+function privacyHits(text) {
+  const hits = new Set();
+  for (const [m] of text.matchAll(EMAIL_RE)) if (!ASSET_TLD.test(m) && !FICTIONAL_EMAILS.has(m.toLowerCase())) hits.add(`e-mail "${m}"`);
+  for (const m of text.matchAll(OWNER_RE)) hits.add(`name "${text.slice(Math.max(0, m.index - 30), m.index + 40).replace(/\s+/g, ' ')}"`);
+  return [...hits];
+}
+
+const privacyLog = [];
+
+async function privacyCheck(page, file) {
+  const { dom, state } = await page.evaluate(privacyCorpusInPage);
+  const hits = [...privacyHits(dom).map((h) => `DOM ${h}`), ...privacyHits(state).map((h) => `state ${h}`)];
+  if (state.startsWith('!')) hits.push(state.slice(1));
+  const fictional = [...new Set([...dom.matchAll(EMAIL_RE)].map(([m]) => m).filter((m) => FICTIONAL_EMAILS.has(m.toLowerCase())))];
+  privacyLog.push({ file, hits, fictional });
+  if (hits.length) throw new Error(`privacy: ${file} shows real personal data, not saved: ${hits.join('; ')}`);
+  return fictional;
+}
 
 /* ------------------------------------------------------------------ */
 /* hotspot specs                                                       */
@@ -278,6 +414,7 @@ async function newPage(browser, { theme = 'dark', width = 1440, height = 900, dp
     timezoneId: 'America/Sao_Paulo',
   });
   await context.clock.setFixedTime(NOW);
+  await installScrub(context);
   const page = await context.newPage();
   page.on('pageerror', (err) => console.error('  page error:', err.message));
   return { context, page };
@@ -360,10 +497,11 @@ async function capture(page, meta, specs, { omitBackground = false } = {}) {
   const vp = page.viewportSize();
   const dpr = await page.evaluate(() => window.devicePixelRatio);
   const path = `${OUT}${meta.file}`;
+  const fictional = await privacyCheck(page, meta.file);
   await page.screenshot({ path, fullPage: false, omitBackground });
   const entry = { file: meta.file, route: meta.route, theme: meta.theme ?? 'dark', width: Math.round(vp.width * dpr), height: Math.round(vp.height * dpr), dpr, description_pt: meta.pt, description_en: meta.en, hotspots: out };
   manifest.push(entry);
-  console.log(`✓ ${meta.file}  ${entry.width}x${entry.height}  ${out.length} hotspots${missing.length ? `  (absent: ${missing.join(', ')})` : ''}`);
+  console.log(`✓ ${meta.file}  ${entry.width}x${entry.height}  ${out.length} hotspots${missing.length ? `  (absent: ${missing.join(', ')})` : ''}  privacy: 0 hits${fictional.length ? ` (fictional: ${fictional.join(', ')})` : ''}`);
   return entry;
 }
 
@@ -701,3 +839,8 @@ if (ONLY.length && existsSync(manifestPath)) {
 }
 writeFileSync(manifestPath, `${JSON.stringify(merged, null, 2)}\n`);
 console.log(`manifest: ${merged.length} entries → ${manifestPath}`);
+
+console.log(`scrubbed modules: ${[...scrubbed].map(([p, n]) => `${p} (${n})`).join(', ') || 'none'}`);
+const leaks = privacyLog.filter((l) => l.hits.length);
+console.log(`privacy scan: ${privacyLog.length} captures scanned, ${leaks.reduce((n, l) => n + l.hits.length, 0)} hits${leaks.length ? ` in ${leaks.map((l) => l.file).join(', ')}` : ''}`);
+if (leaks.length) process.exitCode = 1;
