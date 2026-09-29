@@ -55,8 +55,8 @@ export const sfx: SfxCue[] = [
 	{
 		ref: 'whoosh_in_3.wav',
 		atFrame: 2,
-		gainDb: -15,
-		note: 'v2: “Confirmar os 19” lifts out of its bar toward the camera. G5 fix: the whoosh PEAK (0.31 s into the file) sits on the lift’s fastest frame (SNAPPY from f0: Δ peaks f1–3, 94 % by f6), abs 782; the file starts in s11’s tail (abs 773). −22 → −15 dB: it was buried under the bed.',
+		gainDb: -14,
+		note: 'v2: “Confirmar os 19” lifts out of its bar toward the camera. G5 fix: the whoosh PEAK (0.31 s into the file) sits on the lift’s fastest frame (SNAPPY from f0: Δ peaks f1–3, 94 % by f6), abs 782; the file starts in s11’s tail (abs 773). −22 → −14 dB: it was buried under the bed (peak ≈ −17.6 dBFS in the mix, was −25.6).',
 	},
 	{ref: 'click.wav', atFrame: 30, gainDb: -12, note: 'Confirmar os 19.'},
 	{ref: 'shimmer_1.wav', atFrame: 33, gainDb: -14, note: 'All badges flip to “você” (C+3).'},

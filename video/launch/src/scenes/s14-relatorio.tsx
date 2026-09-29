@@ -62,7 +62,12 @@ import {
 export const sfx: SfxCue[] = [
 	{ref: 'ding_1.wav', atFrame: 15, gainDb: -12, note: '18:00 lands (E6); rhymes with s06’s ding.'},
 	{ref: 'whoosh-soft.wav', atFrame: 36, gainDb: -14, note: 'Report window rises; loudest point ≈ fastest frame of the rise.'},
-	{ref: 'whoosh_in_3.wav', atFrame: 53, gainDb: -18, note: 'v2: the report card lifts out of the window (SNAPPY, lands ≈ f53). v2 review: −22 → −18 dB (the film-wide LiftCard lift level).'},
+	{
+		ref: 'whoosh_in_3.wav',
+		atFrame: 47,
+		gainDb: -14,
+		note: 'v2: the report card lifts out of the window. G5 fix: the whoosh PEAK sits on the lift’s fastest frames (SNAPPY from f45: Δ peaks f46–48, 94 % by f51), abs 977, not after the card has landed (abs 983); −22 → −14 dB: it was buried under the bed (peak ≈ −17.6 dBFS in the mix, was −25.6).',
+	},
 	{ref: 'click.wav', atFrame: 60, gainDb: -12, note: 'Copiar Markdown.'},
 	{ref: 'success_chime_2.wav', atFrame: 63, gainDb: -14, note: 'Mint check.'},
 ];
@@ -269,7 +274,7 @@ const Clock: React.FC<{f: number}> = ({f}) => {
 const LIFT_AT = 45;
 const COMP = {width: W, height: H};
 /** v2 grade: a touch brighter than the default window grade (window + card share it, patches keep matching). */
-const GRADE_S14 = {brightness: 1.3, lift: 0.07};
+const GRADE_S14 = {brightness: 1.36, lift: 0.07}; // G5 fix: 1.3 → 1.36 (the scene's > 0.3 fraction sat at the 0.08 floor)
 
 const CAMERA: CameraKey[] = [
 	{at: RISE, zoom: 1.35, focus: {x: 1672, y: 840}, anchor: {x: 1000, y: 660}, duration: 0},
@@ -335,7 +340,7 @@ const CARD: LiftCardProps = {
 	float: 5,
 	floatPeriod: 80,
 	glow: 'volt',
-	glowOpacity: 0.6,
+	glowOpacity: 0.8, // G5 fix: 0.6 → 0.8, a brighter spill around the card (fill)
 	grade: GRADE_S14,
 	style: {zIndex: 30},
 };
@@ -377,7 +382,14 @@ const PagePatches: React.FC = () => (
 const FIELD_BG = '#121a2b';
 /** Inner top of each activity field (measured: 610, 756, 902, 1048, 1226, 1372; inner height 64). */
 const FIELD_TOPS = [610, 756, 902, 1048, 1226, 1372];
-/** v2 review: a real text field's overflow fade at the right edge, so "…ementas e ca" / "…000042/2(" read as overflow, not a clip. */
+/**
+ * v2 review / G5 fix: a real text field's overflow fade at the right edge, so "…ementas e ca" / "…000042/20" read as
+ * overflow, not a hard clip mid-glyph. The capture clips every field's text at x 2047 (glyphs y top+22…top+47); the
+ * fade runs over the last ≈ 7 glyphs (x 1950 → solid fill at 2047) and stops at x 2068, inside the field's rounded
+ * border (inner edge x 2071, corner radius ≈ 12): it spans only the glyph band top+10…top+56, so it never nicks the
+ * border's corner arcs (the v2-review fade did, leaving a notch at both right corners).
+ */
+const FADE = {left: 1950, right: 2068, top: 10, h: 46};
 const FieldFades: React.FC = () => (
 	<>
 		{FIELD_TOPS.map((top, i) => (
@@ -385,12 +397,11 @@ const FieldFades: React.FC = () => (
 				key={i}
 				style={{
 					position: 'absolute',
-					left: 1968,
-					top: top + 1,
-					width: 104,
-					height: 62,
-					// transparent → field fill by 62 %: the last clipped glyph ("…e ca", "…/2(") is fully under the fill
-					background: `linear-gradient(90deg, rgba(18,26,43,0) 0%, ${FIELD_BG} 62%)`,
+					left: FADE.left,
+					top: top + FADE.top,
+					width: FADE.right - FADE.left,
+					height: FADE.h,
+					background: `linear-gradient(90deg, rgba(18,26,43,0) 0%, rgba(18,26,43,0.6) 48%, ${FIELD_BG} 82%)`,
 				}}
 			/>
 		))}
@@ -553,7 +564,7 @@ const S14Relatorio: React.FC = () => {
 					look={{
 						// v2: the key pool is a footlight UNDER the volt 18:00 (not on it), then rises behind the report card
 						keyPool: {x: lerp(0.5, 0.54, poolUp), y: lerp(0.82, 0.62, poolUp), w: lerp(0.92, 0.82, poolUp), h: lerp(0.66, 0.92, poolUp), opacity: lerp(0.55, 0.46, poolUp)},
-						keyLight: {x: lerp(0.5, 0.54, poolUp), y: lerp(0.86, 0.64, poolUp), w: lerp(0.6, 0.5, poolUp), h: lerp(0.4, 0.62, poolUp), opacity: lerp(0.22, 0.16, poolUp)},
+						keyLight: {x: lerp(0.5, 0.56, poolUp), y: lerp(0.86, 0.6, poolUp), w: lerp(0.6, 0.56, poolUp), h: lerp(0.4, 0.66, poolUp), opacity: lerp(0.22, 0.18, poolUp)},
 						guard: [{...CLOCK_GUARD, opacity: GUARD_OPACITY * (1 - poolUp)}] /* footlight falloff only (GUARD RULE) */,
 					}}
 				>
