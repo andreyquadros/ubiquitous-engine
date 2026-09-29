@@ -43,9 +43,9 @@ const CARD_BG = APP.panel; // #0c1220, the empty-state card
 /** The in-app UBI's 900-px clip frame as drawn in the capture (image px: top-left + size) and its small bubble. */
 const INAPP = {x: 1107, y: 400, size: 352};
 const INAPP_BUBBLE = {cx: 1280, cy: 373, w: 238};
-/** Landing: 940-px frame, feet on y 962, body centre x ≈ 600. */
-const END_SIZE = 940;
-const END = {size: END_SIZE, x: 600 + (UBI_ANCHORS.feet.x - UBI_ANCHORS.body.x) * (END_SIZE / 900), y: 962};
+/** Landing: 1000-px frame (body ≈ 710 px), feet on y 985, body centre x ≈ 610. */
+const END_SIZE = 1000;
+const END = {size: END_SIZE, x: 610 + (UBI_ANCHORS.feet.x - UBI_ANCHORS.body.x) * (END_SIZE / 900), y: 985};
 /** "Nada esperando por você" and the "Ver a Timeline" button of the empty-state card (image px, measured). */
 const CARD_TEXT = [
 	{x: 1030, y: 764, w: 500, h: 68},
@@ -54,9 +54,9 @@ const CARD_TEXT = [
 const ARC = 70; // extra leap height (px) on top of the clip's own jump, 0 at f15 and at contact
 
 /** The big bubble's final box and its tail (tip at his helmet). */
-const BUBBLE = {x: 846, y: 238, w: 968, h: 184, r: 48};
+const BUBBLE = {x: 872, y: 286, w: 968, h: 188, r: 48};
 const TEXT_SIZE = 100;
-const TAIL = {base0: 96, base1: 190, tip: {x: 790, y: 468}};
+const TAIL = {base0: 96, base1: 190, tip: {x: 812, y: 520}};
 
 const CAMERA: CameraKey[] = [
 	// framed below the title bar from the first frame (v1 showed the canvas + title-bar strip f0–6)
@@ -162,17 +162,17 @@ const Bubble: React.FC<{f: number; text: string; from: {cx: number; cy: number; 
 const Sparks: React.FC<{f: number; x: number; y: number}> = ({f, x, y}) => {
 	const d = f - CONTACT;
 	if (d < 0 || d > 22) return null;
-	const n = 16;
+	const n = 22;
 	return (
 		<>
 			{Array.from({length: n}, (_, i) => {
 				const a = Math.PI * (1.05 + (0.9 * i) / (n - 1)) + noise2D('s13-sa', i, 0) * 0.12; // upper half-fan
-				const sp = 280 + 160 * (0.5 + 0.5 * noise2D('s13-ss', i, 1));
+				const sp = 380 + 220 * (0.5 + 0.5 * noise2D('s13-ss', i, 1));
 				const t = clamp01(d / 22);
 				const e = E.push(t);
 				const px = x + Math.cos(a) * sp * e * 1.25;
 				const py = y + Math.sin(a) * sp * e * 0.7 + 90 * t * t; // a little gravity
-				const r = (i % 3 === 0 ? 7 : 5) * (1 - 0.5 * t);
+				const r = (i % 3 === 0 ? 10 : 7) * (1 - 0.5 * t);
 				const c = i % 3 === 0 ? color.mint : i % 3 === 1 ? color.volt : color.ember;
 				const o = (1 - t) * ramp(d, 0, 2);
 				return (
@@ -260,6 +260,22 @@ const S13NadaEmDuvida: React.FC = () => {
 								) : null}
 							</Screen>
 						</AbsoluteFill>
+						{/* anticipation: the in-app UBI starts to glow as the camera pushes in (he is about to step out) */}
+						{f < MATCH + 6 ? (
+							<div
+								style={{
+									position: 'absolute',
+									left: inApp.x + inApp.w / 2 - inApp.w * 1.6,
+									top: inApp.y + inApp.h * 0.55 - inApp.w * 1.3,
+									width: inApp.w * 3.2,
+									height: inApp.w * 2.6,
+									borderRadius: '50%',
+									opacity: ramp(f, 2, MATCH, E.enter) * (1 - ramp(f, MATCH, MATCH + 6)),
+									mixBlendMode: 'screen',
+									background: 'radial-gradient(closest-side, rgba(170,200,255,0.34) 0%, rgba(77,141,255,0.14) 50%, rgba(77,141,255,0) 100%)',
+								}}
+							/>
+						) : null}
 						{/* key light: white-blue behind UBI and the bubble (screen), so the stage reads lit, not blacked out */}
 						{bloom > 0.001 ? (
 							<>
