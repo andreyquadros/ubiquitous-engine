@@ -62,7 +62,7 @@ import {
 export const sfx: SfxCue[] = [
 	{ref: 'ding_1.wav', atFrame: 15, gainDb: -12, note: '18:00 lands (E6); rhymes with s06’s ding.'},
 	{ref: 'whoosh-soft.wav', atFrame: 36, gainDb: -14, note: 'Report window rises; loudest point ≈ fastest frame of the rise.'},
-	{ref: 'whoosh_in_3.wav', atFrame: 53, gainDb: -22, note: 'v2: the report card lifts out of the window (SNAPPY, lands ≈ f53).'},
+	{ref: 'whoosh_in_3.wav', atFrame: 53, gainDb: -18, note: 'v2: the report card lifts out of the window (SNAPPY, lands ≈ f53). v2 review: −22 → −18 dB (the film-wide LiftCard lift level).'},
 	{ref: 'click.wav', atFrame: 60, gainDb: -12, note: 'Copiar Markdown.'},
 	{ref: 'success_chime_2.wav', atFrame: 63, gainDb: -14, note: 'Mint check.'},
 ];
@@ -348,9 +348,50 @@ const MetaRecompose: React.FC = () => (
 			<React.Fragment key={dy}>
 				{/* "Gerado 29/09 18:00" stays where it is */}
 				<Crop src={FILE} rect={{x: 648, y: 434 + dy, w: 244, h: 36}} />
-				{/* "3h22 registradas   6.120 tokens de entrada, 1.480 de saída" slides in after it (the 26-px group gap kept) */}
-				<Crop src={FILE} rect={{x: 1160, y: 434 + dy, w: 700, h: 36}} at={{x: 912, y: 434 + dy}} />
+				{/* "3h22 registradas" slides in after it (the 26-px group gap kept); v2 review: the token counts (x 1386–1843) are left out */}
+				<Crop src={FILE} rect={{x: 1160, y: 434 + dy, w: 210, h: 36}} at={{x: 912, y: 434 + dy}} />
 			</React.Fragment>
+		))}
+	</>
+);
+
+/** Page background of the Relatórios capture. */
+const PAGE_BG = '#060a14';
+/**
+ * v2 review: the page heading block. "Relatórios" + its subline (x 513–1441, y 81–183) ghost behind the headline,
+ * and the status line "Terça-feira, 29 de setembro: 2 de 3 relatórios prontos." (x 513–1225, y 260–287) reads
+ * as "2 of 3 ready" right under "O relatório sai pronto.". Both go (page colour).
+ */
+const PAGE_PATCHES = [
+	{x: 500, y: 68, w: 960, h: 128},
+	{x: 500, y: 248, w: 750, h: 52},
+];
+const PagePatches: React.FC = () => (
+	<>
+		{PAGE_PATCHES.map((r, i) => (
+			<div key={i} style={{position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h, background: PAGE_BG}} />
+		))}
+	</>
+);
+/** Input fill of the report's activity fields (#121a2b); fields span x 1468–2074. */
+const FIELD_BG = '#121a2b';
+/** Inner top of each activity field (measured: 610, 756, 902, 1048, 1226, 1372; inner height 64). */
+const FIELD_TOPS = [610, 756, 902, 1048, 1226, 1372];
+/** v2 review: a real text field's overflow fade at the right edge, so "…ementas e ca" / "…000042/2(" read as overflow, not a clip. */
+const FieldFades: React.FC = () => (
+	<>
+		{FIELD_TOPS.map((top, i) => (
+			<div
+				key={i}
+				style={{
+					position: 'absolute',
+					left: 1986,
+					top: top + 1,
+					width: 86,
+					height: 62,
+					background: `linear-gradient(90deg, rgba(18,26,43,0) 0%, ${FIELD_BG} 72%)`,
+				}}
+			/>
 		))}
 	</>
 );
@@ -526,6 +567,8 @@ const S14Relatorio: React.FC = () => {
 							<Screen {...SHOT} style={{zIndex: 'auto'}}>
 								<Patches patches={storyboardPatches(scene, FILE)} />
 								<MetaRecompose />
+								<PagePatches />
+								<FieldFades />
 								{/* continuity: s13 just emptied the review queue — the sidebar's pending-count badge goes (nav colour) */}
 								<div style={{position: 'absolute', left: BADGE.x - 3, top: BADGE.y - 3, width: BADGE.w + 6, height: BADGE.h + 6, background: '#0a101c'}} />
 								<LiftHole rect={CROP} at={LIFT_AT} enter="lift" color={APP.panel} pad={4} feather={16} radius={20} socket={0.6} />
@@ -552,6 +595,7 @@ const S14Relatorio: React.FC = () => {
 								<Crop src={FILE} rect={{x: 548, y: 382, w: 200, h: 84}} at={{x: CROP.x + 30, y: 382}} />
 								<Crop src={FILE} rect={{x: 648, y: 434, w: 244, h: 36}} at={{x: CROP.x + 132, y: 434}} />
 							</div>
+							<FieldFades />
 							<CopyButton f={f} />
 							<div style={{position: 'absolute', left: CROP.x, top: CROP.y, width: CROP.w, height: CROP.h, overflow: 'hidden'}}>
 								<LightSweep from={70} to={100} strength={0.1} />

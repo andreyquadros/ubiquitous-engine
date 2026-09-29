@@ -19,13 +19,14 @@
  * bubble floats against him, a light sweep crosses the bubble.
  */
 import React from 'react';
-import {AbsoluteFill} from 'remotion';
+import {AbsoluteFill, Easing} from 'remotion';
 import {noise2D} from '@remotion/noise';
+import {LiftCard, type LiftCardProps} from '../components/LiftCard';
 import {Screen, type ScreenConfig} from '../components/Screen';
 import {mapImageRect, type CameraKey} from '../components/screen-geometry';
 import {alpha, color, font} from '../design/tokens';
 import {E, Patches, springAt, storyboardPatches, TransitionIn, TransitionOut, UbiTrack, UBI_ANCHORS, useScene, useSceneFrame, type SfxCue} from '../shared';
-import {APP, Backdrop, clamp01, Finish, gradientFill, H, lerp, LightSweep, ramp, voltGlow, W, widenLegend} from './_parts/G5/common';
+import {APP, Backdrop, clamp01, Finish, gradientFill, H, Icon, lerp, LightSweep, ramp, voltGlow, W, widenLegend} from './_parts/G5/common';
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
 export const sfx: SfxCue[] = [
@@ -73,17 +74,98 @@ const SHOT: ScreenConfig = {
 	grade: {brightness: 1.3, lift: 0.07},
 };
 
+const BUBBLE_GROW = 20;
+const BUBBLE_LAND = 27;
+/** Accelerate out of the in-app bubble, arrive fast on the peak (a pop, not a glide). */
+const BUBBLE_EASE = Easing.bezier(0.45, 0, 0.55, 1);
+
+/**
+ * v2 review (fill): the empty state's own heading "Nada esperando por você" (review-done.png, ink x 1048–1511,
+ * y 784–821) LIFTS out of the racking app from f17 as a slim floating chip under the bubble, in the lower-right
+ * quadrant that was empty backdrop; a mint check draws on at its left (f25–33). No number is shown.
+ */
+const CHIP: {x: number; y: number; w: number; h: number} = {x: 900, y: 762, w: 672, h: 80};
+const CHIP_AT = 17;
+const CHIP_K = 1.42;
+const CHIP_POS = {x: 1372, y: 700};
+const Chip: React.FC<{f: number}> = ({f}) => {
+	if (f < CHIP_AT) return null;
+	const props: LiftCardProps = {
+		src: FILE,
+		rect: CHIP,
+		at: CHIP_AT,
+		enter: 'lift',
+		spring: 'smooth',
+		from: (fr) => {
+			// its in-window rect, through the app's push (scale about (END.x, 640))
+			const r = mapImageRect(SHOT, fr, COMP, CHIP);
+			const p = fr < MATCH ? 1 : 1 + 0.1 * E.push(ramp(fr, MATCH, 35));
+			return {x: END.x + (r.x - END.x) * p, y: 640 + (r.y - 640) * p, w: r.w * p, h: r.h * p};
+		},
+		x: [
+			[CHIP_AT, CHIP_POS.x],
+			[59, CHIP_POS.x - 18],
+		],
+		y: CHIP_POS.y,
+		width: CHIP.w * CHIP_K,
+		rotateX: [
+			[CHIP_AT, 12],
+			[59, 7, E.glide],
+		],
+		rotateY: [
+			[CHIP_AT, -14],
+			[59, -9, E.glide],
+		],
+		radius: 26,
+		float: 5,
+		floatPeriod: 70,
+		glow: color.mint,
+		glowOpacity: 0.32,
+		grade: SHOT.grade,
+		style: {zIndex: 'auto'},
+	};
+	const check = ramp(f, 25, 33, E.push);
+	const badge = ramp(f, 23, 27, E.enter);
+	return (
+		<LiftCard {...props}>
+			{/* mint check badge at the chip's left (image px) */}
+			<div
+				style={{
+					position: 'absolute',
+					left: CHIP.x + 44,
+					top: CHIP.y + 10,
+					width: 60,
+					height: 60,
+					borderRadius: '50%',
+					opacity: badge,
+					transform: `scale(${lerp(0.6, 1, badge).toFixed(4)})`,
+					background: alpha(color.mint, 0.16),
+					boxShadow: `inset 0 0 0 2px ${alpha(color.mint, 0.7)}, 0 0 18px ${alpha(color.mint, 0.35 * badge)}`,
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'center',
+				}}
+			>
+				<Icon name="check" size={34} stroke={color.mint} strokeWidth={2.6} draw={check} />
+			</div>
+		</LiftCard>
+	);
+};
+
 const Bubble: React.FC<{f: number; text: string; from: {cx: number; cy: number; w: number}; bob: number}> = ({f, text, from, bob}) => {
 	if (f < MATCH) return null;
-	const s = springAt(f, MATCH, 'SNAPPY', 12);
-	const k = lerp(from.w / BUBBLE.w, 1, s);
+	// v2 review: the in-app bubble holds its place f15–20, then grows f20–27 and PEAKS (overshoot 1.05) on f27 =
+	// abs 897, the storyboard landFrame and the pop+2 transient; it settles 1.05 → 1 over f27–33
+	const g = BUBBLE_EASE(ramp(f, BUBBLE_GROW, BUBBLE_LAND));
+	const settle = E.glide(ramp(f, BUBBLE_LAND, BUBBLE_LAND + 6));
+	const k = f < BUBBLE_LAND ? lerp(from.w / BUBBLE.w, 1.05, g) : lerp(1.05, 1, settle);
 	const bx = BUBBLE.x + BUBBLE.w / 2;
 	const by = BUBBLE.y + BUBBLE.h / 2;
-	const cx = lerp(from.cx, bx, s);
-	const cy = lerp(from.cy, by, s) + bob;
+	const cx = lerp(from.cx, bx, g);
+	const cy = lerp(from.cy, by, g) + bob;
 	// fully opaque on the match frame: it starts on the in-app bubble's rect, which is covered on this same frame (no blink)
 	const o = f >= MATCH ? 1 : 0;
-	const v = ramp(f, MATCH + 8, MATCH + 12);
+	const v = ramp(f, BUBBLE_LAND - 3, BUBBLE_LAND);
 	// text: "Nada em dúvida!" with the last word volt (split on the last space / NBSP)
 	const cut = Math.max(text.lastIndexOf(' '), text.lastIndexOf(' '));
 	const lead = text.slice(0, cut + 1);
@@ -253,7 +335,8 @@ const S13NadaEmDuvida: React.FC = () => {
 								{/* he stepped out of the card: its heading and button melt away with the rack (no blurred text smudge at his feet) */}
 								{f >= MATCH
 									? CARD_TEXT.map((r, i) => (
-											<div key={i} style={{position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h, background: CARD_BG, borderRadius: 12, opacity: ramp(f, MATCH, MATCH + 9, E.enter)}} />
+											// the heading (i = 0) leaves as the lifted chip on f17: covered in one frame there (never two copies)
+											<div key={i} style={{position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h, background: CARD_BG, borderRadius: 12, opacity: i === 0 ? (f >= CHIP_AT ? 1 : ramp(f, MATCH, MATCH + 9, E.enter)) : ramp(f, MATCH, MATCH + 9, E.enter)}} />
 										))
 									: null}
 								{/* only one UBI: the bitmap UBI and its bubble go on the match frame itself */}
@@ -339,6 +422,7 @@ const S13NadaEmDuvida: React.FC = () => {
 							</>
 						) : null}
 						<Sparks f={f} x={END.x} y={END.y - 20} />
+						<Chip f={f} />
 						<UbiTrack segments={scene.ubiTrack} size={size} x={x} y={y} opacity={f >= MATCH ? 1 : 0} rim={alpha(color.volt, 0.45)} />
 						<Bubble f={f} text={scene.copy[0].text} from={smallBubble} bob={-0.5 * float} />
 					</AbsoluteFill>

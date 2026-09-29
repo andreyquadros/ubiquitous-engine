@@ -23,7 +23,7 @@ import {noise2D} from '@remotion/noise';
 import {GLASS_INSET, RIM_PX, rimBackground, Screen, WINDOW_SHADOW, type ScreenConfig} from '../components/Screen';
 import {gradeFilter, resolveGrade} from '../components/screen-geometry';
 import {alpha, color} from '../design/tokens';
-import {E, hotspot, springAt, storyboardCamera, TransitionIn, TransitionOut, useScene, useSceneFrame, type SfxCue} from '../shared';
+import {E, hotspot, springAt, storyboardCamera, TransitionIn, TransitionOut, UbiClip, UBI_ANCHORS, useScene, useSceneFrame, type SfxCue} from '../shared';
 import {arcPoint, ArrowCursor, Backdrop, ClickRipple, Crop, Finish, Headline, lerp, LightSweep, pressAt, ramp, Shockwave, unitsOf} from './_parts/G5/common';
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
@@ -122,6 +122,54 @@ const OkFace: React.FC<{f: number}> = ({f}) => {
 	);
 };
 
+/**
+ * v2 review: the capture's UBI is a 120-app-px bitmap (jaggy at ≈ 400 px on screen). It is covered with the
+ * panel's own background (the app's `bg-panel` #0c1220 + `--hero-glow` radial-gradient(60% 80% at 22% 30%,
+ * rgb(77 141 255 / 0.16), transparent 70%), drawn over the whole panel box so the patch is seamless; measured
+ * against the capture: median error 0.6 levels) and the hi-res 3D UBI is composited at the same pose and place:
+ * the app's `mood="worried"` = the `worried` clip (finger up, orb in the other hand), looping, feet on the
+ * capture's feet (image px: silhouette x 180–449, y 172–595 → frame scale 0.687). The app's FloorGlow is
+ * re-drawn (rose #ff5c7a, 0.62 × 0.11 of the 480-px box, blur 24, opacity 0.7 ↔ 0.45 / scaleX 1 ↔ 0.86 over
+ * 3.6 s) and he floats like the in-app mascot does.
+ */
+const PANEL_BG: React.CSSProperties = {
+	backgroundColor: '#0c1220',
+	backgroundImage: 'radial-gradient(60% 80% at 22% 30%, rgba(77, 141, 255, 0.16), transparent 70%)',
+	backgroundSize: `${IMG.w}px ${IMG.h}px`,
+	backgroundRepeat: 'no-repeat',
+};
+const UBI_K = 423 / 616; // capture silhouette height / worried-clip silhouette height (900-px frame)
+const UBI_FEET = {x: 314.5 + (UBI_ANCHORS.feet.x - 460) * UBI_K, y: 595 + (UBI_ANCHORS.feet.y - 796) * UBI_K};
+const PATCH_BOTTOM = 704;
+const FLOAT_P = 108; // FloorGlow FLOAT_PERIOD.worried = 3.6 s
+const HiResUbi: React.FC<{f: number}> = ({f}) => {
+	const pad = 6;
+	const ph = 0.5 - 0.5 * Math.sin((f / FLOAT_P) * Math.PI * 2); // 1 when he is highest (UbiClip bob = sin · float): the glow shrinks and dims
+	const glowW = UBI.w * 0.62;
+	const glowH = UBI.w * 0.11;
+	return (
+		<>
+			{/* the capture's own floor glow bleeds ≈ 40 px below the UBI box: the patch runs to y 704 */}
+			<div style={{position: 'absolute', left: UBI.x - pad, top: UBI.y - pad, width: UBI.w + pad * 2, height: PATCH_BOTTOM - (UBI.y - pad), ...PANEL_BG, backgroundPosition: `${-(UBI.x - pad)}px ${-(UBI.y - pad)}px`}} />
+			<div
+				style={{
+					position: 'absolute',
+					left: UBI.x + UBI.w / 2 - glowW / 2,
+					top: UBI.y + UBI.h - glowH - 14, // tucked 14 px closer under his feet than the app's box-bottom glow
+					width: glowW,
+					height: glowH,
+					borderRadius: '50%',
+					background: 'radial-gradient(closest-side, #ff5c7a, transparent)',
+					filter: 'blur(24px)',
+					opacity: lerp(0.7, 0.45, ph),
+					transform: `scaleX(${lerp(1, 0.86, ph).toFixed(4)})`,
+				}}
+			/>
+			<UbiClip clip="worried" loop x={UBI_FEET.x} y={UBI_FEET.y} size={900 * UBI_K} float={9} floatPeriod={FLOAT_P} />
+		</>
+	);
+};
+
 /** Two volt breaths around the button before the click ("press me"), image space. */
 const OkPulse: React.FC<{f: number}> = ({f}) => {
 	if (f < 28 || f > CLICK + 1) return null;
@@ -154,9 +202,10 @@ const S15Foco: React.FC = () => {
 		if (c.text !== 'Não! Foque na sua produtividade.' && c.text !== 'Ok, foco!') throw new Error(`s15 copy drift: ${c.text}`);
 	}
 	const units = unitsOf(HEADLINE, [
-		{text: 'Foco', at: 20},
-		{text: 'que se', at: 22},
-		{text: 'defende.', at: 24, volt: 'defende.'},
+		// v2 review: +3 f so it lands and turns volt exactly on f30 (abs 1065: the tick and the beat)
+		{text: 'Foco', at: 23},
+		{text: 'que se', at: 25},
+		{text: 'defende.', at: 27, volt: 'defende.'},
 	]);
 
 	// backdrop: Foco page on the Bloqueios card (storyboard backdrop key), −12 px drift, glitch jolt f2–4
@@ -236,6 +285,7 @@ const S15Foco: React.FC = () => {
 								<div style={{position: 'absolute', inset: 0, filter: GRADE_FILTER}}>
 									<Img src={staticFile(WIN)} style={{position: 'absolute', left: 0, top: 0, width: WIN_W, height: WIN_H, display: 'block'}} />
 									<div style={{position: 'absolute', left: 0, top: 0, width: IMG.w, height: IMG.h, transformOrigin: '0 0', transform: `scale(${S0})`}}>
+										<HiResUbi f={f} />
 										{/* the in-app UBI's glow breathes after the click */}
 										{breathe > 0.001 ? (
 											<div

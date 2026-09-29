@@ -89,6 +89,10 @@ const S18EndCard: React.FC = () => {
 	const ring = f >= CONTACT && f < CONTACT + 18 ? ramp(f, CONTACT, CONTACT + 18, E.push) : 0;
 	const flare = f >= CONTACT ? 1 + 0.6 * (1 - ramp(f, CONTACT, CONTACT + 14, E.enter)) : 1;
 
+	/* ---- v2 review: the final hit reads visually — a 3-f white/volt burst decaying f0–2 (as the T7 drop at 240) */
+	const HIT_BURST = [0.34, 0.17, 0.06];
+	const burst = f < HIT_BURST.length ? HIT_BURST[f] : 0;
+
 	return (
 		<TransitionOut>
 			<TransitionIn>
@@ -191,6 +195,36 @@ const S18EndCard: React.FC = () => {
 					</MaskLine>
 					<CtaPill frame={f} at={12} sheenAt={120} text={cta} breatheFrom={60} />
 					<PlatformRow frame={f} at={18} text={platforms} />
+
+					{burst > 0 ? (
+						<>
+							{/* light burst around the lockup (screen: adds light, never greys the frame) */}
+							<AbsoluteFill
+								style={{
+									background:
+										'radial-gradient(ellipse 58% 62% at 50% 36%, rgba(210,226,255,1) 0%, rgba(128,170,255,0.6) 30%, rgba(77,141,255,0.2) 64%, rgba(77,141,255,0) 100%)',
+									opacity: burst,
+									mixBlendMode: 'screen',
+									pointerEvents: 'none',
+								}}
+							/>
+							{/* a volt starburst streak along the row (anamorphic flare) */}
+							<div
+								style={{
+									position: 'absolute',
+									left: 960 - 900,
+									top: ROW_Y - 40,
+									width: 1800,
+									height: 80,
+									borderRadius: '50%',
+									background: 'radial-gradient(closest-side, rgba(255,255,255,0.9) 0%, rgba(140,180,255,0.55) 35%, rgba(77,141,255,0) 100%)',
+									opacity: burst * 1.8,
+									mixBlendMode: 'screen',
+									pointerEvents: 'none',
+								}}
+							/>
+						</>
+					) : null}
 
 					<Vignette strength={0.55} />
 					<FilmGrain opacity={0.045} seed="s18" />

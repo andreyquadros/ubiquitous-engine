@@ -51,7 +51,7 @@ import {
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
 export const sfx: SfxCue[] = [
-	{ref: 'whoosh_in_3.wav', atFrame: 10, gainDb: -22, note: 'v2: “Confirmar os 19” lifts out of its bar toward the camera (lands ≈ f10).'},
+	{ref: 'whoosh_in_3.wav', atFrame: 5, gainDb: -18, note: 'v2: “Confirmar os 19” lifts out of its bar toward the camera. v2 review: on the landing (≈ f5, abs 785), −22 → −18 dB (the film-wide LiftCard lift level).'},
 	{ref: 'click.wav', atFrame: 30, gainDb: -12, note: 'Confirmar os 19.'},
 	{ref: 'shimmer_1.wav', atFrame: 33, gainDb: -14, note: 'All badges flip to “você” (C+3).'},
 	{ref: 'ui_pop_1.wav', atFrame: 44, gainDb: -20, note: 'v2: the button card lands in row 1’s “você” badge.'},
@@ -90,18 +90,22 @@ const PCT_RIGHT = [1800, 1831, 1762, 1762, 1831, 1762, 1800, 1762, 1831, 1831, 1
 const pctPatches = PCT_RIGHT.map((r, i) => ({x: r - 72, y: 572 + ROW_H * i, w: 76, h: 28}));
 /** After the confirm every row reads "100%" (x 1740–1804): patched too, so no column of "100 %" reads as an accuracy claim. */
 const pctPatchesAfter = Array.from({length: 12}, (_, i) => ({x: 1730, y: 473 + ROW_H * i, w: 82, h: 32}));
+/** v2 review: the picker's subtitle "Calendário, 5min" (x 2128–2317, y 183–206, both captures) contradicts s11's "Calendário → IFRO". */
+const PICKER_SUB: Rect = {x: 2120, y: 176, w: 210, h: 38};
 /** The two pending rows' "60%" / "68%" (IA suggestions; x 1783–1832, same place in both captures): patched too (v2 crit). */
 const pctPatchesPending = [130, 242].map((y) => ({x: 1776, y, w: 62, h: 32}));
 
 /** Scene grade: a touch brighter than the default window grade (the review list is the darkest UI in the film). */
 const GRADE_S12 = {brightness: 1.3, lift: 0.07};
 
+const HOLD_ZOOM = 2.4;
 const CAMERA: CameraKey[] = [
 	{at: 0, zoom: 1.75, focus: {x: 1500, y: 580}, anchor: {x: 830, y: 610}, duration: 0},
 	{at: SWAP, zoom: 1.86, focus: {x: 1500, y: 580}, anchor: {x: 830, y: 610}, duration: SWAP, easing: E.linear},
-	// reframe on the column of "você" (the window's top rows sit under the headline band)
-	{at: 50, zoom: 1.84, focus: {x: 1300, y: 760}, anchor: {x: 960, y: 690}, duration: 50 - SWAP, easing: E.push},
-	{at: 89, zoom: 1.92, focus: {x: 1285, y: 760}, anchor: {x: 960, y: 690}, duration: 39, easing: E.linear},
+	// v2 review: push IN on the first confirmed rows (s 0.93 → 1.2 comp px per image px: row titles ≥ 36 px, "você" chips
+	// ≈ 48 px); row 1 sits just under the headline band, the sidebar and the picker stay fully out of frame
+	{at: 50, zoom: HOLD_ZOOM, focus: {x: 1265, y: 717}, anchor: {x: 934, y: 668}, duration: 50 - SWAP, easing: E.push},
+	{at: 89, zoom: HOLD_ZOOM * 1.035, focus: {x: 1262, y: 717}, anchor: {x: 934, y: 668}, duration: 39, easing: E.linear},
 ];
 
 const shotOf = (src: string): ScreenConfig => ({
@@ -115,7 +119,7 @@ const shotOf = (src: string): ScreenConfig => ({
 	rotateY: [
 		[0, -14],
 		[SWAP, -12],
-		[89, -8, E.glide],
+		[89, -5, E.glide], // v2 review: flatter at the hold (−8 → −5) so row 1's top edge stays level under the band
 	],
 	dots: 'neutral',
 	radius: 16,
@@ -145,7 +149,8 @@ const CARD_UP: LiftCardProps = {
 		[24, CARD_SCALE * 1.01],
 		[28, CARD_SCALE * 1.05, E.enter],
 		[CLICK - 1, CARD_SCALE * 1.05],
-		[CLICK + 1, CARD_SCALE * 1.0, E.exit],
+		// v2 review: pressed ON the click frame (the transient is at f30.1)
+		[CLICK, CARD_SCALE * 0.99, E.exit],
 		[CLICK + 4, CARD_SCALE * 1.06, E.push],
 	],
 	rotateX: [
@@ -197,7 +202,8 @@ const cardAt = (f: number, fps: number): LiftCardProps => {
 const CardFace: React.FC<{f: number}> = ({f}) => {
 	const hover = ramp(f, 24, 28, E.enter);
 	const press = pressAt(f, CLICK);
-	const mint = ramp(f, CLICK, CLICK + 3, E.enter);
+	// v2 review: the colour flips on the click frame itself (0.5 at f30, full at f31)
+	const mint = ramp(f, CLICK - 1, CLICK + 1, E.enter);
 	// v2 crit: over the drop's last frames the face turns solid mint (the label goes), so it lands in the "você" badge as colour
 	const solid = ramp(f, LAND - 8, LAND - 4, E.enter);
 	return (
@@ -320,6 +326,7 @@ const S12UmClique: React.FC = () => {
 						<Patches patches={layerPatches(shot.src)} />
 						{/* the sidebar's "Revisão" pending-count badge */}
 						<div style={{position: 'absolute', left: BADGE_NAV.x - 3, top: BADGE_NAV.y - 3, width: BADGE_NAV.w + 6, height: BADGE_NAV.h + 6, background: '#14223c'}} />
+						<div style={{position: 'absolute', left: PICKER_SUB.x, top: PICKER_SUB.y, width: PICKER_SUB.w, height: PICKER_SUB.h, background: ROW_BG}} />
 						{pctPatchesPending.map((r, i) => (
 							<div key={`p${i}`} style={{position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h, background: ROW_BG}} />
 						))}
@@ -367,7 +374,8 @@ const S12UmClique: React.FC = () => {
 							style={{
 								opacity: band,
 								pointerEvents: 'none',
-								background: `linear-gradient(180deg, ${navyDim(0.94)} 0px, ${navyDim(0.92)} 230px, ${navyDim(0.5)} 300px, ${navyDim(0)} 380px)`,
+								// v2 review: a clean band behind the headline (y 0–278 at ≈ 0.97; the section header sits under it), fading out above row 1 (y ≈ 325)
+								background: `linear-gradient(180deg, ${navyDim(0.975)} 0px, ${navyDim(0.965)} 278px, ${navyDim(0.4)} 306px, ${navyDim(0)} 328px)`,
 								zIndex: 31,
 							}}
 						/>

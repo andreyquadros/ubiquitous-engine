@@ -183,9 +183,21 @@ export const MaskLine: React.FC<{
 	color: string;
 	children: React.ReactNode;
 	ariaLabel?: string;
-}> = ({frame, at, duration = 18, capTop, left, cx, family, size, weight, tracking, color: c, children, ariaLabel}) => {
+	/**
+	 * Soft-edged mask: while the line rises, the clip's lower edge is a feathered fade (not a hard edge) and
+	 * the glyphs carry a little blur, so the first frames show soft rising letters instead of clipped slivers
+	 * (s17 v2 review). Off by default.
+	 */
+	feather?: boolean;
+}> = ({frame, at, duration = 18, capTop, left, cx, family, size, weight, tracking, color: c, children, ariaLabel, feather = false}) => {
 	if (frame < at) return null;
 	const p = ramp(frame, at, at + duration, E.enter);
+	// feather: solid down to (15 + 85 p) % of the clip box, then fading to 0 at its lower edge (gone once landed),
+	// plus an opacity ramp over the first half of the rise, so the first glyph tops never read as hard slivers
+	const solid = 15 + 85 * p;
+	const fmask = feather && p < 0.995 ? `linear-gradient(180deg, #000 0%, #000 ${solid.toFixed(2)}%, rgba(0,0,0,0) 100%)` : undefined;
+	const fblur = feather ? 6 * (1 - p) : 0;
+	const fop = feather ? Math.pow(Math.min(1, p / 0.55), 1.5) : 1;
 	const padT = 0.16 * size;
 	const padB = 0.12 * size;
 	const padX = 0.1 * size;
@@ -196,8 +208,8 @@ export const MaskLine: React.FC<{
 			? {position: 'absolute', left: 0, width: W, top, display: 'flex', justifyContent: 'center'}
 			: {position: 'absolute', left: (left ?? 0) - padX, top};
 	return (
-		<div style={box} aria-label={ariaLabel}>
-			<div style={{overflow: 'hidden', paddingTop: padT, paddingBottom: padB, paddingLeft: padX, paddingRight: padX}}>
+		<div style={fop < 1 ? {...box, opacity: fop} : box} aria-label={ariaLabel}>
+			<div style={{overflow: 'hidden', paddingTop: padT, paddingBottom: padB, paddingLeft: padX, paddingRight: padX, WebkitMaskImage: fmask, maskImage: fmask}}>
 				<div
 					style={{
 						fontFamily,
@@ -209,6 +221,7 @@ export const MaskLine: React.FC<{
 						whiteSpace: 'nowrap',
 						transformOrigin: '0% 100%',
 						transform: p < 1 ? `translateY(${((1 - p) * 110).toFixed(3)}%) rotate(${((1 - p) * 3).toFixed(3)}deg)` : undefined,
+						filter: fblur > 0.2 ? `blur(${fblur.toFixed(2)}px)` : undefined,
 					}}
 				>
 					{children}

@@ -35,8 +35,8 @@ import {Screen, type ScreenConfig} from '../components/Screen';
 import {navyDim, STAGE, StageBase} from '../components/Stage';
 import {mapImageRect, type Rect} from '../components/screen-geometry';
 import {alpha, color, font} from '../design/tokens';
-import {E, hotspot, springAt, storyboardPatches, TransitionIn, TransitionOut, useScene, useSceneFrame, type SfxCue} from '../shared';
-import type {StoryboardPatch} from '../storyboard';
+import {E, hotspot, sceneById, springAt, storyboardPatches, TransitionIn, TransitionOut, useScene, useSceneFrame, type SfxCue} from '../shared';
+import type {SceneSpec, StoryboardPatch} from '../storyboard';
 import {FilmGrain, H, lerp, ramp, Stage, Vignette, W} from './_parts/G6/common';
 import {APP, arcPoint, ArrowCursor, ClickRipple, Headline, KeyIcon, mixHex, pressAt, projectCardPoint, Shockwave, unitsOf} from './_parts/G6/kit';
 
@@ -94,11 +94,14 @@ const V2_PATCHES: StoryboardPatch[] = [
 	{file: AFTER, rect: {x: 2698, y: 1416, w: 96, h: 56}, color: PANEL, from: SWAP, to: 104, covers: 'local-only toggle'},
 ];
 
-/** Hover windows (the cursor rests on each label from its arrival − 3 f to its departure). */
+/**
+ * Hover windows. v2 review: the highlight's first visible frame is the cursor's arrival = the tick frame
+ * (f15 / f30 / f45; ramp starts 1 f earlier at 0, so it reads on the cue frame, never before it).
+ */
 const HOVER: Record<ProviderId, [number, number]> = {
-	anthropic: [12, 17],
-	openai: [27, 32],
-	xai: [42, 58],
+	anthropic: [14, 17],
+	openai: [29, 32],
+	xai: [44, 58],
 	ubi: [68, 999],
 };
 const hoverOf = (f: number, id: ProviderId) => {
@@ -238,23 +241,48 @@ const CARD_W = 1380;
 const CARD_K = CARD_W / PICKER.w;
 const CARD = {x: 930, y: 452} as const;
 
-const S16SuaIa: React.FC = () => {
-	const scene = useScene();
-	const {frame: f} = useSceneFrame();
-	const {fps} = useVideoConfig();
-	const [l1, l2] = scene.copy;
+const ubiGlow = (fr: number) => (fr < CLICK ? 0 : 1 - ramp(fr, CLICK + 10, CLICK + 28, E.glide)) * ramp(fr, CLICK, CLICK + 4);
+const headUnits = (spec: SceneSpec) => {
+	const [l1, l2] = spec.copy;
 	const line1 = unitsOf(l1.text, [
 		{text: 'Claude,', at: 2, lit: litOf('anthropic')},
 		{text: 'OpenAI', at: 4, lit: litOf('openai')},
 		{text: 'ou Grok.', at: 6, lit: litOf('xai')},
 	]);
-	const ubiGlow = (fr: number) => (fr < CLICK ? 0 : 1 - ramp(fr, CLICK + 10, CLICK + 28, E.glide)) * ramp(fr, CLICK, CLICK + 4);
 	const line2 = unitsOf(l2.text, [
 		{text: 'Ou', at: 48},
 		{text: 'deixe', at: 50},
 		{text: 'com', at: 52},
 		{text: 'o Ubi.', at: 54, volt: l2.emphasis.includes('Ubi.') ? 'Ubi.' : undefined, lit: ubiGlow},
 	]);
+	return [line1, line2] as const;
+};
+const HEAD = {size: 132, left: 128, capTop1: 690, capTop2: 852} as const;
+/**
+ * v2 review (s16→s17 blur-dissolve): the headline takes part in the out-half (blur 0 → 12 px, opacity → 0.4,
+ * E.glide) so the dissolve has an s16 side; s17 carries this same plate (`S16HeadlineGhost`) over its f0–4
+ * and lets it finish dissolving.
+ */
+export const HEAD_DISSOLVE = {dissolveBlur: 12, dissolveFloor: 0.4, dissolveScale: 1.015} as const;
+const LAST = 104;
+
+/** The settled s16 headline (both lines, as on s16's last frame), for s17's in-half ghost plate. */
+export const S16HeadlineGhost: React.FC<{opacity: number; blur: number; scale: number}> = ({opacity, blur, scale}) => {
+	const [line1, line2] = headUnits(sceneById('s16-sua-ia'));
+	if (opacity <= 0.005) return null;
+	return (
+		<AbsoluteFill style={{opacity, filter: `blur(${blur.toFixed(2)}px)`, transform: `scale(${scale.toFixed(4)})`, pointerEvents: 'none'}}>
+			<Headline units={line1} size={HEAD.size} left={HEAD.left} capTop={HEAD.capTop1} frame={LAST} />
+			<Headline units={line2} size={HEAD.size} left={HEAD.left} capTop={HEAD.capTop2} frame={LAST} />
+		</AbsoluteFill>
+	);
+};
+
+const S16SuaIa: React.FC = () => {
+	const scene = useScene();
+	const {frame: f} = useSceneFrame();
+	const {fps} = useVideoConfig();
+	const [line1, line2] = headUnits(scene);
 
 	const file = f < SWAP ? BEFORE : AFTER;
 	const shot: ScreenConfig = {
@@ -392,8 +420,11 @@ const S16SuaIa: React.FC = () => {
 					</TransitionIn>
 				</Stage>
 			</TransitionOut>
-			<Headline units={line1} size={132} left={128} capTop={690} />
-			{f >= 48 ? <Headline units={line2} size={132} left={128} capTop={852} /> : null}
+			{/* v2 review: the type dissolves too (softer than the stage: 12 px, floor 0.4), so the cut meets s17's blurred in-half */}
+			<TransitionOut options={HEAD_DISSOLVE}>
+				<Headline units={line1} size={HEAD.size} left={HEAD.left} capTop={HEAD.capTop1} />
+				{f >= 48 ? <Headline units={line2} size={HEAD.size} left={HEAD.left} capTop={HEAD.capTop2} /> : null}
+			</TransitionOut>
 			<Vignette strength={0.5} />
 			<FilmGrain opacity={0.045} seed="s16" />
 		</AbsoluteFill>

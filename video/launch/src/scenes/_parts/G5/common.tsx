@@ -243,8 +243,10 @@ export const cursorScale = (k: number) => Math.min(1.5, Math.max(1, 1 + (k - 1) 
 
 /** Press factor 0→1→0 around a click at C: down C−1..C+1, SNAPPY release. */
 export const pressAt = (f: number, click: number) => {
+	// v2 review: fully pressed ON the cue frame (the click transient lands on f, never before the visible press)
 	if (f < click - 1) return 0;
-	if (f <= click + 1) return ramp(f, click - 1, click + 1);
+	if (f <= click) return ramp(f, click - 1.5, click);
+	if (f <= click + 1) return 1;
 	return clamp01(1 - springAt(f, click + 1, 'SNAPPY', 5));
 };
 
@@ -282,7 +284,8 @@ export const ClickRipple: React.FC<{x: number; y: number; at: number; scale?: nu
 				const d = frame - g.start;
 				if (d < 0 || d > g.len) return null;
 				const t = clamp01(d / g.len);
-				const r = g.r * E.push(t) * scale;
+				// v2 review: the first ring is already visible on the click frame (d = 0)
+				const r = g.r * Math.max(0.22, E.push(t)) * scale;
 				const sw = lerp(2, 0.5, t) * scale;
 				return (
 					<div
@@ -381,7 +384,8 @@ export const Shockwave: React.FC<{x: number; y: number; at: number; radius?: num
 	const d = frame - at;
 	if (d < 0 || d > len) return null;
 	const t = clamp01(d / len);
-	const r = radius * E.push(t);
+	// v2 review: visible on the event frame itself (d = 0), not one frame after it
+	const r = radius * Math.max(0.1, E.push(t));
 	const fade = (1 - t) * strength;
 	return (
 		<>

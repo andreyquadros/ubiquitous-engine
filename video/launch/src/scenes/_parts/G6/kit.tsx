@@ -88,16 +88,19 @@ export const gradientFill = (volt = 0, lit = 0): React.CSSProperties => ({
 export const voltGlow = (a: number) => `drop-shadow(0 0 18px rgba(77,141,255,${(0.45 * a).toFixed(3)}))`;
 const TYPE_SHADOW = 'drop-shadow(0 4px 18px rgba(6,10,24,0.55))';
 
-export const Headline: React.FC<{units: HeadUnit[]; size: number; left: number; capTop: number; tracking?: string; weight?: number; style?: React.CSSProperties}> = ({
-	units,
-	size,
-	left,
-	capTop,
-	tracking = '-0.04em',
-	weight = 700,
-	style,
-}) => {
-	const frame = useCurrentFrame();
+export const Headline: React.FC<{
+	units: HeadUnit[];
+	size: number;
+	left: number;
+	capTop: number;
+	tracking?: string;
+	weight?: number;
+	style?: React.CSSProperties;
+	/** Render at this (scene) frame instead of the current one (e.g. a settled ghost plate in the next scene). */
+	frame?: number;
+}> = ({units, size, left, capTop, tracking = '-0.04em', weight = 700, style, frame: frameAt}) => {
+	const current = useCurrentFrame();
+	const frame = frameAt ?? current;
 	return (
 		<div
 			style={{

@@ -9,12 +9,13 @@
  * the AI gets. On a beat-locked cascade each value passes through the gate and
  * comes out as its token:
  *   ana@example.com        → [email]      f90  (abs 1320, downbeat)
- *   (69) 99999-0000        → [telefone]   f98  (8th)
+ *   (00) 90000-0000        → [telefone]   f98  (8th; DDD 00 does not exist)
  *   123.456.789-00         → [cpf]        f105 (beat)
  *   example.com/?ref=ana   → example.com  f113 (8th; query stripped)
  *
- * f0–5 blur-dissolve in-half on the stage lights + UBI (the navy base and the
- * type stay crisp). Line 1 masks up from f0 (≥ 0.9 by f8). f4–30 the panel
+ * f0–5 blur-dissolve in-half on the stage lights + UBI; s16's headline plate
+ * finishes its dissolve over f0–4 (v2 review). Line 1 masks up from f2 through
+ * a soft-edged mask (≥ 0.9 by f8). f4–30 the panel
  * rises and its rows fill in. f45 (beat 2) internal jump-cut: the stage + UBI
  * jump to 1.08 (the type/panel layer to 1.02: parallax), UBI's look clip starts.
  * f60 line 2 masks up. f76–88 the gate arms (draws down) and a volt marker
@@ -32,6 +33,7 @@ import {alpha, color} from '../design/tokens';
 import {E, springAt, TransitionIn, TransitionOut, UbiTrack, useSceneFrame, type SfxCue} from '../shared';
 import {clamp01, FilmGrain, lerp, MaskLine, ramp, Stage, TYPE, Vignette} from './_parts/G6/common';
 import {gradientFill, mixHex, voltGlow} from './_parts/G6/kit';
+import {S16HeadlineGhost} from './s16-sua-ia';
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
 export const sfx: SfxCue[] = [
@@ -75,6 +77,7 @@ const UBI = {x: 400, y: 985, size: 820} as const;
 /* Timing                                                                    */
 /* ------------------------------------------------------------------------ */
 
+const L1_AT = 2;
 const JUMP = 45;
 const LINE2 = 60;
 const SWEEP = 76;
@@ -108,6 +111,10 @@ const PANEL_BG = '#131c30';
 const ROW_BG = '#19243b';
 const INK = '#eef3fc';
 const TOKEN_INK = '#8ab4ff';
+/** v2 review: the landed token is the proof → near-white on a volt-tinted fill (brighter than the raw value). */
+const TOKEN_ON = '#f3f7ff';
+/** The raw value dims to this once its token has landed, so the eye travels left → right with the cascade. */
+const VALUE_DIM = 0.45;
 
 /** lucide icons (mail, phone, id-card, link), stroke 2 in a 24 box. */
 const RowIcon: React.FC<{name: Row['icon']; size: number; stroke: string}> = ({name, size, stroke}) => {
@@ -169,11 +176,13 @@ const RowView: React.FC<{f: number; row: Row; i: number}> = ({f, row, i}) => {
 	const g = ramp(f, F - 7, F, E.push);
 	const ghostO = f < F - 7 || f > F + 1 ? 0 : Math.sin(Math.PI * clamp01((f - (F - 7)) / 9)) * 0.75;
 	// token: pops out of the gate on the flip (SNAPPY), blur 6 → 0 by F + 2
+	// v2 review: readable ON the pop's frame (opacity 0.8, blur ≤ 1.6 px at F), settled by F + 2
 	const tokIn = f < F ? 0 : springAt(f, F, 'SNAPPY');
-	const tokO = ramp(f, F, F + 2);
-	const tokSharp = ramp(f, F, F + 3, E.enter);
+	const tokO = f < F ? 0 : lerp(0.8, 1, ramp(f, F, F + 2));
+	const tokSharp = f < F ? 0 : lerp(0.73, 1, ramp(f, F, F + 2, E.enter));
 	const flash = f >= F ? 1 - ramp(f, F, F + 16, E.glide) : 0;
 	const done = ramp(f, F, F + 5, E.enter);
+	const valueO = f < F ? 1 : lerp(1, VALUE_DIM, ramp(f, F, F + 6, E.glide));
 	// beat breath on the landed tokens (the build)
 	const breath = f >= 118 ? 0.5 + 0.5 * Math.cos((2 * Math.PI * (f - 120)) / 15) : 0;
 	const breathA = f >= 118 ? ramp(f, 118, 124) * breath : 0;
@@ -226,7 +235,7 @@ const RowView: React.FC<{f: number; row: Row; i: number}> = ({f, row, i}) => {
 				/>
 			) : null}
 			{/* the value: it stays (your data) */}
-			<div style={{position: 'absolute', left: VALUE_X - ROW.inset, top: cy - FS / 2, height: FS, display: 'flex', alignItems: 'center', ...textStyle(500, INK)}}>{row.value}</div>
+			<div style={{position: 'absolute', left: VALUE_X - ROW.inset, top: cy - FS / 2, height: FS, display: 'flex', alignItems: 'center', ...textStyle(500, INK), opacity: valueO}}>{row.value}</div>
 			{/* ghost copy sliding into the gate, clipped at it */}
 			{ghostO > 0.01 ? (
 				<div style={{position: 'absolute', left: 0, top: 0, width: GATE_X - ROW.inset, height: ROW.h, overflow: 'hidden'}}>
@@ -279,13 +288,13 @@ const RowView: React.FC<{f: number; row: Row; i: number}> = ({f, row, i}) => {
 						padding: '0 22px',
 						borderRadius: 16,
 						boxSizing: 'border-box',
-						background: `linear-gradient(${alpha(color.volt, 0.16 + 0.1 * flash + 0.06 * breathA)}, ${alpha(color.volt, 0.16 + 0.1 * flash + 0.06 * breathA)}), #0f1a33`,
-						boxShadow: `inset 0 0 0 1.5px ${alpha(color.volt, 0.45 + 0.3 * flash)}, 0 0 ${(12 + 30 * flash + 10 * breathA).toFixed(1)}px ${alpha(color.volt, 0.22 + 0.4 * flash + 0.12 * breathA)}`,
+						background: `linear-gradient(${alpha(color.volt, 0.3 + 0.12 * flash + 0.06 * breathA)}, ${alpha(color.volt, 0.3 + 0.12 * flash + 0.06 * breathA)}), #0f1a33`,
+						boxShadow: `inset 0 0 0 1.5px ${alpha(color.volt, 0.6 + 0.3 * flash)}, 0 0 ${(12 + 30 * flash + 10 * breathA).toFixed(1)}px ${alpha(color.volt, 0.26 + 0.4 * flash + 0.12 * breathA)}`,
 						opacity: tokO,
 						filter: tokSharp < 1 ? `blur(${(6 * (1 - tokSharp)).toFixed(2)}px)` : undefined,
 						transformOrigin: '0% 50%',
 						transform: tokIn < 0.999 ? `translateX(${(-24 * (1 - tokIn)).toFixed(2)}px) scale(${lerp(0.9, 1, tokIn).toFixed(4)})` : undefined,
-						...textStyle(600, TOKEN_INK),
+						...textStyle(600, TOKEN_ON),
 					}}
 				>
 					{row.token}
@@ -440,7 +449,8 @@ const S17Privacidade: React.FC = () => {
 	// fictional samples; the address and its token are the storyboard's copy, the rest follow redact.rs exactly
 	const rows: Row[] = [
 		{icon: 'mail', value: address, token, flip: FLIPS[0]},
-		{icon: 'phone', value: '(69) 99999-0000', token: '[telefone]', flip: FLIPS[1]},
+		// v2 review: DDD 00 does not exist (provably fictional); still matches redact.rs's PHONE regex → [telefone]
+		{icon: 'phone', value: '(00) 90000-0000', token: '[telefone]', flip: FLIPS[1]},
 		{icon: 'id', value: '123.456.789-00', token: '[cpf]', flip: FLIPS[2]},
 		{icon: 'link', value: 'example.com/?ref=ana', token: 'example.com', flip: FLIPS[3]},
 	];
@@ -451,6 +461,7 @@ const S17Privacidade: React.FC = () => {
 	const orbVolt = lerp(0.2, 0.3, build);
 	const floor = 0.3 * ramp(f, BUILD, 149, E.glide);
 	const volt = ramp(f, DRAW + 6, DRAW_END + 2, E.enter); // "mínimo." turns volt as the line lands
+	const ghostK = 1 - clamp01(f / 5); // 1 on the cut frame → 0 at f5
 
 	return (
 		<TransitionOut>
@@ -483,7 +494,8 @@ const S17Privacidade: React.FC = () => {
 
 				{/* type + panel camera (parallax: moves less than the stage) */}
 				<AbsoluteFill style={{transform: `scale(${zt.toFixed(5)})`, transformOrigin: '960px 540px'}}>
-					<MaskLine frame={f} at={0} capTop={L1.capTop} left={L1.left} family="sora" size={L1.size} weight={700} tracking="-0.04em" color={color.ink} ariaLabel={line1}>
+					{/* v2 review: line 1 rises from f2 (≥ 0.9 by f8, as the storyboard) through a soft-edged mask, once the dissolve has mostly settled */}
+					<MaskLine frame={f} at={L1_AT} duration={16} feather capTop={L1.capTop} left={L1.left} family="sora" size={L1.size} weight={700} tracking="-0.04em" color={color.ink} ariaLabel={line1}>
 						<span style={gradientFill(0)}>{line1}</span>
 					</MaskLine>
 					<Panel f={f} rows={rows} />
@@ -493,6 +505,10 @@ const S17Privacidade: React.FC = () => {
 					</MaskLine>
 					<Connector f={f} />
 				</AbsoluteFill>
+
+				{/* v2 review: the s16 side of the blur-dissolve continues here — s16's headline plate (0.4, 12 px on s16's
+				    last frame) finishes dissolving over f0–4 (screen space, the cut is not a camera move) */}
+				{f < 5 ? <S16HeadlineGhost opacity={0.4 * Math.pow(ghostK, 1.4)} blur={12 + 8 * (1 - ghostK)} scale={1 + 0.015 * ghostK} /> : null}
 
 				<Vignette strength={0.5} />
 				<FilmGrain opacity={0.045} seed="s17" />
