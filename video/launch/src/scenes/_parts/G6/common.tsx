@@ -13,7 +13,7 @@ import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame} from 'remotion';
 import {noise2D} from '@remotion/noise';
 import {Grain} from '../../../components/Grain';
-import {StageBase, StageFinish, StageLights, STAGE, type StageLook} from '../../../components/Stage';
+import {StageBase, StageFinish, StageGuards, StageLights, STAGE, type StageLook} from '../../../components/Stage';
 import {alpha, color} from '../../../design/tokens';
 import {E} from '../../../shared/motion';
 
@@ -148,6 +148,7 @@ export const Stage: React.FC<{
 					/>
 				</AbsoluteFill>
 			) : null}
+			<StageGuards guard={look?.guard} level={look?.level} keyPool={look?.keyPool} keyLight={look?.keyLight} />
 			{children}
 		</AbsoluteFill>
 	);

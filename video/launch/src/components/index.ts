@@ -10,6 +10,12 @@ export {
 	StageBase,
 	StageLights,
 	StageFinish,
+	StageGuards,
+	guardFor,
+	guardIssues,
+	guardProfile,
+	guardAlphaAt,
+	GUARD_OPACITY,
 	STAGE,
 	navyDim,
 	v2Dim,
@@ -21,6 +27,7 @@ export {
 	type StageLook,
 	type StagePool,
 	type StageKeyLight,
+	type StageGuard,
 } from './Stage';
 export {
 	screenGeometry,

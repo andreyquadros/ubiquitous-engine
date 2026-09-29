@@ -31,7 +31,8 @@ delay, 'snappy'|'smooth'|'subtleBounce')`, `staggerDelay(i, n, each, order)`.
 | layer | what |
 |---|---|
 | `<StageBase opacity?>` | navy vertical gradient `#0f1730 → #0a0f20` (`STAGE.top/bottom`), never black |
-| `<StageLights {...look} seed>` | volt **key pool** behind the subject (0.38), **indigo** `#6c5cff` (light only, never UI/type) + ember pools (0.12–0.16), a slow **aurora** sweep (two diagonal bands, one pass ≈ 12 s), and the white-blue **key light** `#cfe0ff` (0.14) right behind the subject |
+| `<StageLights {...look} seed>` | volt **key pool** behind the subject (0.42, a real pool: w 0.82 × h 0.92 of the canvas, 0 inside the frame edges), **indigo** `#6c5cff` (light only, never UI/type) + ember pools (0.18 / 0.17), a slow **aurora** sweep (two diagonal bands, one pass ≈ 12 s), and the white-blue **key light** `#cfe0ff` (0.15, w 0.5 × h 0.62) right behind the subject |
+| `<StageGuards guard level keyPool keyLight>` | soft navy **type guards** (`look.guard`), drawn by every group backdrop above its lights/orbs/floor and under its children; in dev it `console.warn`s once when the look breaks the GUARD RULE (`guardIssues(look)`) |
 | `<StageFinish vignette grain seed>` | vignette (v1 strength scale: `vignetteAlpha(s)` = 0.35 × s / 0.6, capped at **0.35**) + grain (default 0.042) |
 | `<Stage {...look}>` | all three with children between lights and finish |
 
@@ -39,13 +40,41 @@ delay, 'snappy'|'smooth'|'subtleBounce')`, `staggerDelay(i, n, each, order)`.
 
 | prop | default | notes |
 |---|---|---|
-| `level` | 1 | multiplier on every light; 0 = lights out (base only). G1 `orbs={[]}` (s04) → 0 |
-| `keyPool` | `{x: .5, y: .48, w: 1.15, h: 1.3, opacity: .38}` | fractions of the canvas; **move it behind the subject of the shot** (`keyPool: {x: .7, y: .45}`) or `false` |
-| `pools` | indigo TR 0.16, ember BL 0.12 | `StagePool[]` `{color, x, y, w, h?, opacity, drift?}` |
-| `keyLight` | `{x: .5, y: .48, w: .62, h: .78, opacity: .14}` | put it right behind the window / card / headline |
+| `level` | 1 | multiplier on every light; 0 = lights out (base only). s04 passes `look={{level: 0}}` explicitly |
+| `keyPool` | `{x: .5, y: .5, w: .82, h: .92, opacity: .42}` | fractions of the canvas; **move it behind the subject of the shot** (`keyPool: {x: .7, y: .45}`) or `false` |
+| `pools` | indigo TR 0.18, ember BL 0.17 | `StagePool[]` `{color, x, y, w, h?, opacity, drift?}` |
+| `keyLight` | `{x: .5, y: .5, w: .5, h: .62, opacity: .15}` | put it right behind the window / card / subject — **not** behind volt type |
+| `guard` | none | `StageGuard[]` `{x, y, w, h, opacity? = GUARD_OPACITY (0.68)}` (fractions); build one from the glyph box in px with `guardFor({x, y, w, h}, {padX?, padY?, opacity?})` (default pads 0.5 w / 1.2 h per side). Profile: a smooth ramp `guardProfile(r)` = 1 − smoothstep(0.12, 1, r), no flat core. Scaled by `level`. Only ever trims a light's FALLOFF: see the GUARD RULE below |
 | `aurora` / `speed` | 1 / 1 | |
 
-All pure CSS gradients, normal alpha compositing (no blend modes, no filters) — measured cost ≈ 0.
+All pure CSS gradients, normal alpha compositing (no blend modes, no filters).
+
+**Volt type rule + GUARD RULE (round 2).** Volt `#4d8dff` needs a local background darker than about
+rgb(24, 34, 64) for 4.5:1, which a lit part of the key pool is not. The fix is where the LIGHT goes, not a
+darker guard:
+
+1. **Light the subject, not the type.** The key-pool centre, the key-light centre and any volt orb of the
+   scene sit behind the subject (UBI, the window, the card), away from the volt type. The type sits on the
+   light's falloff.
+2. **A guard only trims falloff.** The key pool's and key light's ≥ 50 % isolines stay out of every guard's
+   core (guard alpha ≥ 50 % of its peak, r ≤ ~0.6 of the drawn ellipse). A guard that sits on a light's hot
+   centre carves a navy hole out of it and leaves a bright ring around the type: no real light looks like
+   that (round 1's s05 / s18 did it, 2.0–2.3× ring/interior). `guardIssues(look)` checks this and
+   `StageGuards` warns in dev.
+3. **Keep guards light.** Default peak 0.68 with a long soft feather (pads 0.5 w / 1.2 h). Use a shorter
+   `padX` when the subject's light is close beside the type (s05 / s18: `padX: 0.2–0.3 × w`), and a lower
+   peak when another light sits right under or over the type (s05: 0.68 → 0.55 as the floor's horizon glow
+   rises under the lockup).
+4. **A pill is a surface.** A volt label on a translucent volt pill has almost no contrast margin; give the
+   pill its own navy backing (s05 / s18 AI pill: `linear-gradient(volt 0.11, volt 0.11), rgba(10,16,36,0.88)`)
+   instead of guarding the stage behind it.
+5. **Check with stills:** ≥ 4.5:1 for the volt type against a 6–22 px ring around the glyphs, AND a luma
+   profile through each guard (columns through the type block, a row through its centre, content masked)
+   has no valley: min(peak on either side) / guard interior ≤ 1.25.
+
+Reference setups: **s05 / s18** (key pool, key light and the volt bloom orb all behind UBI; one lockup
+guard with a short horizontal feather; no CTA guard), **s14** (footlight under the 18:00 + a default guard;
+the pool rises behind the report window after the morph and the guard fades).
 
 Helpers: `navyDim(a)` → `rgba(10, 16, 36, a)` (use it for every dim/scrim instead of black),
 `SPOTLIGHT_DIM` (0.38), `v2Dim(v1)` (maps a v1 dim tuned against 0.62 black: 0.62 → 0.38),
@@ -139,7 +168,7 @@ Define the shot once as a `ScreenConfig` const and share it with overlays.
 | `float` / `floatPeriod` | px / frames | 0 / 120 | gentle bob |
 | `camera` | `CameraKey[]` | — | see below |
 | `spotlights` | `SpotlightSpec[]` | — | `{rect, at, until?, fade?, dim?=0.38, color?, radius?=20, pad?=14, outline?}` (image px). v2: navy tint `rgba(10,16,36,…)`, default dim 0.38 (v1 0.62 black), stronger outline glow; drawn ungraded above the graded content |
-| `grade` | boolean \| `{brightness, contrast, saturate}` | on: 1.2 / 1.05 / 1.15 | v2 grade of the window CONTENT: the bitmap **and** the image-space children are graded together, so patches sampled from the ungraded capture still match. For a colour OUTSIDE the window that must match one inside it use `gradeHex(hex)` (s05's hero-card tint → `HERO_CARD_GRADED`) |
+| `grade` | boolean \| `{brightness, contrast, saturate, lift}` | on: 1.2 / 1.05 / 1.15 / lift 0.05 | v2 grade of the window CONTENT (the lift raises the black point: out = lift + (1 − lift) · in, emitted as `contrast(0.958) brightness(1.2495) saturate(1.15)`, so the app's panels land at ≈ 0.10 luma instead of 0.066): the bitmap **and** the image-space children are graded together, so patches sampled from the ungraded capture still match. For a colour OUTSIDE the window that must match one inside it use `gradeHex(hex)` (s05's hero-card tint → `HERO_CARD_GRADED`) |
 | `rim` | boolean | true | v2 rim light: 1.5 px gradient border (volt ≈ 0.7 top-left → transparent) + a white top highlight; the drop shadow is deeper/larger (`WINDOW_SHADOW`) and the ambient `glow` is 0.35 |
 | `chrome` / `title` / `radius` | `'mac' \| 'none'` / string / px | mac / — / 14 | |
 | `dots` | `'mac' \| 'neutral'` | mac | title-bar dots: macOS traffic lights, or neutral `#3a4560` dots for platform-agnostic shots (style §S10) |

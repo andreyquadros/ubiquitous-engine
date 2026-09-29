@@ -2,7 +2,7 @@ import React from 'react';
 import {AbsoluteFill, useCurrentFrame, useVideoConfig} from 'remotion';
 import {noise2D} from '@remotion/noise';
 import {alpha, layer, resolveColor, type Accent} from '../design/tokens';
-import {StageBase, StageFinish, StageLights, STAGE, type StageLook} from './Stage';
+import {StageBase, StageFinish, StageGuards, StageLights, STAGE, type StageLook} from './Stage';
 
 export type OrbSpec = {
 	/** Palette accent or CSS colour. */
@@ -169,6 +169,8 @@ export const Background: React.FC<BackgroundProps> = ({
 					/>
 				</AbsoluteFill>
 			) : null}
+
+			<StageGuards guard={look?.guard} level={look?.level} keyPool={look?.keyPool} keyLight={look?.keyLight} />
 
 			{children ? <AbsoluteFill style={{zIndex: layer.content}}>{children}</AbsoluteFill> : null}
 

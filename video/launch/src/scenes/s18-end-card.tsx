@@ -16,6 +16,7 @@
 import React from 'react';
 import {AbsoluteFill} from 'remotion';
 import {DirectionalBlur} from '../components/Transitions';
+import {guardFor} from '../components/Stage';
 import {color} from '../design/tokens';
 import {E, springAt, TransitionIn, TransitionOut, UbiTrack, useSceneFrame, type SfxCue} from '../shared';
 import {FilmGrain, lerp, MaskLine, ramp, Stage, Vignette} from './_parts/G6/common';
@@ -48,6 +49,17 @@ const fallOffset = (f: number) => {
 /** Vertical speed px/f (for the motion blur). */
 const fallSpeed = (f: number) => Math.abs(fallOffset(f) - fallOffset(f - 1));
 
+/**
+ * v2 type guard (glyph box from a still at f100): the lockup "ubiqX [AI]"
+ * (x 501–1199, y 341–512). Round 2: the light (key pool, key light, volt orb)
+ * sits behind UBI, so the lockup and the CTA pill are on its falloff; the guard
+ * only trims it (GUARD RULE, components/Stage.tsx). Short horizontal feather so
+ * its core stays clear of the pool. The CTA pill needs no guard any more.
+ */
+const END_GUARDS = [guardFor({x: 850, y: 428, w: 698, h: 172}, {padX: 0.2 * 698})];
+/** The light behind UBI (his body centre ≈ (1311, 360)). */
+const UBI_LIGHT = {x: 1330, y: 360};
+
 const S18EndCard: React.FC = () => {
 	const {frame: f, scene} = useSceneFrame();
 	const [hero, tagline, cta, platforms] = scene.copy.map((c) => c.text);
@@ -79,13 +91,20 @@ const S18EndCard: React.FC = () => {
 						<Stage
 							seed="s18"
 							orbs={[
-								{c: color.volt, x: 960, y: 430, d: 1150, opacity: orbA, s: breathe},
+								// the final hit's volt bloom, behind UBI (round 2: was centred on the lockup, under the guard → a navy hole in a bright ring)
+								{c: color.volt, x: UBI_LIGHT.x, y: UBI_LIGHT.y, d: 1150, opacity: orbA, s: breathe},
 								{c: color.ember, x: 250, y: 960, d: 800, opacity: 0.06},
 							]}
 							floor={0.2}
 							lineAlpha={0.5}
 							horizon={0.7}
 							gridSpeed={0.5}
+							look={{
+								guard: END_GUARDS /* trims the light's falloff under the volt X + AI pill (≥ 4.5:1) */,
+								// the key pool and the white-blue key light sit behind UBI (the lit subject); the type is on their falloff
+								keyPool: {x: UBI_LIGHT.x / 1920, y: UBI_LIGHT.y / 1080, w: 0.52, h: 0.9},
+								keyLight: {x: 0.69, y: 0.34, w: 0.34, h: 0.56, opacity: 0.17},
+							}}
 						/>
 					</AbsoluteFill>
 

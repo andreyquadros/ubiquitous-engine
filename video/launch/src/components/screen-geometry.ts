@@ -132,47 +132,87 @@ export type ScreenConfig = {
 	/**
 	 * v2 colour grade of the window CONTENT (bitmap + image-space children
 	 * together, so patches sampled from the ungraded capture still match).
-	 * Default on: brightness 1.2, contrast 1.05, saturate 1.15. `false` = off.
+	 * Default on: brightness 1.2, contrast 1.05, saturate 1.15, black-point lift
+	 * 0.05 (GRADE). `false` = off.
 	 */
 	grade?: boolean | Grade;
 	/** v2 rim light (volt top-left gradient border + white top highlight). Default true. */
 	rim?: boolean;
 };
 
-/** A CSS colour grade (filter functions, applied in this order). */
-export type Grade = {brightness?: number; contrast?: number; saturate?: number};
+/**
+ * A colour grade: brightness → contrast → saturate (CSS filter maths), then a
+ * black-point `lift` (out = lift + (1 − lift) · in). The lift is what raises
+ * the app's dark panels (#0b101f … #111726) off the floor: brightness ×
+ * contrast alone maps v → 1.26 v − 0.025, which leaves those panels at their
+ * v1 luma and crushes everything below ≈ 24/255.
+ */
+export type Grade = {brightness?: number; contrast?: number; saturate?: number; lift?: number};
 
-/** The v2 window grade (brief/v2-look.md §3 "UI windows"). */
-export const GRADE: Required<Grade> = {brightness: 1.2, contrast: 1.05, saturate: 1.15};
+/**
+ * The v2 window grade (brief/v2-look.md §3 "UI windows": brightness 1.2,
+ * contrast 1.05, saturate 1.15) + a 0.05 black-point lift (round 1 fix: the
+ * app panel #0b101f lands at ≈ 0.10 luma instead of 0.066).
+ */
+export const GRADE: Required<Grade> = {brightness: 1.2, contrast: 1.05, saturate: 1.15, lift: 0.05};
 
 /** Resolve a `grade` prop to a full grade, or null when off. */
 export const resolveGrade = (g: boolean | Grade | undefined): Required<Grade> | null =>
 	g === false ? null : g === undefined || g === true ? GRADE : {...GRADE, ...g};
 
+type GradeStep = ['brightness' | 'contrast' | 'saturate', number];
+
+/**
+ * The grade as CSS filter steps. With a lift, brightness B · contrast C · lift
+ * L is one linear map v → s·v + i (s = B·C·(1 − L), i = L + (1 − L)·(1 − C)/2),
+ * emitted as `contrast(s / (s + 2i)) brightness(s + 2i)`: contrast < 1 first
+ * gives the positive intercept, the brightness after it restores the slope, so
+ * whites still clip to white (s + i ≥ 1). Pure CSS filter functions, no SVG.
+ */
+const gradeSteps = (g: Required<Grade>): GradeStep[] => {
+	if (!(g.lift > 0)) {
+		return [
+			['brightness', g.brightness],
+			['contrast', g.contrast],
+			['saturate', g.saturate],
+		];
+	}
+	const s = g.brightness * g.contrast * (1 - g.lift);
+	const i = g.lift + (1 - g.lift) * 0.5 * (1 - g.contrast);
+	const b = s + 2 * i;
+	return [
+		['contrast', +(s / b).toFixed(4)],
+		['brightness', +b.toFixed(4)],
+		['saturate', g.saturate],
+	];
+};
+
 /** CSS `filter` string of a grade ('' for null). */
-export const gradeFilter = (g: Required<Grade> | null): string =>
-	g ? `brightness(${g.brightness}) contrast(${g.contrast}) saturate(${g.saturate})` : '';
+export const gradeFilter = (g: Required<Grade> | null): string => (g ? gradeSteps(g).map(([f, v]) => `${f}(${v})`).join(' ') : '');
 
 /**
  * The colour a flat #rrggbb becomes under a grade (sRGB maths of the CSS
- * filter functions, as Chrome applies them). Use it for anything OUTSIDE a
- * graded window that must match a colour inside it (e.g. s05's tint to the
- * hero-card colour before the s06 match cut).
+ * filter functions, as Chrome applies them, clamped after each step). Use it
+ * for anything OUTSIDE a graded window that must match a colour inside it
+ * (e.g. s05's tint to the hero-card colour before the s06 match cut).
  */
 export const gradeHex = (hex: string, g: Required<Grade> | null = GRADE): string => {
-	const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
 	if (!g) return hex;
 	const cl = (v: number) => Math.max(0, Math.min(1, v));
-	let [r, gg, b] = c.map((v) => cl(v * g.brightness));
-	[r, gg, b] = [r, gg, b].map((v) => cl((v - 0.5) * g.contrast + 0.5));
-	const s = g.saturate;
-	const m = [
-		[0.213 + 0.787 * s, 0.715 - 0.715 * s, 0.072 - 0.072 * s],
-		[0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s],
-		[0.213 - 0.213 * s, 0.715 - 0.715 * s, 0.072 + 0.928 * s],
-	];
-	const out = m.map((row) => cl(row[0] * r + row[1] * gg + row[2] * b));
-	return '#' + out.map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
+	let c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+	for (const [f, v] of gradeSteps(g)) {
+		if (f === 'brightness') c = c.map((x) => cl(x * v));
+		else if (f === 'contrast') c = c.map((x) => cl((x - 0.5) * v + 0.5));
+		else {
+			const m = [
+				[0.213 + 0.787 * v, 0.715 - 0.715 * v, 0.072 - 0.072 * v],
+				[0.213 - 0.213 * v, 0.715 + 0.285 * v, 0.072 - 0.072 * v],
+				[0.213 - 0.213 * v, 0.715 - 0.715 * v, 0.072 + 0.928 * v],
+			];
+			c = m.map((row) => cl(row[0] * c[0] + row[1] * c[1] + row[2] * c[2]));
+		}
+	}
+	return '#' + c.map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
 };
 
 export const DEFAULT_IMAGE = {w: 2880, h: 1800};

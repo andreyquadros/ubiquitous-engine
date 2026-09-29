@@ -7,7 +7,7 @@
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame} from 'remotion';
 import {noise2D} from '@remotion/noise';
-import {StageBase, StageFinish, StageLights, STAGE, type StageLook} from '../../../components/Stage';
+import {StageBase, StageFinish, StageGuards, StageLights, STAGE, type StageLook} from '../../../components/Stage';
 import {gradeHex} from '../../../components/screen-geometry';
 import {alpha, color} from '../../../design/tokens';
 
@@ -39,8 +39,8 @@ export const mixHex = (a: string, b: string, t: number) => {
  */
 export const HERO_CARD = '#0c1220';
 /**
- * v2: the hero-card colour as it reads INSIDE the graded <Screen> (brightness 1.2,
- * contrast 1.05, saturate 1.15 → #081025). s05 tints its stage to THIS so the
+ * v2: the hero-card colour as it reads INSIDE the graded <Screen> (GRADE: brightness
+ * 1.2, contrast 1.05, saturate 1.15, lift 0.05; computed by gradeHex). s05 tints its stage to THIS so the
  * s05 → s06 match cut still matches; patches inside the Screen keep HERO_CARD.
  */
 export const HERO_CARD_GRADED = gradeHex(HERO_CARD);
@@ -208,6 +208,7 @@ export const Backdrop: React.FC<BackdropProps> = ({
 					/>
 				</AbsoluteFill>
 			) : null}
+			<StageGuards guard={look?.guard} level={look?.level} keyPool={look?.keyPool} keyLight={look?.keyLight} />
 			{children}
 			<StageFinish vignette={vignette} grain={grain} seed={seed} />
 		</AbsoluteFill>

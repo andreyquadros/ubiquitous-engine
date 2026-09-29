@@ -18,7 +18,7 @@
 import React, {createContext, useContext} from 'react';
 import {AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {noise2D} from '@remotion/noise';
-import {navyDim, StageBase, StageFinish, StageLights, STAGE, type StageLook} from '../../../components/Stage';
+import {navyDim, StageBase, StageFinish, StageGuards, StageLights, STAGE, type StageLook} from '../../../components/Stage';
 import {GLASS_INSET, RIM_PX, rimBackground, WINDOW_SHADOW} from '../../../components/Screen';
 import {gradeFilter, mapWithGeometry, resolveGrade, screenGeometry, type Point, type Rect, type ScreenConfig, type ScreenGeometry} from '../../../components/screen-geometry';
 import {alpha, color, font} from '../../../design/tokens';
@@ -112,6 +112,7 @@ export const Backdrop: React.FC<{seed: string; children?: React.ReactNode; grain
 					/>
 				);
 			})}
+			<StageGuards guard={look?.guard} level={look?.level} keyPool={look?.keyPool} keyLight={look?.keyLight} />
 			{children}
 			<StageFinish vignette={vignette} grain={grain} seed={seed} />
 		</AbsoluteFill>

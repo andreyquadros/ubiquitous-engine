@@ -104,7 +104,9 @@ export const AiPill: React.FC<{frame: number}> = ({frame}) => {
 					lineHeight: 1,
 					letterSpacing: '-0.01em',
 					color: color.volt,
-					background: 'rgba(77, 141, 255, 0.14)',
+					// v2 round 2: the pill is a surface with its own navy backing (0.88) under the volt tint, so the volt
+					// "AI" holds ≥ 4.5:1 wherever the stage light falls (a 0.14 tint alone over a lit stage measured 3.7:1)
+					background: 'linear-gradient(rgba(77, 141, 255, 0.11), rgba(77, 141, 255, 0.11)), rgba(10, 16, 36, 0.88)',
 					boxShadow: 'inset 0 0 0 1.5px rgba(77, 141, 255, 0.24)',
 					borderRadius: 999,
 					padding: '0.2em 0.5em',

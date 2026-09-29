@@ -18,6 +18,7 @@
  */
 import React from 'react';
 import {AbsoluteFill, Easing} from 'remotion';
+import {GUARD_OPACITY, guardFor} from '../components/Stage';
 import {color, font} from '../design/tokens';
 import {E, springAt, TransitionIn, TransitionOut, UbiTrack, useScene, useSceneFrame, type SfxCue} from '../shared';
 import {APP_GLOW, Backdrop, CARET, HERO_CARD_GRADED, lerp, mixHex, ramp, shakeTransform, slamShake, UBI_MATCH, W, H} from './_parts/G2/common';
@@ -88,6 +89,19 @@ const Descriptor: React.FC<{frame: number; text: string}> = ({frame, text}) => {
 	);
 };
 
+/**
+ * v2 type guard: the settled lockup "ubiqX [AI]" glyph box (x 446–1170, y 439–632, from a still).
+ * Round 2: the light (key pool, key light, volt orb) sits behind UBI, so the lockup is on the
+ * light's falloff and the guard only trims it (GUARD RULE, components/Stage.tsx). Short
+ * horizontal feather (0.3 × w) so the guard core stays clear of the pool behind UBI. Peak
+ * `lockupGuardPeak`: the default 0.68 while the wordmark's own glow halo holds (f0–45), 0.55 once the
+ * floor's horizon glow sits right under it (f60+; a denser guard there reads as a dip).
+ */
+const LOCKUP_GUARD = guardFor({x: 808, y: 532, w: 724, h: 194}, {padX: 0.3 * 724});
+const lockupGuardPeak = (f: number) => lerp(GUARD_OPACITY, 0.55, ramp(f, 45, 75, E.glide));
+/** The light behind UBI (his settled body centre ≈ (1375, 470)). */
+const UBI_LIGHT = {x: 1375, y: 470};
+
 const S05DropUbiqx: React.FC = () => {
 	const scene = useScene();
 	const {frame: f} = useSceneFrame();
@@ -137,9 +151,16 @@ const S05DropUbiqx: React.FC = () => {
 							<Backdrop
 								seed="s05"
 								base={mixHex(color.canvas, HERO_CARD_GRADED, tint)}
-								look={{level: 1 - tint /* v2 stage fades out onto the hero-card colour for the match cut */}}
+								look={{
+									level: 1 - tint /* v2 stage fades out onto the hero-card colour for the match cut */,
+									guard: [{...LOCKUP_GUARD, opacity: lockupGuardPeak(f)}] /* trims the light's falloff under the volt X + AI pill (≥ 4.5:1) */,
+									// the key pool and the white-blue key light sit behind UBI (the lit subject); the lockup is on their falloff
+									keyPool: {x: UBI_LIGHT.x / W, y: UBI_LIGHT.y / H, w: 0.6, h: 0.92},
+									keyLight: {x: 0.71, y: 0.42, w: 0.36, h: 0.6, opacity: 0.17},
+								}}
 								orbs={[
-									{c: color.volt, x: 966, y: 520, d: 1100, opacity: orbA * fade},
+									// the drop's volt bloom, behind UBI (round 2: was centred on the lockup, under the guard → a navy hole in a bright ring)
+									{c: color.volt, x: UBI_LIGHT.x, y: UBI_LIGHT.y, d: 1100, opacity: orbA * fade},
 									{c: color.ember, x: 1640, y: 900, d: 900, opacity: 0.07 * fade},
 								]}
 								floor={floor}

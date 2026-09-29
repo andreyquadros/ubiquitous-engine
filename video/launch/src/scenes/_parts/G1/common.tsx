@@ -7,7 +7,7 @@
 import React from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import {noise2D} from '@remotion/noise';
-import {StageBase, StageFinish, StageLights, STAGE, type StageLook} from '../../../components/Stage';
+import {StageBase, StageFinish, StageGuards, StageLights, STAGE, type StageLook} from '../../../components/Stage';
 import {alpha, color, font} from '../../../design/tokens';
 
 export const W = 1920;
@@ -64,12 +64,13 @@ export const G1_ORBS: Orb[] = [
  * centre), the problem act swaps the ember pool for a rose one.
  */
 export const G1_LOOK: StageLook = {
-	keyPool: {x: 0.5, y: 0.42, w: 1.3, h: 1.45, opacity: 0.36},
+	// round 1: a real pool (was w 1.3 × h 1.45, a frame-wide wash)
+	keyPool: {x: 0.5, y: 0.44, w: 0.84, h: 0.94, opacity: 0.4},
 	pools: [
-		{color: STAGE.indigo, x: 0.86, y: 0.14, w: 0.78, opacity: 0.16},
-		{color: color.rose, x: 0.1, y: 0.94, w: 0.66, opacity: 0.1},
+		{color: STAGE.indigo, x: 0.86, y: 0.14, w: 0.8, opacity: 0.18},
+		{color: color.rose, x: 0.1, y: 0.94, w: 0.7, opacity: 0.15},
 	],
-	keyLight: {x: 0.5, y: 0.44, w: 0.8, h: 0.75, opacity: 0.12},
+	keyLight: {x: 0.5, y: 0.46, w: 0.52, h: 0.62, opacity: 0.14},
 };
 
 export const Backdrop: React.FC<{
@@ -78,7 +79,7 @@ export const Backdrop: React.FC<{
 	grain?: number;
 	vignette?: number;
 	/**
-	 * Stage rig overrides. Default: G1_LOOK, or lights OUT when `orbs` is empty
+	 * Stage rig overrides (merged over G1_LOOK). Lights out = `look={{level: 0}}`
 	 * (s04, the designed silence: navy base + vignette + grain only).
 	 */
 	look?: StageLook;
@@ -86,7 +87,7 @@ export const Backdrop: React.FC<{
 }> = ({orbs = G1_ORBS, seed, grain = 0.045, vignette = 0.6, look, children}) => {
 	const frame = useCurrentFrame();
 	const t = frame * 0.004;
-	const rig: StageLook = {...G1_LOOK, ...(orbs.length === 0 ? {level: 0} : null), ...look};
+	const rig: StageLook = {...G1_LOOK, ...look};
 	return (
 		<AbsoluteFill style={{backgroundColor: STAGE.bottom, overflow: 'hidden'}}>
 			<StageBase />
@@ -112,6 +113,7 @@ export const Backdrop: React.FC<{
 					/>
 				);
 			})}
+			<StageGuards guard={rig.guard} level={rig.level} keyPool={rig.keyPool} keyLight={rig.keyLight} />
 			{children}
 			<StageFinish vignette={vignette} grain={grain} seed={seed} />
 		</AbsoluteFill>

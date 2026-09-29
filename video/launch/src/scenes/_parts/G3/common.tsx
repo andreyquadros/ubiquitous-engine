@@ -15,7 +15,7 @@
 import React from 'react';
 import {AbsoluteFill, interpolate} from 'remotion';
 import {noise2D} from '@remotion/noise';
-import {StageBase, StageFinish, StageLights, type StageLook} from '../../../components/Stage';
+import {StageBase, StageFinish, StageGuards, StageLights, type StageLook} from '../../../components/Stage';
 import {color, font} from '../../../design/tokens';
 import {springAt, type SpringName} from '../../../shared';
 
@@ -72,6 +72,7 @@ export const Stage: React.FC<{children?: React.ReactNode; seed?: string; look?: 
 	<AbsoluteFill style={{backgroundColor: '#0a0f20', overflow: 'hidden'}}>
 		<StageBase />
 		<StageLights seed={seed} {...look} />
+		<StageGuards guard={look?.guard} level={look?.level} keyPool={look?.keyPool} keyLight={look?.keyLight} />
 		{children}
 	</AbsoluteFill>
 );

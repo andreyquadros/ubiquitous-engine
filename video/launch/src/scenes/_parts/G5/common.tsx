@@ -15,7 +15,7 @@
 import React from 'react';
 import {AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame} from 'remotion';
 import {noise2D} from '@remotion/noise';
-import {StageBase, StageFinish, StageLights, STAGE, type StageLook} from '../../../components/Stage';
+import {StageBase, StageFinish, StageGuards, StageLights, STAGE, type StageLook} from '../../../components/Stage';
 import type {Point, Rect} from '../../../components/screen-geometry';
 import {alpha, color, font} from '../../../design/tokens';
 import {E, springAt} from '../../../shared/motion';
@@ -76,9 +76,8 @@ export const APP = {
 
 export const Backdrop: React.FC<{
 	seed: string;
+	/** Put <Finish> last among the children: it owns the vignette + grain (this backdrop draws neither). */
 	children?: React.ReactNode;
-	grain?: number;
-	vignette?: number;
 	ember?: number;
 	volt?: number;
 	/** v2 stage rig overrides (components/Stage.tsx). */
@@ -114,6 +113,7 @@ export const Backdrop: React.FC<{
 					/>
 				);
 			})}
+			<StageGuards guard={look?.guard} level={look?.level} keyPool={look?.keyPool} keyLight={look?.keyLight} />
 			{children}
 		</AbsoluteFill>
 	);

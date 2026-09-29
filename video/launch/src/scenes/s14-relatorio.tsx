@@ -22,6 +22,7 @@ import React from 'react';
 import {AbsoluteFill, Easing} from 'remotion';
 import {measureText} from '@remotion/layout-utils';
 import {Screen, type ScreenConfig} from '../components/Screen';
+import {GUARD_OPACITY, guardFor} from '../components/Stage';
 import {mapWithGeometry, screenGeometry, type CameraKey} from '../components/screen-geometry';
 import {alpha, color, font} from '../design/tokens';
 import {E, hotspot, Patches, springAt, storyboardPatches, TransitionIn, TransitionOut, useScene, useSceneFrame, type SfxCue} from '../shared';
@@ -73,6 +74,8 @@ const BADGE = hotspot(FILE, 'nav-revisao-badge');
 
 const CLOCK = {size: 240, cx: 960, cy: 470};
 const KICK = {left: 144, top: 88, h: 48, size: 40, padX: 20};
+/** v2 type guard behind the volt "18:00" (glyph box x 642–1296, y 369–557 at MORPH); fades with the big clock. */
+const CLOCK_GUARD = guardFor({x: CLOCK.cx, y: 463, w: 654, h: 188});
 
 /** One digit cell: rolls from `from` to `to` (new digit enters from below). */
 const Digit: React.FC<{from: string; to: string; p: number; v: number}> = ({from, to, p, v}) => {
@@ -147,7 +150,8 @@ const Clock: React.FC<{f: number}> = ({f}) => {
 	const pillBg = f < MORPH ? 0 : springAt(f, MORPH + 3, 'SNAPPY', 10);
 
 	// glow breath behind the clock at contact
-	const glow = 0.14 + 0.1 * (ramp(f, CONTACT - 1, CONTACT + 2) - ramp(f, CONTACT + 2, CONTACT + 24, E.glide));
+	// v2: steady level 0.14 → 0.09 so the volt 18:00 holds ≥ 4.5:1 on its stage guard (the contact breath is unchanged)
+	const glow = 0.09 + 0.1 * (ramp(f, CONTACT - 1, CONTACT + 2) - ramp(f, CONTACT + 2, CONTACT + 24, E.glide));
 	const glowO = 1 - ramp(f, MORPH, MORPH + 10, E.enter);
 
 	return (
@@ -458,11 +462,21 @@ const S14Relatorio: React.FC = () => {
 	const halfH = (BTN.h / 2) * LIFT * onScreen;
 
 	const scrim = ramp(f, RISE, RISE + 2);
+	const poolUp = ramp(f, MORPH, MORPH_END + 6, E.glide);
 
 	return (
 		<TransitionOut>
 			<TransitionIn>
-				<Backdrop seed="s14" ember={0.05}>
+				<Backdrop
+					seed="s14"
+					ember={0.05}
+					look={{
+						// v2: the key pool is a footlight UNDER the volt 18:00 (not on it), then rises behind the report window
+						keyPool: {x: 0.5, y: lerp(0.8, 0.5, poolUp), w: lerp(0.86, 0.82, poolUp), h: lerp(0.64, 0.92, poolUp), opacity: 0.44},
+						keyLight: {x: 0.5, y: lerp(0.82, 0.5, poolUp), w: 0.5, h: lerp(0.4, 0.62, poolUp), opacity: 0.15},
+						guard: [{...CLOCK_GUARD, opacity: GUARD_OPACITY * (1 - poolUp)}] /* footlight falloff only (GUARD RULE) */,
+					}}
+				>
 					{partB ? (
 						<AbsoluteFill style={{transform: rise > 0.05 ? `translateY(${rise.toFixed(2)}px)` : undefined, opacity: ramp(f, RISE, RISE + 4)}}>
 							<Screen {...SHOT} style={{zIndex: 'auto'}}>

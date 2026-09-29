@@ -25,7 +25,7 @@ const S04Silencio: React.FC = () => {
 	const {frame} = useFrame();
 	return (
 		<SceneTransitions>
-			<Backdrop seed="s04" orbs={[]}>
+			<Backdrop seed="s04" orbs={[]} look={{level: 0 /* the designed silence: lights out, navy base + vignette + grain */}}>
 				<Caret x={CARET_SPOT.x} y={CARET_SPOT.y} on={frame < 8} />
 			</Backdrop>
 		</SceneTransitions>
