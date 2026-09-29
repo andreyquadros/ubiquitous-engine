@@ -485,3 +485,11 @@ export const CaptureImg: React.FC<{src: string; imgW?: number; imgH?: number}> =
 
 /** CSS clip-path inset for an image-space rect inside a 2880×1800 box. */
 export const insetOf = (r: Rect, imgW = 2880, imgH = 1800) => `inset(${r.y}px ${imgW - r.x - r.w}px ${imgH - r.y - r.h}px ${r.x}px)`;
+
+/**
+ * The storyboard's keys-legend patches (x 2136, h 32) leave the left edge of the first key box and the bottom
+ * 3 px of every key box visible (measured on the @3x twins: the boxes span x 2128–2786 and 39 px in height).
+ * Grow them to the whole legend line so no key-box fragments peek out. Other patches pass through unchanged.
+ */
+export const widenLegend = <T extends {rect: Rect; covers?: string}>(patches: T[]): T[] =>
+	patches.map((p) => (/keys legend/.test(p.covers ?? '') ? {...p, rect: {x: 2118, y: p.rect.y - 4, w: 2800 - 2118, h: p.rect.h + 10}} : p));

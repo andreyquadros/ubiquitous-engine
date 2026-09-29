@@ -19,7 +19,7 @@ import {AbsoluteFill} from 'remotion';
 import {noise2D} from '@remotion/noise';
 import {alpha, color, font} from '../design/tokens';
 import {E, Patches, springAt, storyboardCamera, storyboardPatches, TransitionIn, TransitionOut, UbiTrack, UBI_ANCHORS, useScene, useSceneFrame, type SfxCue} from '../shared';
-import {Backdrop, clamp01, G4Plane, lerp, ramp, UI} from './_parts/G4/common';
+import {Backdrop, clamp01, G4Plane, lerp, ramp, UI, widenLegend} from './_parts/G4/common';
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
 export const sfx: SfxCue[] = [
@@ -36,6 +36,11 @@ const CONTACT = 30;
 const START = {size: 352, x: 788 + UBI_ANCHORS.feet.x * (352 / 900), y: 460 + UBI_ANCHORS.feet.y * (352 / 900)};
 /** Landing: 760-px frame, body centre x 640 (body anchor x 443 → feet x ≈ 646), feet on y 900. */
 const END = {size: 760, x: 640 + (UBI_ANCHORS.feet.x - UBI_ANCHORS.body.x) * (760 / 900), y: 900};
+/** "Nada esperando por você" and the "Ver a Timeline" button of the empty-state card (image px, measured). */
+const CARD_TEXT = [
+	{x: 1030, y: 764, w: 500, h: 68},
+	{x: 1140, y: 942, w: 280, h: 90},
+];
 const ARC = 70; // extra leap height (px) on top of the clip's own jump, 0 at f15 and at contact
 
 /** The in-app bubble on screen at f15 and the big bubble's final box. */
@@ -116,7 +121,7 @@ const S13NadaEmDuvida: React.FC = () => {
 	const scene = useScene();
 	const {frame: f} = useSceneFrame();
 	const cam = storyboardCamera(scene, {file: FILE});
-	const patches = storyboardPatches(scene, FILE);
+	const patches = widenLegend(storyboardPatches(scene, FILE));
 	const staticPatches = patches.filter((p) => !/UBI/.test(p.covers ?? ''));
 	const ubiPatch = patches.find((p) => /UBI/.test(p.covers ?? ''));
 
@@ -154,6 +159,15 @@ const S13NadaEmDuvida: React.FC = () => {
 									children: (
 										<>
 											<Patches patches={staticPatches} />
+											{/* he stepped out of the card: its heading and button melt away with the rack (no blurred text smudge at his feet) */}
+											{f >= MATCH
+												? CARD_TEXT.map((r, i) => (
+														<div
+															key={i}
+															style={{position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h, background: UI.card, borderRadius: 12, opacity: ramp(f, MATCH, MATCH + 9, E.enter)}}
+														/>
+													))
+												: null}
 											{ubiPatch && f >= MATCH ? (
 												<div
 													style={{

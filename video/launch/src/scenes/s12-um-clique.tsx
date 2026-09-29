@@ -32,6 +32,7 @@ import {
 	Scrim,
 	StaggerHeadline,
 	unitsOf,
+	widenLegend,
 } from './_parts/G4/common';
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
@@ -48,6 +49,7 @@ const SWAP = 32;
 
 const BUTTON = hotspot(BEFORE, 'confirm-all-button'); // 1785,446 226×64
 const BAR = hotspot(BEFORE, 'confirm-bar');
+const BADGE = hotspot(AFTER, 'nav-revisao-badge');
 const ROW1 = hotspot(AFTER, 'reviewed-row-1'); // 514,432 1529×114
 const BTN_CROP: Rect = {x: BUTTON.x - 2, y: BUTTON.y - 2, w: BUTTON.w + 4, h: BUTTON.h + 4};
 const BTN_RADIUS = 12;
@@ -126,12 +128,14 @@ const S12UmClique: React.FC = () => {
 	const dimOut = 1 - ramp(f, SWAP, SWAP + 10, E.enter);
 	const beforeLayer = (
 		<>
-			<Patches patches={storyboardPatches(scene, BEFORE)} />
+			<Patches patches={widenLegend(storyboardPatches(scene, BEFORE))} />
 		</>
 	);
 	const afterLayer = (
 		<>
-			<Patches patches={storyboardPatches(scene, AFTER)} />
+			<Patches patches={widenLegend(storyboardPatches(scene, AFTER))} />
+			{/* the sidebar's orange "Revisão" badge (a pending count) peeks in at the left edge after the pull-back: cover it in the nav colour */}
+			<div style={{position: 'absolute', left: BADGE.x - 3, top: BADGE.y - 3, width: BADGE.w + 6, height: BADGE.h + 6, background: '#14223c'}} />
 			{Array.from({length: 11}, (_, i) => {
 				const at = SWAP + 1 + 2 * i;
 				const v = ramp(f, at, at + 2) * (1 - ramp(f, at + 2, at + 10, E.enter));

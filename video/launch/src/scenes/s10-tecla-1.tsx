@@ -13,7 +13,7 @@ import React from 'react';
 import {AbsoluteFill} from 'remotion';
 import {noise2D} from '@remotion/noise';
 import {Patches, storyboardCamera, storyboardPatches, TransitionIn, TransitionOut, useScene, useSceneFrame, type SfxCue} from '../shared';
-import {Backdrop, G4Plane, KeyPool, ramp} from './_parts/G4/common';
+import {Backdrop, G4Plane, KeyPool, ramp, widenLegend} from './_parts/G4/common';
 import {KeyCap3D} from './_parts/G4/KeyCap3D';
 import {S10, s10KeyPose} from './_parts/G4/keyTimeline';
 
@@ -46,7 +46,7 @@ const S10Tecla1: React.FC = () => {
 				<Backdrop seed="s10">
 					<G4Plane
 						{...cam}
-						layers={[{src: FILE, children: <Patches patches={storyboardPatches(scene, FILE)} />}]}
+						layers={[{src: FILE, children: <Patches patches={widenLegend(storyboardPatches(scene, FILE))} />}]}
 						blur={14}
 						dim={0.55}
 						push={push}

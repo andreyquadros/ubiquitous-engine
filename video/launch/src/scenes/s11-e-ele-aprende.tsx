@@ -9,7 +9,7 @@
  * f12 the IFRO row takes the pressed tint (volt 16 %) under the spotlight.
  * f15 (abs 705, beat) state change → review-after-assign: the Calendário row
  * slides out left (−140 px) and fades, the list closes up (−112 px), the
- * assign card cross-dissolves (6 f); the new active row flashes mint 12 %.
+ * assign card switches in place (its subtitle would double up in a dissolve); the new active row flashes mint 12 %.
  * f12–27 "Uma tecla. / E ele aprende." (units at f12/15/18/21, "aprende." volt)
  * over a left canvas scrim. f30 (abs 720, downbeat) the rule chips
  * "Sempre: Calendário → IFRO" morph in (y +8 → 0, SNAPPY, 2-f stagger) while
@@ -38,6 +38,7 @@ import {
 	StaggerHeadline,
 	UI,
 	unitsOf,
+	widenLegend,
 } from './_parts/G4/common';
 import {KeyCap3D, mixPose, type KeyPose} from './_parts/G4/KeyCap3D';
 import {S10_FINAL} from './_parts/G4/keyTimeline';
@@ -65,7 +66,6 @@ const IFRO_ROW = hotspot(AFTER, 'assign-option-1');
 const SUGGEST = hotspot(AFTER, 'last-suggestions');
 const ROW1 = hotspot(BEFORE, 'queue-row-1'); // Calendário (selected)
 const LIST_BELOW: Rect = {x: 514, y: 462, w: 1529, h: 1092}; // rows 2… + settled header + card bottom
-const ASSIGN_CARD: Rect = {x: 2080, y: 230, w: 760, h: 880};
 const NEW_ACTIVE = hotspot(AFTER, 'queue-row-1');
 
 /** Rule-chip reveal: the storyboard's cover (2127,800,663×150) leaves 3 px of the second chip's border (y 953–955) → 160 tall. */
@@ -175,20 +175,21 @@ const S11EEleAprende: React.FC = () => {
 	]);
 
 	// --- match cut: keycap → chip ------------------------------------------
-	const m = f < MORPH ? springAt(f, 0, 'SNAPPY', MORPH) : 1;
+	// travel: a slow lift-off then a soft landing on the chip over the 12-f half (E.cursor), so the eye can follow the key
+	const m = E.cursor(ramp(f, 0, MORPH));
 	const target = chipPose(cam, f);
 	const p = arcPoint({x: S10_FINAL.cx, y: S10_FINAL.cy}, {x: target.cx, y: target.cy}, clamp01(m), 0.1);
 	const pose: KeyPose = {...mixPose(S10_FINAL, target, clamp01(m)), cx: p.x, cy: p.y, size: lerp(S10_FINAL.size, target.size, m)};
 	// shape/colour settle a touch earlier than the travel so the chip is flat when it arrives
-	const flat = ramp(f, 2, 10, E.enter);
+	const flat = ramp(f, 3, 11, E.glide);
 	pose.skirt = lerp(S10_FINAL.skirt, 0, flat);
 	pose.shadow = lerp(1, 0, flat);
 	pose.dish = lerp(1, 0, flat);
 	const rack = f < MORPH ? springAt(f, 0, 'SMOOTH', MORPH) : 1;
 
 	// --- plane state ---------------------------------------------------------
-	const before = storyboardPatches(scene, BEFORE);
-	const afterPatches = storyboardPatches(scene, AFTER).filter((q) => !/rule chips/.test(q.covers ?? ''));
+	const before = widenLegend(storyboardPatches(scene, BEFORE));
+	const afterPatches = widenLegend(storyboardPatches(scene, AFTER)).filter((q) => !/rule chips/.test(q.covers ?? ''));
 	const swapped = f >= SWAP;
 	const e = swapped ? springAt(f, SWAP, 'SNAPPY') : 0;
 	const inSwap = swapped && f < SWAP + SWAP_LEN;
@@ -197,8 +198,8 @@ const S11EEleAprende: React.FC = () => {
 	const tint = ramp(f, 12, 18, E.enter) * (1 - ramp(f, RULES, RULES + 10, E.exit));
 	const spotDim = 0.45 * ramp(f, 12, 22, E.enter);
 	// the spot stretches down to the chips (bottom edge leads), then its top follows: it never frames an unrelated row alone
-	const lead = ramp(f, RULES, 50, E.glide);
-	const follow = ramp(f, 40, 60, E.glide);
+	const lead = ramp(f, RULES, 42, E.glide);
+	const follow = ramp(f, 38, 60, E.glide);
 	const spotTop = lerp(IFRO_ROW.y, SUGGEST.y, follow);
 	const spotBottom = lerp(IFRO_ROW.y + IFRO_ROW.h, SUGGEST.y + SUGGEST.h, lead);
 	const spotX = lerp(IFRO_ROW.x, SUGGEST.x, (lead + follow) / 2);
@@ -238,7 +239,6 @@ const S11EEleAprende: React.FC = () => {
 				<>
 					<BeforeSlice rect={LIST_BELOW} ty={-112 * e} opacity={1 - ramp(f, SWAP + 1, SWAP + SWAP_LEN)} patches={beforePatchEls} />
 					<BeforeSlice rect={ROW1} tx={-140 * e} opacity={1 - ramp(f, SWAP, SWAP + SWAP_LEN, E.enter)} patches={beforePatchEls} />
-					<BeforeSlice rect={ASSIGN_CARD} opacity={1 - ramp(f, SWAP, SWAP + SWAP_LEN, E.glide)} patches={beforePatchEls} />
 				</>
 			) : null}
 			{mint > 0.001 ? (
