@@ -59,12 +59,15 @@ const BUILD_START = 36;
 const BUILD_END = 60;
 
 /* ---- the app's speech bubble (pop-in): its box incl. tail + shadow ----- */
-const BUBBLE = {x: 2236, y: 276, w: 540, h: 216, tail: {x: 2506, y: 452}};
+const BUBBLE = {x: 2196, y: 262, w: 630, h: 284, tail: {x: 2506, y: 452}}; // incl. its soft drop shadow; stops above UBI's head (552)
 const BUBBLE_AT = 3;
 const BUBBLE_UNTIL = 24;
 /** In-app UBI ink box (patched during the 3D → bitmap crossfade). */
-const APP_UBI = {x: 2392, y: 540, w: 236, h: 356};
+const APP_UBI = {x: 2392, y: 540, w: 236, h: 348};
 const XFADE = 4;
+
+/** 3D → bitmap crossfade over f0–4 (1, .56, .25, .06, 0): quadratic so the double image barely shows while the camera races. */
+const xfade = (f: number) => clamp01(1 - f / XFADE) ** 2;
 
 const playheadX = (f: number) => lerp(TRACK.x08, TRACK.x18, ramp(f, BUILD_START, BUILD_END, E.glide));
 
@@ -78,7 +81,8 @@ const DashOverlays: React.FC<{f: number}> = ({f}) => {
 	const breath = f >= 75 ? Math.sin(Math.PI * ramp(f, 75, 89, E.linear)) : 0;
 	const glowK = 1 + 0.9 * pulse + 0.55 * breath;
 	const ring = f >= BUILD_END && f < BUILD_END + 16 ? ramp(f, BUILD_END, BUILD_END + 16, E.push) : -1;
-	const xf = clamp01(1 - f / XFADE);
+	const xf = xfade(f);
+	const sink = ramp(f, 36, 46, E.enter);
 	const bubbleP = f < BUBBLE_AT ? 0 : springAt(f, BUBBLE_AT, 'SNAPPY');
 	const bubbleOn = f <= BUBBLE_UNTIL;
 	return (
@@ -108,9 +112,26 @@ const DashOverlays: React.FC<{f: number}> = ({f}) => {
 			) : null}
 			{/* in-app UBI hidden under the 3D UBI on the cut, revealed over the 4-f crossfade */}
 			{xf > 0.001 ? (
-				<div style={{position: 'absolute', left: APP_UBI.x, top: APP_UBI.y, width: APP_UBI.w, height: APP_UBI.h, background: HERO_CARD, opacity: xf}} />
+				<div style={{position: 'absolute', left: APP_UBI.x, top: APP_UBI.y, width: APP_UBI.w, height: APP_UBI.h, background: HERO_CARD, opacity: xf, borderRadius: 40, boxShadow: `0 0 16px 8px ${HERO_CARD}`}} />
 			) : null}
 
+			{/* as the camera glides down, the in-app UBI (and his ember glow) melt into the card so no cut-off feet
+			    peek out under the thickening scrim */}
+			{sink > 0.001 ? (
+				<div
+					style={{
+						position: 'absolute',
+						left: APP_UBI.x - 10,
+						top: APP_UBI.y - 10,
+						width: APP_UBI.w + 20,
+						height: 420,
+						background: HERO_CARD,
+						opacity: sink,
+						borderRadius: 60,
+						boxShadow: `0 0 24px 12px ${HERO_CARD}`,
+					}}
+				/>
+			) : null}
 			{/* day-track cover: hides everything right of the playhead (and, for good, right of 18h incl. the now-marker) */}
 			<div
 				style={{
@@ -239,12 +260,12 @@ const mix = (a: string, b: string, t: number) => {
 	return `rgb(${pa.map((v, i) => Math.round(v + (pb[i] - v) * t)).join(', ')})`;
 };
 
-/** Top canvas scrim: solid 0–200 → 0 at 260, thickening f30–60 to solid 0–420 → 0 at 480. */
+/** Top canvas scrim: solid 0–200 → 0 at 260, thickening f30–60 to solid 0–465 → 0 at 535 (the board's 420/480 left the in-app UBI's feet peeking out under it). */
 const Scrim: React.FC<{f: number}> = ({f}) => {
 	const on = ramp(f, 2, 14, E.enter);
-	const t = ramp(f, 30, 60, E.glide);
-	const solid = lerp(200, 420, t);
-	const end = lerp(260, 480, t);
+	const t = ramp(f, 30, 54, E.enter); // leads the E.glide camera so the hero (and UBI's feet) sink under it cleanly
+	const solid = lerp(200, 465, t);
+	const end = lerp(260, 535, t);
 	if (on <= 0.001) return null;
 	return (
 		<AbsoluteFill
@@ -278,7 +299,7 @@ const S06EleRegistra: React.FC = () => {
 	const g = screenGeometry(shot, f, {width: W, height: H});
 	const feet = mapWithGeometry(g, UBI_MATCH_IMG);
 	const ubiSize = UBI_MATCH.size * g.k * g.scale * g.s0;
-	const xf = clamp01(1 - f / XFADE);
+	const xf = xfade(f);
 
 	return (
 		<AbsoluteFill style={{backgroundColor: color.canvas}}>
@@ -296,11 +317,11 @@ const S06EleRegistra: React.FC = () => {
 				{() => (
 					<>
 						<TransitionOut>
-							<G2Screen {...shot}>
+							<G2Screen {...shot} style={{zIndex: 'auto'}}>
 								<DashOverlays f={f} />
 							</G2Screen>
 							{xf > 0.001 ? (
-								<UbiClip clip="idle" index={96 + f} x={feet.x} y={feet.y} size={ubiSize} anchor="feet" opacity={xf} />
+								<UbiClip clip="idle" index={96 + f} x={feet.x} y={feet.y} size={ubiSize} anchor="feet" opacity={xf} style={{zIndex: 1}} />
 							) : null}
 						</TransitionOut>
 						<Scrim f={f} />

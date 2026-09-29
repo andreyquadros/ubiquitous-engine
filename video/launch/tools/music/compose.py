@@ -926,13 +926,24 @@ MOTIF_A = [(0, 'A4', 1.0), (3, 'C5', 0.78), (6, 'E5', 0.82), (8, 'G5', 0.9), (11
 MOTIF_B = [(0, 'A4', 1.0), (3, 'C5', 0.78), (6, 'E5', 0.82), (8, 'A5', 0.92), (11, 'G5', 0.76), (14, 'E5', 0.7)]
 OVER_G = {'C5': 'B4', 'E5': 'D5', 'C6': 'B5'}
 
+# Tonal SFX hits from storyboard.json scenes[].sfx (shimmer / bloop / chime / pop / key-down). The hook,
+# arp and counter-melody leave [hit - 3.5, hit + 3] free so the SFX sound alone ("leave the frames where
+# SFX hit free of melodic notes"). Designed unisons (420 ding, 885 shimmer, 900 bloop, 945 ding, 990
+# click) are scripted stingers and stay.
+TONAL_SFX = (250, 255, 675, 681, 708, 720, 813, 897, 993, 1203, 1320, 1390, 1395)
+
+
+def sfx_clear(fr):
+    return not any(h - 3.5 <= fr <= h + 3 for h in TONAL_SFX)
+
 
 def motif_bar(mx, bar, chord, variant, gain, lo=0.0, hi=1e9, skip=(), bright=1.0, decay=0.42, dly=0.22, hall=0.18,
               holes=()):
     pat = MOTIF_A if variant == 0 else MOTIF_B
     for step, note, v in pat:
         fr = fbar(bar, 1, step)
-        if fr < lo or fr >= hi or any(abs(fr - s) < 0.5 for s in skip) or any(a <= fr < b for a, b in holes):
+        if fr < lo or fr >= hi or any(abs(fr - s) < 0.5 for s in skip) or any(a <= fr < b for a, b in holes) \
+                or not sfx_clear(fr):
             continue
         nm = OVER_G.get(note, note) if ROOT[chord] == 'G' else note
         mx.add('lead', fr, pluck(V(nm), v, seed=S(fr), bright=bright, decay=decay), gain=gain,
@@ -1186,10 +1197,12 @@ def build_score(mx: Mixer):
     for fr in (705, 735, 765, 795, 825, 855, 885):
         clap_at(mx, fr, 1.0)
     hats16(mx, 690, 900, 0.19, open_every=lambda fr: int(fr) % 30 == 7)
-    counter = [(690, 'E5', 0.9), (697.5, 'G5', 0.8), (705, 'A5', 1.0), (727.5, 'G5', 0.8), (735, 'E5', 0.8),
+    counter = [(690, 'E5', 0.9), (697.5, 'G5', 0.8), (712.5, 'A5', 1.0), (727.5, 'G5', 0.8), (735, 'E5', 0.8),
                (750, 'A5', 0.9), (780, 'E5', 0.85), (787.5, 'G5', 0.8), (795, 'A5', 0.95), (840, 'A5', 0.9),
                (855, 'G5', 0.8), (862.5, 'E5', 0.8)]
     for fr, nm, v in counter:
+        if not sfx_clear(fr):
+            continue
         mx.add('lead', fr, bell(V(nm), v, seed=S(fr), decay=0.8), gain=0.2, hall=0.3, dly=0.2)
     ev(690, sec, 'downbeat-hit', 'Groove re-enters on beat 3 (key -> chip morph): kick, clap, hats, sub, bass, hook + bell counter-melody E5-G5-A5 (C-major pentatonic, additive bell).')
     crash_at(mx, 720, 0.6, gain=0.18, dur=1.8, tau=0.5)
@@ -1225,7 +1238,7 @@ def build_score(mx: Mixer):
                'G': ['G5', 'B5', 'D6', 'B5']}[c]
         for st in range(16):
             fr = fbar(b, 1, st)
-            if 1035 <= fr < 1050 or st % 4 == 0:
+            if 1035 <= fr < 1050 or st % 4 == 0 or not sfx_clear(fr):
                 continue
             r = rng_for('arp', S(fr))
             mx.add('lead', fr, pluck(V(arp[st % 4]), 0.5 * (1 + 0.1 * r.standard_normal()), seed=S(fr) + 1,
@@ -1257,7 +1270,7 @@ def build_score(mx: Mixer):
     mx.add('lead', 990, pluck(V('C6'), 0.9, seed=9900, bright=1.1, decay=0.5), gain=0.3, dly=0.25, hall=0.2)
     ev(990, sec, 'stinger', 'Pluck C6 with the “Copiar Markdown” click.')
     stab(mx, 1035, 'Am', gain=0.66)
-    mx.add('bass', 1035, no_synth(1.0, seed=1035), gain=0.46, dly=0.0)
+    mx.add('bass', 1035, no_synth(1.0, seed=1035), gain=0.62, hall=0.08)
     ev(1035, sec, 'stinger', 'Full-band Am stab + low “no” synth (A1/E2/A2 saws, pitch falls a whole step, filter closes); groove holes 1035-1049 and resumes on 1050.')
     crash_at(mx, 1080, 0.7, gain=0.2, dur=2.0, tau=0.55)
     ev(1080, sec, 'downbeat-hit', 'Bar 19 downbeat (“Ok, foco!”): light crash, chord to G.')

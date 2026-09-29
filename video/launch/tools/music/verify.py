@@ -180,15 +180,36 @@ def main():
     sys.path.insert(0, HERE)
     import compose as C
     n = SR
-    y = C.saw_os(1760.0, n) * np.hanning(n)
-    Y = 20 * np.log10(np.abs(np.fft.rfft(y)) + 1e-12)
-    Y -= Y.max()
-    fr = np.fft.rfftfreq(n, 1 / SR)
-    harm = np.zeros_like(fr, dtype=bool)
-    for k in range(1, int(24000 / 1760) + 1):
-        harm |= np.abs(fr - 1760 * k) < 12
-    rep['aliasProbeSaw1760_2xPolyBLEP'] = {'worstNonHarmonicDb': round(float(Y[~harm & (fr > 20)].max()), 1),
-                                'worstNonHarmonicBelow5kDb': round(float(Y[~harm & (fr > 20) & (fr < 5000)].max()), 1)}
+    probe = {}
+    for name, fn in (('polyBLEP_2x', C.saw_os), ('polyBLEP_1x', C.saw_blep)):
+        y = fn(1760.0, n) * np.blackman(n)
+        Y = 20 * np.log10(np.abs(np.fft.rfft(y)) + 1e-12)
+        Y -= Y.max()
+        fr = np.fft.rfftfreq(n, 1 / SR)
+        harm = np.zeros_like(fr, dtype=bool)
+        for k in range(1, int(24000 / 1760) + 1):
+            harm |= np.abs(fr - 1760 * k) < 12
+        m = ~harm & (fr > 20)
+        probe[name] = {'worstNonHarmonicBelow20kDb': round(float(Y[m & (fr < 20000)].max()), 1),
+                       'worstNonHarmonicBelow16kDb': round(float(Y[m & (fr < 16000)].max()), 1)}
+    rep['aliasProbeSaw1760'] = probe
+
+    # per-stem onsets (the stem that carries each scripted hit)
+    stem_hits = [(0, 'drums'), (0, 'harmony'), (105, 'bass'), (150, 'harmony'), (240, 'drums'), (240, 'harmony'),
+                 (300, 'lead'), (420, 'lead'), (510, 'harmony'), (525, 'harmony'), (540, 'harmony'), (660, 'harmony'),
+                 (690, 'lead'), (810, 'harmony'), (885, 'lead'), (900, 'lead'), (945, 'lead'), (990, 'lead'),
+                 (1035, 'bass'), (1275, 'lead'), (1380, 'drums'), (1380, 'harmony'), (1395, 'drums'),
+                 (1440, 'lead'), (1455, 'lead')]
+    so = []
+    for fr_, stem in stem_hits:
+        p_ = os.path.join(args.dir, 'stems', f'{stem}.wav')
+        if not os.path.exists(p_):
+            continue
+        sx, _ = sf.read(p_, dtype='float64', always_2d=True)
+        sm = sx.T.mean(axis=0)
+        off, jump = first_attack(sm, fr_, 1.5, 1.5, blk=48)
+        so.append({'frame': fr_, 'stem': stem, 'envelopeJumpOffsetFrames': round(off, 3), 'jumpDb': round(jump, 1)})
+    rep['stemOnsets'] = so
 
     # stems
     st = {}
@@ -242,9 +263,9 @@ def plot(x, mono, tS, lS, tM, lM, board, png, markers_path):
         for b in range(27):
             ax.axvline(b * 2.0, color='#00000033' if ax is not axs[1] else '#ffffff55', lw=0.7)
         ax.axvspan(225 / FPS, 240 / FPS, color='#2ca02c33')
-    for s in board['sections']:
+    for si, s in enumerate(board['sections']):
         f0 = (s['startBar'] - 1) * 60
-        axs[0].text(f0 / FPS + 0.05, 0.93, f"{s['name']}\nbars {s['startBar']}-{s['startBar'] + s['bars'] - 1} · E{s['energy']}",
+        axs[0].text(f0 / FPS + 0.05, 0.93 if si % 2 == 0 else -0.72, f"{s['name']}\nbars {s['startBar']}-{s['startBar'] + s['bars'] - 1} · E{s['energy']}",
                     fontsize=8, va='top')
         for ax in axs:
             ax.axvline(f0 / FPS, color='#d8a03b', lw=1.8)
