@@ -12,9 +12,18 @@
  * app's ember floor glow fades in, UBI shrinks onto the in-app UBI's rect of
  * s06 f0 (E.exit, 15 f).
  *
- * Layers: canvas camera (backdrop + floor glow; scaled 1 → 1.04) · type (screen
- * space, whole px; only the ≤ 8-f slam shake moves it) · UBI (screen space,
- * position mapped through the canvas camera, then to the match rect).
+ * v2 (brief v2-scenes G2): lockup 1.23× (Lockup.tsx LOCKUP_SCALE), descriptor
+ * 64 px, UBI 720-px frame; the drop explodes from the X's spot (DropBurst: core
+ * bloom, two shockwave rings, a ray fan, 44 sparks, f0–28) and the volt bloom
+ * behind UBI peaks 0.42; rising motes keep the hold alive; f30–52 a product
+ * constellation (Constellation.tsx: categories list, 88 ring, review row,
+ * day-track strip as LiftCards in depth) pops in on 8th notes and recedes
+ * f90–106, so f106–119 is the v1 match-cut state (stage + lockup + UBI).
+ *
+ * Layers: canvas camera (backdrop + floor glow; scaled 1 → 1.04) · motes +
+ * constellation + burst (behind the type) · type (screen space, whole px; only
+ * the ≤ 8-f slam shake moves it) · UBI (screen space, position mapped through
+ * the canvas camera, then to the match rect).
  */
 import React from 'react';
 import {AbsoluteFill, Easing} from 'remotion';

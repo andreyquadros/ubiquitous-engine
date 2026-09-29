@@ -450,10 +450,10 @@ export const TimesheetPlane: React.FC<{
 							<div
 								style={{
 									position: 'absolute',
-									left: c.x - TS.col / 2 + 4,
-									top: c.y - TS.row / 2 + 4,
-									width: TS.col - 8,
-									height: TS.row - 8,
+									left: c.x - TS.col / 2 + 3,
+									top: c.y - TS.row / 2 + 3,
+									width: TS.col - 6,
+									height: TS.row - 6,
 									borderRadius: 10,
 									opacity: m.o * Math.min(1, sc),
 									background: alpha(color.rose, 0.2),
@@ -464,7 +464,8 @@ export const TimesheetPlane: React.FC<{
 								style={{
 									position: 'absolute',
 									left: c.x - 60,
-									top: c.y - 50,
+									// centre the cap-height glyph (Sora: cap centre 0.475 em below the line-box top)
+									top: c.y - 50 + (0.5 - 0.475) * 68,
 									width: 120,
 									height: 100,
 									display: 'flex',
@@ -472,7 +473,7 @@ export const TimesheetPlane: React.FC<{
 									justifyContent: 'center',
 									fontFamily: font.display,
 									fontWeight: 800,
-									fontSize: 72,
+									fontSize: 68,
 									lineHeight: 1,
 									color: '#ff6b70',
 									textShadow: `0 0 22px ${alpha(color.rose, 0.7)}, 0 2px 0 rgba(60, 8, 12, 0.5)`,

@@ -1,14 +1,17 @@
 /**
  * s03-planilha-de-memoria — abs 180–224 (45 f) · problem
  *
- * f0 (downbeat) hard cut INTO the slam contact: "Chutar as horas?" at full
- * opacity, scale 1.06→1 (SLAM) + 6 px shake. The s01 timesheet is back, flat
- * (rx 6°). Rose "?" guesses pop on 8ths (f8 TER/11h, f15 SEG/15h, f23 QUI/09h,
- * f30 TER/14h; SNAPPY, no bounce). f20–30 a rose strike-through crosses out
- * "Chutar". The camera converges on the volt caret in TER/10h (E.glide pan +
- * linear push 1.00→1.03 around the caret) so that on f44 the caret sits
+ * v2. f0 (downbeat) hard cut INTO the slam contact: "Chutar as horas?" 136 px
+ * at full opacity, scale 1.06→1 (SLAM) + 6 px shake. The s01 sheet is back,
+ * big (1.2×, flat rx 6°, top edge y ≈ 300). Rose "?" guesses (≈ 82 px →
+ * 120 px on the canvas, in rose-lit cells) pop on 8ths with a small spring
+ * overshoot (f8 TER/11h, f15 SEG/15h, f23 QUI/09h, f30 TER/14h). f20–30 a
+ * thick rose strike-through crosses out "Chutar", which steps back to 60 %.
+ * The camera converges on the volt caret in TER/10h (E.glide pan + an
+ * accelerating push 1.00→1.52 around the caret) so that on f44 the caret sits
  * exactly on (960, 520) at 4×56 px — the spot where s04 keeps it and s05's X
- * pops out of it. Caret blinks, then is solid f30–44. Hard cut at 45.
+ * pops out of it — with the sheet running off both sides (v1's last frame was
+ * lopsided). Caret blinks, then is solid f30–44. Hard cut at 45.
  */
 import React from 'react';
 import {AbsoluteFill, interpolate} from 'remotion';
@@ -21,6 +24,7 @@ import {
 	CARET_SPOT,
 	camTransform,
 	cellCenter,
+	inkGradient,
 	CLAMP,
 	lerp,
 	project,
@@ -45,7 +49,10 @@ export const sfx: SfxCue[] = [
 	{ref: 'ui_tick_1.wav', atFrame: 30, gainDb: -22, note: '“?” pops.'},
 ];
 
-const POSE: PlanePose = {cx: 960, cy: 680, rx: 6, rz: 0, s: 1};
+// v2: the sheet is big again (1.2×, top edge y ≈ 300) and the camera pushes in hard on the caret
+const POSE: PlanePose = {cx: 960, cy: 682, rx: 6, rz: 0, s: 1.2};
+/** End zoom: big enough that at f44 the sheet runs off both sides (fixes v1's lopsided last frame). */
+const Z_END = 1.52;
 const LAST = 44;
 /** The caret's cell, projected with the camera at rest. */
 const CARET_F = (() => {
@@ -55,13 +62,14 @@ const CARET_F = (() => {
 
 const camAt = (f: number): Cam2D => {
 	const e = interpolate(f, [0, LAST], [0, 1], {...CLAMP, easing: E.glide});
-	const t = interpolate(f, [0, LAST], [0, 1], CLAMP);
+	// accelerating push (ease-in): the frame closes in on the caret right into the drop-out
+	const t = Math.pow(interpolate(f, [0, LAST], [0, 1], CLAMP), 1.6);
 	return {
 		fx: CARET_F.x,
 		fy: CARET_F.y,
 		ax: lerp(CARET_F.x, CARET_SPOT.x, e),
 		ay: lerp(CARET_F.y, CARET_SPOT.y, e),
-		zoom: Math.exp(lerp(0, Math.log(1.03), t)),
+		zoom: Math.exp(lerp(0, Math.log(Z_END), t)),
 	};
 };
 
@@ -72,7 +80,7 @@ const GUESSES: {col: number; row: number; at: number}[] = [
 	{col: TER, row: 5, at: 30}, // TER/14h
 ];
 
-const HEAD = {size: 120, capTop: 170};
+const HEAD = {size: 136, capTop: 100};
 
 /** Caret: 8 on / 8 off from f0, off f24–29, solid f30–44. */
 const caretOn = (f: number) => (f >= 30 ? true : f >= 24 ? false : f % 16 < 8);
@@ -90,18 +98,18 @@ const S03PlanilhaDeMemoria: React.FC = () => {
 	let slamScale = 1.06 - 0.06 * sp;
 	if (frame > 8 && Math.abs(slamScale - 1) < 0.001) slamScale = 1;
 	const strike = ramp(frame, 20, 30, E.enter);
-	const struckColor = strike > 0 ? `rgba(232,237,249,${(1 - 0.32 * strike).toFixed(3)})` : color.ink;
 
+	// "?" guesses pop with a spring (small overshoot) from 25 %
 	const marks: Mark[] = GUESSES.map((g) => ({
 		col: g.col,
 		row: g.row,
-		p: springAt(frame, g.at - 1, 'SNAPPY'),
-		o: interpolate(frame, [g.at - 2, g.at + 1], [0, 1], CLAMP),
+		p: frame < g.at - 1 ? 0 : 0.25 + 0.75 * springAt(frame, g.at - 1, 'BOUNCY_SUBTLE'),
+		o: interpolate(frame, [g.at - 1, g.at + 1], [0, 1], CLAMP),
 	}));
 
 	return (
 		<SceneTransitions>
-			<Backdrop seed="s03">
+			<Backdrop seed="s03" look={{keyPool: {x: 0.46, y: 0.62, w: 0.9, h: 0.9, opacity: 0.42}, keyLight: {x: 0.46, y: 0.6, w: 0.6, h: 0.6, opacity: 0.16}}}>
 				<AbsoluteFill style={{transform: shakeTransform(shake)}}>
 					<AbsoluteFill style={{transformOrigin: '0 0', transform: camTransform(cam)}}>
 						<TimesheetPlane pose={POSE} marks={marks} />
@@ -125,14 +133,16 @@ const S03PlanilhaDeMemoria: React.FC = () => {
 							whiteSpace: 'nowrap',
 							transform: slamScale === 1 ? undefined : `scale(${slamScale})`,
 							transformOrigin: '50% 50%',
+							filter: 'drop-shadow(0 6px 30px rgba(5, 9, 22, 0.6))',
 						}}
 					>
-						{headline.slice(0, at)}
-						<span style={{position: 'relative', display: 'inline-block', color: struckColor}}>
-							{emph}
-							<SweepBar progress={strike} color={color.rose} topEm={0.535} thicknessEm={0.07} overhangEm={0.04} />
+						{headline.slice(0, at) ? <span style={inkGradient}>{headline.slice(0, at)}</span> : null}
+						<span style={{position: 'relative', display: 'inline-block'}}>
+							{/* the struck word steps back (60 %) under a thick rose bar */}
+							<span style={{...inkGradient, opacity: 1 - 0.4 * strike}}>{emph}</span>
+							<SweepBar progress={strike} color={color.rose} topEm={0.5} thicknessEm={0.09} overhangEm={0.05} glow />
 						</span>
-						{headline.slice(at + emph.length)}
+						<span style={inkGradient}>{headline.slice(at + emph.length)}</span>
 					</div>
 				</AbsoluteFill>
 			</Backdrop>

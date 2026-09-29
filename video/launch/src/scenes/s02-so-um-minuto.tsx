@@ -1,20 +1,23 @@
 /**
  * s02-so-um-minuto — abs 90–179 (90 f) · problem
  *
- * Layer A (texture, never read): 12 generic window-title chips in three depth
- * rows (y 170 / 300 / 900, scale 0.8 / 1 / 0.9) streaking right→left, re-laid
- * out on 8ths (f0, 8, 30, 38, 45, 53) — each set with its own linear push
- * 1.00→1.06 and ±2° tilt. 38 px/f until the slam, then 8 px/f and 40 %, then
- * 4 px/f from the landing. Layer B: the slam "“Só um minutinho.”" (mount f11 at
- * 1.45 / blur 12, SLAM contact f15 + 6 px shake). Layer C: the counter 1→40
- * (mount f29, counts f30→60, lands f60: pulse, ink→rose, underline under
- * "min"). Everything on the dark canvas. Hard cuts in and out.
+ * v2. Layer A (texture): a flurry of generic, unbranded window-title chips
+ * (44 px text, lit glass pills, coloured generic app squares) in six depth
+ * rows streaking right→left with horizontal motion blur, re-laid out on 8ths
+ * (f0, 8, 30, 38, 45, 53), each set with its own linear push 1.00→1.06 and
+ * ±2° tilt. The two `near` rows fill the middle of f0–14 and are blown apart
+ * on the contact; the four outer rows (y 100 / 226 / 860 / 990) frame the type
+ * at 50 %. 38 px/f until the slam, then 8 px/f, then 4 px/f from the landing.
+ * Layer B: the slam "“Só um minutinho.”" 136 px (mount f11 at 1.45 / blur 12,
+ * SLAM contact f15 + 6 px shake). Layer C: the counter 1→40 at 300 px, "min"
+ * 135 px (mount f29, counts f30→60, lands f60: pulse, ink→rose, underline,
+ * a rose floor light blooms under it and breathes). Hard cuts in and out.
  */
 import React from 'react';
 import {AbsoluteFill, Easing, interpolate, random} from 'remotion';
-import {color, font} from '../design/tokens';
+import {alpha, color, font} from '../design/tokens';
 import {E, SceneTransitions, springAt, useScene, type SfxCue} from '../shared';
-import {Backdrop, boxTopForCap, CLAMP, G1_ORBS, lerp, ramp, shakeTransform, slamShake, SweepBar, useFrame} from './_parts/G1/common';
+import {Backdrop, boxTopForCap, CLAMP, G1_ORBS, inkGradient, lerp, ramp, shakeTransform, slamShake, SweepBar, useFrame} from './_parts/G1/common';
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
 export const sfx: SfxCue[] = [
@@ -44,12 +47,26 @@ const TITLES = [
 	'(12) Caixa de entrada',
 	'Proposta_v3_final.pdf',
 	'Sem título — Documento',
+	'Chamada perdida',
+	'Lembrete: responder',
+	'Atualização disponível',
+	'Rascunho — e-mail',
 ];
+/** Generic app squares (no brands): muted accents. */
+const HUES = ['#7d8bab', '#e0a73a', '#3fbf8c', '#e2656a', '#5aa9e6', '#9aa6c2'];
 const SHOTS = [0, 8, 30, 38, 45, 53];
+/**
+ * v2: six depth rows. The two `near` rows fill the middle of the frame before
+ * the slam (f0–14: no empty frames) and are blown away on the contact; the
+ * four outer rows frame the type afterwards.
+ */
 const ROWS = [
-	{y: 170, s: 0.8},
-	{y: 300, s: 1},
-	{y: 900, s: 0.9},
+	{y: 100, s: 0.82, near: false},
+	{y: 226, s: 1, near: false},
+	{y: 420, s: 1.2, near: true},
+	{y: 640, s: 1.3, near: true},
+	{y: 860, s: 1, near: false},
+	{y: 990, s: 0.84, near: false},
 ];
 const SLAM_IN = 11;
 const CONTACT = 15;
@@ -69,40 +86,42 @@ const dist = (f: number) => {
 	return d;
 };
 
-const chipWidth = (t: string) => Math.round(t.length * 30 * 0.53 + 26 * 2 + 18 + 14);
+const CHIP = {h: 82, text: 44, square: 32}; // far rows (×0.82–0.84) still ≥ 36 px
+const chipWidth = (t: string) => Math.round(t.length * CHIP.text * 0.52 + 22 + CHIP.square + 16 + 32);
 
-type ChipPlacement = {title: string; x: number; row: number};
+type ChipPlacement = {title: string; hue: string; x: number; row: number};
 
 const layout = (shot: number): ChipPlacement[] => {
 	const out: ChipPlacement[] = [];
 	ROWS.forEach((r, ri) => {
-		let x = -260 + random(`s02-${shot}-${ri}-start`) * 260;
-		for (let i = 0; i < 4; i++) {
+		let x = -320 + random(`s02-${shot}-${ri}-start`) * 300;
+		for (let i = 0; i < 5; i++) {
 			const title = TITLES[Math.floor(random(`s02-${shot}-${ri}-${i}-t`) * TITLES.length)];
-			out.push({title, x, row: ri});
-			x += (chipWidth(title) + 90 + random(`s02-${shot}-${ri}-${i}-g`) * 170) * r.s;
+			const hue = HUES[Math.floor(random(`s02-${shot}-${ri}-${i}-h`) * HUES.length)];
+			out.push({title, hue, x, row: ri});
+			x += (chipWidth(title) + 70 + random(`s02-${shot}-${ri}-${i}-g`) * 150) * r.s;
 		}
 	});
 	return out;
 };
 
-const Chip: React.FC<{title: string}> = ({title}) => (
+const Chip: React.FC<{title: string; hue: string}> = ({title, hue}) => (
 	<div
 		style={{
 			display: 'inline-flex',
 			alignItems: 'center',
-			gap: 14,
-			height: 60,
-			padding: '0 26px',
+			gap: 16,
+			height: CHIP.h,
+			padding: '0 32px 0 22px',
 			borderRadius: 999,
-			background: color.panel2,
-			border: '1px solid rgba(255,255,255,0.08)',
-			boxShadow: '0 1px 0 rgba(255,255,255,0.05) inset, 0 8px 20px -6px rgba(0,0,0,0.55)',
+			background: 'linear-gradient(180deg, rgba(196,210,240,0.26) 0%, rgba(150,168,210,0.16) 100%)',
+			border: '1.5px solid rgba(220,230,255,0.26)',
+			boxShadow: '0 1.5px 0 rgba(255,255,255,0.18) inset, 0 14px 30px -10px rgba(2,5,14,0.7)',
 			whiteSpace: 'nowrap',
 		}}
 	>
-		<div style={{width: 18, height: 18, borderRadius: 5, background: '#3a4560'}} />
-		<span style={{fontFamily: font.text, fontWeight: 500, fontSize: 30, color: color.ink2, opacity: 0.7}}>{title}</span>
+		<div style={{width: CHIP.square, height: CHIP.square, borderRadius: 8, background: hue, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.3)'}} />
+		<span style={{fontFamily: font.text, fontWeight: 600, fontSize: CHIP.text, color: color.ink}}>{title}</span>
 	</div>
 );
 
@@ -114,11 +133,14 @@ const ChipLayer: React.FC<{frame: number}> = ({frame}) => {
 	const travelled = dist(frame) - dist(start);
 	const push = lerp(1, 1.06, interpolate(frame, [start, end], [0, 1], CLAMP));
 	const rot = (random(`s02-rot-${shotIdx}`) * 2 - 1) * 2;
-	const dim = lerp(1, 0.4, ramp(frame, CONTACT, CONTACT + 6, E.enter));
+	const settle = ramp(frame, CONTACT, CONTACT + 6, E.enter);
+	// outer rows step back to 50 %; the near rows are blown out on the contact
+	const outer = lerp(1, 0.5, settle);
+	const blown = ramp(frame, CONTACT - 4, CONTACT, E.exit); // gone by the contact: the slam lands on a clean middle
 	const v = speed(frame);
 	const streak = 2 + v * 0.22; // horizontal smear grows with speed; 2 px base blur
 	return (
-		<AbsoluteFill style={{opacity: dim}}>
+		<AbsoluteFill>
 			<svg width={0} height={0} style={{position: 'absolute'}}>
 				<filter id="s02-streak" x="-10%" y="-20%" width="120%" height="140%" colorInterpolationFilters="sRGB">
 					<feGaussianBlur stdDeviation={`${streak.toFixed(2)} 2`} />
@@ -127,11 +149,16 @@ const ChipLayer: React.FC<{frame: number}> = ({frame}) => {
 			<AbsoluteFill
 				style={{
 					transform: `scale(${push}) rotate(${rot}deg)`,
-					filter: 'saturate(0.7) url(#s02-streak)',
+					filter: 'saturate(0.8) url(#s02-streak)',
 				}}
 			>
 				{chips.map((c, i) => {
 					const r = ROWS[c.row];
+					const o = r.near ? 1 - blown : outer;
+					if (o <= 0.001) return null;
+					// near rows: pushed apart (up / down) and scaled as they blow out
+					const push = r.near ? (r.y < 540 ? -1 : 1) * 160 * blown : 0;
+					const k = r.s * (r.near ? 1 + 0.25 * blown : 1);
 					return (
 						<div
 							key={i}
@@ -139,11 +166,12 @@ const ChipLayer: React.FC<{frame: number}> = ({frame}) => {
 								position: 'absolute',
 								left: 0,
 								top: 0,
+								opacity: o,
 								transformOrigin: '0 50%',
-								transform: `translate(${(c.x - travelled * r.s).toFixed(2)}px, ${r.y - 30}px) scale(${r.s})`,
+								transform: `translate(${(c.x - travelled * r.s).toFixed(2)}px, ${(r.y - CHIP.h / 2 + push).toFixed(2)}px) scale(${k.toFixed(4)})`,
 							}}
 						>
-							<Chip title={c.title} />
+							<Chip title={c.title} hue={c.hue} />
 						</div>
 					);
 				})}
@@ -156,8 +184,9 @@ const ChipLayer: React.FC<{frame: number}> = ({frame}) => {
 /* Scene                                                                     */
 /* ------------------------------------------------------------------------ */
 
-const HEAD = {size: 128, capTop: 330};
-const NUM = {size: 240, capTop: 560};
+const HEAD = {size: 136, capTop: 300};
+const NUM = {size: 300, capTop: 470};
+const MIN_K = 0.45; // "min" = 135 px
 
 const S02SoUmMinuto: React.FC = () => {
 	const scene = useScene();
@@ -226,12 +255,28 @@ const S02SoUmMinuto: React.FC = () => {
 								transformOrigin: '50% 50%',
 							}}
 						>
-							{headline.slice(0, at)}
-							<span style={{color: color.rose}}>{emph}</span>
-							{headline.slice(at + emph.length)}
+							<span style={inkGradient}>{headline.slice(0, at)}</span>
+							<span style={{color: color.rose, textShadow: `0 0 34px ${alpha(color.rose, 0.45)}`}}>{emph}</span>
+							<span style={inkGradient}>{headline.slice(at + emph.length)}</span>
 						</div>
 					) : null}
 				</AbsoluteFill>
+
+				{/* the truth lands: a rose floor light blooms under the counter on f60, then breathes */}
+				{frame >= LAND - 1 ? (
+					<div
+						style={{
+							position: 'absolute',
+							left: 960 - 760,
+							top: 700,
+							width: 1520,
+							height: 420,
+							borderRadius: '50%',
+							opacity: (0.75 + 0.25 * Math.cos((frame - LAND) / 6)) * ramp(frame, LAND - 1, LAND + 3),
+							background: `radial-gradient(closest-side, ${alpha(color.rose, 0.3)} 0%, ${alpha(color.rose, 0.12)} 50%, ${alpha(color.rose, 0)} 100%)`,
+						}}
+					/>
+				) : null}
 
 				{/* C: the counter */}
 				{shown ? (
@@ -252,11 +297,19 @@ const S02SoUmMinuto: React.FC = () => {
 							transformOrigin: '50% 60%',
 						}}
 					>
-						<span style={{display: 'inline-grid', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.04em', color: numColor}}>
+						<span
+							style={{
+								display: 'inline-grid',
+								fontVariantNumeric: 'tabular-nums',
+								letterSpacing: '-0.04em',
+								color: numColor,
+								textShadow: `0 0 ${(40 * rose).toFixed(1)}px ${alpha(color.rose, 0.5 * rose)}`,
+							}}
+						>
 							<span style={{gridArea: '1 / 1', visibility: 'hidden'}}>40</span>
 							<span style={{gridArea: '1 / 1', justifySelf: 'end'}}>{value}</span>
 						</span>
-						<span style={{fontSize: NUM.size * 0.5, letterSpacing: '-0.02em', color: color.ink2}}>
+						<span style={{fontSize: NUM.size * MIN_K, letterSpacing: '-0.02em', color: color.ink2}}>
 							{' '}
 							<span style={{position: 'relative', display: 'inline-block', lineHeight: 1}}>
 								min

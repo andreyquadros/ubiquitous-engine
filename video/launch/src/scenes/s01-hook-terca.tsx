@@ -1,14 +1,17 @@
 /**
  * s01-hook-terca — abs 0–89 (90 f) · hook
  *
- * f0 is the poster: rose kicker + the question fully set, the empty ANTES
- * timesheet leaning back like a desk (rx 32°, rz −4°, s 0.90, centre y 800),
- * volt caret on in TER/10h. f0–24 the sheet slams flat (E.push, 90 % by f6,
- * vertical motion blur only while it moves > 40 px/f). f2–14 volt underline
- * sweeps under "terça?". f30 (beat 3) the TER column is spotlit: the other
- * four go to 40 % over 8 f. Caret blinks 8/8. f24–89 camera push 1.00→1.04
- * into TER with the camera sliding 24 px toward it (content +24 px). The
- * type is pinned in screen space and never moves or blurs. Hard cut at 90.
+ * v2. f0 is the poster: rose kicker (46 px) + the question (136 px, white
+ * gradient) fully set, the empty ANTES timesheet — now a lit, desk-sized
+ * slate sheet at 1.2× (day labels ≈ 38 px, hours ≈ 31 px on the canvas) —
+ * leaning back like a desk (rx 30°, rz −4°, s 1.1, centre y 830), volt caret
+ * on in TER/10h. f0–24 the sheet slams flat to fill the lower ~60 % and bleed
+ * off the bottom (E.push, vertical motion blur only while it moves > 40 px/f).
+ * f2–14 volt underline sweeps under "terça?". f30 (beat 3) the TER column
+ * lights up volt (wash + rim + glow + lit header chip) while the other four
+ * step back to 55 %; the glow then breathes. f40–86 a light sweep crosses the
+ * sheet. Caret blinks 8/8. f24–89 camera push 1.00→1.06 into TER with a 24 px
+ * slide. The type is pinned in screen space. Hard cut at 90.
  */
 import React from 'react';
 import {AbsoluteFill, interpolate} from 'remotion';
@@ -36,7 +39,9 @@ import {
 } from './_parts/G1/common';
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
-export const sfx: SfxCue[] = [];
+export const sfx: SfxCue[] = [
+	{ref: 'ui_pop_2.wav', atFrame: 30, gainDb: -20, note: 'v2: the TER column lights up volt (beat 3).'},
+];
 
 // v2: the sheet is 1.2× (desk-sized, fills the lower ~60 % and bleeds off the bottom edge)
 const POSE_0: PlanePose = {cx: 960, cy: 830, rx: 30, rz: -4, s: 1.1};
