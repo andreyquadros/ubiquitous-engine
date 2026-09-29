@@ -207,9 +207,9 @@ const S08RegrasMemoriaIa: React.FC = () => {
 		<Stage
 			seed="s08"
 			look={{
-				level: 1 + 0.35 * flash,
+				level: 1.12 + 0.3 * flash,
 				keyPool: {x: 0.52, y: 0.48, w: 0.86, h: 0.98, opacity: 0.5},
-				keyLight: {x: 0.58, y: 0.5, w: 0.5, h: 0.62, opacity: 0.16},
+				keyLight: {x: 0.58, y: 0.5, w: 0.5, h: 0.62, opacity: 0.18},
 			}}
 		>
 			<AbsoluteFill style={{transform: shakeTransform(shake)}}>

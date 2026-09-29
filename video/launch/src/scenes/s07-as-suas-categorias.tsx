@@ -13,7 +13,7 @@
  *    card (no scrim: the window sits below the headline band).
  *  - The typing is the subject: the capture's own value is re-typed live at
  *    2 chars/f (f8–52) inside the card, re-set at 44 image px (≈ 50 px on the
- *    canvas, two lines), under the field label re-set at 36 image px (≈ 41 px).
+ *    canvas, two lines), under the field label re-set at 38 image px (≈ 43 px).
  *    The textarea takes a volt focus ring and the card's volt glow swells while
  *    typing, then breathes back once the caret blinks.
  *  - Secondary motion in the hold: window push + pan (camera), card float, tilt
@@ -64,7 +64,7 @@ const TA_FILL = '#121a2b';
 const TA_PATCH = {x: 1356, y: 704, w: 1412, h: 160};
 /** The field label ("O que conta como trabalho desta categoria", Inter 500, cap-top ≈ 645, baseline ≈ 667). */
 const LABEL_PATCH = {x: 1336, y: 634, w: 840, h: 48};
-const LABEL = {left: 1342, baseline: 673, size: 36, color: '#e3e9f4', text: 'O que conta como trabalho desta categoria'};
+const LABEL = {left: 1342, baseline: 674, size: 38, color: '#e3e9f4', text: 'O que conta como trabalho desta categoria'};
 /** Re-typed value: Inter 400 at 44 image px (capture: 28), wrapping inside the textarea interior. */
 const TYPE = {left: 1369, firstBaseline: 756, size: 44, lineHeight: 58, width: 1390, color: '#f2f6fc'};
 /** The capture's own description value, first line (88 chars). */
@@ -147,8 +147,8 @@ const S07AsSuasCategorias: React.FC = () => {
 	const WZ = 1.0;
 	const FOCUS = {x: FIELD.x + FIELD.w / 2, y: FIELD.y + FIELD.h / 2};
 	const camera: CameraKey[] = [
-		{at: 0, zoom: WZ, focus: FOCUS, anchor: {x: 1273, y: 810}, duration: 0},
-		{at: 59, zoom: WZ * 1.05, focus: FOCUS, anchor: {x: 1250, y: 798}, duration: 59, easing: E.linear},
+		{at: 0, zoom: WZ, focus: FOCUS, anchor: {x: 1273, y: 850}, duration: 0},
+		{at: 59, zoom: WZ * 1.05, focus: FOCUS, anchor: {x: 1250, y: 838}, duration: 59, easing: E.linear},
 	];
 	const shot: ScreenConfig = {
 		src: FILE,
@@ -194,7 +194,7 @@ const S07AsSuasCategorias: React.FC = () => {
 		<Stage
 			seed="s07"
 			look={{
-				keyPool: {x: 0.52, y: 0.46, w: 0.92, h: 0.9, opacity: 0.48},
+				keyPool: {x: 0.54, y: 0.38, w: 0.92, h: 0.9, opacity: 0.5},
 				keyLight: {x: 0.5, y: 0.54, w: 0.62, h: 0.5, opacity: 0.16},
 			}}
 		>

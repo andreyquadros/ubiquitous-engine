@@ -122,7 +122,7 @@ export const KeyCap3D: React.FC<{pose: KeyPose; label?: string}> = ({pose: p, la
 					const e = 1 - Math.pow(1 - t, 3);
 					const grow = 1 + (i === 0 ? 1.35 : 0.95) * e;
 					const a = (i === 0 ? 0.95 : 0.6) * Math.pow(1 - t, 1.4);
-					const bw = (i === 0 ? 7 : 4) * u * (1 - 0.75 * t);
+					const bw = (i === 0 ? 4 : 2.5) * u * (1 - 0.7 * t);
 					return (
 						<div
 							key={i}
@@ -133,8 +133,9 @@ export const KeyCap3D: React.FC<{pose: KeyPose; label?: string}> = ({pose: p, la
 								width: s * grow,
 								height: s * grow,
 								borderRadius: p.radius * grow * 1.2,
-								border: `${bw.toFixed(2)}px solid ${alpha(i === 0 ? '#cfe0ff' : color.volt, a)}`,
-								boxShadow: `0 0 ${(28 * u).toFixed(1)}px ${alpha(color.volt, 0.7 * a)}, inset 0 0 ${(22 * u).toFixed(1)}px ${alpha(color.volt, 0.45 * a)}`,
+								border: `${bw.toFixed(2)}px solid ${alpha(i === 0 ? '#e6eeff' : '#9cc0ff', a)}`,
+								background: `radial-gradient(closest-side, ${alpha(color.volt, 0)} 58%, ${alpha(color.volt, 0.22 * a)} 100%)`,
+								boxShadow: `0 0 ${(34 * u).toFixed(1)}px ${alpha(color.volt, 0.85 * a)}, inset 0 0 ${(46 * u).toFixed(1)}px ${alpha(color.volt, 0.55 * a)}`,
 							}}
 						/>
 					);
@@ -163,7 +164,7 @@ export const KeyCap3D: React.FC<{pose: KeyPose; label?: string}> = ({pose: p, la
 							top: -s * 0.25,
 							height: bottom + s * 0.75,
 							borderRadius: '50%',
-							background: `radial-gradient(closest-side, ${alpha(rgbToHex(mixHex('#cfe0ff', color.volt, 0.35 + 0.65 * lit)), 0.34 * p.floorGlow)} 0%, ${alpha(color.volt, 0.16 * p.floorGlow)} 45%, ${alpha(color.volt, 0)} 100%)`,
+							background: `radial-gradient(closest-side, ${alpha(rgbToHex(mixHex('#cfe0ff', color.volt, 0.35 + 0.65 * lit)), 0.5 * p.floorGlow)} 0%, ${alpha(color.volt, 0.22 * p.floorGlow)} 45%, ${alpha(color.volt, 0)} 100%)`,
 						}}
 					/>
 				) : null}
@@ -178,7 +179,7 @@ export const KeyCap3D: React.FC<{pose: KeyPose; label?: string}> = ({pose: p, la
 							top: s * 0.22,
 							height: bottom - s * 0.14,
 							borderRadius: p.radius * 1.3,
-							background: `rgba(2,5,14,${(0.7 * p.shadow).toFixed(3)})`,
+							background: `rgba(2,5,14,${(0.55 * p.shadow).toFixed(3)})`,
 							filter: `blur(${(s * 0.07).toFixed(1)}px)`,
 							transform: `translateY(${(s * 0.07).toFixed(1)}px)`,
 						}}
