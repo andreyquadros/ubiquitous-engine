@@ -19,7 +19,7 @@
  * bubble floats against him, a light sweep crosses the bubble.
  */
 import React from 'react';
-import {AbsoluteFill, Easing} from 'remotion';
+import {AbsoluteFill} from 'remotion';
 import {noise2D} from '@remotion/noise';
 import {LiftCard, type LiftCardProps} from '../components/LiftCard';
 import {Screen, type ScreenConfig} from '../components/Screen';
@@ -78,18 +78,25 @@ const SHOT: ScreenConfig = {
 
 const BUBBLE_GROW = 20;
 const BUBBLE_LAND = 27;
-/** Accelerate out of the in-app bubble, arrive fast on the peak (a pop, not a glide). */
-const BUBBLE_EASE = Easing.bezier(0.45, 0, 0.55, 1);
+/**
+ * G5 fix (sync): accelerate out of the in-app bubble and ARRIVE FAST on the 1.05 peak at f27 (abs 897, the pop+2
+ * transient), then settle: an ease-IN (end slope 2.4), so f26 is still visibly short (≈ 0.85) and f27 is the hit. The
+ * v2-review ease-in-out arrived with zero velocity, so it read as landed ≈ f25–26, before the pop.
+ */
+const BUBBLE_EASE = (t: number) => t * t * (0.6 + 0.4 * t);
 
 /**
  * v2 review (fill): the empty state's own heading "Nada esperando por você" (review-done.png, ink x 1048–1511,
  * y 784–821) LIFTS out of the racking app from f17 as a slim floating chip under the bubble, in the lower-right
  * quadrant that was empty backdrop; a mint check draws on at its left (f25–33). No number is shown.
  */
-const CHIP: {x: number; y: number; w: number; h: number} = {x: 920, y: 762, w: 652, h: 80};
+// G5 fix (fill): tighter crop (x 930–1550: check badge + heading), larger (1.42 → 1.5: heading ≈ 57 px) and lower
+// (y 752 → 790), so it sits centred in the lower-right quadrant (bubble bottom 474 → chip ≈ 730–855 → frame 1080), with
+// a stronger mint spill under it
+const CHIP: {x: number; y: number; w: number; h: number} = {x: 930, y: 762, w: 620, h: 80};
 const CHIP_AT = 17;
-const CHIP_K = 1.42;
-const CHIP_POS = {x: 1380, y: 752};
+const CHIP_K = 1.5;
+const CHIP_POS = {x: 1378, y: 790};
 const Chip: React.FC<{f: number}> = ({f}) => {
 	if (f < CHIP_AT) return null;
 	const props: LiftCardProps = {
@@ -122,7 +129,7 @@ const Chip: React.FC<{f: number}> = ({f}) => {
 		float: 5,
 		floatPeriod: 70,
 		glow: color.mint,
-		glowOpacity: 0.32,
+		glowOpacity: 0.45,
 		grade: SHOT.grade,
 		style: {zIndex: 'auto'},
 	};
@@ -134,7 +141,7 @@ const Chip: React.FC<{f: number}> = ({f}) => {
 			<div
 				style={{
 					position: 'absolute',
-					left: CHIP.x + 44,
+					left: CHIP.x + 34,
 					top: CHIP.y + 10,
 					width: 60,
 					height: 60,
