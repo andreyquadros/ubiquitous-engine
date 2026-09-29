@@ -3,7 +3,14 @@ name: CI
 on:
   push:
     branches: ["**"]
+    # The launch film (video/) is not part of the app. Every pushed commit publishes the
+    # continuous release below, which installed apps then offer as an update -- so a commit that
+    # only touches the film must not build installers or ship a release with nothing new in it.
+    paths-ignore:
+      - "video/**"
   pull_request:
+    paths-ignore:
+      - "video/**"
 
 # A newer push on the same branch cancels the run still going, so the continuous release
 # always lands on the latest commit instead of racing an older build.
