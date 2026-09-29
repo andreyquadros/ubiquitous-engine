@@ -36,6 +36,7 @@ import {
 	ArrowCursor,
 	Backdrop,
 	ClickRipple,
+	Crop,
 	Finish,
 	H,
 	Headline,
@@ -51,7 +52,12 @@ import {
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
 export const sfx: SfxCue[] = [
-	{ref: 'whoosh_in_3.wav', atFrame: 5, gainDb: -18, note: 'v2: “Confirmar os 19” lifts out of its bar toward the camera. v2 review: on the landing (≈ f5, abs 785), −22 → −18 dB (the film-wide LiftCard lift level).'},
+	{
+		ref: 'whoosh_in_3.wav',
+		atFrame: 2,
+		gainDb: -15,
+		note: 'v2: “Confirmar os 19” lifts out of its bar toward the camera. G5 fix: the whoosh PEAK (0.31 s into the file) sits on the lift’s fastest frame (SNAPPY from f0: Δ peaks f1–3, 94 % by f6), abs 782; the file starts in s11’s tail (abs 773). −22 → −15 dB: it was buried under the bed.',
+	},
 	{ref: 'click.wav', atFrame: 30, gainDb: -12, note: 'Confirmar os 19.'},
 	{ref: 'shimmer_1.wav', atFrame: 33, gainDb: -14, note: 'All badges flip to “você” (C+3).'},
 	{ref: 'ui_pop_1.wav', atFrame: 44, gainDb: -20, note: 'v2: the button card lands in row 1’s “você” badge.'},
@@ -70,8 +76,22 @@ const BUTTON = hotspot(BEFORE, 'confirm-all-button'); // 1785,446 226×64
 const BADGE_NAV = hotspot(AFTER, 'nav-revisao-badge');
 const ROW1 = hotspot(AFTER, 'reviewed-row-1'); // 514,432 1529×114
 const ROW_H = 114;
-/** The mint "você" origin badge of reviewed row i (measured on review-confirmed: x 1830–1939, 40 px tall). */
+/** The mint "você" origin badge of reviewed row i (measured on review-confirmed: x 1830–1939, y 468–507 in row 1). */
 const voce = (i: number): Rect => ({x: 1830, y: 468 + ROW_H * i, w: 110, h: 40});
+/**
+ * G5 fix (proof ≥ 34 px): the badge's label is ≈ 23 image px, so even at the hold zoom (≈ 1.31 comp px per image px)
+ * it reads ≈ 30 px. As the mint wave reaches a row its badge POPS (1 → 1.4) and settles SWOLLEN at 1.28× about its
+ * centre (x 1815–1955: clear of the patched "100%" at x ≤ 1812 and of the chevron at x ≥ 1982): label ≈ 39 px.
+ */
+const CHIP_SWELL = 1.28;
+const swellOf = (r: Rect, s: number): Rect => ({x: r.x + (r.w * (1 - s)) / 2, y: r.y + (r.h * (1 - s)) / 2, w: r.w * s, h: r.h * s});
+/** Swell of row i's badge at frame f (the wave reaches row i at SWAP + 1 + 2i). */
+const chipSwell = (i: number, f: number) => {
+	const at = SWAP + 1 + 2 * i;
+	const up = ramp(f, at, at + 3, E.push);
+	const pop = ramp(f, at + 1, at + 3) * (1 - ramp(f, at + 3, at + 9, E.glide));
+	return 1 + (CHIP_SWELL - 1) * up + 0.12 * pop;
+};
 /** Button crop: the face plus a little of the bar around it (#0e1524). */
 const BTN_CROP: Rect = {x: BUTTON.x - 14, y: BUTTON.y - 12, w: BUTTON.w + 28, h: BUTTON.h + 24};
 const BAR_BG = '#0e1524';
@@ -98,28 +118,43 @@ const pctPatchesPending = [130, 242].map((y) => ({x: 1776, y, w: 62, h: 32}));
 /** Scene grade: a touch brighter than the default window grade (the review list is the darkest UI in the film). */
 const GRADE_S12 = {brightness: 1.3, lift: 0.07};
 
-const HOLD_ZOOM = 2.4;
+const HOLD_ZOOM = 2.6;
+/** Row 1's top edge (image y 432) is pinned on canvas y 345, just under the headline band, for the whole hold. */
+const ROW1_TOP_ON_CANVAS = 345;
 const CAMERA: CameraKey[] = [
 	{at: 0, zoom: 1.75, focus: {x: 1500, y: 580}, anchor: {x: 830, y: 610}, duration: 0},
 	{at: SWAP, zoom: 1.86, focus: {x: 1500, y: 580}, anchor: {x: 830, y: 610}, duration: SWAP, easing: E.linear},
-	// v2 review: push IN on the first confirmed rows (s 0.93 → 1.2 comp px per image px: row titles ≥ 36 px, "você" chips
-	// ≈ 48 px); row 1 sits just under the headline band, the sidebar and the picker stay fully out of frame
-	{at: 50, zoom: HOLD_ZOOM, focus: {x: 1265, y: 717}, anchor: {x: 934, y: 680}, duration: 50 - SWAP, easing: E.push},
-	{at: 89, zoom: HOLD_ZOOM * 1.035, focus: {x: 1262, y: 717}, anchor: {x: 934, y: 680}, duration: 39, easing: E.linear},
+	// G5 fix (proof ≥ 34 px): push IN on the confirmed rows. Measured through the projection (image px → canvas px):
+	// row titles (28 image px) 35.1 px at f50 → 35.6 px at f89, the badge labels (23 image px) 29.5 px × CHIP_SWELL ≈ 38 px.
+	// The zoom pivots on row 1's top edge (focus y 432 → canvas y 345), so the rows never slide up under the band; the
+	// row icons (image x 545) → swollen badges (x 1955) span canvas x ≈ 72–1866 at f50, 45–1863 at f89 (a slow pan
+	// left + a 1 % push); the sidebar and the picker stay out of frame
+	{at: 50, zoom: HOLD_ZOOM, focus: {x: 1265, y: 432}, anchor: {x: 975, y: ROW1_TOP_ON_CANVAS}, duration: 50 - SWAP, easing: E.push},
+	{at: 89, zoom: HOLD_ZOOM * 1.01, focus: {x: 1275, y: 432}, anchor: {x: 975, y: ROW1_TOP_ON_CANVAS}, duration: 39, easing: E.linear},
 ];
+/**
+ * G5 fix (clean headline band): everything of the list card above row 1 (the two pending rows, the section header
+ * "Classificados neste dia (19)" and its subline, x 514–2043, y ≤ 427; all #0c1220 in the capture) is flattened to
+ * the card colour while it slides under the navy band (f38–50, during the push), so the band is clean navy — no ghost
+ * rows, no half-dimmed subline at its lower edge.
+ */
+const ABOVE_ROW1: Rect = {x: 514, y: 0, w: 1530, h: 427};
 
 const shotOf = (src: string): ScreenConfig => ({
 	src,
 	camera: CAMERA,
+	// G5 fix: the tilt settles WITH the push (by f50), then only creeps, so the framing above holds through the hold
 	rotateX: [
 		[0, 9],
 		[SWAP, 8],
-		[89, 5.5, E.glide],
+		[50, 6, E.push],
+		[89, 5.5, E.linear],
 	],
 	rotateY: [
 		[0, -14],
 		[SWAP, -12],
-		[89, -5, E.glide], // v2 review: flatter at the hold (−8 → −5) so row 1's top edge stays level under the band
+		[50, -6, E.push],
+		[89, -5, E.linear], // v2 review: flatter at the hold (−8 → −5) so row 1's top edge stays level under the band
 	],
 	dots: 'neutral',
 	radius: 16,
@@ -179,7 +214,8 @@ const cardAt = (f: number, fps: number): LiftCardProps => {
 	if (f < SWAP) return CARD_UP;
 	const p0 = liftCardPose(CARD_UP, SWAP - 1, fps);
 	const t = DROP_EASE(ramp(f, SWAP, LAND));
-	const to = mapImageRect(SHOT_AFTER, f, COMP, voce(0));
+	// row 1's badge is swollen (CHIP_SWELL) by the time the card lands in it
+	const to = mapImageRect(SHOT_AFTER, f, COMP, swellOf(voce(0), chipSwell(0, f)));
 	const w0 = p0.w * p0.s;
 	return {
 		...CARD_UP,
@@ -239,7 +275,7 @@ const CardFace: React.FC<{f: number}> = ({f}) => {
 	);
 };
 
-/** Mint wave: each reviewed row washes mint as the wave passes; its "você" badge glows and keeps a breathing glow. */
+/** Mint wave: each reviewed row washes mint as the wave passes; its "você" badge pops, stays swollen and keeps a breathing glow. */
 const MintWave: React.FC<{f: number}> = ({f}) => (
 	<>
 		{Array.from({length: 11}, (_, i) => {
@@ -251,14 +287,25 @@ const MintWave: React.FC<{f: number}> = ({f}) => (
 			const glow = f < at ? 0 : Math.max(hit, settle * (0.5 + 0.2 * (f >= 50 ? breathe : 0.5)));
 			const wash = Math.max(hit, 0.35 * settle);
 			const b = voce(i);
+			const s = chipSwell(i, f);
+			// the capture's own badge pixels (the @3x twin via Crop), scaled about the badge centre; drawn UNDER the wash
+			// so the row tint covers badge and row alike (the crop's corner pixels are the row colour)
+			const swell: React.CSSProperties = {position: 'absolute', left: b.x, top: b.y, width: b.w, height: b.h, transformOrigin: '50% 50%', transform: `scale(${s.toFixed(4)})`};
 			return (
 				<React.Fragment key={i}>
+					{s > 1.0005 ? (
+						<div style={swell}>
+							<Crop src={AFTER} rect={b} at={{x: 0, y: 0}} />
+						</div>
+					) : null}
 					{wash > 0.001 ? (
 						<div style={{position: 'absolute', left: ROW1.x, top: ROW1.y + ROW_H * i, width: ROW1.w, height: ROW_H, background: `linear-gradient(90deg, ${alpha(color.mint, 0.04)} 0%, ${alpha(color.mint, 0.2)} 70%, ${alpha(color.mint, 0.3)} 100%)`, opacity: wash}} />
 					) : null}
 					{edge > 0.001 ? <div style={{position: 'absolute', left: ROW1.x, top: ROW1.y + ROW_H * i - 2, width: ROW1.w, height: 4, background: alpha(color.mint, 0.9), boxShadow: `0 0 18px ${alpha(color.mint, 0.8)}`, opacity: edge}} /> : null}
 					{glow > 0.001 ? (
-						<div style={{position: 'absolute', left: b.x - 2, top: b.y - 2, width: b.w + 4, height: b.h + 4, borderRadius: 12, boxShadow: `0 0 0 2px ${alpha(color.mint, 0.8 * glow)}, 0 0 26px 4px ${alpha(color.mint, 0.55 * glow)}`, background: alpha(color.mint, 0.1 * glow)}} />
+						<div style={swell}>
+							<div style={{position: 'absolute', left: -2, top: -2, width: b.w + 4, height: b.h + 4, borderRadius: 12, boxShadow: `0 0 0 2px ${alpha(color.mint, 0.8 * glow)}, 0 0 26px 4px ${alpha(color.mint, 0.55 * glow)}`, background: alpha(color.mint, 0.1 * glow)}} />
+						</div>
 					) : null}
 				</React.Fragment>
 			);
@@ -307,6 +354,7 @@ const S12UmClique: React.FC = () => {
 	const band = ramp(f, 24, 34, E.enter);
 	const spill = ramp(f, 0, 10, E.enter) * (1 - ramp(f, SWAP, SWAP + 8, E.enter)) * (1 + 0.35 * ramp(f, CLICK, CLICK + 2) * (1 - ramp(f, CLICK + 2, SWAP + 6)));
 	const pull = ramp(f, SWAP, 50, E.push);
+	const headClean = ramp(f, 38, 50, E.enter);
 	const badgeC = mapWithGeometry(g, {x: 1880, y: 700});
 	const layerPatches = (file: string) => widenLegend(storyboardPatches(scene, file));
 
@@ -342,6 +390,9 @@ const S12UmClique: React.FC = () => {
 								{pctPatchesAfter.map((r, i) => (
 									<div key={i} style={{position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h, background: ROW_BG}} />
 								))}
+								{headClean > 0.001 ? (
+									<div style={{position: 'absolute', left: ABOVE_ROW1.x, top: ABOVE_ROW1.y, width: ABOVE_ROW1.w, height: ABOVE_ROW1.h, background: ROW_BG, opacity: headClean}} />
+								) : null}
 								<MintWave f={f} />
 							</>
 						)}
