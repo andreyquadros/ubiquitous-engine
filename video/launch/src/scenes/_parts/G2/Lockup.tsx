@@ -2,19 +2,22 @@
  * The s05 lockup type: the real ubiqX wordmark (brand/ubiqx-wordmark-bold.svg,
  * per-letter paths inlined verbatim so the X can pop on its own) + the "AI" pill.
  *
- * Geometry: viewBox 2917 × 969 drawn 194 px tall (k = 194/969 ≈ 0.2002,
- * width 584 px). The X glyph box is (2213–2917, 39–769): its centre (2565, 404)
- * is pinned on the caret spot (960, 520), so the wordmark spans x 446.5–1030.5,
- * y 439.1–633.1 (baseline 593.0, x-height top 483.3).
+ * Geometry (v2: LOCKUP_SCALE 1.23 × the v1 194 px): viewBox 2917 × 969 drawn
+ * 238.6 px tall (k ≈ 0.2463, width 718 px). The X glyph box is (2213–2917,
+ * 39–769): its centre (2565, 404) stays pinned on the caret spot (960, 520), so
+ * the wordmark spans x 328.3–1046.7, y 420.5–659.1 (baseline 609.9).
  */
 import React from 'react';
 import {color, font} from '../../../design/tokens';
 import {CARET, clamp01, lerp} from './common';
 
+/** v2: the lockup is 1.23× the v1 size (brief v2-scenes G2: 1.15–1.3×). */
+export const LOCKUP_SCALE = 1.23;
+
 export const WM = {
 	vbW: 2917,
 	vbH: 969,
-	h: 194,
+	h: 194 * LOCKUP_SCALE,
 	get k() {
 		return this.h / this.vbH;
 	},
@@ -91,7 +94,7 @@ export const Wordmark: React.FC<WordmarkState> = ({spread, xPop, glint, glow}) =
 			/>
 		) : null,
 	);
-	const band = 700; // 140 px on screen
+	const band = 700; // 172 px on screen
 	const gx = lerp(-900, WM.vbW + 900, glint);
 	const showGlint = glint > 0 && glint < 1;
 	return (
@@ -106,7 +109,7 @@ export const Wordmark: React.FC<WordmarkState> = ({spread, xPop, glint, glow}) =
 				overflow: 'visible',
 				filter:
 					glow > 0.01
-						? `drop-shadow(0 0 ${(22 * glow).toFixed(1)}px rgba(77, 141, 255, ${(0.3 * glow).toFixed(3)})) drop-shadow(0 0 ${(60 * glow).toFixed(1)}px rgba(77, 141, 255, ${(0.14 * glow).toFixed(3)}))`
+						? `drop-shadow(0 0 ${(26 * glow).toFixed(1)}px rgba(77, 141, 255, ${(0.3 * glow).toFixed(3)})) drop-shadow(0 0 ${(72 * glow).toFixed(1)}px rgba(77, 141, 255, ${(0.14 * glow).toFixed(3)}))`
 						: undefined,
 			}}
 		>
@@ -128,10 +131,10 @@ export const Wordmark: React.FC<WordmarkState> = ({spread, xPop, glint, glow}) =
 	);
 };
 
-/** "AI" pill: Sora 600 56 px, volt on rgba(77,141,255,0.14), radius 999, padding 0.2em 0.5em. */
+/** "AI" pill: Sora 600 56 px × LOCKUP_SCALE (69 px), volt on a navy-backed volt tint, radius 999, padding 0.2em 0.5em. */
 export const AI_PILL = {
-	size: 56,
-	gap: 24,
+	size: Math.round(56 * LOCKUP_SCALE),
+	gap: Math.round(24 * LOCKUP_SCALE),
 	get left() {
 		return WM.left + WM.w + this.gap;
 	},

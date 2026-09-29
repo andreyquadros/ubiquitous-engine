@@ -21,6 +21,7 @@ import {
 	blinkOn,
 	camTransform,
 	cellCenter,
+	inkGradient,
 	CLAMP,
 	lerp,
 	project,
@@ -37,8 +38,9 @@ import {
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
 export const sfx: SfxCue[] = [];
 
-const POSE_0: PlanePose = {cx: 960, cy: 800, rx: 32, rz: -4, s: 0.9};
-const POSE_1: PlanePose = {cx: 960, cy: 700, rx: 8, rz: 0, s: 1};
+// v2: the sheet is 1.2× (desk-sized, fills the lower ~60 % and bleeds off the bottom edge)
+const POSE_0: PlanePose = {cx: 960, cy: 830, rx: 30, rz: -4, s: 1.1};
+const POSE_1: PlanePose = {cx: 960, cy: 790, rx: 8, rz: 0, s: 1.2};
 const SLAM_END = 24;
 const PUSH_FROM = 24;
 const PUSH_TO = 89;
@@ -62,7 +64,7 @@ const TER_FOCUS = (() => {
 
 const camAt = (f: number): Cam2D => {
 	const t = interpolate(f, [PUSH_FROM, PUSH_TO], [0, 1], CLAMP); // linear drift
-	const zoom = Math.exp(lerp(Math.log(1), Math.log(1.04), t));
+	const zoom = Math.exp(lerp(Math.log(1), Math.log(1.06), t));
 	return {fx: TER_FOCUS.x, fy: TER_FOCUS.y, ax: TER_FOCUS.x + 24 * t, ay: TER_FOCUS.y, zoom};
 };
 
@@ -85,8 +87,15 @@ const planeSpeed = (f: number) => {
 	return v;
 };
 
-const KICKER = {size: 26, capTop: 168};
-const HEAD = {size: 112, capTop: 214};
+const KICKER = {size: 46, capTop: 118};
+const HEAD = {size: 136, capTop: 186};
+
+
+/** The key pool + key light sit behind the sheet (the subject); the white headline sits on their falloff. */
+const S01_LOOK = {
+	keyPool: {x: 0.5, y: 0.66, w: 0.9, h: 0.9, opacity: 0.42},
+	keyLight: {x: 0.5, y: 0.7, w: 0.62, h: 0.6, opacity: 0.16},
+};
 
 const S01HookTerca: React.FC = () => {
 	const scene = useScene();
@@ -104,15 +113,18 @@ const S01HookTerca: React.FC = () => {
 	// light, 1–2 frames only: the slam reads as speed, the labels never smear into streaks
 	const blur = v > 40 ? Math.min(10, (v - 30) * 0.25) : 0;
 	const dim = ramp(frame, 30, 38, E.enter);
+	// TER lights up volt on beat 3, then breathes
+	const glow = ramp(frame, 30, 36, E.enter) * (frame > 36 ? 0.9 + 0.1 * Math.cos((frame - 36) / 7) : 1);
+	const sweep = frame >= 40 ? interpolate(frame, [40, 86], [0, 1], {...CLAMP, easing: E.glide}) : undefined;
 	const underline = ramp(frame, 2, 14, E.glide);
 
 	return (
 		<SceneTransitions>
-			<Backdrop seed="s01">
+			<Backdrop seed="s01" look={S01_LOOK}>
 				{/* canvas layer: the timesheet (camera applies here only) */}
 				<AbsoluteFill style={{transformOrigin: '0 0', transform: camTransform(cam)}}>
 					<DirectionalBlur amount={blur} angle={90}>
-						<TimesheetPlane pose={pose} dim={dim} caretOn={blinkOn(frame)} />
+						<TimesheetPlane pose={pose} dim={dim} glow={glow} sweep={sweep} caretOn={blinkOn(frame)} />
 					</DirectionalBlur>
 				</AbsoluteFill>
 
@@ -145,21 +157,22 @@ const S01HookTerca: React.FC = () => {
 							top: Math.round(boxTopForCap('display', HEAD.size, HEAD.capTop)),
 							textAlign: 'center',
 							fontFamily: font.display,
-							fontWeight: 700,
 							fontSize: HEAD.size,
 							lineHeight: 1,
-							letterSpacing: '-0.035em',
+							fontWeight: 800,
+							letterSpacing: '-0.04em',
 							color: color.ink,
 							whiteSpace: 'nowrap',
 							fontKerning: 'normal',
+							filter: 'drop-shadow(0 6px 30px rgba(5, 9, 22, 0.6))',
 						}}
 					>
-						{before}
+						<span style={inkGradient}>{before}</span>
 						<span style={{position: 'relative', display: 'inline-block'}}>
-							{emph}
-							<SweepBar progress={underline} color={color.volt} topEm={1.07} thicknessEm={0.08} overhangEm={0.01} />
+							<span style={inkGradient}>{emph}</span>
+							<SweepBar progress={underline} color={color.volt} topEm={1.15} thicknessEm={0.07} overhangEm={0.01} glow />
 						</span>
-						{after}
+						{after ? <span style={inkGradient}>{after}</span> : null}
 					</div>
 				</AbsoluteFill>
 			</Backdrop>

@@ -22,7 +22,9 @@ import {GUARD_OPACITY, guardFor} from '../components/Stage';
 import {color, font} from '../design/tokens';
 import {E, springAt, TransitionIn, TransitionOut, UbiTrack, useScene, useSceneFrame, type SfxCue} from '../shared';
 import {APP_GLOW, Backdrop, CARET, HERO_CARD_GRADED, lerp, mixHex, ramp, shakeTransform, slamShake, UBI_MATCH, W, H} from './_parts/G2/common';
-import {AiPill, Wordmark} from './_parts/G2/Lockup';
+import {AiPill, AI_PILL, Wordmark, WM} from './_parts/G2/Lockup';
+import {DropBurst, Motes} from './_parts/G2/Burst';
+import {Constellation} from './_parts/G2/Constellation';
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
 export const sfx: SfxCue[] = [
@@ -30,10 +32,19 @@ export const sfx: SfxCue[] = [
 	{ref: 'shimmer_1.wav', atFrame: 10, gainDb: -14, note: 'Glint.'},
 	{ref: 'bloop_1.wav', atFrame: 15, gainDb: -12, note: 'UBI lands.'},
 	{ref: 'whoosh_out_3.wav', atFrame: 108, gainDb: -14, note: 'UBI shrinks away into the app.'},
+	// v2: the product constellation — one soft rising pop per fragment, on its entrance frame (8th notes)
+	{ref: 'ui_pop_up_1.wav', atFrame: 30, gainDb: -21, note: 'v2 constellation: "Suas categorias" fragment pops in.'},
+	{ref: 'ui_pop_up_2.wav', atFrame: 37, gainDb: -21, note: 'v2 constellation: 88 ring pops in.'},
+	{ref: 'ui_pop_up_3.wav', atFrame: 45, gainDb: -21, note: 'v2 constellation: review row pops in.'},
+	{ref: 'ui_pop_up_4.wav', atFrame: 52, gainDb: -21, note: 'v2 constellation: day-track strip pops in.'},
 ];
 
-/* UBI in the lockup: 600-px frame, box (1075, 129) → feet anchor (450, 797) on (1375, 660.3). */
-const UBI_HOME = {x: 1075 + 450 * (600 / 900), y: 129 + 797 * (600 / 900), size: 600};
+/*
+ * UBI in the lockup (v2: 720-px frame, 1.2× v1): body left ≈ 64 px right of the AI pill; feet on the
+ * lockup floor (descender line 659 + 32). Body ink ≈ x 1331–1610, y 180–691.
+ */
+const UBI_SIZE = 720;
+const UBI_HOME = {x: 1471, y: 691, size: UBI_SIZE};
 const MATCH_START = 105;
 const MATCH_END = 119;
 
@@ -51,8 +62,8 @@ const launchOffset = (f: number) => {
 };
 
 const Descriptor: React.FC<{frame: number; text: string}> = ({frame, text}) => {
-	// Inter 500 44 px, cap-top y 752 (cap offset 0.1358 em) → line box top 746.0; centred on x 960.
-	const size = 44;
+	// v2: Inter 500 64 px (≥ 64 secondary line), cap-top y 752 (cap offset 0.1358 em); centred on x 960.
+	const size = 64;
 	const p = ramp(frame, 3, 15, E.enter);
 	if (frame < 3) return null;
 	const padT = 0.16 * size;
@@ -75,8 +86,8 @@ const Descriptor: React.FC<{frame: number; text: string}> = ({frame, text}) => {
 						fontWeight: 500,
 						fontSize: size,
 						lineHeight: 1,
-						letterSpacing: '-0.01em',
-						color: color.ink2,
+						letterSpacing: '-0.015em',
+						color: '#c3cde2',
 						whiteSpace: 'nowrap',
 						transformOrigin: '0% 100%',
 						transform: p < 1 ? `translateY(${((1 - p) * 110).toFixed(2)}%) rotate(${((1 - p) * 3).toFixed(3)}deg)` : undefined,
@@ -97,10 +108,14 @@ const Descriptor: React.FC<{frame: number; text: string}> = ({frame, text}) => {
  * `lockupGuardPeak`: the default 0.68 while the wordmark's own glow halo holds (f0–45), 0.55 once the
  * floor's horizon glow sits right under it (f60+; a denser guard there reads as a dip).
  */
-const LOCKUP_GUARD = guardFor({x: 808, y: 532, w: 724, h: 194}, {padX: 0.3 * 724});
+const LOCK_BOX = {l: WM.left, r: WM.left + WM.w + AI_PILL.gap + 2.6 * AI_PILL.size, t: WM.top, b: WM.top + WM.h};
+const LOCKUP_GUARD = guardFor(
+	{x: (LOCK_BOX.l + LOCK_BOX.r) / 2, y: (LOCK_BOX.t + LOCK_BOX.b) / 2, w: LOCK_BOX.r - LOCK_BOX.l, h: LOCK_BOX.b - LOCK_BOX.t},
+	{padX: 0.25 * (LOCK_BOX.r - LOCK_BOX.l)},
+);
 const lockupGuardPeak = (f: number) => lerp(GUARD_OPACITY, 0.55, ramp(f, 45, 75, E.glide));
-/** The light behind UBI (his settled body centre ≈ (1375, 470)). */
-const UBI_LIGHT = {x: 1375, y: 470};
+/** The light behind UBI (his settled body centre ≈ (1470, 436)). */
+const UBI_LIGHT = {x: 1470, y: 436};
 
 const S05DropUbiqx: React.FC = () => {
 	const scene = useScene();
@@ -110,8 +125,8 @@ const S05DropUbiqx: React.FC = () => {
 
 	/* ---- canvas ---------------------------------------------------------- */
 	const tint = ramp(f, MATCH_START, MATCH_END, Easing.inOut(Easing.quad));
-	// volt orb Ø1100 behind the lockup: 0 → 0.30 over 6 f, settles 0.18 by f30
-	const orbA = f < 6 ? lerp(0, 0.3, ramp(f, 0, 6, E.push)) : lerp(0.3, 0.18, ramp(f, 6, 30, E.glide));
+	// volt bloom orb Ø1300 behind UBI: 0 → 0.42 over 6 f (the drop), settles 0.2 by f30
+	const orbA = f < 6 ? lerp(0, 0.42, ramp(f, 0, 6, E.push)) : lerp(0.42, 0.2, ramp(f, 6, 30, E.glide));
 	const fade = 1 - 0.85 * tint;
 	const floor = 0.35 * ramp(f, 59, 75, E.enter) * fade;
 	const z = canvasZoom(f);
@@ -156,11 +171,11 @@ const S05DropUbiqx: React.FC = () => {
 									guard: [{...LOCKUP_GUARD, opacity: lockupGuardPeak(f)}] /* trims the light's falloff under the volt X + AI pill (≥ 4.5:1) */,
 									// the key pool and the white-blue key light sit behind UBI (the lit subject); the lockup is on their falloff
 									keyPool: {x: UBI_LIGHT.x / W, y: UBI_LIGHT.y / H, w: 0.6, h: 0.92},
-									keyLight: {x: 0.71, y: 0.42, w: 0.36, h: 0.6, opacity: 0.17},
+									keyLight: {x: UBI_LIGHT.x / W, y: UBI_LIGHT.y / H, w: 0.36, h: 0.62, opacity: 0.18},
 								}}
 								orbs={[
 									// the drop's volt bloom, behind UBI (round 2: was centred on the lockup, under the guard → a navy hole in a bright ring)
-									{c: color.volt, x: UBI_LIGHT.x, y: UBI_LIGHT.y, d: 1100, opacity: orbA * fade},
+									{c: color.volt, x: UBI_LIGHT.x, y: UBI_LIGHT.y, d: 1300, opacity: orbA * fade},
 									{c: color.ember, x: 1640, y: 900, d: 900, opacity: 0.07 * fade},
 								]}
 								floor={floor}
@@ -174,10 +189,10 @@ const S05DropUbiqx: React.FC = () => {
 								<div
 									style={{
 										position: 'absolute',
-										left: floorPt.x - 230 * z,
-										top: floorPt.y - 44 * z,
-										width: 460 * z,
-										height: 88 * z,
+										left: floorPt.x - 280 * z,
+										top: floorPt.y - 52 * z,
+										width: 560 * z,
+										height: 104 * z,
 										borderRadius: '50%',
 										opacity: land,
 										background: `radial-gradient(closest-side, rgba(77,141,255,0.42) 0%, rgba(77,141,255,0.16) 45%, transparent 100%)`,
@@ -188,10 +203,10 @@ const S05DropUbiqx: React.FC = () => {
 								<div
 									style={{
 										position: 'absolute',
-										left: floorPt.x - lerp(90, 300, ring),
-										top: floorPt.y - lerp(14, 46, ring),
-										width: lerp(180, 600, ring),
-										height: lerp(28, 92, ring),
+										left: floorPt.x - lerp(100, 380, ring),
+										top: floorPt.y - lerp(16, 58, ring),
+										width: lerp(200, 760, ring),
+										height: lerp(32, 116, ring),
 										borderRadius: '50%',
 										border: `2px solid rgba(77,141,255,${(0.55 * (1 - ring)).toFixed(3)})`,
 										boxShadow: `0 0 18px rgba(77,141,255,${(0.35 * (1 - ring)).toFixed(3)})`,
@@ -213,6 +228,13 @@ const S05DropUbiqx: React.FC = () => {
 									}}
 								/>
 							) : null}
+						</AbsoluteFill>
+
+						{/* v2: product constellation (f30–106, behind the type), the drop burst (f0–30), rising motes */}
+						<AbsoluteFill style={{transform: shakeTransform(shake)}}>
+							<Motes f={f} presence={ramp(f, 10, 30, E.enter) * (1 - ramp(f, 94, 108, E.exit))} />
+							<Constellation f={f} zoom={z} />
+							<DropBurst f={f} />
 						</AbsoluteFill>
 
 						{/* type: screen space, slam shake only */}

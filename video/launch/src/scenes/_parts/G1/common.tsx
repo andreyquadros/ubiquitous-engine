@@ -211,22 +211,40 @@ export const camApply = (c: Cam2D, p: {x: number; y: number}) => ({x: c.ax + (p.
 /* ------------------------------------------------------------------------ */
 
 const LINE = 1.5;
-const LINE_C = '#26324b'; // #1f2a40 lifted one step: after the ANTES filter (brightness .8) it lands on the board's line colour
+/**
+ * v2 sheet palette: a lit slate "desk" sheet (luma ≈ 0.2–0.3 under the key
+ * light), not a near-black card. The ANTES treatment (desaturated) stays.
+ */
+const SHEET = {
+	top: '#35415c',
+	bottom: '#262f45',
+	header: '#46526f',
+	headerRule: '#7a88a8',
+	line: '#56637f',
+	rowLine: 'rgba(122, 136, 168, 0.42)',
+	zebra: 'rgba(255, 255, 255, 0.035)',
+	edge: '#66739a',
+};
 
-export type Mark = {col: number; row: number; p: number /* 0→1 spring */; o: number /* opacity */};
+export type Mark = {col: number; row: number; p: number /* 0→1 spring (may overshoot) */; o: number /* opacity */};
 
 export const TimesheetPlane: React.FC<{
 	pose: PlanePose;
-	/** 0 → 1: the four non-TER columns go to 40 %. */
+	/** 0 → 1: the four non-TER columns step back to 55 %. */
 	dim?: number;
+	/** 0 → 1: the TER column lights up volt (wash + rim + glow + lit header chip). */
+	glow?: number;
 	/** In-plane caret (TER/10h). */
 	caretOn?: boolean;
 	/** Rose "?" guesses. */
 	marks?: Mark[];
+	/** Light sweep across the sheet: 0 → 1 = left → right (undefined = none). */
+	sweep?: number;
 	P?: number;
-}> = ({pose, dim = 0, caretOn = false, marks = [], P = PERSPECTIVE}) => {
-	const colOpacity = (i: number) => (i === TER ? 1 : 1 - 0.6 * dim);
+}> = ({pose, dim = 0, glow = 0, caretOn = false, marks = [], sweep, P = PERSPECTIVE}) => {
+	const colOpacity = (i: number) => (i === TER ? 1 : 1 - 0.45 * dim);
 	const caret = cellCenter(TER, 1);
+	const terLeft = TS.gutter + TER * TS.col;
 	return (
 		<AbsoluteFill style={{perspective: P, perspectiveOrigin: `${W / 2}px ${H / 2}px`}}>
 			<div
@@ -240,18 +258,46 @@ export const TimesheetPlane: React.FC<{
 					transform: `rotateX(${pose.rx}deg) rotateZ(${pose.rz}deg) scale(${pose.s})`,
 				}}
 			>
-				{/* ANTES treatment: desaturate 60 %, brightness 0.8 — the caret and the guesses stay out of it */}
-				<div style={{position: 'absolute', inset: 0, filter: 'saturate(0.4) brightness(0.8)'}}>
+				{/* shadow + ambient under the sheet (outside the ANTES filter) */}
+				<div
+					style={{
+						position: 'absolute',
+						inset: 0,
+						borderRadius: 24,
+						boxShadow: `0 50px 110px -30px rgba(3, 6, 16, 0.85), 0 0 120px -10px ${alpha(color.volt, 0.16)}`,
+					}}
+				/>
+				{/* ANTES treatment: desaturated; the caret, the volt column and the guesses stay out of it */}
+				<div style={{position: 'absolute', inset: 0, filter: 'saturate(0.55)'}}>
 					{/* card */}
 					<div
 						style={{
 							position: 'absolute',
 							inset: 0,
 							borderRadius: 24,
-							background: 'linear-gradient(180deg, rgba(23,32,51,0.72) 0%, rgba(17,23,38,0.66) 100%)',
-							boxShadow: `inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 ${LINE}px ${LINE_C}, 0 40px 90px -30px rgba(0,0,0,0.7)`,
+							overflow: 'hidden',
+							background: `linear-gradient(180deg, ${SHEET.top} 0%, ${SHEET.bottom} 100%)`,
+							boxShadow: `inset 0 1.5px 0 rgba(255,255,255,0.22), 0 0 0 ${LINE}px ${SHEET.edge}`,
 						}}
-					/>
+					>
+						{/* the key light falling on the sheet (upper centre) */}
+						<div
+							style={{
+								position: 'absolute',
+								left: '10%',
+								top: -TS.h * 0.35,
+								width: '80%',
+								height: TS.h * 1.1,
+								background: 'radial-gradient(closest-side, rgba(207,224,255,0.16), rgba(207,224,255,0.06) 55%, rgba(207,224,255,0) 100%)',
+							}}
+						/>
+						{/* zebra rows */}
+						{Array.from({length: TS.rows}, (_, j) =>
+							j % 2 === 1 ? (
+								<div key={j} style={{position: 'absolute', left: 0, right: 0, top: TS.header + j * TS.row, height: TS.row, background: SHEET.zebra}} />
+							) : null,
+						)}
+					</div>
 					{/* header band */}
 					<div
 						style={{
@@ -261,35 +307,33 @@ export const TimesheetPlane: React.FC<{
 							width: TS.w,
 							height: TS.header,
 							borderRadius: '24px 24px 0 0',
-							background: 'rgba(255,255,255,0.025)',
+							background: `linear-gradient(180deg, ${SHEET.header}, ${alpha(SHEET.header, 0.82)})`,
+							boxShadow: `inset 0 -${LINE}px 0 ${SHEET.headerRule}`,
 						}}
 					/>
-					{/* gutter: hour labels + the header rule across the gutter */}
-					<div style={{position: 'absolute', left: 0, top: TS.header - LINE / 2, width: TS.gutter, height: LINE, background: LINE_C}} />
+					{/* gutter: hour labels + rules */}
 					{HOURS.map((h, j) => (
 						<React.Fragment key={h}>
 							<div
 								style={{
 									position: 'absolute',
 									left: 0,
-									width: TS.gutter - 28,
+									width: TS.gutter - 22,
 									top: TS.header + j * TS.row,
 									height: TS.row,
 									display: 'flex',
 									alignItems: 'center',
 									justifyContent: 'flex-end',
 									fontFamily: font.text,
-									fontWeight: 500,
+									fontWeight: 600,
 									fontSize: 26,
-									color: color.ink3,
+									color: color.ink2,
 									fontVariantNumeric: 'tabular-nums',
 								}}
 							>
 								{h}
 							</div>
-							{j > 0 ? (
-								<div style={{position: 'absolute', left: 24, top: TS.header + j * TS.row - LINE / 2, width: TS.gutter - 24, height: LINE, background: alpha(LINE_C, 0.5)}} />
-							) : null}
+							{j > 0 ? <div style={{position: 'absolute', left: 20, top: TS.header + j * TS.row - LINE / 2, width: TS.gutter - 20, height: LINE, background: SHEET.rowLine}} /> : null}
 						</React.Fragment>
 					))}
 					{/* day columns */}
@@ -298,10 +342,7 @@ export const TimesheetPlane: React.FC<{
 						const last = i === DAYS.length - 1;
 						return (
 							<div key={d} style={{position: 'absolute', left, top: 0, width: TS.col, height: TS.h, opacity: colOpacity(i)}}>
-								{/* left rule (TER also owns its right rule so the spotlit column stays closed) */}
-								<div style={{position: 'absolute', left: -LINE / 2, top: 0, width: LINE, height: TS.h, background: LINE_C}} />
-								{i === TER ? <div style={{position: 'absolute', left: TS.col - LINE / 2, top: 0, width: LINE, height: TS.h, background: LINE_C}} /> : null}
-								{/* header label */}
+								<div style={{position: 'absolute', left: -LINE / 2, top: 0, width: LINE, height: TS.h, background: SHEET.line}} />
 								<div
 									style={{
 										position: 'absolute',
@@ -313,26 +354,26 @@ export const TimesheetPlane: React.FC<{
 										alignItems: 'center',
 										justifyContent: 'center',
 										fontFamily: font.text,
-										fontWeight: 600,
-										fontSize: 30,
-										letterSpacing: '0.14em',
-										paddingLeft: '0.14em',
-										color: i === TER ? interpolateColor(dim) : color.ink2,
+										fontWeight: 700,
+										fontSize: 32,
+										letterSpacing: '0.12em',
+										paddingLeft: '0.12em',
+										color: color.ink,
+										opacity: i === TER ? 1 - glow : 0.92,
 									}}
 								>
 									{d}
 								</div>
-								{/* row rules (header rule + 8 inner) */}
-								{Array.from({length: TS.rows}, (_, j) => (
+								{Array.from({length: TS.rows - 1}, (_, j) => (
 									<div
 										key={j}
 										style={{
 											position: 'absolute',
 											left: 0,
 											width: last ? TS.col - 1 : TS.col,
-											top: TS.header + j * TS.row - LINE / 2,
+											top: TS.header + (j + 1) * TS.row - LINE / 2,
 											height: LINE,
-											background: LINE_C,
+											background: SHEET.rowLine,
 										}}
 									/>
 								))}
@@ -340,50 +381,116 @@ export const TimesheetPlane: React.FC<{
 						);
 					})}
 				</div>
-				{/* rose guesses */}
-				{marks.map((m, i) => {
-					if (m.o <= 0) return null;
-					const c = cellCenter(m.col, m.row);
-					const sc = 0.9 + 0.1 * m.p;
-					return (
+				{/* light sweep (secondary motion in the holds) */}
+				{sweep !== undefined && sweep > 0 && sweep < 1 ? (
+					<div style={{position: 'absolute', inset: 0, borderRadius: 24, overflow: 'hidden', pointerEvents: 'none'}}>
 						<div
-							key={i}
 							style={{
 								position: 'absolute',
-								left: c.x - 40,
-								top: c.y - 30,
-								width: 80,
-								height: 60,
+								top: -TS.h * 0.3,
+								height: TS.h * 1.6,
+								width: 360,
+								left: -360 + sweep * (TS.w + 720) - 360,
+								transform: 'rotate(18deg)',
+								background: 'linear-gradient(90deg, rgba(207,224,255,0) 0%, rgba(207,224,255,0.10) 45%, rgba(230,238,255,0.16) 50%, rgba(207,224,255,0.10) 55%, rgba(207,224,255,0) 100%)',
+							}}
+						/>
+					</div>
+				) : null}
+				{/* the TER column lights up volt */}
+				{glow > 0 ? (
+					<>
+						<div
+							style={{
+								position: 'absolute',
+								left: terLeft,
+								top: 0,
+								width: TS.col,
+								height: TS.h,
+								borderRadius: 14,
+								opacity: glow,
+								background: `linear-gradient(180deg, ${alpha(color.volt, 0.3)} 0%, ${alpha(color.volt, 0.16)} 28%, ${alpha(color.volt, 0.1)} 100%)`,
+								boxShadow: `inset 0 0 0 2.5px ${alpha(color.volt, 0.95)}, inset 0 0 36px ${alpha(color.volt, 0.35)}, 0 0 48px ${alpha(color.volt, 0.55)}, 0 0 140px ${alpha(color.volt, 0.3)}`,
+							}}
+						/>
+						{/* lit header chip */}
+						<div
+							style={{
+								position: 'absolute',
+								left: terLeft + 34,
+								top: 8,
+								width: TS.col - 68,
+								height: TS.header - 16,
+								borderRadius: 999,
+								opacity: glow,
+								background: `linear-gradient(180deg, #6aa0ff, ${color.volt})`,
+								boxShadow: `0 0 24px ${alpha(color.volt, 0.7)}, inset 0 1px 0 rgba(255,255,255,0.35)`,
 								display: 'flex',
 								alignItems: 'center',
 								justifyContent: 'center',
 								fontFamily: font.text,
-								fontWeight: 600,
-								fontSize: 44,
-								lineHeight: 1,
-								color: color.rose,
-								opacity: m.o,
-								transform: `scale(${sc})`,
+								fontWeight: 800,
+								fontSize: 32,
+								letterSpacing: '0.12em',
+								paddingLeft: '0.12em',
+								color: '#ffffff',
 							}}
 						>
-							?
+							{DAYS[TER]}
 						</div>
+					</>
+				) : null}
+				{/* rose guesses */}
+				{marks.map((m, i) => {
+					if (m.o <= 0) return null;
+					const c = cellCenter(m.col, m.row);
+					const sc = Math.max(0, m.p);
+					return (
+						<React.Fragment key={i}>
+							<div
+								style={{
+									position: 'absolute',
+									left: c.x - TS.col / 2 + 4,
+									top: c.y - TS.row / 2 + 4,
+									width: TS.col - 8,
+									height: TS.row - 8,
+									borderRadius: 10,
+									opacity: m.o * Math.min(1, sc),
+									background: alpha(color.rose, 0.2),
+									boxShadow: `inset 0 0 0 2px ${alpha(color.rose, 0.75)}, 0 0 30px ${alpha(color.rose, 0.35)}`,
+								}}
+							/>
+							<div
+								style={{
+									position: 'absolute',
+									left: c.x - 60,
+									top: c.y - 50,
+									width: 120,
+									height: 100,
+									display: 'flex',
+									alignItems: 'center',
+									justifyContent: 'center',
+									fontFamily: font.display,
+									fontWeight: 800,
+									fontSize: 72,
+									lineHeight: 1,
+									color: '#ff6b70',
+									textShadow: `0 0 22px ${alpha(color.rose, 0.7)}, 0 2px 0 rgba(60, 8, 12, 0.5)`,
+									opacity: m.o,
+									transform: `scale(${sc.toFixed(4)})`,
+								}}
+							>
+								?
+							</div>
+						</React.Fragment>
 					);
 				})}
 				{caretOn ? (
-					<div style={{position: 'absolute', left: caret.x - CARET_W / 2, top: caret.y - CARET_H / 2, ...caretStyle()}} />
+					<div style={{position: 'absolute', left: caret.x - CARET_W / 2, top: caret.y - CARET_H / 2, ...caretStyle(), boxShadow: `0 0 18px ${alpha(color.volt, 0.9)}, 0 0 4px #bcd4ff`}} />
 				) : null}
 			</div>
 		</AbsoluteFill>
 	);
-};
-
-/** TER header: ink-2 → ink as the spotlight comes on. */
-const interpolateColor = (t: number) => {
-	const a = [0xa8, 0xb4, 0xcd];
-	const b = [0xe8, 0xed, 0xf9];
-	const c = a.map((v, i) => Math.round(v + (b[i] - v) * Math.max(0, Math.min(1, t))));
-	return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
 };
 
 /* ------------------------------------------------------------------------ */
@@ -398,7 +505,9 @@ export const SweepBar: React.FC<{
 	thicknessEm: number;
 	/** extend beyond the word, em each side */
 	overhangEm?: number;
-}> = ({progress, color: c, topEm, thicknessEm, overhangEm = 0}) =>
+	/** soft glow in the bar's colour */
+	glow?: boolean;
+}> = ({progress, color: c, topEm, thicknessEm, overhangEm = 0, glow = false}) =>
 	progress <= 0 ? null : (
 		<span
 			style={{
@@ -409,11 +518,20 @@ export const SweepBar: React.FC<{
 				height: `${thicknessEm}em`,
 				borderRadius: 999,
 				background: c,
+				boxShadow: glow ? `0 0 18px ${c.startsWith('#') ? alpha(c, 0.7) : c}` : undefined,
 				transformOrigin: '0% 50%',
 				transform: `scaleX(${progress})`,
 			}}
 		/>
 	);
+
+/** v2 headline ink: white with a slight top-to-bottom gradient (brief §3 Headlines). */
+export const inkGradient: React.CSSProperties = {
+	backgroundImage: 'linear-gradient(180deg, #ffffff 0%, #ffffff 35%, #cdd7ee 100%)',
+	WebkitBackgroundClip: 'text',
+	backgroundClip: 'text',
+	color: 'transparent',
+};
 
 export const useFrame = () => {
 	const frame = useCurrentFrame();

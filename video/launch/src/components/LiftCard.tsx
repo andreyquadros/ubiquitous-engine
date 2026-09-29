@@ -10,6 +10,12 @@
  * - The card is graded like the window (GRADE), so it reads as the same UI.
  *   Claim-safety patches that fall inside the crop must be re-applied as
  *   `children` (image px of the FULL capture, like <Screen> children).
+ *   Or pass them as `patches` (StoryboardPatch[], e.g. storyboardPatches(scene, file)):
+ *   drawn exactly like <Patches> (same frames, colour and 2 px bleed).
+ * - `from` may be a function of the frame (e.g. `(f) => mapImageRect(shot, f, comp, rect)`)
+ *   so the lift origin / drop target tracks a moving camera or a floating window.
+ * - <LiftHole> (child of the <Screen>, image space) hides the source element in
+ *   the window while it is lifted, so the element never appears twice.
  * - Deterministic and frame-driven: springs from design tokens, sine float,
  *   linear drift, keyframed pose. Frames are local to the enclosing Sequence.
  *
@@ -25,8 +31,12 @@ import {AbsoluteFill, Img, interpolate, spring, useCurrentFrame, useVideoConfig}
 import {alpha, color, ease, resolveColor, springs, type Accent, type SpringPreset} from '../design/tokens';
 import {kf, lerp, oscillate, progress, type Keyframed} from '../design/motion';
 import {useHires} from '../shared/ui';
+import type {StoryboardPatch} from '../storyboard';
 import {gradeFilter, resolveGrade, type Grade, type Rect} from './screen-geometry';
 import {resolveSrc, rimBackground, GLASS_INSET, RIM_PX} from './Screen';
+
+/** A comp-px rect, or one per frame (local frames) for a moving window. */
+export type LiftFrom = Rect | ((frame: number) => Rect);
 
 export type LiftCardEnter = 'lift' | 'rise' | 'pop' | 'fade' | 'none';
 export type LiftCardExit = 'sink' | 'drop' | 'fade' | 'none';
@@ -68,8 +78,12 @@ export type LiftCardProps = {
 	enter?: LiftCardEnter;
 	/** Spring preset of the entrance (tokens.springs). Default smooth (pop: subtleBounce). */
 	spring?: SpringPreset;
-	/** Where the element sits at `at` (comp px rect, e.g. mapImageRect(shot, at, …)); used by `lift`. */
-	from?: {x: number; y: number; w: number; h: number};
+	/**
+	 * Where the element sits in the window (comp px rect), used by `lift` and `drop`.
+	 * Static (`mapImageRect(shot, at, …)`) or a function of the frame
+	 * (`(f) => mapImageRect(shot, f, …)`) so the origin tracks a moving camera.
+	 */
+	from?: LiftFrom;
 	/** Exit start frame and style. */
 	exitAt?: number;
 	exit?: LiftCardExit;
@@ -93,6 +107,8 @@ export type LiftCardProps = {
 	grade?: boolean | Grade;
 	/** Overall opacity multiplier (keyframeable). Default 1. */
 	opacity?: Keyframed;
+	/** Claim-safety patches (image px of the FULL capture), e.g. storyboardPatches(scene, file); drawn like <Patches>. */
+	patches?: readonly StoryboardPatch[];
 	/** Image-space overlays (patches, live values): image px of the FULL capture, like <Screen> children. */
 	children?: React.ReactNode;
 	/** Extra style on the outer full-frame layer (e.g. zIndex). */
@@ -120,10 +136,11 @@ export const liftCardPose = (p: LiftCardProps, frame: number, fps: number) => {
 	let s = 1;
 	let o = kf(p.opacity, frame, 1);
 	let lift = 1; // shadow / glow / rim presence
-	if (enter === 'lift' && p.from) {
-		const fx = p.from.x + p.from.w / 2;
-		const fy = p.from.y + p.from.h / 2;
-		const kFrom = p.from.w / p.rect.w;
+	const from = typeof p.from === 'function' ? p.from(frame) : p.from;
+	if (enter === 'lift' && from) {
+		const fx = from.x + from.w / 2;
+		const fy = from.y + from.h / 2;
+		const kFrom = from.w / p.rect.w;
 		cx = lerp(fx, cx, e);
 		cy = lerp(fy, cy, e);
 		k = Math.exp(lerp(Math.log(kFrom), Math.log(kTarget), e));
@@ -156,10 +173,10 @@ export const liftCardPose = (p: LiftCardProps, frame: number, fps: number) => {
 			s *= lerp(1, 0.92, x);
 		} else if (ex === 'drop') {
 			// back into the window: flatten + shrink toward `from`
-			if (p.from) {
-				cx = lerp(cx, p.from.x + p.from.w / 2, x);
-				cy = lerp(cy, p.from.y + p.from.h / 2, x);
-				k = lerp(k, p.from.w / p.rect.w, x);
+			if (from) {
+				cx = lerp(cx, from.x + from.w / 2, x);
+				cy = lerp(cy, from.y + from.h / 2, x);
+				k = lerp(k, from.w / p.rect.w, x);
 			}
 			rx = lerp(rx, 0, x);
 			ry = lerp(ry, 0, x);
@@ -173,7 +190,7 @@ export const liftCardPose = (p: LiftCardProps, frame: number, fps: number) => {
 export const LiftCard: React.FC<LiftCardProps> = (props) => {
 	const frame = useCurrentFrame();
 	const {fps} = useVideoConfig();
-	const {src, rect, hires: hiresProp, radius = 16, perspective = 1600, glowOpacity = 0.35, rim = true, shadow = 1, children, style} = props;
+	const {src, rect, hires: hiresProp, radius = 16, perspective = 1600, glowOpacity = 0.35, rim = true, shadow = 1, patches, children, style} = props;
 	const img = props.imageSize ?? DEFAULT_IMAGE;
 	const hires = useHires(hiresProp === false || typeof hiresProp === 'string' ? null : src);
 	const drawSrc = typeof hiresProp === 'string' ? hiresProp : hires ? `ui/${hires.hires}` : src;
@@ -227,13 +244,109 @@ export const LiftCard: React.FC<LiftCardProps> = (props) => {
 				<div style={{position: 'absolute', inset: 0, borderRadius: radius, overflow: 'hidden', background: color.panel}}>
 					<div style={{position: 'absolute', left: -rect.x * k, top: -rect.y * k, width: img.w * k, height: img.h * k, filter: grade || undefined}}>
 						<Img src={resolveSrc(drawSrc)} style={{position: 'absolute', left: 0, top: 0, width: img.w * k, height: img.h * k, maxWidth: 'none', display: 'block'}} />
-						{children ? (
-							<div style={{position: 'absolute', left: 0, top: 0, width: img.w, height: img.h, transformOrigin: '0 0', transform: `scale(${k})`}}>{children}</div>
+						{children || patches?.length ? (
+							<div style={{position: 'absolute', left: 0, top: 0, width: img.w, height: img.h, transformOrigin: '0 0', transform: `scale(${k})`}}>
+								{patches ? <PatchLayer patches={patches} frame={frame} rect={rect} /> : null}
+								{children}
+							</div>
 						) : null}
 					</div>
 					<div style={{position: 'absolute', inset: 0, borderRadius: radius, boxShadow: GLASS_INSET}} />
 				</div>
 			</div>
 		</AbsoluteFill>
+	);
+};
+
+/** Storyboard patches as <Patches> draws them (inlined to keep components/ free of shared/ cycles); skips ones outside the crop. */
+const PatchLayer: React.FC<{patches: readonly StoryboardPatch[]; frame: number; rect: Rect; bleed?: number}> = ({patches, frame, rect, bleed = 2}) => (
+	<>
+		{patches
+			.filter((q) => frame >= q.from && frame <= q.to)
+			.filter((q) => q.rect.x < rect.x + rect.w && q.rect.x + q.rect.w > rect.x && q.rect.y < rect.y + rect.h && q.rect.y + q.rect.h > rect.y)
+			.map((q, i) => (
+				<div key={i} style={{position: 'absolute', left: q.rect.x - bleed, top: q.rect.y - bleed, width: q.rect.w + bleed * 2, height: q.rect.h + bleed * 2, background: q.color}} />
+			))}
+	</>
+);
+
+export type LiftHoleProps = Pick<LiftCardProps, 'rect' | 'at' | 'enter' | 'spring' | 'exitAt' | 'exit' | 'exitDuration'> & {
+	/**
+	 * Fill, sampled from the capture's surface around the element (hex, like the
+	 * storyboard patch colours) so the element simply vanishes from the window.
+	 * Omitted: a navy dim (rgba(7,11,20,0.78)) that leaves a faint ghost, which
+	 * reads fine on any surface but is less clean. Prefer a sampled colour.
+	 */
+	color?: string;
+	/** Extra coverage around `rect`, image px (covers anti-aliased edges / glow). Default 6. */
+	pad?: number;
+	/** Soft edge width, image px. Default 18. */
+	feather?: number;
+	/** Corner radius, image px. Default 24. */
+	radius?: number;
+	/** Empty-socket hint: faint inner rim + inset shade, 0–1. Default 0.5 (0 = pure fill). */
+	socket?: number;
+	/** Opacity multiplier (keyframeable). Default 1. */
+	opacity?: Keyframed;
+};
+
+/** Presence 0–1 of the hole at a frame (pure): on when the card leaves, off as a `drop` lands or a card fades away. */
+export const liftHolePresence = (p: LiftHoleProps, frame: number, fps: number): number => {
+	const at = p.at ?? 0;
+	const enter = p.enter ?? 'rise';
+	if (frame < at) return 0;
+	let o = 1;
+	if (enter !== 'lift' && enter !== 'none') {
+		// the card appears elsewhere: the element leaves the window with the same spring
+		const e = spring({frame: frame - at, fps, config: springs[p.spring ?? (enter === 'pop' ? 'subtleBounce' : 'smooth')]});
+		o = Math.max(0, Math.min(1, e * 1.4));
+	}
+	if (p.exitAt !== undefined && (p.exit ?? 'fade') !== 'none') {
+		const x = progress(frame, p.exitAt, p.exitDuration ?? 12, ease.exit);
+		// drop: hole stays until the card has landed (the card fades over its last 30 %);
+		// fade/sink: the element returns to the window as the card leaves
+		o *= (p.exit ?? 'fade') === 'drop' ? (x >= 1 ? 0 : 1) : 1 - x;
+	}
+	return o * kf(p.opacity, frame, 1);
+};
+
+/**
+ * <LiftHole>: hides the lifted element in the window underneath. Place it as a
+ * CHILD of the <Screen> (image space, graded + tilted with the window) and pass
+ * the card's rect/timing (spreading the LiftCard props works).
+ *
+ * @example
+ * const ring = {src: 'ui/dashboard.png', rect: RING, at: 14, enter: 'lift' as const};
+ * <Screen {...shot}><LiftHole {...ring} color="#111c33" /></Screen>
+ * <LiftCard {...ring} x={1380} y={500} from={(f) => mapImageRect(shot, f, COMP, RING)} style={{zIndex: 30}} />
+ */
+export const LiftHole: React.FC<LiftHoleProps> = (p) => {
+	const frame = useCurrentFrame();
+	const {fps} = useVideoConfig();
+	const o = liftHolePresence(p, frame, fps);
+	if (o <= 0.002) return null;
+	const {rect, pad = 6, feather = 18, radius = 24, socket = 0.5} = p;
+	const fill = p.color ?? 'rgba(7,11,20,0.78)';
+	return (
+		<div
+			style={{
+				position: 'absolute',
+				left: rect.x - pad,
+				top: rect.y - pad,
+				width: rect.w + pad * 2,
+				height: rect.h + pad * 2,
+				borderRadius: radius,
+				background: fill,
+				opacity: o < 0.999 ? o : undefined,
+				// feathered edge: the same colour blurred outward
+				boxShadow: [
+					`0 0 ${feather}px ${feather * 0.35}px ${fill}`,
+					socket > 0 ? `inset 0 ${(6 * socket).toFixed(1)}px ${(22 * socket).toFixed(1)}px rgba(0,0,0,${(0.45 * socket).toFixed(3)})` : '',
+					socket > 0 ? `inset 0 0 0 1.5px rgba(255,255,255,${(0.05 * socket).toFixed(3)})` : '',
+				]
+					.filter(Boolean)
+					.join(', '),
+			}}
+		/>
 	);
 };

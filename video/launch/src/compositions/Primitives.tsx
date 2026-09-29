@@ -24,6 +24,7 @@ import {
 	KeyCombo,
 	KineticText,
 	LiftCard,
+	LiftHole,
 	LogoRow,
 	mapImageRect,
 	maskWipe,
@@ -402,23 +403,28 @@ const LIFT_SHOT: ScreenConfig = {
 	x: -140,
 	scale: 0.9,
 	float: 4,
-	spotlights: [{rect: {x: 578, y: 428, w: 368, h: 368}, at: 10, radius: 184}],
+	spotlights: [{rect: {x: 578, y: 428, w: 368, h: 368}, at: 2, until: 12, radius: 184}], // hand the focus to the card as it lifts
 };
 const RING = {x: 560, y: 410, w: 404, h: 404};
+const COMP = {width: 1920, height: 1080};
+// same rect + timing for the card and the hole it leaves in the window
+const RING_LIFT = {rect: RING, at: 14, enter: 'lift' as const, exitAt: 54, exit: 'drop' as const, exitDuration: 18};
 const LiftDemo = () => {
 	const frame = useCurrentFrame();
 	return (
 		<Background seed="lift">
-			<Screen {...LIFT_SHOT} style={{zIndex: 'auto'}} />
+			<Screen {...LIFT_SHOT} style={{zIndex: 'auto'}}>
+				{/* colour sampled from the dashboard card around the ring */}
+				<LiftHole {...RING_LIFT} color="#101a2f" radius={RING.w / 2} />
+			</Screen>
 			<LiftCard
 				src="ui/dashboard.png"
-				rect={RING}
+				{...RING_LIFT}
 				x={1380}
 				y={500}
 				scale={1.5}
-				at={14}
-				enter="lift"
-				from={mapImageRect(LIFT_SHOT, 14, {width: 1920, height: 1080}, RING)}
+				// tracks the floating window (origin of the lift, target of the drop)
+				from={(f) => mapImageRect(LIFT_SHOT, f, COMP, RING)}
 				rotateX={[[14, 8], [75, 4]]}
 				rotateY={[[14, -12], [75, -6]]}
 				drift={{x: -0.2, y: 0}}
@@ -426,7 +432,7 @@ const LiftDemo = () => {
 				radius={28}
 				style={{zIndex: 30}}
 			/>
-			<Label n={16} name={`v2 look · Stage · Screen grade + rim · LiftCard (f${frame})`} />
+			<Label n={16} name={`v2 look · Stage · Screen grade + rim · LiftCard + LiftHole (f${frame})`} />
 		</Background>
 	);
 };

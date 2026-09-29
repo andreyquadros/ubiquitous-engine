@@ -213,7 +213,9 @@ Lifts one element of a UI capture out of the screenshot as a floating 3D card (b
 cards": the 88 ring, a review row, "Confirmar os 19", the provider pills, the redaction chip).
 `rect` is in the capture's **2x image px** (hotspots work: `hotspot('ui/dashboard.png', 'focus-dial')`);
 the `@3x` twin is drawn when shipped. The card is graded like the window. **Claim-safety patches inside the
-crop must be re-applied as `children`** (image px of the full capture, same as `<Screen>` children).
+crop must be re-applied**: pass `patches={storyboardPatches(scene, file)}` (drawn exactly like `<Patches>`:
+same frames, colour, 2 px bleed; patches outside the crop are skipped) and/or image-space `children`
+(image px of the full capture, same as `<Screen>` children).
 
 | prop | type | default | notes |
 |---|---|---|---|
@@ -222,25 +224,47 @@ crop must be re-applied as `children`** (image px of the full capture, same as `
 | `scale` | Keyframed | 1.4 | relative to the element's size in a 1440-wide Screen at zoom 1 (brief: 1.2–1.6) |
 | `width` | Keyframed | — | explicit on-canvas width (overrides `scale`) |
 | `rotateX` / `rotateY` / `rotateZ` | Keyframed (deg) | 8 / −10 / 0 | brief: 6–14° |
-| `at` / `enter` / `spring` | frame / `'lift' \| 'rise' \| 'pop' \| 'fade' \| 'none'` / preset | 0 / rise / smooth (pop: subtleBounce) | `lift` flies from `from` (the element's comp rect in the window at `at`: `mapImageRect(shot, at, {width: 1920, height: 1080}, rect)`) to the target pose, shadow + glow growing with it |
+| `at` / `enter` / `spring` | frame / `'lift' \| 'rise' \| 'pop' \| 'fade' \| 'none'` / preset | 0 / rise / smooth (pop: subtleBounce) | `lift` flies from `from` to the target pose, shadow + glow growing with it |
+| `from` | Rect \| `(frame) => Rect` | — | the element's comp rect in the window. Static: `mapImageRect(shot, at, COMP, rect)`. **Animated: pass a function** `(f) => mapImageRect(shot, f, COMP, rect)` so the lift origin and the `drop` target track a moving camera / floating window (frames local to the Sequence) |
 | `exitAt` / `exit` / `exitDuration` | frame / `'sink' \| 'drop' \| 'fade' \| 'none'` / 12 | — | `drop` flies back into `from` |
 | `float` / `floatPeriod` | px / frames | 5 / 96 | sine bob |
 | `drift` | `{x, y}` px per frame | — | parallax against the window's camera |
 | `glow` / `glowOpacity` | accent \| false / 0–1 | volt / 0.35 | coloured light under the card |
 | `rim` / `shadow` / `radius` / `perspective` | | true / 1 / 16 / 1600 | |
+| `patches` | StoryboardPatch[] | — | claim-safety patches re-applied inside the card |
 | `grade` / `opacity` / `style` | | on / 1 / — | pass `style={{zIndex: 30}}` to sit above a Screen |
 
 `liftCardPose(props, frame, fps)` returns the pose (`cx, cy, w, h, k, rx, ry…`) to glue a cursor or callout.
 
+### LiftHole: the element leaves the window
+
+So a lifted element never appears twice, put `<LiftHole>` **as a child of the `<Screen>`** (image space,
+tilted + graded with the window, like patches) with the card's `rect` and timing — spread the same object
+into both. It draws a feathered fill over the source rect with a faint "empty socket" (inset shade + hairline):
+
+- On from `at` for `enter="lift"` (the card starts exactly on top, so no pop); for rise/pop/fade it fades in with the card's spring.
+- `exit="drop"`: stays until the card has landed back, then vanishes (the element is "back"). `fade`/`sink`: the element fades back in as the card leaves.
+- **Fill choice: pass `color` sampled from the capture's surface around the element** (hex, like the storyboard patch colours;
+  e.g. `python3 -c "from PIL import Image; print('#%02x%02x%02x' % Image.open('public/ui/dashboard.png').convert('RGB').getpixel((760, 610)))"`).
+  It is drawn inside the Screen's grade, so the raw capture colour matches. Without `color` it falls back to a navy
+  dim (`rgba(7,11,20,0.78)`) that leaves a faint ghost of the element — acceptable on any surface, but less clean.
+- `pad` 6 / `feather` 18 / `radius` 24 (image px; use `rect.w / 2` for round elements like the ring) / `socket` 0.5 (0 = flat fill) / `opacity`.
+- End any Screen spotlight on the element (`until`) around the lift, otherwise its outline circles an empty hole.
+- `liftHolePresence(props, frame, fps)` is the pure 0–1 presence.
+
 ```tsx
 const RING = hotspot('ui/dashboard.png', 'focus-dial');
-<Screen {...shot} style={{zIndex: 'auto'}} />
-<LiftCard src="ui/dashboard.png" rect={RING} x={1380} y={500} scale={1.5}
-  at={14} enter="lift" from={mapImageRect(shot, 14, {width: 1920, height: 1080}, RING)}
+const COMP = {width: 1920, height: 1080};
+const RING_LIFT = {rect: RING, at: 14, enter: 'lift' as const, exitAt: 54, exit: 'drop' as const, exitDuration: 18};
+<Screen {...shot} style={{zIndex: 'auto'}}>
+  <LiftHole {...RING_LIFT} color="#101a2f" radius={RING.w / 2} />
+</Screen>
+<LiftCard src="ui/dashboard.png" {...RING_LIFT} x={1380} y={500} scale={1.5}
+  from={(f) => mapImageRect(shot, f, COMP, RING)} patches={storyboardPatches(scene, 'ui/dashboard.png')}
   rotateX={[[14, 8], [75, 4]]} rotateY={[[14, -12], [75, -6]]} drift={{x: -0.2, y: 0}} glow="mint" style={{zIndex: 30}} />
 ```
 
-Primitives reel segment `lift` (frames 1057–1131) shows it live.
+Primitives reel segment `lift` (frames 1057–1131) shows lift → hole → drop back live.
 
 ## Cursor
 

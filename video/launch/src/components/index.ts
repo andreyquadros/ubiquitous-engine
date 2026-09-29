@@ -70,7 +70,7 @@ export {
 	type FlashCutProps,
 	type BlurDissolveProps,
 } from './Transitions';
-export {LiftCard, liftCardPose, type LiftCardProps, type LiftCardEnter, type LiftCardExit} from './LiftCard';
+export {LiftCard, LiftHole, liftCardPose, liftHolePresence, type LiftCardProps, type LiftCardEnter, type LiftCardExit, type LiftFrom, type LiftHoleProps} from './LiftCard';
 export {Grain, type GrainProps} from './Grain';
 export {Glow, type GlowProps} from './Glow';
 export {MotionBlur, type MotionBlurProps} from './MotionBlur';
