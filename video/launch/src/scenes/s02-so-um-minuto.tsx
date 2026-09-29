@@ -95,8 +95,12 @@ const layout = (shot: number): ChipPlacement[] => {
 	const out: ChipPlacement[] = [];
 	ROWS.forEach((r, ri) => {
 		let x = -320 + random(`s02-${shot}-${ri}-start`) * 300;
+		// v2 review fix: no title twice in a row (a seeded shuffle, first 5), and never the title right above
+		const above = new Set(out.filter((c) => c.row === ri - 1).map((c) => c.title));
+		const deck = [...TITLES].sort((p, q) => random(`s02-${shot}-${ri}-k-${p}`) - random(`s02-${shot}-${ri}-k-${q}`));
+		const picks = [...deck.filter((t) => !above.has(t)), ...deck.filter((t) => above.has(t))].slice(0, 5);
 		for (let i = 0; i < 5; i++) {
-			const title = TITLES[Math.floor(random(`s02-${shot}-${ri}-${i}-t`) * TITLES.length)];
+			const title = picks[i];
 			const hue = HUES[Math.floor(random(`s02-${shot}-${ri}-${i}-h`) * HUES.length)];
 			out.push({title, hue, x, row: ri});
 			x += (chipWidth(title) + 70 + random(`s02-${shot}-${ri}-${i}-g`) * 150) * r.s;
@@ -134,16 +138,19 @@ const ChipLayer: React.FC<{frame: number}> = ({frame}) => {
 	const push = lerp(1, 1.06, interpolate(frame, [start, end], [0, 1], CLAMP));
 	const rot = (random(`s02-rot-${shotIdx}`) * 2 - 1) * 2;
 	const settle = ramp(frame, CONTACT, CONTACT + 6, E.enter);
+	// v2 review fix: once the counter lands the chips defocus (blur → 7 px) and drop another 25 % so "40 min" owns the frame
+	const recede = ramp(frame, LAND, LAND + 10, E.glide);
 	// outer rows step back to 50 %; the near rows are blown out on the contact
-	const outer = lerp(1, 0.5, settle);
+	const outer = lerp(1, 0.5, settle) * lerp(1, 0.75, recede);
 	const blown = ramp(frame, CONTACT - 4, CONTACT, E.exit); // gone by the contact: the slam lands on a clean middle
 	const v = speed(frame);
-	const streak = 2 + v * 0.22; // horizontal smear grows with speed; 2 px base blur
+	const soft = lerp(2, 7, recede);
+	const streak = Math.max(soft, 2 + v * 0.22); // horizontal smear grows with speed; 2 px base blur
 	return (
 		<AbsoluteFill>
 			<svg width={0} height={0} style={{position: 'absolute'}}>
-				<filter id="s02-streak" x="-10%" y="-20%" width="120%" height="140%" colorInterpolationFilters="sRGB">
-					<feGaussianBlur stdDeviation={`${streak.toFixed(2)} 2`} />
+				<filter id="s02-streak" x="-10%" y="-25%" width="120%" height="150%" colorInterpolationFilters="sRGB">
+					<feGaussianBlur stdDeviation={`${streak.toFixed(2)} ${soft.toFixed(2)}`} />
 				</filter>
 			</svg>
 			<AbsoluteFill

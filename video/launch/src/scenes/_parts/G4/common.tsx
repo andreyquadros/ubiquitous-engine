@@ -150,6 +150,13 @@ export type G4PlaneProps = Omit<ScreenConfig, 'src'> & {
 	pushOrigin?: Point;
 	/** Screen-space translation (shake). */
 	shift?: Point;
+	/**
+	 * v2 review fix (crisp type): the window is LAID OUT at `raster` × its size inside the 3D plane (and the camera scale
+	 * divided by it). Chrome rasterises a layer whose transform has perspective at 1 unit = 1 px and then projects it, so at
+	 * zoom 2.4–3.2 the rows were upscaled ×k ("upscaled JPEG" type). Every length (perspective included) is × raster, so the
+	 * projection is identical. 'auto' (default) = the on-screen window scale k·scale, clamped to [1, 3.6].
+	 */
+	raster?: number | 'auto';
 };
 
 const LayerImg: React.FC<{layer: PlaneLayer; g: ScreenGeometry}> = ({layer, g}) => {
@@ -169,11 +176,12 @@ const LayerImg: React.FC<{layer: PlaneLayer; g: ScreenGeometry}> = ({layer, g}) 
 	);
 };
 
-export const G4Plane: React.FC<G4PlaneProps> = ({layers, children, blur = 0, brightness = 1, dim = 0, push = 1, pushOrigin, shift, ...cfg}) => {
+export const G4Plane: React.FC<G4PlaneProps> = ({layers, children, blur = 0, brightness = 1, dim = 0, push = 1, pushOrigin, shift, raster = 'auto', ...cfg}) => {
 	const frame = useCurrentFrame();
 	const {width, height} = useVideoConfig();
 	const g = screenGeometry({...cfg, src: layers[0]?.src ?? ''}, frame, {width, height});
 	const r = (cfg.radius ?? 14) * (g.winW / 1440);
+	const R = raster === 'auto' ? Math.max(1, Math.min(3.6, g.k * g.scale)) : Math.max(1, raster);
 	const grade = gradeFilter(resolveGrade(cfg.grade));
 	const rim = cfg.rim !== false;
 	const filters = [blur > 0.2 ? `blur(${blur.toFixed(2)}px)` : '', Math.abs(brightness - 1) > 0.002 ? `brightness(${brightness.toFixed(3)})` : '']
@@ -189,19 +197,21 @@ export const G4Plane: React.FC<G4PlaneProps> = ({layers, children, blur = 0, bri
 	return (
 		<AbsoluteFill style={{pointerEvents: 'none', filter: filters || undefined}}>
 			<AbsoluteFill style={{transform: tf || undefined, transformOrigin: '0 0'}}>
-				<AbsoluteFill style={{transformOrigin: '0 0', transform: `translate(${g.Cx - g.k * g.fx}px, ${g.Cy - g.k * g.fy}px) scale(${g.k})`}}>
-					<AbsoluteFill style={{perspective: g.perspective, perspectiveOrigin: `${g.cx}px ${g.cy}px`}}>
+				<AbsoluteFill style={{transformOrigin: '0 0', transform: `translate(${g.Cx - g.k * g.fx}px, ${g.Cy - g.k * g.fy}px) scale(${g.k / R})`}}>
+					<AbsoluteFill style={{perspective: g.perspective * R, perspectiveOrigin: `${g.cx * R}px ${g.cy * R}px`}}>
 						<div
 							style={{
 								position: 'absolute',
-								left: g.left,
-								top: g.top,
-								width: g.winW,
-								height: g.winH,
+								left: g.left * R,
+								top: g.top * R,
+								width: g.winW * R,
+								height: g.winH * R,
 								transformOrigin: '50% 50%',
-								transform: `translateY(${g.bob}px) rotateX(${g.rx}deg) rotateY(${g.ry}deg) rotateZ(${g.rz}deg) scale(${g.scale})`,
+								transform: `translateY(${g.bob * R}px) rotateX(${g.rx}deg) rotateY(${g.ry}deg) rotateZ(${g.rz}deg) scale(${g.scale})`,
 							}}
 						>
+							{/* the window at its 1× layout, scaled up INSIDE the perspective layer (painted, not composited) */}
+							<div style={{position: 'absolute', left: 0, top: 0, width: g.winW, height: g.winH, transformOrigin: '0 0', transform: R !== 1 ? `scale(${R})` : undefined}}>
 							{/* v2: deep drop shadow + rim light behind the opaque window box (same as <Screen>) */}
 							<div
 								style={{
@@ -233,6 +243,7 @@ export const G4Plane: React.FC<G4PlaneProps> = ({layers, children, blur = 0, bri
 										boxShadow: GLASS_INSET,
 									}}
 								/>
+							</div>
 							</div>
 						</div>
 					</AbsoluteFill>

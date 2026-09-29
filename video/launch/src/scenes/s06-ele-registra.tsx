@@ -72,18 +72,92 @@ const BUILD_END = 60;
 const BUBBLE = {x: 2196, y: 262, w: 630, h: 284, tail: {x: 2506, y: 452}}; // incl. its soft drop shadow; stops above UBI's head (552)
 const BUBBLE_AT = 3;
 const BUBBLE_UNTIL = 24;
-/** In-app UBI ink box (patched during the 3D → bitmap crossfade). */
-const APP_UBI = {x: 2392, y: 540, w: 236, h: 348};
-const XFADE = 4;
+/** In-app UBI ink box (hidden for the whole shot: the 3D UBI stands in for him, see UBI_HOLD). */
+const APP_UBI = {x: 2370, y: 520, w: 280, h: 384};
+/** v2 review: the APP_UBI patch is a copy of the empty hero card 260 px to his left (x 2110–2390; stat ink ends at 2101, his ink starts at 2400),
+ *  so it carries the card's own gradient and grade (a flat div read as a faint box under the brightened grade). */
+const APP_UBI_SRC_DX = -260;
+/** His ember floor glow (x 2378–2634, y 890–958, measured on the capture; the card border sits at y 992). v2 review:
+ *  the ink is already hidden by APP_UBI, so this only takes the glow, as a copy of the empty card 300 px to its left
+ *  (x 2048–2364, y 850–978: below the stat ink, which ends at y 796). */
+const APP_UBI_AWAY = {x: 2348, y: 850, w: 316, h: 128};
+const APP_GLOW_SRC_DX = -300;
+/** 16-px feathered edge on all four sides (no hard or shadowed edge to read as a patch). */
+const AWAY_MASK =
+	'linear-gradient(90deg, transparent 0px, #000 16px, #000 calc(100% - 16px), transparent 100%), linear-gradient(180deg, transparent 0px, #000 16px, #000 calc(100% - 16px), transparent 100%)';
 
-/** 3D → bitmap crossfade over f0–4 (1, .56, .25, .06, 0): quadratic so the double image barely shows while the camera races. */
-const xfade = (f: number) => clamp01(1 - f / XFADE) ** 2;
+/**
+ * v2 review (major: ghosted double UBI at abs 361–362). The 3D idle pose and the app's static UBI art are
+ * different drawings (≈ 30 px apart in head/arm placement even on the match frame), so ANY crossfade between
+ * them shows two robots. The 3D UBI now stays the only UBI: it rides the window through the pull-back (feet
+ * pinned on the in-app UBI's feet, size from the projected height, so it tracks tilt/perspective), keeps
+ * idling, and fades out f25–30 (E.enter: most of it in the first 2 f), before the lifting day-track card reaches
+ * him, so the card never slices him (critique r1).
+ */
+const UBI_OUT = {start: 25, end: 30};
+/** In-app UBI ink height (image px, 552 → 890): the projected length of this span sizes the 3D UBI. */
+const UBI_INK_H = 338;
+
+/**
+ * v2 review (major: demo numbers as the subject of the match frame). Depth-of-field veils over the Resumo card's
+ * stat sentence, review pill, "24min sem categoria" and the four metric values (ink x 1011–2101, y 435–796) and over
+ * the 88 ring's interior (ring ⌀ 343 at (761.5, 611.5), stroke inner edge r ≈ 148): a blurred copy of the same
+ * capture (so the card gradient and grade stay continuous), feathered, slightly dimmed. The focus is UBI; the card
+ * reads as soft UI, never as a sentence or a number. The ring stroke itself stays sharp.
+ */
+const STAT_VEIL = {x: 940, y: 340, w: 1240, h: 560, blur: 15, dim: 0.16, feather: 80};
+const RING_VEIL = {cx: 761.5, cy: 611.5, r: 142, blur: 24, dim: 0.4};
+/** Sidebar "Revisão" pending-count badge (same patch as G3 s07/s08): the film never shows a pending number. */
+const REVIEW_COUNT_PATCH = {x: 370, y: 372, w: 50, h: 48, fill: '#0a101c'};
+
+/** A blurred, dimmed copy of the capture inside `rect` (image px), masked by `mask`. */
+const Veil: React.FC<{x: number; y: number; w: number; h: number; blur: number; dim: number; mask: string; radius?: number | string}> = ({
+	x,
+	y,
+	w,
+	h,
+	blur,
+	dim,
+	mask,
+	radius,
+}) => {
+	const pad = Math.ceil(blur * 2.5);
+	return (
+		<div style={{position: 'absolute', left: x, top: y, width: w, height: h, overflow: 'hidden', borderRadius: radius, WebkitMaskImage: mask, maskImage: mask, WebkitMaskComposite: 'source-in', maskComposite: 'intersect'}}>
+			<div style={{position: 'absolute', left: -pad, top: -pad, width: w + 2 * pad, height: h + 2 * pad, overflow: 'hidden', filter: `blur(${blur}px)`}}>
+				<Img src={staticFile(FILE)} style={{position: 'absolute', left: -(x - pad), top: -(y - pad), width: 2880, height: 1800, maxWidth: 'none'}} />
+			</div>
+			<div style={{position: 'absolute', inset: 0, background: HERO_CARD, opacity: dim}} />
+		</div>
+	);
+};
+
+const feather = (px: number) =>
+	`linear-gradient(90deg, transparent 0px, #000 ${px}px, #000 calc(100% - ${px}px), transparent 100%), linear-gradient(180deg, transparent 0px, #000 ${px}px, #000 calc(100% - ${px}px), transparent 100%)`;
+
+/** Demo-number veils + nav badge patch (children of the screen, image px), on for the whole shot. */
+const StatVeils: React.FC = () => (
+	<>
+		<Veil {...STAT_VEIL} mask={feather(STAT_VEIL.feather)} />
+		<Veil
+			x={RING_VEIL.cx - RING_VEIL.r}
+			y={RING_VEIL.cy - RING_VEIL.r}
+			w={2 * RING_VEIL.r}
+			h={2 * RING_VEIL.r}
+			blur={RING_VEIL.blur}
+			dim={RING_VEIL.dim}
+			radius="50%"
+			mask="radial-gradient(closest-side, #000 86%, transparent 100%)"
+		/>
+		<div style={{position: 'absolute', left: REVIEW_COUNT_PATCH.x, top: REVIEW_COUNT_PATCH.y, width: REVIEW_COUNT_PATCH.w, height: REVIEW_COUNT_PATCH.h, background: REVIEW_COUNT_PATCH.fill}} />
+	</>
+);
 
 const playheadX = (f: number) => lerp(TRACK.x08, TRACK.x18, ramp(f, BUILD_START, BUILD_END, E.glide));
 
 /** Hero-card overlays glued to the dashboard (children of the screen): the bubble pop and the 3D → bitmap UBI cover. */
 const HeroOverlays: React.FC<{f: number}> = ({f}) => {
-	const xf = xfade(f);
+	const away = ramp(f, UBI_OUT.start, UBI_OUT.end, E.enter); // his ember floor glow leaves with the 3D UBI
 	const bubbleP = f < BUBBLE_AT ? 0 : springAt(f, BUBBLE_AT, 'SNAPPY');
 	const bubbleOn = f <= BUBBLE_UNTIL;
 	return (
@@ -111,9 +185,49 @@ const HeroOverlays: React.FC<{f: number}> = ({f}) => {
 					) : null}
 				</>
 			) : null}
-			{/* in-app UBI hidden under the 3D UBI on the cut, revealed over the 4-f crossfade */}
-			{xf > 0.001 ? (
-				<div style={{position: 'absolute', left: APP_UBI.x, top: APP_UBI.y, width: APP_UBI.w, height: APP_UBI.h, background: HERO_CARD, opacity: xf, borderRadius: 40, boxShadow: `0 0 16px 8px ${HERO_CARD}`}} />
+			{/* v2 review: the in-app UBI stays hidden for the whole shot under a copy of the empty card to his left
+			    (the 3D UBI stands in for him; no crossfade between two different drawings) */}
+			<div
+				style={{
+					position: 'absolute',
+					left: APP_UBI.x,
+					top: APP_UBI.y,
+					width: APP_UBI.w,
+					height: APP_UBI.h,
+					overflow: 'hidden',
+					WebkitMaskImage: AWAY_MASK,
+					maskImage: AWAY_MASK,
+					WebkitMaskComposite: 'source-in',
+					maskComposite: 'intersect',
+				}}
+			>
+				<Img
+					src={staticFile(FILE)}
+					style={{position: 'absolute', left: -(APP_UBI.x + APP_UBI_SRC_DX), top: -APP_UBI.y, width: 2880, height: 1800, maxWidth: 'none'}}
+				/>
+			</div>
+			{/* critique r1 / v2 review: his ember floor glow leaves with the 3D UBI (f25–30); on through f89 */}
+			{away > 0.001 ? (
+				<div
+					style={{
+						position: 'absolute',
+						left: APP_UBI_AWAY.x,
+						top: APP_UBI_AWAY.y,
+						width: APP_UBI_AWAY.w,
+						height: APP_UBI_AWAY.h,
+						overflow: 'hidden',
+						opacity: away,
+						WebkitMaskImage: AWAY_MASK,
+						maskImage: AWAY_MASK,
+						WebkitMaskComposite: 'source-in',
+						maskComposite: 'intersect',
+					}}
+				>
+					<Img
+						src={staticFile(FILE)}
+						style={{position: 'absolute', left: -(APP_UBI_AWAY.x + APP_GLOW_SRC_DX), top: -APP_UBI_AWAY.y, width: 2880, height: 1800, maxWidth: 'none'}}
+					/>
+				</div>
 			) : null}
 		</>
 	);
@@ -134,7 +248,8 @@ const TrackOverlays: React.FC<{f: number}> = ({f}) => {
 	const breath = f >= 75 ? Math.sin(Math.PI * ramp(f, 75, 89, E.linear)) : 0;
 	const glowK = 1 + 0.9 * pulse + 0.55 * breath;
 	const ring = f >= BUILD_END && f < BUILD_END + 16 ? ramp(f, BUILD_END, BUILD_END + 16, E.push) : -1;
-	const label = ramp(f, BUILD_END - 2, BUILD_END + 4, E.enter) * (0.75 + 0.25 * breath);
+	const labelIn = ramp(f, BUILD_END - 2, BUILD_END + 4, E.enter);
+	const label = labelIn * (0.75 + 0.25 * breath);
 	const sweep = ramp(f, BUILD_END, BUILD_END + 16, E.glide);
 	const TH = TRACK.bottom - TRACK.top;
 	return (
@@ -160,21 +275,44 @@ const TrackOverlays: React.FC<{f: number}> = ({f}) => {
 					}}
 				/>
 			) : null}
-			{/* "18h" lights up as the playhead lands on it */}
+			{/* "18h" lights up as the playhead lands on it (critique r1: a live white label over a patched bitmap glyph,
+			    with a dim volt halo UNDER it, so the payoff hour is the most legible one on the card, not a blue smudge) */}
 			{label > 0.003 ? (
-				<div
-					style={{
-						position: 'absolute',
-						left: LABEL_18.x - 60,
-						top: LABEL_18.y - 34,
-						width: 120,
-						height: 68,
-						borderRadius: '50%',
-						mixBlendMode: 'screen',
-						opacity: label,
-						background: 'radial-gradient(closest-side, rgba(120,170,255,0.75) 0%, rgba(77,141,255,0.28) 55%, transparent 100%)',
-					}}
-				/>
+				<>
+					<div style={{position: 'absolute', left: LABEL_18.x - 36, top: LABEL_18.y - 15, width: 72, height: 30, background: TRACK_LABEL_BG, opacity: clamp01(labelIn * 3)}} />
+					<div
+						style={{
+							position: 'absolute',
+							left: LABEL_18.x - 64,
+							top: LABEL_18.y - 26,
+							width: 128,
+							height: 52,
+							borderRadius: 26,
+							opacity: label,
+							background: 'radial-gradient(closest-side, rgba(77,141,255,0.24) 0%, rgba(77,141,255,0.12) 60%, rgba(77,141,255,0) 100%)',
+						}}
+					/>
+					<div
+						style={{
+							position: 'absolute',
+							left: LABEL_18.x - 60,
+							width: 120,
+							top: LABEL_18.baseline - LABEL_18.size * 0.864,
+							height: LABEL_18.size,
+							lineHeight: 1,
+							textAlign: 'center',
+							fontFamily: font.text,
+							fontWeight: 600,
+							fontSize: LABEL_18.size,
+							color: '#ffffff',
+							textShadow: `0 0 ${(10 + 4 * breath).toFixed(1)}px rgba(77,141,255,0.8)`,
+							opacity: labelIn,
+							whiteSpace: 'nowrap',
+						}}
+					>
+						18h
+					</div>
+				</>
 			) : null}
 			{/* playhead: 3 image px (≈ 5 comp px on the card), glow, dot on top */}
 			{ph > 0.001 ? (
@@ -317,8 +455,10 @@ const COMP = {width: W, height: H};
 
 /** The lifted day-track strip: image x 1270–2300 (just before 08h → past the 18h tick), y 1140–1300 (playhead dot → hour labels). */
 const CROP = {x: 1270, y: 1140, w: 1030, h: 160};
-/** "18h" label centre (image px). */
-const LABEL_18 = {x: 2222, y: 1273};
+/** "18h" label (image px): centre, glyph baseline (digits 1265–1280) and the Inter size that matches its 16-px digits. */
+const LABEL_18 = {x: 2222, y: 1273, baseline: 1281, size: 22};
+/** Flat panel colour under the hour labels (sampled). */
+const TRACK_LABEL_BG = '#0c1220';
 const LIFT_AT = 26;
 const CARD_W = 1740;
 const TRACK_LIFT = {rect: CROP, at: LIFT_AT, enter: 'lift' as const, spring: 'smooth' as const};
@@ -357,11 +497,19 @@ const S06EleRegistra: React.FC = () => {
 		grade: gradeAt(f),
 	};
 
-	// the 3D UBI rides the camera over the crossfade (feet anchored on the in-app UBI's feet)
+	// v2 review: the 3D UBI is the only UBI; it rides the window (feet pinned on the in-app UBI's feet, size from the
+	// projected ink height so tilt/perspective are tracked; identical to the old formula on the match frame) and
+	// leaves as the day-track card lifts over him
 	const g = screenGeometry(shot, f, COMP);
+	const g0 = screenGeometry(shot, 0, COMP);
 	const feet = mapWithGeometry(g, UBI_MATCH_IMG);
-	const ubiSize = UBI_MATCH.size * g.k * g.scale * g.s0;
-	const xf = xfade(f);
+	const projH = (gg: typeof g) => {
+		const a = mapWithGeometry(gg, UBI_MATCH_IMG);
+		const b = mapWithGeometry(gg, {x: UBI_MATCH_IMG.x, y: UBI_MATCH_IMG.y - UBI_INK_H});
+		return Math.hypot(a.x - b.x, a.y - b.y);
+	};
+	const ubiSize = UBI_MATCH.size * g0.k * g0.scale * g0.s0 * (projH(g) / projH(g0));
+	const ubiO = 1 - ramp(f, UBI_OUT.start, UBI_OUT.end, E.enter);
 
 	// the window steps back once the strip lifts: navy dim + depth blur
 	const back = ramp(f, LIFT_AT + 6, LIFT_AT + 32, E.glide); // trails the lift so the lit window carries f26–40
@@ -388,14 +536,15 @@ const S06EleRegistra: React.FC = () => {
 						<TransitionOut>
 							<AbsoluteFill style={{filter: back > 0.01 ? `blur(${(2.2 * back).toFixed(2)}px)` : undefined}}>
 								<G2Screen {...shot} style={{zIndex: 'auto'}}>
+									<StatVeils />
 									<HeroOverlays f={f} />
 									<TrackOverlays f={f} />
 									<LiftHole {...TRACK_LIFT} color={HERO_CARD} radius={20} pad={4} socket={0.6} />
 								</G2Screen>
 								{back > 0.001 ? <AbsoluteFill style={{background: navyDim(0.2 * back)}} /> : null}
 							</AbsoluteFill>
-							{xf > 0.001 ? (
-								<UbiClip clip="idle" index={96 + f} x={feet.x} y={feet.y} size={ubiSize} anchor="feet" opacity={xf} style={{zIndex: 1}} />
+							{ubiO > 0.001 ? (
+								<UbiClip clip="idle" index={(96 + f) % 120} x={feet.x} y={feet.y} size={ubiSize} anchor="feet" opacity={ubiO} style={{zIndex: 1}} />
 							) : null}
 						</TransitionOut>
 						<Scrim f={f} />

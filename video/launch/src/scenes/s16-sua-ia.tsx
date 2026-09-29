@@ -24,7 +24,8 @@
  *
  * Claim safety: the helper line under the picker (a cost estimate before the
  * click, the plan price after it) is patched in BOTH captures, as are the model
- * fields (storyboard) and the monthly-budget value; the window is also set back
+ * fields (storyboard), the monthly-budget value and the images-per-hour cap
+ * (value + unit, facts §5.20); the window is also set back
  * behind a depth blur, so none of its small print is legible.
  */
 import React from 'react';
@@ -81,6 +82,16 @@ const V2_PATCHES: StoryboardPatch[] = [
 	{file: BEFORE, rect: {x: 1796, y: 1430, w: 170, h: 46}, color: PANEL, from: 0, to: SWAP - 1, covers: 'budget unit'},
 	{file: AFTER, rect: {x: 1160, y: 1230, w: 60, h: 46}, color: '#10172a', from: SWAP, to: 104, covers: 'budget value'},
 	{file: AFTER, rect: {x: 1796, y: 1230, w: 170, h: 46}, color: PANEL, from: SWAP, to: 104, covers: 'budget unit'},
+	// critique r1: the images-per-hour cap ("6" + "imagens por hora", facts §5.20: demo value, engine default 20/h).
+	// Glyph bboxes measured: value x 2012–2026 y 1441–1462 (field fill #121a2b, field interior y 1418–1485);
+	// unit x 2593–2787 y 1442–1465 (panel). Same rows in the after capture, 200 px higher.
+	{file: BEFORE, rect: {x: 2002, y: 1434, w: 36, h: 36}, color: '#121a2b', from: 0, to: SWAP - 1, covers: 'images-per-hour value'},
+	{file: BEFORE, rect: {x: 2586, y: 1436, w: 210, h: 36}, color: PANEL, from: 0, to: SWAP - 1, covers: 'images-per-hour unit'},
+	{file: AFTER, rect: {x: 2002, y: 1234, w: 36, h: 36}, color: '#121a2b', from: SWAP, to: 104, covers: 'images-per-hour value'},
+	{file: AFTER, rect: {x: 2586, y: 1236, w: 210, h: 36}, color: PANEL, from: SWAP, to: 104, covers: 'images-per-hour unit'},
+	// nit: the "Somente local" toggle (x 2702–2789) sat right after "Grok." and read as "Grok.•"
+	{file: BEFORE, rect: {x: 2698, y: 1584, w: 96, h: 56}, color: PANEL, from: 0, to: SWAP - 1, covers: 'local-only toggle'},
+	{file: AFTER, rect: {x: 2698, y: 1416, w: 96, h: 56}, color: PANEL, from: SWAP, to: 104, covers: 'local-only toggle'},
 ];
 
 /** Hover windows (the cursor rests on each label from its arrival − 3 f to its departure). */
@@ -108,11 +119,18 @@ const TIPS: Record<ProviderId, {x: number; y: number}> = {
 	ubi: {x: 1880, y: 474},
 };
 const REST_IN = {x: 760, y: 640};
-const REST_OUT = {x: 1640, y: 640};
+/** After the click the cursor drifts off the card to the upper right, clear of the settings fields (critique r1). */
+const REST_OUT = {x: 1760, y: 520};
 
 /* ------------------------------------------------------------------------ */
 /* Picker re-set (image px of the full capture; drawn inside the card)       */
 /* ------------------------------------------------------------------------ */
+
+/** First frame the active pill's SNAPPY slide is ≥ 85 % of the way to "IA do Ubi". */
+const SEL_AT = (() => {
+	for (let fr = CLICK + 1; fr < CLICK + 40; fr++) if (springAt(fr, CLICK + 1, 'SNAPPY') > 0.85) return fr;
+	return CLICK + 8;
+})();
 
 const Picker: React.FC<{f: number}> = ({f}) => {
 	// active pill: Anthropic → IA do Ubi, SNAPPY from the click's release
@@ -123,7 +141,9 @@ const Picker: React.FC<{f: number}> = ({f}) => {
 	const stretch = Math.sin(Math.PI * Math.min(1, Math.max(0, t))) * 0.06;
 	const sheen = ramp(f, 78, 94, E.glide);
 	// v2: the chosen pill takes a volt selection ring after the click (+ a flash that decays)
-	const sel = ramp(f, CLICK + 2, CLICK + 8, E.enter);
+	// gated on the pill having almost landed (first frame the spring passes 0.85), so only "IA do Ubi" ever wears
+	// the volt ring — never OpenAI / xAI Grok while the pill is in transit (critique r1)
+	const sel = ramp(f, SEL_AT, SEL_AT + 5, E.enter);
 	const flash = f >= CLICK ? 1 - ramp(f, CLICK, CLICK + 16, E.glide) : 0;
 	return (
 		<>
@@ -170,6 +190,8 @@ const Picker: React.FC<{f: number}> = ({f}) => {
 					/>
 				) : null}
 			</div>
+			{/* the click ripple sits between the pill and the labels, so its rings never cross "IA do Ubi" (critique r1) */}
+			<ClickRipple x={rectOf('ubi').x + rectOf('ubi').w / 2} y={rectOf('ubi').y + rectOf('ubi').h / 2} at={CLICK} scale={1.4 / CARD_K} />
 			{PROVIDERS.map((p) => {
 				const hover = hoverOf(f, p.id);
 				const active = p.id === 'anthropic' ? 1 - Math.min(1, Math.max(0, t)) : p.id === 'ubi' ? Math.min(1, Math.max(0, t)) : 0;
@@ -212,6 +234,8 @@ const WINDOW_FOCUS = {x: 1583, y: 453};
 
 /** The lifted picker card: 1380 px wide (pill text 28 × 1380/874 = 44 px). */
 const CARD_W = 1380;
+/** Card scale (comp px per image px) once lifted. */
+const CARD_K = CARD_W / PICKER.w;
 const CARD = {x: 930, y: 452} as const;
 
 const S16SuaIa: React.FC = () => {
@@ -249,7 +273,7 @@ const S16SuaIa: React.FC = () => {
 		],
 		radius: 18,
 		// set-back context window: a brighter grade (it is lit by the stage key; the small print is blurred + patched)
-		grade: {brightness: 1.4, lift: 0.09},
+		grade: {brightness: 1.55, lift: 0.11},
 	};
 	const patches = [...storyboardPatches(scene, file), ...V2_PATCHES.filter((p) => p.file === file)];
 
@@ -274,7 +298,7 @@ const S16SuaIa: React.FC = () => {
 		drift: {x: -0.1, y: 0},
 		radius: 24,
 		glowOpacity: 0.85,
-		grade: {brightness: 1.26, lift: 0.07},
+		grade: {brightness: 1.34, lift: 0.07},
 		patches,
 	};
 	const pose = liftCardPose(cardProps, f, fps);
@@ -316,7 +340,7 @@ const S16SuaIa: React.FC = () => {
 					look={{
 						// the key pool + key light sit behind the window and the lifted card (the subject); the volt "Ubi." (bottom left) is on their falloff
 						keyPool: {x: 0.54, y: 0.46, w: 1.0, h: 1.0, opacity: 0.44},
-						keyLight: {x: 0.5, y: 0.42, w: 0.62, h: 0.4, opacity: 0.18},
+						keyLight: {x: 0.5, y: 0.42, w: 0.62, h: 0.4, opacity: 0.24},
 					}}
 				>
 					<TransitionIn>
@@ -337,8 +361,8 @@ const S16SuaIa: React.FC = () => {
 								<LiftHole {...lift} color={PANEL} radius={22} pad={8} socket={0.7} />
 							</Screen>
 						</AbsoluteFill>
-						{/* navy falloff under the type (the stage, not a black band) */}
-						<AbsoluteFill style={{background: `linear-gradient(180deg, ${navyDim(0)} 600px, ${navyDim(0.3)} 720px, ${navyDim(0.36)} 1080px)`}} />
+						{/* navy falloff under the type (the stage, not a black band); critique r1: a real band (≈ 0.5 from y 640) so the window's small print stays texture behind the 132 px lines */}
+						<AbsoluteFill style={{background: `linear-gradient(180deg, ${navyDim(0)} 590px, ${navyDim(0.6)} 690px, ${navyDim(0.66)} 1080px)`}} />
 						{/* the lifted card lights the window under it: a volt/white-blue spill (screen), growing with the lift */}
 						<AbsoluteFill style={{zIndex: 29, pointerEvents: 'none'}}>
 							<div
@@ -355,12 +379,14 @@ const S16SuaIa: React.FC = () => {
 								}}
 							/>
 						</AbsoluteFill>
+						{/* the shockwave pulses out from BEHIND the card: it reads above/below the pill, never over the type */}
+						<AbsoluteFill style={{zIndex: 29, pointerEvents: 'none'}}>
+							<Shockwave x={clickPt.x} y={clickPt.y} at={CLICK} radius={190} len={16} squash={0.5} strength={0.85} />
+						</AbsoluteFill>
 						<LiftCard {...cardProps} style={{zIndex: 30}}>
 							<Picker f={f} />
 						</LiftCard>
 						<AbsoluteFill style={{zIndex: 31}}>
-							<Shockwave x={clickPt.x} y={clickPt.y} at={CLICK} radius={190} len={16} squash={0.5} strength={0.85} />
-							<ClickRipple x={clickPt.x} y={clickPt.y} at={CLICK} scale={1.4} />
 							{f >= 2 ? <ArrowCursor x={cur.x} y={cur.y} size={cSize} opacity={cOpacity} /> : null}
 						</AbsoluteFill>
 					</TransitionIn>

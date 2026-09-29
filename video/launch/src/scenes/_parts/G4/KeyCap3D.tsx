@@ -121,8 +121,9 @@ export const KeyCap3D: React.FC<{pose: KeyPose; label?: string}> = ({pose: p, la
 					if (t <= 0 || t >= 1) return null;
 					const e = 1 - Math.pow(1 - t, 3);
 					const grow = 1 + (i === 0 ? 1.35 : 0.95) * e;
-					const a = (i === 0 ? 0.95 : 0.6) * Math.pow(1 - t, 1.4);
-					const bw = (i === 0 ? 4 : 2.5) * u * (1 - 0.7 * t);
+					// critique fix: unfilled, thin energy rings (no plate), additive, gone by s10 f26
+					const a = (i === 0 ? 0.9 : 0.55) * Math.pow(1 - t, 1.8);
+					const bw = (i === 0 ? 2.2 : 1.4) * u * (1 - 0.6 * t);
 					return (
 						<div
 							key={i}
@@ -134,8 +135,8 @@ export const KeyCap3D: React.FC<{pose: KeyPose; label?: string}> = ({pose: p, la
 								height: s * grow,
 								borderRadius: p.radius * grow * 1.2,
 								border: `${bw.toFixed(2)}px solid ${alpha(i === 0 ? '#e6eeff' : '#9cc0ff', a)}`,
-								background: `radial-gradient(closest-side, ${alpha(color.volt, 0)} 58%, ${alpha(color.volt, 0.22 * a)} 100%)`,
-								boxShadow: `0 0 ${(34 * u).toFixed(1)}px ${alpha(color.volt, 0.85 * a)}, inset 0 0 ${(46 * u).toFixed(1)}px ${alpha(color.volt, 0.55 * a)}`,
+								boxShadow: `0 0 ${(18 * u).toFixed(1)}px ${alpha(color.volt, 0.7 * a)}, inset 0 0 ${(12 * u).toFixed(1)}px ${alpha(color.volt, 0.45 * a)}`,
+								mixBlendMode: 'screen',
 							}}
 						/>
 					);

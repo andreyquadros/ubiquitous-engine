@@ -8,7 +8,7 @@
  * the wordmark spans x 328.3–1046.7, y 420.5–659.1 (baseline 609.9).
  */
 import React from 'react';
-import {color, font} from '../../../design/tokens';
+import {font} from '../../../design/tokens';
 import {CARET, clamp01, lerp} from './common';
 
 /** v2: the lockup is 1.23× the v1 size (brief v2-scenes G2: 1.15–1.3×). */
@@ -73,15 +73,17 @@ export type WordmarkState = {
 	glint: number;
 	/** Volt glow strength 0–1 (text-shadow 0.30 at 1). */
 	glow: number;
+	/** v2 review: explicit X rotation (deg); when set, `xPop` is used as the X's scale only (may exceed 1 for the overshoot). */
+	xRot?: number;
 };
 
 /** The wordmark as SVG, absolutely positioned in canvas px (left/top from WM). */
-export const Wordmark: React.FC<WordmarkState> = ({spread, xPop, glint, glow}) => {
+export const Wordmark: React.FC<WordmarkState> = ({spread, xPop, glint, glow, xRot: xRotIn}) => {
 	const k = WM.k;
 	const dxVb = spread / k; // viewBox units per gap
 	const letterDx = (i: number) => -(4 - i) * dxVb; // X (index 4) is the pivot
 	const xs = Math.max(0, xPop);
-	const xRot = lerp(-90, 0, clamp01(xPop));
+	const xRot = xRotIn ?? lerp(-90, 0, clamp01(xPop));
 	const letters = WM_PATHS.map((p, i) =>
 		i < 4 ? (
 			<path key={p.id} d={p.d} fill={p.fill} transform={dxVb ? `translate(${letterDx(i).toFixed(2)} 0)` : undefined} />
@@ -131,7 +133,7 @@ export const Wordmark: React.FC<WordmarkState> = ({spread, xPop, glint, glow}) =
 	);
 };
 
-/** "AI" pill: Sora 600 56 px × LOCKUP_SCALE (69 px), volt on a navy-backed volt tint, radius 999, padding 0.2em 0.5em. */
+/** "AI" pill: Sora 600 56 px × LOCKUP_SCALE (69 px), bright volt on a lifted navy fill with a volt rim, radius 999, padding 0.2em 0.5em. */
 export const AI_PILL = {
 	size: Math.round(56 * LOCKUP_SCALE),
 	gap: Math.round(24 * LOCKUP_SCALE),
@@ -161,11 +163,12 @@ export const AiPill: React.FC<{p: number}> = ({p}) => {
 				fontSize: AI_PILL.size,
 				lineHeight: 1,
 				letterSpacing: '-0.01em',
-				color: color.volt,
-				// v2 round 2: the pill is a surface with its own navy backing (0.88) under the volt tint, so the volt
-				// "AI" holds ≥ 4.5:1 wherever the stage light falls (a 0.14 tint alone over a lit stage measured 3.7:1)
-				background: 'linear-gradient(rgba(77, 141, 255, 0.11), rgba(77, 141, 255, 0.11)), rgba(10, 16, 36, 0.88)',
-				boxShadow: 'inset 0 0 0 1.5px rgba(77, 141, 255, 0.22)',
+				// v2 review (minor: the pill was the dimmest element at 480×270): a lighter navy fill (#1c2a4a), a 1.5-px
+				// volt rim with a soft volt halo, and a brighter volt "AI" (#a9c8ff), so the product name reads "ubiqX AI"
+				// on a phone while the pill stays a surface (text ≥ 4.5:1 on its own fill, independent of the stage light)
+				color: '#a9c8ff',
+				background: '#1c2a4a',
+				boxShadow: 'inset 0 0 0 1.5px rgba(77, 141, 255, 0.95), 0 0 22px rgba(77, 141, 255, 0.28)',
 				borderRadius: 999,
 				padding: '0.2em 0.5em',
 				whiteSpace: 'nowrap',

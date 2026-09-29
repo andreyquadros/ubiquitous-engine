@@ -11,7 +11,7 @@
  *  - cardPoint(): projects an image-px point of a LiftCard crop to the canvas
  *    (the same CSS 3D maths as LiftCard), so the keycap lands exactly on the chip.
  *  - <V2Headline>: the v2 display line (Sora 700, −0.04em, white → cool-grey
- *    gradient, volt-gradient emphasis with a soft glow, optional marker sweep).
+ *    gradient, volt-gradient emphasis with a soft glow, optional volt underline swipe).
  */
 import React from 'react';
 import {AbsoluteFill} from 'remotion';
@@ -37,6 +37,13 @@ export const REVIEW_END = {zoom: 2.5, focus: {x: 2458, y: 566}, anchor: {x: 1300
  * categoria." (ink x 512–1700, y 148–188) carries two counts; covered on the page colour #060a14 in both captures.
  */
 export const S09_SUBTITLE_PATCH = {x: 504, y: 140, w: 1216, h: 56, fill: '#060a14'};
+
+/**
+ * v2 review fix: the assign card's subtitle ("Calendário, 5min" / after the assign "Finder, 3min…", ink x 2128–2317,
+ * y 327–350 in both captures) sits right where the lifted picker card's left edge floats, which sliced it ("Calend|",
+ * "Finder, 3|"). Covered on the card colour from the lift on (s09 fades it in with the lift; s10 / s11 always).
+ */
+export const ASSIGN_SUBTITLE_PATCH = {x: 2118, y: 322, w: 460, h: 34, fill: '#0c1220'};
 
 /** Card surface colour of the review captures (the socket fill). */
 export const CARD_BG = '#0c1220';
@@ -194,16 +201,18 @@ export const V2Headline: React.FC<{
 						kids.push(
 							<span key={`m${i}`} style={{position: 'relative', display: 'inline-block'}}>
 								{p > 0 ? (
+									// v2 review fix: the translucent box read as a text-selection highlight. The marker is now a
+									// volt underline that swipes in under the baseline (soft bright head, glow), a designed accent.
 									<span
 										style={{
 											position: 'absolute',
-											left: '-0.08em',
-											top: '0.08em',
-											height: '0.9em',
-											width: `calc((100% + 0.16em) * ${p.toFixed(4)})`,
-											borderRadius: '0.1em',
-											background: 'linear-gradient(90deg, rgba(77,141,255,0.30), rgba(77,141,255,0.22))',
-											boxShadow: '0 0 30px rgba(77,141,255,0.18)',
+											left: '0.02em',
+											top: `${(SORA_BASE + 0.1).toFixed(3)}em`,
+											height: '0.065em',
+											width: `calc((100% - 0.04em) * ${p.toFixed(4)})`,
+											borderRadius: '0.04em',
+											background: `linear-gradient(90deg, rgba(47,114,240,0.55) 0%, ${color.volt} 55%, #cfe0ff 100%)`,
+											boxShadow: `0 0 18px rgba(77,141,255,${(0.55 * Math.min(1, p * 1.5)).toFixed(3)}), 0 0 4px rgba(120,170,255,0.6)`,
 											zIndex: 0,
 										}}
 									/>

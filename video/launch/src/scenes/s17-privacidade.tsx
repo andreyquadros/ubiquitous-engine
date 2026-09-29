@@ -247,19 +247,26 @@ const RowView: React.FC<{f: number; row: Row; i: number}> = ({f, row, i}) => {
 					</div>
 				</div>
 			) : null}
-			{/* right cell: empty slot → token */}
+			{/* right cell: empty slot → token. The slot is sized by the (invisible) token itself, with the token
+			    chip's own padding, so each dashed slot is exactly the chip that lands in it (critique r1: the
+			    fixed 330 px slots left the column half-empty around short tokens like [cpf]). */}
 			<div
 				style={{
 					position: 'absolute',
 					left: TOKEN_X - ROW.inset,
 					top: cy - 36,
 					height: 72,
-					width: PANEL.w - ROW.inset - 24 - TOKEN_X,
+					display: 'flex',
+					alignItems: 'center',
+					padding: '0 20.5px', // + the 1.5 px border = the chip's 22 px padding
 					borderRadius: 16,
 					boxSizing: 'border-box',
 					border: `1.5px dashed rgba(140,170,230,${(0.22 * (1 - done)).toFixed(3)})`,
+					...textStyle(600, 'transparent'),
 				}}
-			/>
+			>
+				{row.token}
+			</div>
 			{tokO > 0 ? (
 				<div
 					style={{

@@ -24,7 +24,7 @@ import {Patches, storyboardPatches, TransitionIn, TransitionOut, useScene, useSc
 import {Backdrop, G4Plane, ramp, widenLegend} from './_parts/G4/common';
 import {KeyCap3D} from './_parts/G4/KeyCap3D';
 import {S10, s10KeyPose} from './_parts/G4/keyTimeline';
-import {CARD_BG, PICKER, PICKER_AT, pickerLift, REVIEW_END, REVIEW_FILE, S09_LEN, S09_SUBTITLE_PATCH} from './_parts/G4/review';
+import {ASSIGN_SUBTITLE_PATCH, CARD_BG, PICKER, PICKER_AT, pickerLift, REVIEW_END, REVIEW_FILE, S09_LEN, S09_SUBTITLE_PATCH} from './_parts/G4/review';
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
 export const sfx: SfxCue[] = [
@@ -88,6 +88,7 @@ const S10Tecla1: React.FC = () => {
 										<>
 											<Patches patches={patches} />
 											<div style={{position: 'absolute', ...rectStyle(S09_SUBTITLE_PATCH)}} />
+											<div style={{position: 'absolute', ...rectStyle(ASSIGN_SUBTITLE_PATCH)}} />
 											<LiftHole rect={PICKER} at={lift.at} enter="lift" color={CARD_BG} pad={4} feather={10} radius={14} />
 										</>
 									),

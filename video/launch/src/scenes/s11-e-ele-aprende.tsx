@@ -30,9 +30,10 @@ import {alpha, color, font} from '../design/tokens';
 import {E, hotspot, Patches, springAt, storyboardPatches, TransitionIn, TransitionOut, useScene, useSceneFrame, type SfxCue} from '../shared';
 import {arcPoint, Backdrop, CaptureImg, clamp01, G4Plane, insetOf, lerp, ramp, UI, widenLegend} from './_parts/G4/common';
 import {KeyCap3D, mixPose, type KeyPose} from './_parts/G4/KeyCap3D';
-import {S10_FINAL} from './_parts/G4/keyTimeline';
+import {S10_FINAL, s10KeyPose} from './_parts/G4/keyTimeline';
 import {
 	AFTER_FILE,
+	ASSIGN_SUBTITLE_PATCH,
 	CARD_BG,
 	cardPoint,
 	PICKER,
@@ -63,6 +64,10 @@ const SWAP = 15;
 const SWAP_LEN = 6;
 const RULES = 30;
 const SWEEP = 38;
+/** Critique fix: a second, subtler sweep keeps the f55–89 hold alive. */
+const SWEEP2 = 66;
+/** Critique fix: the flying key stays silver until it is almost home, then swaps to the chip colours under a volt bloom. */
+const FACE_SWAP = 10;
 
 const KEY1 = hotspot(REVIEW_FILE, 'assign-key-1'); // 2746,402 40×40
 const IFRO_ROW = hotspot(REVIEW_FILE, 'assign-option-1');
@@ -72,8 +77,16 @@ const NEW_ACTIVE = hotspot(AFTER_FILE, 'queue-row-1');
 
 /** Rule-chip reveal cover: the storyboard's (2127,800,663×150) leaves 3 px of the second chip's border → 160 tall. */
 const RULE_COVER: Rect = {x: 2127, y: 800, w: 663, h: 160};
-/** The lifted rule block: "Da última decisão", "Criar regra: [Sempre: Calendário → IFRO]", "[Sempre: calendário → IFRO]". */
-const RULE: Rect = {x: 2110, y: 796, w: 512, h: 172};
+/**
+ * The lifted rule block, cropped (critique fix) to "Da última decisão" + "Criar regra: [Sempre: Calendário → IFRO]" so the payoff
+ * is ONE chip (the capture's second, lower-case chip read as a duplicated line). Chip 1 ink ends at y ≈ 897, chip 2 starts at 908.
+ */
+const RULE: Rect = {x: 2110, y: 792, w: 512, h: 110};
+/** The socket left in the window covers the whole old block (both chips), so the second chip is not left behind in the window. */
+const RULE_HOLE: Rect = {x: 2110, y: 796, w: 512, h: 172};
+
+/** Where the backdrop blur applies: the headline's left side, feathered out before the picker / rule cards (x ≈ 970). */
+const LEFT_MASK = 'linear-gradient(90deg, #000 0px, #000 748px, rgba(0,0,0,0) 898px)'; // element starts at x −48
 
 /** v2 headline scrim: a lifted navy (#141f3c), lighter than the stage so the left half is not a hole. */
 const SCRIM = (a: number) => `rgba(20, 31, 60, ${a.toFixed(3)})`;
@@ -158,8 +171,16 @@ const S11EEleAprende: React.FC = () => {
 		floorGlow: 0,
 		opacity: 1,
 	};
-	const p = arcPoint({x: S10_FINAL.cx, y: S10_FINAL.cy}, {x: target.cx, y: target.cy}, clamp01(m), 0.1);
-	const pose: KeyPose = {...mixPose(S10_FINAL, target, clamp01(m)), cx: p.x, cy: p.y, size: lerp(S10_FINAL.size, target.size, m)};
+	// v2 review fix: the flight starts from s10's pose CONTINUED (its post-release float keeps running), so the cut does not
+	// land from a dead hold: f0 = s10KeyPose(30), the frame after S10_FINAL (s10 f29), ≈ 1.1 px higher and 0.06° rolled.
+	const src = s10KeyPose(S10_LEN + f);
+	const p = arcPoint({x: src.cx, y: src.cy}, {x: target.cx, y: target.cy}, clamp01(m), 0.1);
+	// critique fix: the key keeps its size (and its light) longer and shrinks late, slamming into the socket, so the frame
+	// is not dark and empty during f5–11
+	const sz = Math.pow(ramp(f, 0, MORPH - 1), 1.45); // chip-sized from f11 (contact), so f11 → f12 (LitChip) does not pop
+	const pose: KeyPose = {...mixPose(src, target, clamp01(m)), cx: p.x, cy: p.y, size: lerp(S10_FINAL.size, target.size, sz)};
+	pose.legendSize = lerp(S10_FINAL.legendSize, target.legendSize, sz);
+	pose.radius = lerp(S10_FINAL.radius, target.radius, sz);
 	// shape / colour settle a touch earlier than the travel so the chip is flat when it arrives
 	const flat = ramp(f, 3, 11, E.glide);
 	pose.skirt = lerp(S10_FINAL.skirt, 0, flat);
@@ -168,6 +189,21 @@ const S11EEleAprende: React.FC = () => {
 	pose.rim = lerp(S10_FINAL.rim, 0, flat);
 	pose.floorGlow = lerp(S10_FINAL.floorGlow, 0, flat);
 	pose.shock = 0;
+	// face colours: silver (S10_FINAL) through the flight, a 2-f swap to the chip colours at f10–12 under the landing bloom
+	// (no muddy grey mid-blend while the key is big)
+	const col = mixPose(src, target, ramp(f, FACE_SWAP, MORPH - 1, E.enter));
+	pose.faceTop = col.faceTop;
+	pose.faceBottom = col.faceBottom;
+	pose.highlight = col.highlight;
+	pose.border = col.border;
+	pose.borderAlpha = col.borderAlpha;
+	pose.borderWidth = col.borderWidth;
+	pose.skirtTop = col.skirtTop;
+	pose.skirtBottom = col.skirtBottom;
+	pose.legendInk = col.legendInk;
+	pose.legendLit = col.legendLit;
+	// landing bloom on the chip, f10–15: peak at contact f11 (the ui_tick_1 transient lands 1 f after, on f12)
+	const bloom = f < FACE_SWAP ? 0 : f <= MORPH - 1 ? ramp(f, FACE_SWAP - 0.5, MORPH - 1) : Math.exp(-(f - MORPH + 1) / 2.4);
 
 	// --- plane state ---------------------------------------------------------
 	const before = widenLegend(storyboardPatches(scene, REVIEW_FILE));
@@ -175,7 +211,13 @@ const S11EEleAprende: React.FC = () => {
 	const swapped = f >= SWAP;
 	const e = swapped ? springAt(f, SWAP, 'SNAPPY') : 0;
 	const inSwap = swapped && f < SWAP + SWAP_LEN;
-	const subtitle = <div style={{position: 'absolute', left: S09_SUBTITLE_PATCH.x, top: S09_SUBTITLE_PATCH.y, width: S09_SUBTITLE_PATCH.w, height: S09_SUBTITLE_PATCH.h, background: S09_SUBTITLE_PATCH.fill}} />;
+	const subtitle = (
+		<>
+			<div style={{position: 'absolute', left: S09_SUBTITLE_PATCH.x, top: S09_SUBTITLE_PATCH.y, width: S09_SUBTITLE_PATCH.w, height: S09_SUBTITLE_PATCH.h, background: S09_SUBTITLE_PATCH.fill}} />
+			{/* v2 review fix: no "Finder, 3|" sliced by the picker card's left edge */}
+			<div style={{position: 'absolute', left: ASSIGN_SUBTITLE_PATCH.x, top: ASSIGN_SUBTITLE_PATCH.y, width: ASSIGN_SUBTITLE_PATCH.w, height: ASSIGN_SUBTITLE_PATCH.h, background: ASSIGN_SUBTITLE_PATCH.fill}} />
+		</>
+	);
 	const pickerHole = <LiftHole rect={PICKER} at={picker.at} enter="lift" color={CARD_BG} pad={4} feather={10} radius={14} />;
 	const beforePatchEls = (
 		<>
@@ -220,7 +262,7 @@ const S11EEleAprende: React.FC = () => {
 			{subtitle}
 			{pickerHole}
 			{coverOn ? <div style={{position: 'absolute', left: RULE_COVER.x - 2, top: RULE_COVER.y - 2, width: RULE_COVER.w + 4, height: RULE_COVER.h + 4, background: UI.card}} /> : null}
-			<LiftHole rect={RULE} at={RULES} enter="lift" color={CARD_BG} pad={6} feather={12} radius={16} />
+			<LiftHole rect={RULE_HOLE} at={RULES} enter="lift" color={CARD_BG} pad={6} feather={12} radius={16} />
 			{inSwap ? (
 				<>
 					<BeforeSlice rect={LIST_BELOW} ty={-112 * e} opacity={1 - ramp(f, SWAP + 1, SWAP + SWAP_LEN)} patches={beforePatchEls} />
@@ -239,6 +281,7 @@ const S11EEleAprende: React.FC = () => {
 	const chipLit = f >= MORPH ? 1 : 0;
 	const pickerKids = (
 		<>
+			{f < MORPH ? <KeySocket f={f} /> : null}
 			{tint > 0.001 ? (
 				// the pressed option takes the selected state: a volt-filled row; its icon tile + label are re-set on top
 				<div
@@ -285,10 +328,10 @@ const S11EEleAprende: React.FC = () => {
 						>
 							<G4Plane {...cam} layers={swapped ? [{src: AFTER_FILE, children: afterLayer}] : [{src: REVIEW_FILE, children: <>{beforePatchEls}{pickerHole}</>}]} />
 							<AbsoluteFill style={{background: navyDim(veil)}} />
-							{/* key light over the stepped-back window, behind the two cards */}
+							{/* key light over the stepped-back window, behind the two cards (critique fix: brighter once racked in, 0.2 → 0.3) */}
 							<AbsoluteFill
 								style={{
-									background: `radial-gradient(ellipse 38% 56% at 73% 52%, ${alpha('#cfe0ff', 0.2)} 0%, ${alpha(color.volt, 0.15)} 50%, ${alpha(color.volt, 0)} 100%)`,
+									background: `radial-gradient(ellipse ${lerp(38, 40, rack).toFixed(2)}% ${lerp(56, 58, rack).toFixed(2)}% at 73% 52%, ${alpha('#cfe0ff', lerp(0.2, 0.3, rack))} 0%, ${alpha(color.volt, lerp(0.15, 0.18, rack))} 50%, ${alpha(color.volt, 0)} 100%)`,
 								}}
 							/>
 							<LiftCard {...picker} patches={before}>
@@ -296,31 +339,95 @@ const S11EEleAprende: React.FC = () => {
 							</LiftCard>
 						</AbsoluteFill>
 						{/* s10's key light travels with the key into the chip and dies into the IFRO row's glow */}
-						{f < MORPH + 8 ? (
+						{f < MORPH + 12 ? (
 							<AbsoluteFill
 								style={{
-									opacity: 1 - ramp(f, MORPH - 2, MORPH + 7, E.enter),
-									background: `radial-gradient(ellipse ${lerp(34, 9, m).toFixed(2)}% ${lerp(44, 14, m).toFixed(2)}% at ${((pose.cx / 1920) * 100).toFixed(2)}% ${((pose.cy / 1080) * 100).toFixed(2)}%, ${alpha('#cfe0ff', 0.2)} 0%, ${alpha(color.volt, 0.16)} 45%, ${alpha(color.volt, 0)} 100%)`,
+									opacity: 1 - ramp(f, MORPH + 2, MORPH + 12, E.enter),
+									background: `radial-gradient(ellipse ${lerp(34, 16, m).toFixed(2)}% ${lerp(44, 24, m).toFixed(2)}% at ${((pose.cx / 1920) * 100).toFixed(2)}% ${((pose.cy / 1080) * 100).toFixed(2)}%, ${alpha('#cfe0ff', 0.26)} 0%, ${alpha(color.volt, 0.16)} 45%, ${alpha(color.volt, 0)} 100%)`,
 								}}
 							/>
 						) : null}
+						{/* v2 review fix: the queue rows behind the headline become pure texture (a masked 10-px backdrop blur on the
+						    left, fading out before the cards), so no "em categ… / 0% / pendente / 40% IA" reads between the words */}
+						<AbsoluteFill
+							style={{
+								// bleeds off the left edge so the blur's edge clamp does not leave sharp crumbs of text at x 0–8
+								left: -48,
+								opacity: ramp(f, 3, 10, E.enter),
+								backdropFilter: 'blur(11px)',
+								WebkitBackdropFilter: 'blur(11px)',
+								WebkitMaskImage: LEFT_MASK,
+								maskImage: LEFT_MASK,
+							}}
+						/>
 						{/* left scrim under the headline (navy, v2) */}
 						<AbsoluteFill
 							style={{
-								opacity: ramp(f, 8, 18, E.enter),
-								background: `linear-gradient(90deg, ${SCRIM(0.92)} 0px, ${SCRIM(0.84)} 620px, ${SCRIM(0.36)} 900px, ${SCRIM(0)} 1060px)`,
+								opacity: ramp(f, 3, 10, E.enter),
+								background: `linear-gradient(90deg, ${SCRIM(0.97)} 0px, ${SCRIM(0.8)} 40px, ${SCRIM(0.72)} 620px, ${SCRIM(0.3)} 900px, ${SCRIM(0)} 1060px)`,
 							}}
 						/>
 						<RuleSparks f={f} card={rule} fps={fps} />
 						<LiftCard {...rule}>
-							<Sweep f={f} rect={RULE} />
+							<Sweep f={f} rect={RULE} at={SWEEP} />
+							<Sweep f={f} rect={RULE} at={SWEEP2} gain={0.55} />
 						</LiftCard>
+						{bloom > 0.01 ? <LandingBloom x={chipC.x} y={chipC.y} k={k} a={bloom} /> : null}
 						{f < MORPH ? <KeyCap3D pose={pose} label={KEY_LABEL} /> : null}
 						<V2Headline f={f} lines={lines} size={124} left={100} capTops={[384, 540]} />
 					</Backdrop>
 				)}
 			</TransitionIn>
 		</TransitionOut>
+	);
+};
+
+/**
+ * Until the key lands, the capture's own "1" chip is covered by an EMPTY socket (image space of the capture) with a faint
+ * volt target ring that brightens as the key approaches, so only one "1" exists in any frame.
+ */
+const KeySocket: React.FC<{f: number}> = ({f}) => {
+	const a = 0.22 + 0.78 * ramp(f, 2, MORPH - 1, E.enter);
+	return (
+		<>
+			<div style={{position: 'absolute', left: KEY1.x - 3, top: KEY1.y - 3, width: KEY1.w + 6, height: KEY1.h + 6, borderRadius: 10, background: CARD_BG}} />
+			<div
+				style={{
+					position: 'absolute',
+					left: KEY1.x,
+					top: KEY1.y,
+					width: KEY1.w,
+					height: KEY1.h,
+					borderRadius: 8,
+					background: '#080d18',
+					boxShadow: [
+						`inset 0 2px 5px rgba(0,0,0,0.55)`,
+						`inset 0 0 0 1.15px rgba(77,141,255,${(0.35 + 0.55 * a).toFixed(3)})`,
+						`0 0 ${(6 + 14 * a).toFixed(1)}px rgba(77,141,255,${(0.5 * a).toFixed(3)})`,
+					].join(', '),
+				}}
+			/>
+		</>
+	);
+};
+
+/** A 3–4 f volt bloom where the key lands (canvas px), additive. */
+const LandingBloom: React.FC<{x: number; y: number; k: number; a: number}> = ({x, y, k, a}) => {
+	const r = 230 * Math.max(0.8, k);
+	return (
+		<AbsoluteFill style={{pointerEvents: 'none', mixBlendMode: 'screen'}}>
+			<div
+				style={{
+					position: 'absolute',
+					left: x - r,
+					top: y - r,
+					width: 2 * r,
+					height: 2 * r,
+					borderRadius: '50%',
+					background: `radial-gradient(closest-side, rgba(230,238,255,${(0.75 * a).toFixed(3)}) 0%, rgba(77,141,255,${(0.6 * a).toFixed(3)}) 22%, rgba(77,141,255,${(0.18 * a).toFixed(3)}) 55%, rgba(77,141,255,0) 100%)`,
+				}}
+			/>
+		</AbsoluteFill>
 	);
 };
 
@@ -397,8 +504,8 @@ const BeforeSlice: React.FC<{rect: Rect; tx?: number; ty?: number; opacity: numb
 	);
 
 /** A soft diagonal light band sweeping across the rule chips (image px of the capture). */
-const Sweep: React.FC<{f: number; rect: Rect}> = ({f, rect}) => {
-	const t = ramp(f, SWEEP, SWEEP + 16, E.glide);
+const Sweep: React.FC<{f: number; rect: Rect; at: number; gain?: number}> = ({f, rect, at, gain = 1}) => {
+	const t = ramp(f, at, at + 16, E.glide);
 	if (t <= 0 || t >= 1) return null;
 	const x = lerp(rect.x - 260, rect.x + rect.w + 60, t);
 	return (
@@ -412,6 +519,7 @@ const Sweep: React.FC<{f: number; rect: Rect}> = ({f, rect}) => {
 				transform: 'skewX(-18deg)',
 				background: 'linear-gradient(90deg, rgba(207,224,255,0) 0%, rgba(207,224,255,0.22) 45%, rgba(255,255,255,0.3) 50%, rgba(207,224,255,0.22) 55%, rgba(207,224,255,0) 100%)',
 				mixBlendMode: 'screen',
+				opacity: gain,
 			}}
 		/>
 	);

@@ -5,7 +5,7 @@
  * slam shake. Scene-local — not shared code.
  */
 import React from 'react';
-import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
+import {AbsoluteFill, interpolate, random, useCurrentFrame, useVideoConfig} from 'remotion';
 import {noise2D} from '@remotion/noise';
 import {StageBase, StageFinish, StageGuards, StageLights, STAGE, type StageLook} from '../../../components/Stage';
 import {alpha, color, font} from '../../../design/tokens';
@@ -210,20 +210,83 @@ export const camApply = (c: Cam2D, p: {x: number; y: number}) => ({x: c.ax + (p.
 /* <TimesheetPlane>                                                          */
 /* ------------------------------------------------------------------------ */
 
-const LINE = 1.5;
+const LINE = 1.25;
 /**
- * v2 sheet palette: a lit slate "desk" sheet (luma ≈ 0.2–0.3 under the key
- * light), not a near-black card. The ANTES treatment (desaturated) stays.
+ * v2 review fix: the ANTES sheet is a material object, not a flat mid-grey
+ * slab. Deep slate cells (#232b3a → #1b2230), brighter 1 px rules, a lit
+ * header band, a glass sheen + specular band, a gradient rim highlight and a
+ * real drop shadow onto the stage; a few cells hold ghosted, half-erased
+ * pencil entries and eraser smudges so "empty" reads as "forgotten". Stays
+ * desaturated (ANTES) against the lit volt product world from s05 on.
  */
 const SHEET = {
-	top: '#35415c',
-	bottom: '#262f45',
-	header: '#46526f',
-	headerRule: '#7a88a8',
-	line: '#56637f',
-	rowLine: 'rgba(122, 136, 168, 0.42)',
-	zebra: 'rgba(255, 255, 255, 0.035)',
-	edge: '#66739a',
+	top: '#252e3e',
+	bottom: '#1b2230',
+	header: '#4a5672',
+	headerBottom: '#353f55',
+	headerRule: '#8d9bbb',
+	line: 'rgba(146, 162, 198, 0.62)',
+	rowLine: 'rgba(146, 162, 198, 0.36)',
+	zebra: 'rgba(255, 255, 255, 0.018)',
+	graphite: '190, 202, 228',
+};
+
+/**
+ * Ghosted pencil entries: (col, row, length 0–1 of the cell, erased 0–1).
+ * Never in TER (the forgotten day stays blank) and never under s03's "?"
+ * cells (SEG/15h, QUI/09h, TER/*).
+ */
+const GHOSTS: {col: number; row: number; len: number; erased: number}[] = [
+	{col: 0, row: 0, len: 0.72, erased: 0.2},
+	{col: 0, row: 2, len: 0.46, erased: 0.55},
+	{col: 2, row: 1, len: 0.64, erased: 0.35},
+	{col: 2, row: 4, len: 0.52, erased: 0.7},
+	{col: 3, row: 3, len: 0.7, erased: 0.25},
+	{col: 4, row: 0, len: 0.58, erased: 0.45},
+	{col: 4, row: 5, len: 0.66, erased: 0.3},
+	{col: 0, row: 7, len: 0.5, erased: 0.6},
+	{col: 3, row: 7, len: 0.62, erased: 0.4},
+	{col: 2, row: 7, len: 0.4, erased: 0.75},
+];
+/** Eraser smudges (cell-relative): some over the ghosts, some alone. */
+const SMUDGES: {col: number; row: number; dx: number; w: number; rot: number; o: number}[] = [
+	{col: 0, row: 2, dx: 0.12, w: 0.8, rot: -6, o: 0.09},
+	{col: 2, row: 4, dx: 0.05, w: 0.9, rot: 4, o: 0.1},
+	{col: 2, row: 6, dx: -0.05, w: 0.75, rot: -3, o: 0.08},
+	{col: 4, row: 2, dx: 0.08, w: 0.7, rot: 7, o: 0.08},
+	{col: 4, row: 0, dx: 0.2, w: 0.55, rot: -8, o: 0.07},
+	{col: 3, row: 5, dx: -0.1, w: 0.6, rot: 5, o: 0.07},
+];
+
+/** Illegible cursive scribble (slanted e/l loops, 1–2 pen lifts) across `len` of a cell: pure texture, no letters or digits. */
+const scribble = (seed: string, x0: number, y0: number, len: number) => {
+	const loops = Math.max(4, Math.round(len * 11));
+	const a = (len * TS.col * 0.8) / (loops * Math.PI * 2);
+	const b = a * 2.3; // b > a: the stroke runs back on itself = a loop
+	const breaks = new Set<number>();
+	const nb = 1 + Math.floor(random(`${seed}-nb`) * 2);
+	for (let i = 0; i < nb; i++) breaks.add(2 + Math.floor(random(`${seed}-b${i}`) * (loops - 3)));
+	const N = 16;
+	let d = '';
+	let pen = false;
+	let drift = 0;
+	for (let k = 0; k <= loops * N; k++) {
+		const t = (k / N) * Math.PI * 2;
+		const loop = Math.min(loops - 1, Math.floor(k / N));
+		if (breaks.has(loop) && k % N < N * 0.55) {
+			pen = false;
+			continue;
+		}
+		const r = random(`${seed}-h${loop}`);
+		const h = r > 0.72 ? 24 + r * 8 : 7 + r * 9; // mostly x-height loops, some ascenders
+		drift += (random(`${seed}-d${k}`) - 0.5) * 0.25;
+		const up = (h * (1 - Math.cos(t))) / 2; // 0 on the baseline → h at the top of the loop
+		const y = y0 + 8 - up + drift;
+		const x = x0 + a * t - b * Math.sin(t) + up * 0.32; // italic slant
+		d += `${pen ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)} `;
+		pen = true;
+	}
+	return d;
 };
 
 export type Mark = {col: number; row: number; p: number /* 0→1 spring (may overshoot) */; o: number /* opacity */};
@@ -258,18 +321,30 @@ export const TimesheetPlane: React.FC<{
 					transform: `rotateX(${pose.rx}deg) rotateZ(${pose.rz}deg) scale(${pose.s})`,
 				}}
 			>
-				{/* shadow + ambient under the sheet (outside the ANTES filter) */}
+				{/* drop shadow onto the stage + a faint volt bounce (outside the ANTES filter) */}
+				<div
+					style={{
+						position: 'absolute',
+						left: 30,
+						right: 30,
+						top: 40,
+						bottom: -30,
+						borderRadius: 40,
+						background: 'rgba(2, 4, 12, 0.7)',
+						filter: 'blur(46px)',
+					}}
+				/>
 				<div
 					style={{
 						position: 'absolute',
 						inset: 0,
 						borderRadius: 24,
-						boxShadow: `0 50px 110px -30px rgba(3, 6, 16, 0.85), 0 0 120px -10px ${alpha(color.volt, 0.16)}`,
+						boxShadow: `0 40px 90px -18px rgba(2, 4, 12, 0.9), 0 10px 26px -6px rgba(2, 4, 12, 0.75), 0 0 110px -10px ${alpha(color.volt, 0.14)}`,
 					}}
 				/>
 				{/* ANTES treatment: desaturated; the caret, the volt column and the guesses stay out of it */}
-				<div style={{position: 'absolute', inset: 0, filter: 'saturate(0.55)'}}>
-					{/* card */}
+				<div style={{position: 'absolute', inset: 0, filter: 'saturate(0.6)'}}>
+					{/* card: deep slate */}
 					<div
 						style={{
 							position: 'absolute',
@@ -277,18 +352,17 @@ export const TimesheetPlane: React.FC<{
 							borderRadius: 24,
 							overflow: 'hidden',
 							background: `linear-gradient(180deg, ${SHEET.top} 0%, ${SHEET.bottom} 100%)`,
-							boxShadow: `inset 0 1.5px 0 rgba(255,255,255,0.22), 0 0 0 ${LINE}px ${SHEET.edge}`,
 						}}
 					>
-						{/* the key light falling on the sheet (upper centre) */}
+						{/* the key light pooled on the story (TER / 10h), falling off to deep slate at the edges: a lit object, not a flat slab */}
 						<div
 							style={{
 								position: 'absolute',
-								left: '10%',
-								top: -TS.h * 0.35,
-								width: '80%',
-								height: TS.h * 1.1,
-								background: 'radial-gradient(closest-side, rgba(207,224,255,0.16), rgba(207,224,255,0.06) 55%, rgba(207,224,255,0) 100%)',
+								left: cellCenter(TER, 1).x - 620,
+								top: cellCenter(TER, 1).y - 430,
+								width: 1240,
+								height: 860,
+								background: 'radial-gradient(closest-side, rgba(207,224,255,0.15), rgba(207,224,255,0.07) 45%, rgba(207,224,255,0.02) 75%, rgba(207,224,255,0) 100%)',
 							}}
 						/>
 						{/* zebra rows */}
@@ -307,10 +381,65 @@ export const TimesheetPlane: React.FC<{
 							width: TS.w,
 							height: TS.header,
 							borderRadius: '24px 24px 0 0',
-							background: `linear-gradient(180deg, ${SHEET.header}, ${alpha(SHEET.header, 0.82)})`,
-							boxShadow: `inset 0 -${LINE}px 0 ${SHEET.headerRule}`,
+							background: `linear-gradient(180deg, ${SHEET.header}, ${SHEET.headerBottom})`,
+							boxShadow: `inset 0 -${LINE}px 0 ${SHEET.headerRule}, inset 0 1px 0 rgba(255,255,255,0.12)`,
 						}}
 					/>
+					{/* ghosted, half-erased pencil entries + eraser smudges: "empty" reads as "forgotten" */}
+					<svg width={TS.w} height={TS.h} style={{position: 'absolute', left: 0, top: 0, overflow: 'visible'}}>
+						<defs>
+							<filter id="g1-graphite" x="-5%" y="-40%" width="110%" height="180%">
+								<feGaussianBlur stdDeviation="0.6" />
+							</filter>
+							<filter id="g1-smudge" x="-30%" y="-80%" width="160%" height="260%">
+								<feGaussianBlur stdDeviation="9" />
+							</filter>
+							{GHOSTS.map((g, i) => {
+								const c = cellCenter(g.col, g.row);
+								const x0 = c.x - TS.col * 0.4;
+								const x1 = x0 + g.len * TS.col * 0.82;
+								return (
+									<linearGradient key={i} id={`g1-erase-${i}`} gradientUnits="userSpaceOnUse" x1={x0} y1={0} x2={x1} y2={0}>
+										<stop offset="0" stopColor={`rgb(${SHEET.graphite})`} stopOpacity={0.2} />
+										<stop offset={Math.max(0.05, 1 - g.erased).toFixed(2)} stopColor={`rgb(${SHEET.graphite})`} stopOpacity={0.16} />
+										<stop offset="1" stopColor={`rgb(${SHEET.graphite})`} stopOpacity={0.03} />
+									</linearGradient>
+								);
+							})}
+						</defs>
+						{SMUDGES.map((m, i) => {
+							const c = cellCenter(m.col, m.row);
+							return (
+								<ellipse
+									key={`s${i}`}
+									cx={c.x + m.dx * TS.col}
+									cy={c.y}
+									rx={(m.w * TS.col) / 2}
+									ry={TS.row * 0.26}
+									transform={`rotate(${m.rot} ${c.x} ${c.y})`}
+									fill={`rgba(${SHEET.graphite}, ${m.o})`}
+									filter="url(#g1-smudge)"
+									opacity={colOpacity(m.col)}
+								/>
+							);
+						})}
+						{GHOSTS.map((g, i) => {
+							const c = cellCenter(g.col, g.row);
+							return (
+								<path
+									key={`g${i}`}
+									d={scribble(`g1-ghost-${i}`, c.x - TS.col * 0.4, c.y + 4, g.len)}
+									fill="none"
+									stroke={`url(#g1-erase-${i})`}
+									strokeWidth={2.2}
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									filter="url(#g1-graphite)"
+									opacity={colOpacity(g.col)}
+								/>
+							);
+						})}
+					</svg>
 					{/* gutter: hour labels + rules */}
 					{HOURS.map((h, j) => (
 						<React.Fragment key={h}>
@@ -380,6 +509,31 @@ export const TimesheetPlane: React.FC<{
 							</div>
 						);
 					})}
+					{/* glass sheen: a soft top-left falloff + a thin specular band */}
+					<div
+						style={{
+							position: 'absolute',
+							inset: 0,
+							borderRadius: 24,
+							pointerEvents: 'none',
+							background:
+								'linear-gradient(160deg, rgba(220,232,255,0.075) 0%, rgba(220,232,255,0.03) 22%, rgba(220,232,255,0) 42%, rgba(220,232,255,0) 58%, rgba(220,232,255,0.035) 63%, rgba(220,232,255,0) 70%), linear-gradient(180deg, rgba(0,0,0,0) 55%, rgba(2,4,12,0.22) 100%)',
+						}}
+					/>
+					{/* rim highlight: a lit gradient edge, brightest along the top */}
+					<div
+						style={{
+							position: 'absolute',
+							inset: 0,
+							borderRadius: 24,
+							padding: 1.75,
+							pointerEvents: 'none',
+							background: 'linear-gradient(172deg, rgba(222,232,255,0.8) 0%, rgba(170,186,222,0.42) 12%, rgba(130,146,184,0.26) 45%, rgba(110,126,166,0.16) 100%)',
+							WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+							WebkitMaskComposite: 'xor',
+							maskComposite: 'exclude',
+						}}
+					/>
 				</div>
 				{/* light sweep (secondary motion in the holds) */}
 				{sweep !== undefined && sweep > 0 && sweep < 1 ? (
@@ -456,8 +610,9 @@ export const TimesheetPlane: React.FC<{
 									height: TS.row - 6,
 									borderRadius: 10,
 									opacity: m.o * Math.min(1, sc),
-									background: alpha(color.rose, 0.2),
-									boxShadow: `inset 0 0 0 2px ${alpha(color.rose, 0.75)}, 0 0 30px ${alpha(color.rose, 0.35)}`,
+									// lit from within (on the deep slate a flat 0.2 wash read muddy)
+									background: `linear-gradient(180deg, ${alpha(color.rose, 0.32)} 0%, ${alpha(color.rose, 0.18)} 100%)`,
+									boxShadow: `inset 0 0 0 2px ${alpha(color.rose, 0.8)}, inset 0 0 22px ${alpha(color.rose, 0.28)}, 0 0 30px ${alpha(color.rose, 0.38)}`,
 								}}
 							/>
 							<div

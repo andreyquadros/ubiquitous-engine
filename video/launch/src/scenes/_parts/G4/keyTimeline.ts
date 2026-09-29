@@ -5,7 +5,7 @@
  *   f0–8   mount: scale 0.94 → 1, y +30 → 0 (SNAPPY)
  *   f12–15 press: face +24 px into the well, skirt 34 → 10 (E.exit, 3 f)
  *   f15    CONTACT (abs 675, beat 2): legend latches volt, underglow decays over 8 f,
- *          shockwave rings expand in the key plane over 16 f, floor light flares
+ *          shockwave rings expand in the key plane over 11 f, floor light flares
  *   f16–23 release (SNAPPY), legend stays volt
  */
 import {E, springAt} from '../../../shared/motion';
@@ -18,8 +18,23 @@ export const S10 = {
 	contact: 15,
 	travel: 24,
 	underglowFrames: 8,
-	shockFrames: 16,
+	shockFrames: 11, // critique fix: rings fully gone by f26 (were 16 f, a ghost popped off at the cut)
 } as const;
+
+/**
+ * v2 review fix (no dead hold into the match cut): after the release the key keeps floating up and turning a touch, so
+ * the motion runs through s10 f24–29 and on into s11 (s11 evaluates s10KeyPose(30 + f) as the flight's source pose).
+ * Velocity eases in over f18–26 to 1.1 px/f of rise and 0.06°/f of roll; integrated per frame (pure, deterministic).
+ */
+export const S10_FLOAT = {from: 18, to: 26, vy: -1.1, vrz: 0.06} as const;
+const floatInt = (f: number): number => {
+	let s = 0;
+	for (let i = S10_FLOAT.from + 1; i <= f; i++) s += E.glide(ramp(i, S10_FLOAT.from, S10_FLOAT.to));
+	// fractional tail keeps it continuous for non-integer frames
+	const fi = Math.floor(f);
+	if (f > fi && fi >= S10_FLOAT.from) s += (f - fi) * E.glide(ramp(fi + 1, S10_FLOAT.from, S10_FLOAT.to));
+	return s;
+};
 
 export const s10KeyPose = (f: number): KeyPose => {
 	const m = f < S10.mount ? 0 : springAt(f, S10.mount, 'SNAPPY');
@@ -32,7 +47,8 @@ export const s10KeyPose = (f: number): KeyPose => {
 	return {
 		...KEY_REST,
 		scale: lerp(0.94, 1, m),
-		dy: lerp(30, 0, m),
+		dy: lerp(30, 0, m) + S10_FLOAT.vy * floatInt(f),
+		rz: KEY_REST.rz + S10_FLOAT.vrz * floatInt(f),
 		press,
 		skirt: KEY_REST.skirt - press,
 		legendVolt: lit,
@@ -43,5 +59,5 @@ export const s10KeyPose = (f: number): KeyPose => {
 	};
 };
 
-/** The pose s10 hands over on its last frame (f29). */
+/** The pose s10 hands over on its last frame (f29); s11 f0 continues it one frame on (s10KeyPose(30 + f): the float keeps running across the cut). */
 export const S10_FINAL = s10KeyPose(29);

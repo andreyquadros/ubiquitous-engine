@@ -29,7 +29,7 @@ import type {Keyframe} from '../design/motion';
 import {color, font} from '../design/tokens';
 import {E, TransitionIn, useSceneFrame, useScene, type SfxCue} from '../shared';
 import {G3Screen} from './_parts/G3/G3Screen';
-import {boxTopForBaseline, DimMask, METRICS, ramp, Ring, Stage, StageTop, Words} from './_parts/G3/common';
+import {boxTopForBaseline, DimMask, METRICS, Patch, ramp, Ring, Stage, StageTop, Words} from './_parts/G3/common';
 
 /** SFX cues, scene-relative HIT frames (the master audio layer places them at abs = start + atFrame − hit offset). */
 export const sfx: SfxCue[] = [
@@ -73,6 +73,11 @@ const TYPE_START = 8;
 const CPF = 2; // chars per frame
 const TYPE_END = TYPE_START + Math.ceil(TYPED.length / CPF); // 52
 
+/** Sidebar "Revisão" pending-count badge ("8", orange disc at 376–413 × 378–413) on the sidebar fill: the film never shows a pending number. */
+const REVIEW_COUNT_PATCH = {x: 370, y: 372, w: 50, h: 48, fill: '#0a101c'};
+/** Hint line under the textarea (glyphs x 1342–2493, y 900–922): a 32 % panel veil drops it to ≈ 68 % so the typing stays the only subject. */
+const HINT_VEIL = {x: 1336, y: 894, w: 1170, h: 34, fill: PANEL, opacity: 0.32};
+
 /** The lifted crop: label + textarea + hint line (image px). */
 const FIELD: Rect = {x: 1322, y: 612, w: 1490, h: 324};
 
@@ -102,6 +107,7 @@ const Typing: React.FC<{f: number}> = ({f}) => {
 				{LABEL.text}
 			</div>
 			<div style={{position: 'absolute', left: TA_PATCH.x, top: TA_PATCH.y, width: TA_PATCH.w, height: TA_PATCH.h, background: TA_FILL}} />
+			<Patch {...HINT_VEIL} />
 			<div
 				style={{
 					position: 'absolute',
@@ -194,12 +200,13 @@ const S07AsSuasCategorias: React.FC = () => {
 		<Stage
 			seed="s07"
 			look={{
-				keyPool: {x: 0.54, y: 0.38, w: 0.92, h: 0.9, opacity: 0.5},
+				keyPool: {x: 0.54, y: 0.38, w: 0.92, h: 0.9, opacity: 0.45},
 				keyLight: {x: 0.5, y: 0.54, w: 0.62, h: 0.5, opacity: 0.16},
 			}}
 		>
 			<TransitionIn>
 				<G3Screen {...shot} style={{zIndex: 'auto'}}>
+					<Patch {...REVIEW_COUNT_PATCH} />
 					<DimMask dim={back} holes={[]} />
 					<LiftHole {...lift} color={PANEL} radius={24} />
 				</G3Screen>

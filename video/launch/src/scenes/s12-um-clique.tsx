@@ -90,6 +90,8 @@ const PCT_RIGHT = [1800, 1831, 1762, 1762, 1831, 1762, 1800, 1762, 1831, 1831, 1
 const pctPatches = PCT_RIGHT.map((r, i) => ({x: r - 72, y: 572 + ROW_H * i, w: 76, h: 28}));
 /** After the confirm every row reads "100%" (x 1740–1804): patched too, so no column of "100 %" reads as an accuracy claim. */
 const pctPatchesAfter = Array.from({length: 12}, (_, i) => ({x: 1730, y: 473 + ROW_H * i, w: 82, h: 32}));
+/** The two pending rows' "60%" / "68%" (IA suggestions; x 1783–1832, same place in both captures): patched too (v2 crit). */
+const pctPatchesPending = [130, 242].map((y) => ({x: 1776, y, w: 62, h: 32}));
 
 /** Scene grade: a touch brighter than the default window grade (the review list is the darkest UI in the film). */
 const GRADE_S12 = {brightness: 1.3, lift: 0.07};
@@ -196,19 +198,38 @@ const CardFace: React.FC<{f: number}> = ({f}) => {
 	const hover = ramp(f, 24, 28, E.enter);
 	const press = pressAt(f, CLICK);
 	const mint = ramp(f, CLICK, CLICK + 3, E.enter);
+	// v2 crit: over the drop's last frames the face turns solid mint (the label goes), so it lands in the "você" badge as colour
+	const solid = ramp(f, LAND - 8, LAND - 4, E.enter);
 	return (
-		<div
-			style={{
-				position: 'absolute',
-				left: BUTTON.x,
-				top: BUTTON.y,
-				width: BUTTON.w,
-				height: BUTTON.h,
-				borderRadius: 12,
-				background: mint > 0.001 ? alpha(color.mint, 0.2 * mint) : alpha(color.volt, 0.06 * hover + 0.16 * press),
-				boxShadow: `inset 0 0 0 2px ${mint > 0.001 ? alpha(color.mint, 0.85 * mint) : alpha(color.volt, 0.7 * hover + 0.3 * press)}`,
-			}}
-		/>
+		<>
+			<div
+				style={{
+					position: 'absolute',
+					left: BUTTON.x,
+					top: BUTTON.y,
+					width: BUTTON.w,
+					height: BUTTON.h,
+					borderRadius: 12,
+					background: mint > 0.001 ? alpha(color.mint, 0.2 * mint) : alpha(color.volt, 0.06 * hover + 0.16 * press),
+					boxShadow: `inset 0 0 0 2px ${mint > 0.001 ? alpha(color.mint, 0.85 * mint) : alpha(color.volt, 0.7 * hover + 0.3 * press)}`,
+				}}
+			/>
+			{solid > 0.001 ? (
+				<div
+					style={{
+						position: 'absolute',
+						left: BTN_CROP.x,
+						top: BTN_CROP.y,
+						width: BTN_CROP.w,
+						height: BTN_CROP.h,
+						borderRadius: 14,
+						opacity: solid,
+						background: '#12352f',
+						boxShadow: `inset 0 0 0 3px ${alpha(color.mint, 0.9)}`,
+					}}
+				/>
+			) : null}
+		</>
 	);
 };
 
@@ -299,6 +320,9 @@ const S12UmClique: React.FC = () => {
 						<Patches patches={layerPatches(shot.src)} />
 						{/* the sidebar's "Revisão" pending-count badge */}
 						<div style={{position: 'absolute', left: BADGE_NAV.x - 3, top: BADGE_NAV.y - 3, width: BADGE_NAV.w + 6, height: BADGE_NAV.h + 6, background: '#14223c'}} />
+						{pctPatchesPending.map((r, i) => (
+							<div key={`p${i}`} style={{position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h, background: ROW_BG}} />
+						))}
 						{before ? (
 							<>
 								{pctPatches.map((r, i) => (
@@ -343,7 +367,7 @@ const S12UmClique: React.FC = () => {
 							style={{
 								opacity: band,
 								pointerEvents: 'none',
-								background: `linear-gradient(180deg, ${navyDim(0.92)} 0px, ${navyDim(0.86)} 230px, ${navyDim(0.5)} 300px, ${navyDim(0)} 380px)`,
+								background: `linear-gradient(180deg, ${navyDim(0.94)} 0px, ${navyDim(0.92)} 230px, ${navyDim(0.5)} 300px, ${navyDim(0)} 380px)`,
 								zIndex: 31,
 							}}
 						/>

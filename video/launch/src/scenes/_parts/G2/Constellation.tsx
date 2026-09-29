@@ -16,7 +16,7 @@ import React from 'react';
 import {AbsoluteFill} from 'remotion';
 import {LiftCard} from '../../../components/LiftCard';
 import type {Rect} from '../../../components/screen-geometry';
-import {E} from '../../../shared';
+import {E, springAt} from '../../../shared';
 import {clamp01, lerp, ramp, W, H} from './common';
 
 export type Fragment = {
@@ -60,14 +60,14 @@ export const FRAGMENTS: Fragment[] = [
 		id: 'ring',
 		src: 'ui/dashboard.png',
 		rect: {x: 566, y: 416, w: 392, h: 392},
-		x: 1650,
-		y: 845,
-		width: 250,
+		x: 1690,
+		y: 870,
+		width: 226,
 		depth: 1,
 		rx: 12,
 		ry: -18,
 		at: 37,
-		radius: 125,
+		radius: 113,
 		glow: 'mint',
 		drift: {x: 0.1, y: 0.06},
 	},
@@ -89,7 +89,7 @@ export const FRAGMENTS: Fragment[] = [
 		// the day-track strip 08h → 18h — bottom left
 		id: 'track',
 		src: 'ui/dashboard.png',
-		rect: {x: 1270, y: 1150, w: 1030, h: 150},
+		rect: {x: 1270, y: 1150, w: 1000, h: 150}, // ends before the app's now-marker pin (s06: the build stops at 18h)
 		x: 440,
 		y: 900,
 		width: 640,
@@ -111,10 +111,14 @@ export const Constellation: React.FC<{f: number; zoom: number}> = ({f, zoom}) =>
 			if (f < g.at) return null;
 			const out = ramp(f, RECEDE.start + i * 2, RECEDE.end - 6 + i * 2, E.exit);
 			if (out >= 0.999) return null;
-			// rack focus in (blur 10 → depth blur over 10 f), defocus out
-			const inP = ramp(f, g.at, g.at + 10, E.enter);
+			// v2 review (minor: first visible pixel came 1–2 f after the pop cue): the fragment is already there ON its cue
+			// frame (opacity 0.45, scale 0.9, blur 4) and snaps to 1 (SNAPPY), rack-focusing to its depth blur over 6 f
+			const inP = ramp(f, g.at, g.at + 6, E.enter);
+			const pop = springAt(f, g.at, 'SNAPPY');
+			const popScale = lerp(0.9, 1, pop);
+			const popO = lerp(0.45, 1, clamp01(ramp(f, g.at, g.at + 3, E.enter)));
 			const depthBlur = lerp(1.6, 0, g.depth);
-			const blur = lerp(10, depthBlur, inP) + 8 * out;
+			const blur = lerp(4, depthBlur, inP) + 8 * out;
 			// parallax with the canvas push: near fragments move out faster
 			const zf = 1 + (zoom - 1) * (1 + 1.5 * g.depth);
 			const t = f - g.at;
@@ -123,8 +127,8 @@ export const Constellation: React.FC<{f: number; zoom: number}> = ({f, zoom}) =>
 			// recede: pull toward the centre and shrink
 			const x = lerp(bx, W / 2 + (bx - W / 2) * 0.82, out);
 			const y = lerp(by, H / 2 + (by - H / 2) * 0.82, out);
-			const width = g.width * zf * lerp(1, 0.7, out);
-			const o = lerp(0.72, 1, g.depth) * (1 - out);
+			const width = g.width * zf * lerp(1, 0.7, out) * popScale;
+			const o = lerp(0.72, 1, g.depth) * (1 - out) * popO;
 			return (
 				<AbsoluteFill key={g.id} style={{filter: blur > 0.2 ? `blur(${blur.toFixed(2)}px)` : undefined}}>
 					<LiftCard
@@ -137,8 +141,7 @@ export const Constellation: React.FC<{f: number; zoom: number}> = ({f, zoom}) =>
 						rotateY={g.ry + 4 * Math.sin((f + i * 20) / 30)}
 						rotateZ={g.rz ?? 0}
 						at={g.at}
-						enter="pop"
-						spring="smooth"
+						enter="none"
 						float={lerp(3, 7, g.depth)}
 						floatPeriod={90 + i * 12}
 						radius={g.radius ?? 14}

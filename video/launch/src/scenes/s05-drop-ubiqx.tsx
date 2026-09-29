@@ -4,8 +4,8 @@
  * THE DROP. f0 (abs 240): flash in-half (T7), the wordmark is on screen at
  * full opacity and slams 1.10 → 1 (SLAM) around the X's spot, tracking
  * +0.02em → −0.03em (E.push, 20 f). f0–2 the volt caret of s04 is still on
- * (960, 520); f3 the X pops out of it (−90° → 0, 0 → 1, BOUNCY_SUBTLE — the
- * shot's one bouncy element). f8 "AI" pill (SNAPPY). f3–15 descriptor masks
+ * (960, 520); f3 the X pops out of it (v2 review: 0.95 on f3, overshoot 1.25 on
+ * f4, settled by f10, −24° → 0 twist — the shot's one bouncy element). f8 "AI" pill (SNAPPY). f3–15 descriptor masks
  * up (E.enter, 12 f). f0–15 UBI launches in and lands on beat 2 (contact f15).
  * f10–28 glint. f60 (downbeat) grid floor + slow canvas push 1 → 1.04 (E.glide,
  * 45 f). f105–119 match-cut prep: canvas tints to the hero-card colour, the
@@ -26,7 +26,7 @@
  * the canvas camera, then to the match rect).
  */
 import React from 'react';
-import {AbsoluteFill, Easing} from 'remotion';
+import {AbsoluteFill, Easing, interpolate} from 'remotion';
 import {GUARD_OPACITY, guardFor} from '../components/Stage';
 import {color, font} from '../design/tokens';
 import {E, springAt, TransitionIn, TransitionOut, UbiTrack, useScene, useSceneFrame, type SfxCue} from '../shared';
@@ -41,11 +41,11 @@ export const sfx: SfxCue[] = [
 	{ref: 'shimmer_1.wav', atFrame: 10, gainDb: -14, note: 'Glint.'},
 	{ref: 'bloop_1.wav', atFrame: 15, gainDb: -12, note: 'UBI lands.'},
 	{ref: 'whoosh_out_3.wav', atFrame: 108, gainDb: -14, note: 'UBI shrinks away into the app.'},
-	// v2: the product constellation — one soft rising pop per fragment, on its entrance frame (8th notes)
-	{ref: 'ui_pop_up_1.wav', atFrame: 30, gainDb: -21, note: 'v2 constellation: "Suas categorias" fragment pops in.'},
-	{ref: 'ui_pop_up_2.wav', atFrame: 37, gainDb: -21, note: 'v2 constellation: 88 ring pops in.'},
-	{ref: 'ui_pop_up_3.wav', atFrame: 45, gainDb: -21, note: 'v2 constellation: review row pops in.'},
-	{ref: 'ui_pop_up_4.wav', atFrame: 52, gainDb: -21, note: 'v2 constellation: day-track strip pops in.'},
+	// v2: the product constellation — one rising pop per fragment, on its entrance frame (8th notes); v2 review: −21 → −17 dB (s17's cascade level)
+	{ref: 'ui_pop_up_1.wav', atFrame: 30, gainDb: -17, note: 'v2 constellation: "Suas categorias" fragment pops in.'},
+	{ref: 'ui_pop_up_2.wav', atFrame: 37, gainDb: -17, note: 'v2 constellation: 88 ring pops in.'},
+	{ref: 'ui_pop_up_3.wav', atFrame: 45, gainDb: -17, note: 'v2 constellation: review row pops in.'},
+	{ref: 'ui_pop_up_4.wav', atFrame: 52, gainDb: -17, note: 'v2 constellation: day-track strip pops in.'},
 ];
 
 /*
@@ -145,8 +145,11 @@ const S05DropUbiqx: React.FC = () => {
 	const slam = springAt(f, 0, 'SLAM');
 	const lockScale = lerp(1.1, 1, slam);
 	const spread = 10 * (1 - ramp(f, 0, 20, E.push)); // +0.02em → −0.03em = 0.05em × 200 px per gap
-	const xPop = f < 3 ? 0 : springAt(f, 3, 'BOUNCY_SUBTLE');
-	const caretOn = f <= 2 || (f <= 5 && xPop < 0.6);
+	// v2 review (minor: the X read as a tiny spinning glyph for ~8 f): the X lands near full size on f3 out of the
+	// caret, overshoots to 1.25 on f4 and settles by f10, with a short −24° → 0 twist (E.exit, f3–7)
+	const xPop = f < 3 ? 0 : interpolate(f, [3, 4, 5, 6, 8, 10], [0.95, 1.25, 1.12, 1.0, 0.985, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+	const xRot = interpolate(f, [3, 7], [-24, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: E.exit});
+	const caretOn = f <= 3;
 	const caretScale = f <= 2 ? 1 : Math.max(0, 1 - ramp(f, 3, 6, E.exit));
 	const pill = f < 8 ? 0 : springAt(f, 8, 'SNAPPY');
 	const glint = f < 10 ? 0 : ramp(f, 10, 28, Easing.inOut(Easing.cubic));
@@ -249,7 +252,7 @@ const S05DropUbiqx: React.FC = () => {
 						{/* type: screen space, slam shake only */}
 						<AbsoluteFill style={{transform: shakeTransform(shake)}} aria-label={brand}>
 							<AbsoluteFill style={{transform: `scale(${lockScale.toFixed(5)})`, transformOrigin: `${CARET.x}px ${CARET.y}px`}}>
-								<Wordmark spread={spread} xPop={xPop} glint={glint} glow={glow} />
+								<Wordmark spread={spread} xPop={xPop} xRot={xRot} glint={glint} glow={glow} />
 								<AiPill p={pill} />
 							</AbsoluteFill>
 							{caretOn && caretScale > 0.01 ? (

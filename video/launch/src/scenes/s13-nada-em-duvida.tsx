@@ -81,7 +81,8 @@ const Bubble: React.FC<{f: number; text: string; from: {cx: number; cy: number; 
 	const by = BUBBLE.y + BUBBLE.h / 2;
 	const cx = lerp(from.cx, bx, s);
 	const cy = lerp(from.cy, by, s) + bob;
-	const o = ramp(f, MATCH, MATCH + 2);
+	// fully opaque on the match frame: it starts on the in-app bubble's rect, which is covered on this same frame (no blink)
+	const o = f >= MATCH ? 1 : 0;
 	const v = ramp(f, MATCH + 8, MATCH + 12);
 	// text: "Nada em dúvida!" with the last word volt (split on the last space / NBSP)
 	const cut = Math.max(text.lastIndexOf(' '), text.lastIndexOf(' '));

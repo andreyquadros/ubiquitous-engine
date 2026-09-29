@@ -16,6 +16,8 @@ import {E} from '../../../shared';
 import {CARET, clamp01, lerp, ramp} from './common';
 
 const C = {x: CARET.x, y: CARET.y};
+/** Centre of the settled lockup "ubiqX [AI]" (s05 LOCK_BOX: x 328–1256, y 420–659). */
+const LOCK_C = {x: 792, y: 540};
 
 const SPARKS = Array.from({length: 44}, (_, i) => {
 	const a = ((i + random(`s05-spark-a-${i}`) * 0.8) / 44) * Math.PI * 2;
@@ -33,7 +35,7 @@ const travel = (v: number, t: number) => v * 5 * (1 - Math.exp(-t / 5));
 
 export const DropBurst: React.FC<{f: number}> = ({f}) => {
 	if (f > 30) return null;
-	const bloom = 0.55 * (1 - ramp(f, 0, 12, E.enter));
+	const bloom = 0.55 * (1 - ramp(f, 3, 15, E.enter)); // held through the X pop so the origin stays the brightest point
 	const rays = 0.32 * (1 - ramp(f, 0, 16, E.enter));
 	const raysScale = lerp(0.7, 1.35, ramp(f, 0, 16, E.push));
 	const ring = (delay: number, col: string, width: number) => {
@@ -56,8 +58,27 @@ export const DropBurst: React.FC<{f: number}> = ({f}) => {
 			/>
 		);
 	};
+	// v2 review (minor: the drop read as thin rays): a big volt bloom behind the WHOLE lockup on the downbeat
+	// (≈ 900 px radius, 0.4 → 0 over 10 f) and a brief exposure lift of the stage (0.1 → 0 over 6 f), both screen
+	const lockBloom = 0.4 * (1 - ramp(f, 0, 10, E.exit));
+	const lift = 0.1 * (1 - ramp(f, 0, 6, E.exit));
 	return (
 		<AbsoluteFill style={{pointerEvents: 'none'}}>
+			{lift > 0.003 ? <AbsoluteFill style={{mixBlendMode: 'screen', background: `rgba(120, 165, 255, ${lift.toFixed(3)})`}} /> : null}
+			{lockBloom > 0.003 ? (
+				<div
+					style={{
+						position: 'absolute',
+						left: LOCK_C.x - 900,
+						top: LOCK_C.y - 640,
+						width: 1800,
+						height: 1280,
+						borderRadius: '50%',
+						mixBlendMode: 'screen',
+						background: `radial-gradient(closest-side, rgba(77,141,255,${lockBloom.toFixed(3)}) 0%, rgba(77,141,255,${(lockBloom * 0.6).toFixed(3)}) 35%, rgba(77,141,255,${(lockBloom * 0.18).toFixed(3)}) 70%, transparent 100%)`,
+					}}
+				/>
+			) : null}
 			{bloom > 0.003 ? (
 				<div
 					style={{
@@ -85,8 +106,8 @@ export const DropBurst: React.FC<{f: number}> = ({f}) => {
 						transform: `scale(${raysScale.toFixed(4)}, ${(raysScale * 0.7).toFixed(4)}) rotate(${(f * 0.5).toFixed(2)}deg)`,
 						background:
 							'repeating-conic-gradient(from 4deg at 50% 50%, rgba(160,195,255,0.9) 0deg, rgba(160,195,255,0) 2.2deg, rgba(160,195,255,0) 13deg, rgba(77,141,255,0.7) 14.5deg, rgba(77,141,255,0) 17deg, rgba(77,141,255,0) 26deg)',
-						WebkitMaskImage: 'radial-gradient(closest-side, transparent 6%, black 18%, rgba(0,0,0,0.5) 55%, transparent 100%)',
-						maskImage: 'radial-gradient(closest-side, transparent 6%, black 18%, rgba(0,0,0,0.5) 55%, transparent 100%)',
+						WebkitMaskImage: 'radial-gradient(closest-side, rgba(0,0,0,0.55) 0%, black 12%, rgba(0,0,0,0.5) 55%, transparent 100%)',
+						maskImage: 'radial-gradient(closest-side, rgba(0,0,0,0.55) 0%, black 12%, rgba(0,0,0,0.5) 55%, transparent 100%)',
 					}}
 				/>
 			) : null}

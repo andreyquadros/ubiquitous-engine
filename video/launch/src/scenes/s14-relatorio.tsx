@@ -303,7 +303,7 @@ const riseY = (f: number) => 220 * (1 - E.push(ramp(f, RISE, RISE + 20)));
 /** The lifted piece of the report: buttons strip, table header, rows 1–2 (Atividade · Minutos · Tipo). */
 const CROP = {x: 1452, y: 376, w: 1148, h: 506};
 const CARD_K = 1.42;
-const CARD_AT = {x: 1010, y: 700};
+const CARD_AT = {x: 1010, y: 676}; // v2 crit: −24 px so the card's bottom edge keeps a margin in the hold
 const CARD: LiftCardProps = {
 	src: FILE,
 	rect: CROP,
@@ -465,9 +465,10 @@ const S14Relatorio: React.FC = () => {
 	const caption = scene.copy.find((c) => c.role === 'ui-caption')!;
 	if (kicker.text !== '18:00') throw new Error(`s14 kicker drift: ${kicker.text}`);
 	const units = unitsOf(head.text, [
-		{text: 'O relatório', at: 32},
-		{text: 'sai', at: 34},
-		{text: 'pronto.', at: 36, volt: head.emphasis.includes('pronto.') ? 'pronto.' : undefined},
+		// +2 f (v2 crit): the flying 18:00 clears the headline's first words before they stagger in
+		{text: 'O relatório', at: 34},
+		{text: 'sai', at: 36},
+		{text: 'pronto.', at: 38, volt: head.emphasis.includes('pronto.') ? 'pronto.' : undefined},
 	]);
 
 	const partB = f >= RISE;
@@ -496,6 +497,8 @@ const S14Relatorio: React.FC = () => {
 	const btnTop = onCard(f, {x: BTN.x + BTN.w / 2, y: BTN.y});
 
 	const band = ramp(f, RISE, RISE + 2) * (1 - 0.6 * ramp(f, LIFT_AT, 58, E.glide));
+	// denser under the headline while the window's own heading sits right behind it (until the pull-back)
+	const bandTop = lerp(0.95, 0.86, ramp(f, 48, 58, E.glide));
 	const poolUp = ramp(f, MORPH, MORPH_END + 6, E.glide);
 	const back = ramp(f, LIFT_AT + 2, 64, E.glide);
 
@@ -533,7 +536,7 @@ const S14Relatorio: React.FC = () => {
 						<AbsoluteFill
 							style={{
 								opacity: band,
-								background: `linear-gradient(180deg, ${navyDim(0.88)} 0px, ${navyDim(0.84)} 250px, ${navyDim(0.55)} 300px, ${navyDim(0)} 380px)`,
+								background: `linear-gradient(180deg, ${navyDim(bandTop)} 0px, ${navyDim(bandTop)} 270px, ${navyDim(0.55)} 310px, ${navyDim(0)} 380px)`,
 							}}
 						/>
 					) : null}
@@ -541,13 +544,11 @@ const S14Relatorio: React.FC = () => {
 						<LiftCard {...CARD} patches={storyboardPatches(scene, FILE)}>
 							{/* Regenerar's left edge peeks in at the crop's right side: card colour */}
 							<div style={{position: 'absolute', left: 2582, top: CROP.y, width: 40, height: 110, background: APP.panel}} />
-							{/* the card's own title, re-composed from the capture's pixels: the IFRO icon + "IFRO" and "Gerado 29/09 18:00" */}
-							{/* (crossfaded from the window's own meta line during the lift's first frames, so the card starts identical to the window) */}
-							<div style={{position: 'absolute', inset: 0, opacity: 1 - ramp(f, LIFT_AT, LIFT_AT + 6)}}>
-								<MetaRecompose />
-							</div>
-							<div style={{position: 'absolute', inset: 0, opacity: ramp(f, LIFT_AT, LIFT_AT + 6)}}>
-								<div style={{position: 'absolute', left: CROP.x, top: 380, width: 820, height: 92, background: APP.panel}} />
+							{/* the card's own title, re-composed from the capture's pixels: the IFRO icon + "IFRO" and "Gerado 29/09 18:00". */}
+							{/* The header strip is card colour at FULL opacity from the lift's first frame (it covers the window meta line's */}
+							{/* sliced "…480 de saída" at the crop's left edge); the re-composed title then fades in on it: never two layers. */}
+							<div style={{position: 'absolute', left: CROP.x, top: 380, width: 820, height: 92, background: APP.panel}} />
+							<div style={{position: 'absolute', inset: 0, opacity: ramp(f, LIFT_AT, LIFT_AT + 4)}}>
 								<Crop src={FILE} rect={{x: 548, y: 382, w: 200, h: 84}} at={{x: CROP.x + 30, y: 382}} />
 								<Crop src={FILE} rect={{x: 648, y: 434, w: 244, h: 36}} at={{x: CROP.x + 132, y: 434}} />
 							</div>

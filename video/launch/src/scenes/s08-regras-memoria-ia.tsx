@@ -71,12 +71,25 @@ const PANEL = '#0c1220';
  * Measured glyph boxes + 4 px: rows 1–5.
  */
 const PCT_PATCHES = [
+	// the two rows above the group header
+	{x: 1781, y: 134, w: 52, h: 24},
+	{x: 1781, y: 246, w: 52, h: 24},
+	// rows 1–5
 	{x: 1735, y: 572, w: 66, h: 24},
 	{x: 1781, y: 686, w: 52, h: 24},
 	{x: 1714, y: 800, w: 49, h: 24},
 	{x: 1713, y: 914, w: 50, h: 24},
 	{x: 1781, y: 1028, w: 52, h: 24},
+	// rows 6–11 (legible at ≈ 13 px now that the window is shown whole)
+	{x: 1713, y: 1142, w: 50, h: 24},
+	{x: 1751, y: 1256, w: 50, h: 24},
+	{x: 1713, y: 1370, w: 50, h: 24},
+	{x: 1785, y: 1484, w: 48, h: 24},
+	{x: 1781, y: 1598, w: 52, h: 24},
+	{x: 1785, y: 1712, w: 48, h: 24},
 ];
+/** Sidebar "Revisão" pending-count badge ("8", orange disc at 376–413 × 378–413) on the active-row fill: the film never shows a pending number. */
+const REVIEW_COUNT_PATCH = {x: 370, y: 372, w: 50, h: 48, fill: '#14223c'};
 
 /** Origin badges (storyboard rects, image px): row 1 "regra", row 3 "memória", row 5 "IA". */
 const BADGES: Rect[] = [
@@ -93,7 +106,7 @@ const K = 2.4;
 const SLAM = {size: 188, left: 100, capTops: [232, 432, 632]};
 const CAP = METRICS.sora.cap * SLAM.size;
 /** Card column: left edge + vertical centre on each word's cap band. */
-const CARD_LEFT = [880, 1050, 470];
+const CARD_LEFT = [880, 1115, 470];
 const GLOWS = ['volt', '#8a78ff', 'volt'] as const;
 
 /** A slam word: full opacity on its contact frame, scale 1.06 → 1 (SLAM), a 4-f white-hot → colour settle, then steps back. */
@@ -131,10 +144,13 @@ const S08RegrasMemoriaIa: React.FC = () => {
 	const {fps} = useVideoConfig();
 	const {frame: f} = useSceneFrame();
 
-	/* ---- window: back on the stage, right; hard re-frame on each hit (jump-cut down the list) ---- */
+	/* ---- window: back on the stage, right; hard re-frame on each hit (jump-cut down the list) ----
+	 * ANCHOR x 1860 / Z 0.86 (was 1790 / 0.9): the window's left border stays ≥ 50 px clear of the
+	 * "memória," comma (right edge ≈ 1024 on the f15 contact, 971 settled) on every frame f15–74,
+	 * while the badge column (focus x 1883) stays inside the frame. */
 	const ROW_Y = BADGES.map((b) => b.y + b.h / 2);
-	const ANCHOR = {x: 1790, y: 560};
-	const Z = 0.9;
+	const ANCHOR = {x: 1860, y: 560};
+	const Z = 0.86;
 	const at = (frame: number, row: number, zoom: number, duration: number): CameraKey => ({
 		at: frame,
 		zoom,
@@ -208,13 +224,14 @@ const S08RegrasMemoriaIa: React.FC = () => {
 			seed="s08"
 			look={{
 				level: 1.12 + 0.3 * flash,
-				keyPool: {x: 0.52, y: 0.48, w: 0.86, h: 0.98, opacity: 0.5},
+				keyPool: {x: 0.52, y: 0.48, w: 0.86, h: 0.98, opacity: 0.45},
 				keyLight: {x: 0.58, y: 0.5, w: 0.5, h: 0.62, opacity: 0.18},
 			}}
 		>
 			<AbsoluteFill style={{transform: shakeTransform(shake)}}>
 				<G3Screen {...shot} style={{zIndex: 'auto'}}>
 					<Patch {...LEGEND_PATCH} />
+					<Patch {...REVIEW_COUNT_PATCH} />
 					{PCT_PATCHES.map((p, i) => (
 						<Patch key={i} {...p} fill={PANEL} />
 					))}

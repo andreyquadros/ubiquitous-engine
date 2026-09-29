@@ -117,9 +117,9 @@ const S01HookTerca: React.FC = () => {
 	const v = planeSpeed(frame);
 	// light, 1–2 frames only: the slam reads as speed, the labels never smear into streaks
 	const blur = v > 40 ? Math.min(10, (v - 30) * 0.25) : 0;
-	const dim = ramp(frame, 30, 38, E.enter);
-	// TER lights up volt on beat 3, then breathes
-	const glow = ramp(frame, 30, 36, E.enter) * (frame > 36 ? 0.9 + 0.1 * Math.cos((frame - 36) / 7) : 1);
+	// v2 review fix: the light-up starts ON beat 3 (f30 already lit, in sync with the ui_pop_2 cue), then breathes
+	const dim = ramp(frame, 29, 37, E.enter);
+	const glow = ramp(frame, 29, 35, E.enter) * (frame > 35 ? 0.9 + 0.1 * Math.cos((frame - 35) / 7) : 1);
 	const sweep = frame >= 40 ? interpolate(frame, [40, 86], [0, 1], {...CLAMP, easing: E.glide}) : undefined;
 	const underline = ramp(frame, 2, 14, E.glide);
 

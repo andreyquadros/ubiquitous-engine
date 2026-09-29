@@ -7,10 +7,10 @@
  *      zoom 2.44 (row titles ≈ 35 px), rx 4° ry −6°, micro push ×1.02 over the hold.
  *      The window fades out at comp y ≈ 740–820 into the lit navy stage, where
  *      the headline sits on a footlight.
- *  f2–16  "Só pergunta o que não sabe." 116 px, word stagger (5 units, "o que"
- *      glued, 2 f); f18–28 a volt marker sweeps behind "não sabe.".
- *  f30 (abs 615) internal jump-cut closer on rows 1–4 (zoom 2.65: titles ≈ 38 px,
- *      pills ≈ 30 px); f44–60 the four "pendente" pills pulse an ember ring (2-f
+ *  f2–16  "Só pergunta o que não sabe." 124 px, word stagger (5 units, "o que"
+ *      glued, 2 f); f18–28 a volt underline swipes in under "não sabe." (v2 review fix: was a box).
+ *  f30 (abs 615) internal jump-cut: a new shot, zoom 3.2 on the right half of rows 1–4 (yaw flip,
+ *      pills ≈ 45 px); f44–60 the four "pendente" pills pulse an ember ring (2-f
  *      row stagger).
  *  f44–74 E.glide span to the picker (REVIEW_END); f56 the picker ("IFRO · 1" on
  *      top) LIFTS off the assign card as a floating card (it stays up through
@@ -28,7 +28,7 @@ import type {CameraKey, ScreenConfig} from '../components/screen-geometry';
 import type {Keyframe} from '../design/motion';
 import {E, useScene, useSceneFrame, type SfxCue} from '../shared';
 import {Backdrop, G4Plane, lerp, ramp} from './_parts/G4/common';
-import {CARD_BG, PICKER, PICKER_AT, pickerLift, planeRect, REVIEW_END, REVIEW_FILE, S09_SUBTITLE_PATCH, V2Headline, type V2Unit} from './_parts/G4/review';
+import {ASSIGN_SUBTITLE_PATCH, CARD_BG, PICKER, PICKER_AT, pickerLift, planeRect, REVIEW_END, REVIEW_FILE, S09_SUBTITLE_PATCH, V2Headline, type V2Unit} from './_parts/G4/review';
 
 /** None: music only (≥ 30 % of the features act stays SFX-free). */
 export const sfx: SfxCue[] = [];
@@ -88,7 +88,12 @@ const PendingPulse: React.FC<{f: number}> = ({f}) => (
 
 /* ---- camera: shot A (rows 1–4) → jump-cut shot B (closer) → E.glide span to the picker ---- */
 const A = {zoom: 2.44, focus: {x: 1280, y: 518}, anchor: {x: 960, y: 400}};
-const B = {zoom: 2.65, focus: {x: 1287, y: 530}, anchor: {x: 960, y: 398}};
+/**
+ * Critique fix: B is a clearly different shot (the old 2.49 → 2.65 step read as a stutter): +29 % closer on the RIGHT half of
+ * rows 1–4, so "Sem categoria · 0 % · pendente" fill the frame (≈ 45 px) and the half-cut C/F icon tiles leave it; a harder
+ * angle too (rx 4 → 7, ry −6 → +4, a yaw flip). The f44–74 glide to REVIEW_END becomes a pull-back-and-pan to the picker.
+ */
+const B = {zoom: 3.2, focus: {x: 1660, y: 500}, anchor: {x: 960, y: 392}};
 const JUMP = 30;
 const GLIDE = 44;
 const END = 74;
@@ -113,8 +118,8 @@ const SHOT: Omit<ScreenConfig, 'src'> = {
 	radius: 18,
 	glow: false,
 	camera,
-	rotateX: tilt(4, 4, REVIEW_END.tilt.rx),
-	rotateY: tilt(-6, -5, REVIEW_END.tilt.ry),
+	rotateX: tilt(4, 7, REVIEW_END.tilt.rx),
+	rotateY: tilt(-6, 4, REVIEW_END.tilt.ry),
 };
 
 const S09SoPergunta: React.FC = () => {
@@ -128,13 +133,16 @@ const S09SoPergunta: React.FC = () => {
 	/* ---- headline ---- */
 	const line = scene.copy[0];
 	const glued = line.text.split(' '); // "o que" is one unit: the storyboard glues it with a NBSP
-	const units: V2Unit[] = glued.map((t, i) => ({text: t, at: line.inFrame + 2 * i}));
 	const emph = line.emphasis.join(' ').split(' ');
+	// v2-look §3: the emphasised words take the volt-gradient ink (+ soft glow) over a lighter marker
+	const units: V2Unit[] = glued.map((t, i) => ({text: t, at: line.inFrame + 2 * i, volt: emph.includes(t)}));
 	const m0 = glued.findIndex((t) => t === emph[0]);
 	const marker = m0 >= 0 ? {line: 0, units: [m0, m0 + emph.length - 1] as [number, number], from: 18, to: 28, easing: E.glide} : undefined;
 
 	// the window fades into the stage above the headline band (comp y 730 → 820)
-	const mask = 'linear-gradient(180deg, #000 0px, #000 730px, rgba(0,0,0,0.35) 790px, rgba(0,0,0,0) 830px)';
+	// (critique fix: 30 px higher, so the half-visible WhatsApp row's chips stay pure texture; a soft 22-px top fade keeps the
+	// volt "Classificar agora" button's glow off the frame edge)
+	const mask = 'linear-gradient(180deg, rgba(0,0,0,0.25) 0px, #000 22px, #000 700px, rgba(0,0,0,0.35) 760px, rgba(0,0,0,0) 800px)';
 
 	return (
 		<Backdrop
@@ -157,6 +165,8 @@ const S09SoPergunta: React.FC = () => {
 										<div key={i} style={{position: 'absolute', left: p.x, top: p.y, width: p.w, height: p.h, background: p.fill}} />
 									))}
 									<PendingPulse f={f} />
+									{/* v2 review fix: the assign subtitle would be sliced by the lifting card's left edge */}
+									<div style={{position: 'absolute', left: ASSIGN_SUBTITLE_PATCH.x, top: ASSIGN_SUBTITLE_PATCH.y, width: ASSIGN_SUBTITLE_PATCH.w, height: ASSIGN_SUBTITLE_PATCH.h, background: ASSIGN_SUBTITLE_PATCH.fill, opacity: ramp(f, PICKER_AT - 2, PICKER_AT + 4, E.enter)}} />
 									<LiftHole rect={PICKER} at={PICKER_AT} enter="lift" color={CARD_BG} pad={4} feather={10} radius={14} />
 								</>
 							),
