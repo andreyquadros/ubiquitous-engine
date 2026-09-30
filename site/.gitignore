@@ -1,0 +1,7 @@
+node_modules
+dist
+*.local
+# copied from ../apps/desktop/public by scripts/sync-assets.mjs (predev / prebuild)
+public/ubi/*.glb
+# QA captures from `pnpm captures`
+captures

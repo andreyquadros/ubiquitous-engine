@@ -1,5 +1,6 @@
 [package]
 name = "ubiqx-storage"
+description = "ubiqX persistence adapter: SQLite repositories and migrations implementing the ubiqx-core ports"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,3 +10,15 @@ authors.workspace = true
 
 [dependencies]
 ubiqx-core.workspace = true
+chrono.workspace = true
+parking_lot.workspace = true
+rusqlite.workspace = true
+rusqlite_migration.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

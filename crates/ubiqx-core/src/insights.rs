@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Duration, Utc};
 
+use crate::lang::UiLanguage;
 use crate::model::*;
 
 /// Classifies categories into productive / distraction / neutral for scoring.
@@ -90,7 +91,11 @@ pub fn compute_stats(
     let active = productive + distraction + uncategorized;
     let total = active + idle_secs;
     let hours = active as f32 / 3600.0;
-    let switches_per_hour = if hours > 0.05 { switches as f32 / hours } else { 0.0 };
+    let switches_per_hour = if hours > 0.05 {
+        switches as f32 / hours
+    } else {
+        0.0
+    };
     let focus_score = focus_score(productive, distraction, uncategorized, switches_per_hour);
 
     FocusStats {
@@ -108,7 +113,12 @@ pub fn compute_stats(
 
 /// 0–100. Share of productive time, penalised by heavy context switching. Uncategorised time
 /// counts half (we do not know yet), so a freshly installed app is not punished.
-pub fn focus_score(productive: i64, distraction: i64, uncategorized: i64, switches_per_hour: f32) -> u8 {
+pub fn focus_score(
+    productive: i64,
+    distraction: i64,
+    uncategorized: i64,
+    switches_per_hour: f32,
+) -> u8 {
     let active = (productive + distraction + uncategorized) as f32;
     if active < 60.0 {
         return 0;
@@ -165,6 +175,57 @@ pub struct NudgeInput<'a> {
     /// Last time each nudge kind was emitted.
     pub last_emitted: &'a HashMap<NudgeKind, DateTime<Utc>>,
     pub quiet: bool,
+    /// Language of the nudge texts (`Settings::ui_language`).
+    pub language: UiLanguage,
+}
+
+/// Title and message of a policy nudge, in the UI language.
+pub fn nudge_text(
+    kind: NudgeKind,
+    minutes: i64,
+    switches: u32,
+    lang: UiLanguage,
+) -> (String, String) {
+    match (kind, lang) {
+        (NudgeKind::Unproductive, UiLanguage::PtBr) => (
+            "Hora de voltar ao foco?".into(),
+            format!(
+                "Já são {minutes} min em atividades que você marcou como distração. Que tal retomar uma tarefa importante?"
+            ),
+        ),
+        (NudgeKind::Unproductive, UiLanguage::En) => (
+            "Time to refocus?".into(),
+            format!(
+                "That's {minutes} min on things you marked as distractions. How about getting back to something that matters?"
+            ),
+        ),
+        (NudgeKind::BreakSuggested, UiLanguage::PtBr) => (
+            "Ótimo ritmo! Que tal uma pausa?".into(),
+            format!(
+                "Você está focado há {minutes} min seguidos. Uma pausa de 5 min ajuda a manter a energia."
+            ),
+        ),
+        (NudgeKind::BreakSuggested, UiLanguage::En) => (
+            "Great pace. Time for a break?".into(),
+            format!(
+                "You've been focused for {minutes} min straight. A 5 min break helps keep the energy up."
+            ),
+        ),
+        (NudgeKind::Distracted, UiLanguage::PtBr) => (
+            "Muitas trocas de contexto".into(),
+            format!(
+                "Foram {switches} trocas de janela nos últimos 30 min. Tente fechar o que não é urgente e ficar em uma tarefa por vez."
+            ),
+        ),
+        (NudgeKind::Distracted, UiLanguage::En) => (
+            "Lots of context switching".into(),
+            format!(
+                "{switches} window switches in the last 30 min. Try closing what isn't urgent and staying on one task at a time."
+            ),
+        ),
+        // Kinds the policy never emits: an empty text is never shown.
+        _ => (String::new(), String::new()),
+    }
 }
 
 impl NudgePolicy {
@@ -172,8 +233,11 @@ impl NudgePolicy {
         if input.quiet {
             return vec![];
         }
-        let cats: HashMap<&str, &Category> =
-            input.categories.iter().map(|c| (c.id.as_str(), c)).collect();
+        let cats: HashMap<&str, &Category> = input
+            .categories
+            .iter()
+            .map(|c| (c.id.as_str(), c))
+            .collect();
         let mut out = Vec::new();
 
         // Walk backwards from now: continuous run of the same kind.
@@ -206,15 +270,14 @@ impl NudgePolicy {
             && run_secs >= self.unproductive_after_mins * 60
             && cooled(NudgeKind::Unproductive)
         {
+            let (title, message) =
+                nudge_text(NudgeKind::Unproductive, run_secs / 60, 0, input.language);
             out.push(Nudge {
                 id: new_id(),
                 at: input.now,
                 kind: NudgeKind::Unproductive,
-                title: "Hora de voltar ao foco?".into(),
-                message: format!(
-                    "Já são {} min em atividades que você marcou como distração. Que tal retomar uma tarefa importante?",
-                    run_secs / 60
-                ),
+                title,
+                message,
                 seen: false,
             });
         }
@@ -223,15 +286,14 @@ impl NudgePolicy {
             && run_secs >= self.break_after_mins * 60
             && cooled(NudgeKind::BreakSuggested)
         {
+            let (title, message) =
+                nudge_text(NudgeKind::BreakSuggested, run_secs / 60, 0, input.language);
             out.push(Nudge {
                 id: new_id(),
                 at: input.now,
                 kind: NudgeKind::BreakSuggested,
-                title: "Ótimo ritmo! Que tal uma pausa?".into(),
-                message: format!(
-                    "Você está focado há {} min seguidos. Uma pausa de 5 min ajuda a manter a energia.",
-                    run_secs / 60
-                ),
+                title,
+                message,
                 seen: false,
             });
         }
@@ -256,14 +318,14 @@ impl NudgePolicy {
         if active_secs >= 15 * 60 {
             let per_hour = switches as f32 / (active_secs as f32 / 3600.0);
             if per_hour >= self.distracted_switches_per_hour && cooled(NudgeKind::Distracted) {
+                let (title, message) =
+                    nudge_text(NudgeKind::Distracted, 0, switches, input.language);
                 out.push(Nudge {
                     id: new_id(),
                     at: input.now,
                     kind: NudgeKind::Distracted,
-                    title: "Muitas trocas de contexto".into(),
-                    message: format!(
-                        "Foram {switches} trocas de janela nos últimos 30 min. Tente fechar o que não é urgente e ficar em uma tarefa por vez."
-                    ),
+                    title,
+                    message,
                     seen: false,
                 });
             }
@@ -291,6 +353,7 @@ mod tests {
             description: String::new(),
             keywords: vec![],
             report_time: None,
+            report_template: None,
             is_productive: productive,
             is_system: false,
             archived: false,
@@ -317,6 +380,13 @@ mod tests {
             screenshot_id: None,
             sample_count: 1,
             is_open: false,
+            classify_attempts: 0,
+            next_attempt_at: None,
+            needs_review: false,
+            ai_payload: None,
+            ai_sent_at: None,
+            is_manual: false,
+            note: None,
         }
     }
 
@@ -356,22 +426,92 @@ mod tests {
         let recent = vec![block(0, 30, "yt", Some("fun"))];
         let mut last = HashMap::new();
         let policy = NudgePolicy::default();
-        let n = policy.evaluate(&NudgeInput { now: t(30), recent: &recent, categories: &cats, last_emitted: &last, quiet: false });
+        let n = policy.evaluate(&NudgeInput {
+            now: t(30),
+            recent: &recent,
+            categories: &cats,
+            last_emitted: &last,
+            quiet: false,
+            language: UiLanguage::PtBr,
+        });
         assert_eq!(n.len(), 1);
         assert_eq!(n[0].kind, NudgeKind::Unproductive);
+        assert_eq!(n[0].title, "Hora de voltar ao foco?");
+        assert!(
+            n[0].message.starts_with("Já são 30 min"),
+            "{}",
+            n[0].message
+        );
+        let en = policy.evaluate(&NudgeInput {
+            now: t(30),
+            recent: &recent,
+            categories: &cats,
+            last_emitted: &last,
+            quiet: false,
+            language: UiLanguage::En,
+        });
+        assert_eq!(en[0].title, "Time to refocus?");
+        assert!(
+            en[0].message.starts_with("That's 30 min"),
+            "{}",
+            en[0].message
+        );
         last.insert(NudgeKind::Unproductive, t(30));
-        let n = policy.evaluate(&NudgeInput { now: t(40), recent: &recent, categories: &cats, last_emitted: &last, quiet: false });
+        let n = policy.evaluate(&NudgeInput {
+            now: t(40),
+            recent: &recent,
+            categories: &cats,
+            last_emitted: &last,
+            quiet: false,
+            language: UiLanguage::PtBr,
+        });
         assert!(n.is_empty(), "cooldown should suppress");
-        let n = policy.evaluate(&NudgeInput { now: t(30), recent: &recent, categories: &cats, last_emitted: &HashMap::new(), quiet: true });
+        let n = policy.evaluate(&NudgeInput {
+            now: t(30),
+            recent: &recent,
+            categories: &cats,
+            last_emitted: &HashMap::new(),
+            quiet: true,
+            language: UiLanguage::PtBr,
+        });
         assert!(n.is_empty(), "quiet hours suppress");
     }
 
     #[test]
     fn break_nudge_after_long_focus() {
         let cats = vec![cat("work", true)];
-        let recent = vec![block(0, 50, "a", Some("work")), block(50, 95, "a", Some("work"))];
-        let n = NudgePolicy::default().evaluate(&NudgeInput { now: t(95), recent: &recent, categories: &cats, last_emitted: &HashMap::new(), quiet: false });
-        assert!(n.iter().any(|n| n.kind == NudgeKind::BreakSuggested));
+        let recent = vec![
+            block(0, 50, "a", Some("work")),
+            block(50, 95, "a", Some("work")),
+        ];
+        let n = NudgePolicy::default().evaluate(&NudgeInput {
+            now: t(95),
+            recent: &recent,
+            categories: &cats,
+            last_emitted: &HashMap::new(),
+            quiet: false,
+            language: UiLanguage::PtBr,
+        });
+        let brk = n
+            .iter()
+            .find(|n| n.kind == NudgeKind::BreakSuggested)
+            .expect("break nudge");
+        assert_eq!(brk.title, "Ótimo ritmo! Que tal uma pausa?");
+        assert!(brk.message.contains("há 95 min"), "{}", brk.message);
+        let en = NudgePolicy::default().evaluate(&NudgeInput {
+            now: t(95),
+            recent: &recent,
+            categories: &cats,
+            last_emitted: &HashMap::new(),
+            quiet: false,
+            language: UiLanguage::En,
+        });
+        let brk = en
+            .iter()
+            .find(|n| n.kind == NudgeKind::BreakSuggested)
+            .expect("break nudge");
+        assert_eq!(brk.title, "Great pace. Time for a break?");
+        assert!(brk.message.contains("for 95 min"), "{}", brk.message);
     }
 
     #[test]
@@ -379,9 +519,40 @@ mod tests {
         let cats = vec![cat("work", true)];
         let mut recent = Vec::new();
         for i in 0..30 {
-            recent.push(block(i, i + 1, if i % 2 == 0 { "a" } else { "b" }, Some("work")));
+            recent.push(block(
+                i,
+                i + 1,
+                if i % 2 == 0 { "a" } else { "b" },
+                Some("work"),
+            ));
         }
-        let n = NudgePolicy::default().evaluate(&NudgeInput { now: t(30), recent: &recent, categories: &cats, last_emitted: &HashMap::new(), quiet: false });
-        assert!(n.iter().any(|n| n.kind == NudgeKind::Distracted));
+        let n = NudgePolicy::default().evaluate(&NudgeInput {
+            now: t(30),
+            recent: &recent,
+            categories: &cats,
+            last_emitted: &HashMap::new(),
+            quiet: false,
+            language: UiLanguage::PtBr,
+        });
+        let d = n
+            .iter()
+            .find(|n| n.kind == NudgeKind::Distracted)
+            .expect("distracted nudge");
+        assert_eq!(d.title, "Muitas trocas de contexto");
+        assert!(d.message.starts_with("Foram 29 trocas"), "{}", d.message);
+        let en = NudgePolicy::default().evaluate(&NudgeInput {
+            now: t(30),
+            recent: &recent,
+            categories: &cats,
+            last_emitted: &HashMap::new(),
+            quiet: false,
+            language: UiLanguage::En,
+        });
+        let d = en
+            .iter()
+            .find(|n| n.kind == NudgeKind::Distracted)
+            .expect("distracted nudge");
+        assert_eq!(d.title, "Lots of context switching");
+        assert!(d.message.starts_with("29 window switches"), "{}", d.message);
     }
 }

@@ -1,11 +1,8 @@
 //! Deterministic rule matching — the first, free link of the classifier chain.
 
-use async_trait::async_trait;
-
-use crate::error::CoreResult;
 use crate::model::*;
 use crate::normalize::domain_matches;
-use crate::ports::{Classification, ClassificationContext, Classifier};
+use crate::ports::{Classification, ClassificationContext, LocalClassifier};
 
 /// Evaluates one rule against a block.
 pub fn rule_matches(rule: &Rule, block: &ActivityBlock) -> bool {
@@ -67,35 +64,63 @@ fn specificity(m: RuleMatcher) -> u8 {
 }
 
 /// Classifier backed by the user's rules. Never guesses: a block without a matching rule is
-/// returned as unknown.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct RuleClassifier;
+/// returned as unknown. `origin` restricts which rules are considered so the chain can run
+/// user rules before memory and learned rules after it.
+#[derive(Debug, Clone, Copy)]
+pub struct RuleClassifier {
+    pub origin: Option<RuleOrigin>,
+}
 
-#[async_trait]
-impl Classifier for RuleClassifier {
-    fn name(&self) -> &'static str {
-        "rules"
+impl RuleClassifier {
+    pub fn all() -> Self {
+        Self { origin: None }
     }
 
-    async fn classify(
+    pub fn user_only() -> Self {
+        Self {
+            origin: Some(RuleOrigin::User),
+        }
+    }
+
+    pub fn learned_only() -> Self {
+        Self {
+            origin: Some(RuleOrigin::Learned),
+        }
+    }
+}
+
+impl LocalClassifier for RuleClassifier {
+    fn name(&self) -> &'static str {
+        match self.origin {
+            Some(RuleOrigin::User) => "rules:user",
+            Some(RuleOrigin::Learned) => "rules:learned",
+            None => "rules",
+        }
+    }
+
+    fn classify(
         &self,
-        blocks: &[ActivityBlock],
+        block: &ActivityBlock,
         ctx: &ClassificationContext,
-    ) -> CoreResult<Vec<Classification>> {
-        Ok(blocks
-            .iter()
-            .map(|b| match best_rule(&ctx.rules, b) {
-                Some(rule) => Classification {
-                    block_id: b.id.clone(),
-                    category_id: Some(rule.category_id.clone()),
-                    confidence: 1.0,
-                    source: ClassificationSource::Rule,
-                    description: None,
-                    needs_vision: false,
-                },
-                None => Classification::unknown(&b.id, ClassificationSource::Rule),
-            })
-            .collect())
+    ) -> Option<Classification> {
+        let rules: Vec<Rule> = match self.origin {
+            Some(o) => ctx
+                .rules
+                .iter()
+                .filter(|r| r.origin == o)
+                .cloned()
+                .collect(),
+            None => ctx.rules.clone(),
+        };
+        best_rule(&rules, block).map(|rule| Classification {
+            block_id: block.id.clone(),
+            category_id: Some(rule.category_id.clone()),
+            confidence: 1.0,
+            source: ClassificationSource::Rule,
+            description: None,
+            needs_vision: false,
+            rule_id: Some(rule.id.clone()),
+        })
     }
 }
 
@@ -137,6 +162,13 @@ mod tests {
             screenshot_id: None,
             sample_count: 1,
             is_open: false,
+            classify_attempts: 0,
+            next_attempt_at: None,
+            needs_review: false,
+            ai_payload: None,
+            ai_sent_at: None,
+            is_manual: false,
+            note: None,
         }
     }
 
@@ -151,18 +183,39 @@ mod tests {
             enabled: true,
             created_at: Utc::now(),
             hit_count: 0,
+            miss_count: 0,
+            last_contradicted_at: None,
         }
     }
 
     #[test]
     fn matchers() {
-        let b = block("Google Chrome", "SEI · Processo", Some("https://sei.ifro.edu.br/x"));
-        assert!(rule_matches(&rule(RuleMatcher::App, "google chrome", 0), &b));
-        assert!(rule_matches(&rule(RuleMatcher::App, "com.x.google chrome", 0), &b));
-        assert!(rule_matches(&rule(RuleMatcher::Domain, "ifro.edu.br", 0), &b));
-        assert!(rule_matches(&rule(RuleMatcher::TitleContains, "processo", 0), &b));
+        let b = block(
+            "Google Chrome",
+            "SEI · Processo",
+            Some("https://sei.ifro.edu.br/x"),
+        );
+        assert!(rule_matches(
+            &rule(RuleMatcher::App, "google chrome", 0),
+            &b
+        ));
+        assert!(rule_matches(
+            &rule(RuleMatcher::App, "com.x.google chrome", 0),
+            &b
+        ));
+        assert!(rule_matches(
+            &rule(RuleMatcher::Domain, "ifro.edu.br", 0),
+            &b
+        ));
+        assert!(rule_matches(
+            &rule(RuleMatcher::TitleContains, "processo", 0),
+            &b
+        ));
         assert!(rule_matches(&rule(RuleMatcher::Regex, r"sei\.ifro", 0), &b));
-        assert!(!rule_matches(&rule(RuleMatcher::Regex, r"(unclosed", 0), &b));
+        assert!(!rule_matches(
+            &rule(RuleMatcher::Regex, r"(unclosed", 0),
+            &b
+        ));
         let mut disabled = rule(RuleMatcher::App, "google chrome", 0);
         disabled.enabled = false;
         assert!(!rule_matches(&disabled, &b));
@@ -183,22 +236,37 @@ mod tests {
         assert_eq!(best_rule(&rules, &b).unwrap().pattern, "google chrome");
     }
 
-    #[tokio::test]
-    async fn classifier_returns_unknown_without_match() {
+    #[test]
+    fn classifier_returns_unknown_without_match_and_respects_origin() {
+        let mut learned = rule(RuleMatcher::App, "Slack", 0);
+        learned.origin = RuleOrigin::Learned;
         let ctx = ClassificationContext {
             categories: vec![],
-            rules: vec![rule(RuleMatcher::App, "Xcode", 0)],
+            rules: vec![rule(RuleMatcher::App, "Xcode", 0), learned],
             examples: vec![],
             user_classified: vec![],
             language: "pt-BR".into(),
             min_confidence: 0.6,
+            models: AiModels::default(),
+            user_profile: None,
         };
-        let out = RuleClassifier
-            .classify(&[block("Xcode", "a", None), block("Slack", "b", None)], &ctx)
-            .await
-            .unwrap();
-        assert_eq!(out[0].category_id.as_deref(), Some("cat-Xcode"));
-        assert!(out[1].category_id.is_none());
+        let xcode = block("Xcode", "a", None);
+        let slack = block("Slack", "b", None);
+        let all = RuleClassifier::all();
+        assert_eq!(
+            all.classify(&xcode, &ctx).unwrap().category_id.as_deref(),
+            Some("cat-Xcode")
+        );
+        assert!(all.classify(&block("Figma", "c", None), &ctx).is_none());
+        assert!(RuleClassifier::user_only().classify(&slack, &ctx).is_none());
+        assert_eq!(
+            RuleClassifier::learned_only()
+                .classify(&slack, &ctx)
+                .unwrap()
+                .category_id
+                .as_deref(),
+            Some("cat-Slack")
+        );
     }
 
     #[test]

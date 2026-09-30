@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Menubar app: no Dock icon, no app switcher entry. -->
+  <key>LSUIElement</key>
+  <true/>
+  <!-- Never let App Nap throttle the tracker while the dashboard is hidden. -->
+  <key>NSAppSleepDisabled</key>
+  <true/>
+  <!-- Required for the Automation (Apple Events) prompt that reads the browser's active tab URL. -->
+  <key>NSAppleEventsUsageDescription</key>
+  <string>O ubiqX pergunta ao seu navegador qual site está aberto para classificar sua atividade. Nenhum conteúdo de página é lido.</string>
+  <key>NSSystemAdministrationUsageDescription</key>
+  <string>O ubiqX precisa de Gravação de Tela para ler os títulos das janelas e capturar prints da janela ativa.</string>
+</dict>
+</plist>
