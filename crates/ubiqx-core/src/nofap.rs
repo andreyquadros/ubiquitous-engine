@@ -2178,10 +2178,23 @@ mod tests {
     fn the_default_observation_is_the_cheapest_one() {
         // A caller that forgets to choose must not start PowerShell or send a lookup.
         assert_eq!(ObserveOpts::default(), ObserveOpts::QUICK);
-        let quick = ObserveOpts::QUICK;
-        assert!(!quick.full && !quick.canary && !quick.probe);
-        let full = ObserveOpts::FULL;
-        assert!(full.full && !full.canary && !full.probe);
+        assert_eq!(
+            ObserveOpts::QUICK,
+            ObserveOpts {
+                full: false,
+                canary: false,
+                probe: false
+            }
+        );
+        // The full read differs in the depth of the DNS read only: it sends no lookup.
+        assert_eq!(
+            ObserveOpts {
+                full: false,
+                ..ObserveOpts::FULL
+            },
+            ObserveOpts::QUICK
+        );
+        assert_ne!(ObserveOpts::FULL, ObserveOpts::QUICK);
     }
 
     #[test]
