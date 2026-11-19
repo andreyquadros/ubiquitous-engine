@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { nofapIpc } from './ipc';
 import { __nofapMock } from './mock';
 import { calls, READS, renderPage, resetNofap } from './testing';
 
@@ -162,14 +163,71 @@ describe('the consent wizard', () => {
     expect(screen.getByTestId('nofap-apply')).toHaveTextContent('Aplicar');
   });
 
-  it('offers the autostart switch of the host, on or off as the host says, and never forces it', async () => {
+  it('shows the autostart switch on by default and tells the host only with the last button', async () => {
+    const onChange = vi.fn();
+    // The host has it off; the wizard still proposes it on, in plain sight.
+    renderPage({ autostart: { value: false, onChange } });
+    await goTo(2);
+    expect(screen.getByRole('switch', { name: 'Abrir junto com o computador' })).toHaveAttribute('aria-checked', 'true');
+    for (let s = 2; s < 5; s++) {
+      if (s === 3) for (const box of within(screen.getByTestId('wizard-step-3')).getAllByRole('checkbox')) fireEvent.click(box);
+      next();
+    }
+    expect(await screen.findByTestId('wizard-step-5')).toHaveTextContent('O app abre junto com o computador.');
+    // Nothing is applied before the last button: not in the module, and not in the host either.
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('wizard-enable'));
+    await screen.findByTestId('nofap-status');
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it('never forces autostart: switched off in the wizard, the host is told so, or told nothing when it already agrees', async () => {
     const onChange = vi.fn();
     renderPage({ autostart: { value: true, onChange } });
     await goTo(2);
-    const toggle = screen.getByRole('switch', { name: 'Abrir junto com o computador' });
-    expect(toggle).toHaveAttribute('aria-checked', 'true');
-    fireEvent.click(toggle);
-    expect(onChange).toHaveBeenCalledWith(false);
+    fireEvent.click(screen.getByRole('switch', { name: 'Abrir junto com o computador' }));
+    expect(onChange).not.toHaveBeenCalled();
+    for (let s = 2; s < 5; s++) {
+      if (s === 3) for (const box of within(screen.getByTestId('wizard-step-3')).getAllByRole('checkbox')) fireEvent.click(box);
+      next();
+    }
+    expect(await screen.findByTestId('wizard-step-5')).toHaveTextContent('O app não abre junto com o computador.');
+    fireEvent.click(screen.getByTestId('wizard-enable'));
+    await screen.findByTestId('nofap-status');
+    expect(onChange.mock.calls).toEqual([[false]]);
+  });
+
+  it('leaves the host alone when the switch was not touched and the host already has it on', async () => {
+    const onChange = vi.fn();
+    renderPage({ autostart: { value: true, onChange } });
+    await goTo(5);
+    fireEvent.click(screen.getByTestId('wizard-enable'));
+    await screen.findByTestId('nofap-status');
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('does not touch the host setting when switching on failed', async () => {
+    const onChange = vi.fn();
+    renderPage({ autostart: { value: false, onChange } });
+    await goTo(5);
+    const refused = vi.spyOn(nofapIpc, 'enable').mockRejectedValue(new Error('invalid: refused for the test'));
+    try {
+      fireEvent.click(screen.getByTestId('wizard-enable'));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Não consegui ligar. invalid: refused for the test');
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      refused.mockRestore();
+    }
+  });
+
+  it('offers a person to talk to one step from the wizard', async () => {
+    renderPage();
+    await screen.findByTestId('wizard-step-1');
+    fireEvent.click(screen.getByTestId('nofap-talk'));
+    expect(await screen.findByTestId('crisis-card')).toHaveTextContent('ligue 188. É o CVV: grátis, 24 horas.');
+    // Asking for help switches nothing on.
+    expect(calls().filter((c) => !READS.includes(c.cmd))).toEqual([]);
   });
 
   it('summarises what is stored, how to turn it off and how to remove it without the app', async () => {
@@ -178,7 +236,7 @@ describe('the consent wizard', () => {
     const step = screen.getByTestId('wizard-step-5');
     expect(step).toHaveTextContent('Camadas: Bloqueio no app, Lista do sistema, DNS filtrado, Regras dos navegadores, Verificação por IA.');
     expect(step).toHaveTextContent('Tempo de espera: 10 minutos.');
-    expect(step).toHaveTextContent('Nenhum site visitado, nenhuma imagem.');
+    expect(step).toHaveTextContent('De um site aprendido pela verificação por IA fica só um código, sem o nome. Nenhum histórico de sites visitados, nenhuma imagem.');
     expect(step).toHaveTextContent('Cancelar o pedido é sempre na hora.');
     expect(step).toHaveTextContent('ubiqx-shield BEGIN e END');
     expect(step).toHaveTextContent('Quem tem acesso à sua conta neste computador pode ver que o NoFap está instalado');

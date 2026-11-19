@@ -17,6 +17,9 @@ interface Props {
   onElapsed: () => void;
 }
 
+/** How often the page asks again about a request whose clock ran out before the engine called it ready. */
+export const RECHECK_MS = 30_000;
+
 /** Seconds left of `pending`, counted down locally from the value the engine sent. */
 function useRemaining(pending: PendingView, onElapsed: () => void): number {
   const [left, setLeft] = useState(pending.remaining_secs);
@@ -24,7 +27,13 @@ function useRemaining(pending: PendingView, onElapsed: () => void): number {
   elapsed.current = onElapsed;
   useEffect(() => {
     setLeft(pending.remaining_secs);
-    if (pending.ready || pending.remaining_secs <= 0) return;
+    if (pending.ready) return;
+    // The clock ran out but the engine has not called the request ready yet (the wait only counts while the app
+    // runs): ask again now and then, in case its event was missed.
+    if (pending.remaining_secs <= 0) {
+      const poll = setInterval(() => elapsed.current(), RECHECK_MS);
+      return () => clearInterval(poll);
+    }
     const startedAt = Date.now();
     const timer = setInterval(() => {
       const v = Math.max(0, pending.remaining_secs - Math.round((Date.now() - startedAt) / 1000));
@@ -55,7 +64,7 @@ function PendingRow({ pending, view, sites, onCancel, onConfirm, onElapsed }: Om
         )}
       </div>
       <p className="text-[13px] leading-5 text-ink-2">
-        {pending.ready ? t(isDisable ? 'nofap.pending.ready' : 'nofap.pending.ready_generic') : t('nofap.pending.wait', { delay: fmtDelay(left, t) })}
+        {pending.ready ? t(isDisable ? 'nofap.pending.ready' : 'nofap.pending.ready_generic') : left > 0 ? t('nofap.pending.wait', { delay: fmtDelay(left, t) }) : t('nofap.pending.almost')}
         {pending.ready && pending.expires_at ? ` ${t('nofap.pending.expires', { when: new Date(pending.expires_at).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) })}` : ''}
       </p>
       <div className="flex flex-wrap items-center gap-2">

@@ -1,4 +1,4 @@
-import { Wind } from 'lucide-react';
+import { LifeBuoy, Wind } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -11,7 +11,7 @@ import { ipcErrorMessage } from '../lib/ipc';
 import { useToast } from '../lib/toast';
 import { IssueList, type IssueAction } from './components/IssueList';
 import { LapseFlow } from './components/LapseFlow';
-import { PanicSheet } from './components/PanicSheet';
+import { CrisisCard, PanicSheet } from './components/PanicSheet';
 import { PendingBanner } from './components/PendingBanner';
 import { SiteLists } from './components/SiteLists';
 import { SurfTimer } from './components/SurfTimer';
@@ -32,7 +32,7 @@ const TABS: NofapTab[] = ['protection', 'support', 'lists', 'help'];
 const isTab = (v: string | null): v is NofapTab => !!v && (TABS as string[]).includes(v);
 
 /** The dialogs of the page. The three `info:*` ones only explain an exit that lives outside the module. */
-export type NofapDialog = 'panic' | 'surf' | 'lapse' | 'apply' | 'remove' | 'restore_network' | 'erase' | 'reset' | 'off' | 'consent' | 'info:remove' | 'info:quit' | 'info:ai';
+export type NofapDialog = 'panic' | 'talk' | 'surf' | 'lapse' | 'apply' | 'remove' | 'restore_network' | 'erase' | 'reset' | 'off' | 'consent' | 'info:remove' | 'info:quit' | 'info:ai';
 
 const OVERALL_COLOR: Record<Overall, string> = { off: 'var(--ink-4)', protected: 'var(--signal)', reduced: 'var(--amber)', pending_off: 'var(--violet)', secondary: 'var(--volt)' };
 
@@ -46,6 +46,8 @@ function StatusCard({ view, onIssue, onOpen }: { view: NofapView; onIssue: (acti
   const status = view.status;
   const on = layersOn(status).map((layer) => t(`nofap.layer.${layer}`));
   const tiers = [status.hosts, status.resolver, status.policies];
+  // While the other app holds the protection, the sentence under the heading already says so.
+  const issues = status.overall === 'secondary' ? status.issues.filter((issue) => issue !== 'other_product_primary') : status.issues;
   const sentence =
     status.overall === 'secondary'
       ? t('nofap.secondary.note')
@@ -77,9 +79,9 @@ function StatusCard({ view, onIssue, onOpen }: { view: NofapView; onIssue: (acti
           </Button>
         </div>
       )}
-      {status.issues.length > 0 && (
+      {issues.length > 0 && (
         <div className="mt-4">
-          <IssueList issues={status.issues} onAction={onIssue} />
+          <IssueList issues={issues} onAction={onIssue} />
         </div>
       )}
     </Card>
@@ -124,6 +126,7 @@ export function NofapPage({ host }: { host?: NofapHost }) {
   const error = useNofapStore((s) => s.error);
   const sites = useNofapStore((s) => s.sites);
   const support = useNofapStore((s) => s.support);
+  const supportFailed = useNofapStore((s) => s.supportFailed);
   const load = useNofapStore((s) => s.load);
   const loadSites = useNofapStore((s) => s.loadSites);
   const loadSupport = useNofapStore((s) => s.loadSupport);
@@ -169,10 +172,9 @@ export function NofapPage({ host }: { host?: NofapHost }) {
     async (change: NofapChange) => {
       try {
         const outcome = await request(change);
-        if ('pending' in outcome) {
-          const delay = useNofapStore.getState().view?.config.delay_secs ?? 0;
-          toast.info(t('nofap.pending.title'), t('nofap.pending.wait', { delay: fmtDelay(delay, t) }));
-        }
+        // A request that is ready at once (no waiting time) has nothing to wait for: the banner asks for the
+        // confirmation, and "Desligar" confirms it right away.
+        if ('pending' in outcome && !outcome.pending.ready) toast.info(t('nofap.pending.title'), t('nofap.pending.wait', { delay: fmtDelay(outcome.pending.remaining_secs, t) }));
         if (change.kind === 'set_values' || change.kind === 'set_plans') await loadSupport();
         return outcome;
       } catch (e) {
@@ -280,6 +282,14 @@ export function NofapPage({ host }: { host?: NofapHost }) {
 
   const name = view.display_name;
   const status = view.status;
+  // Until the support request has been answered there is no list, and no reason yet to say that none came.
+  const resources = support ? support.resources : supportFailed ? [] : null;
+  /** A person to talk to, one step from every state of the page: the wizard, the switched-off page, every tab. */
+  const talkButton = (
+    <Button variant="ghost" icon={<LifeBuoy className="size-4" strokeWidth={1.75} aria-hidden />} onClick={() => open('talk')} data-testid="nofap-talk">
+      {t('nofap.btn.talk')}
+    </Button>
+  );
   const cancelButton = (
     <Button variant="ghost" onClick={closeDialog} disabled={busy}>
       {t('nofap.btn.cancel')}
@@ -290,7 +300,10 @@ export function NofapPage({ host }: { host?: NofapHost }) {
   const dialogs = (
     <>
       <Dialog open={dialog === 'panic'} onClose={closeDialog} title={t('nofap.btn.panic')} width="sm">
-        {dialog === 'panic' && <PanicSheet values={view.config.values} plans={view.config.plans} resources={support?.resources ?? []} record={record} onClose={closeDialog} />}
+        {dialog === 'panic' && <PanicSheet values={view.config.values} plans={view.config.plans} resources={resources} record={record} onClose={closeDialog} />}
+      </Dialog>
+      <Dialog open={dialog === 'talk'} onClose={closeDialog} title={t('nofap.btn.talk')} width="sm">
+        {dialog === 'talk' && <CrisisCard resources={resources} />}
       </Dialog>
       <Dialog open={dialog === 'surf'} onClose={closeDialog} title={t('nofap.surf.title')} width="sm">
         {dialog === 'surf' && <SurfTimer record={record} onDone={closeDialog} />}
@@ -368,11 +381,12 @@ export function NofapPage({ host }: { host?: NofapHost }) {
         width="sm"
         footer={
           <>
+            {/* First in the document, so the dialog puts the keyboard on it; shown last, where a primary button goes. */}
+            <Button variant="primary" className="order-last" onClick={closeDialog} data-testid="nofap-off-keep">
+              {t('nofap.btn.keep_protection')}
+            </Button>
             <Button variant="ghost" onClick={() => void requestOff()} data-testid="nofap-off-request">
               {t(view.config.delay_secs > 0 ? 'nofap.off.request' : 'nofap.btn.turn_off')}
-            </Button>
-            <Button variant="primary" onClick={closeDialog}>
-              {t('nofap.btn.keep_protection')}
             </Button>
           </>
         }
@@ -427,7 +441,7 @@ export function NofapPage({ host }: { host?: NofapHost }) {
     const left = [status.hosts, status.resolver, status.policies].some(leftOnSystem);
     return (
       <div data-testid="page-nofap">
-        <PageHeader title={name} subtitle={t('nofap.page.subtitle')} />
+        <PageHeader title={name} subtitle={t('nofap.page.subtitle')} actions={talkButton} />
         <div className="mx-auto flex w-full max-w-[720px] flex-col gap-5">
           {view.config.self_use_at && (
             <Card data-testid="nofap-off">
@@ -471,9 +485,12 @@ export function NofapPage({ host }: { host?: NofapHost }) {
         title={name}
         subtitle={t('nofap.page.subtitle')}
         actions={
-          <Button icon={<Wind className="size-4" strokeWidth={1.75} aria-hidden />} onClick={() => open('panic')} data-testid="nofap-panic">
-            {t('nofap.btn.panic')}
-          </Button>
+          <>
+            {talkButton}
+            <Button icon={<Wind className="size-4" strokeWidth={1.75} aria-hidden />} onClick={() => open('panic')} data-testid="nofap-panic">
+              {t('nofap.btn.panic')}
+            </Button>
+          </>
         }
       />
       <div className="grid grid-cols-12 gap-5">
@@ -495,7 +512,7 @@ export function NofapPage({ host }: { host?: NofapHost }) {
           {tab === 'protection' && <ProtectionTab view={view} host={host} onRequest={(change) => void send(change)} onOpen={open} />}
           {tab === 'support' && <SupportTab view={view} support={support} record={record} onRequest={async (change) => void (await send(change))} onOpen={open} />}
           {tab === 'lists' && (sites ? <SiteLists view={view} sites={sites} onRequest={async (change) => void (await send(change))} /> : <Skeleton className="h-64" />)}
-          {tab === 'help' && <HelpTab view={view} resources={support?.resources ?? []} host={host} onOpen={open} onExport={data.onExport} onTestCard={data.onTestCard} />}
+          {tab === 'help' && <HelpTab view={view} resources={resources} host={host} onOpen={open} onExport={data.onExport} onTestCard={data.onTestCard} />}
         </div>
         <aside className="col-span-12 flex flex-col gap-5 min-[1100px]:col-span-4">
           <ExitsCard name={name} onOpen={open} />

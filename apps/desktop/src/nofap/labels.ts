@@ -31,12 +31,18 @@ export function providerName(provider: AiProvider, t: Translate): string {
   }
 }
 
-/** A waiting time in words, for a sentence: "10 minutos", "4 horas". Zero reads "sem espera". */
+/** A waiting time in words: "10 minutos", "4 horas". Zero reads "sem espera", which fits a label and no sentence (`delayVariant`). */
 export function fmtDelay(secs: number, t: Translate): string {
   if (secs <= 0) return t('nofap.delay.none').toLowerCase();
   if (secs % 3600 === 0) return t('nofap.delay.hours', { count: secs / 3600 });
   return t('nofap.delay.minutes', { count: Math.max(1, Math.ceil(secs / 60)) });
 }
+
+/**
+ * The key of a sentence that names the waiting time. "Desligar espera sem espera" is not a sentence, so with no
+ * waiting time the sentence is its `_now` twin, which says what happens then: a confirmation is asked.
+ */
+export const delayVariant = (key: string, secs: number): string => (secs > 0 ? key : `${key}_now`);
 
 /** A waiting time on a chip: "10 min", "4 h". */
 export function fmtDelayShort(secs: number, t: Translate): string {
@@ -136,8 +142,9 @@ export function cardSize(card: Pick<NofapCard, 'kind' | 'discreet'>, expanded: b
     case 'blocked':
       return { width, height: card.discreet ? 132 : 560 };
     case 'blocked_repeat':
-    case 'help':
       return { width, height: 560 };
+    // The help card is a sentence and two buttons until "Ver opções de ajuda" opens the list.
+    case 'help':
     case 'vision_closed':
     case 'pending_ready':
     case 'resolver_unreachable':

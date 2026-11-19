@@ -1,14 +1,16 @@
+import { X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Ubi } from '../components/ubi/Ubi';
-import { Button } from '../components/ui/Button';
+import { Button, IconButton } from '../components/ui/Button';
+import { Skeleton } from '../components/ui/misc';
 import { hasKey, useT } from '../i18n';
 import { isTauri } from '../lib/ipc';
 import { PanicSheet, type PanicView } from './components/PanicSheet';
 import { ResourceList } from './components/ResourceList';
 import { onNofapEvent } from './events';
 import { nofapIpc } from './ipc';
-import { cardSize, fmtDelay } from './labels';
+import { cardSize, fmtDelay, type Translate } from './labels';
 import type { CardAction, CardKind, NofapCard, NofapView, SupportView, UserEvent } from './types';
 
 /** What the window shows: the card itself, or one of the flows a button opens inside it. */
@@ -54,14 +56,38 @@ function actionLabel(card: NofapCard, action: CardAction): string {
   return `nofap.btn.${action}`;
 }
 
+/**
+ * The sentence of a key the engine names, with nothing but the display name and the waiting time filled in.
+ * `null` for a key this build does not have and for a sentence that would need anything else: a card carries no
+ * site, title or application, so a sentence with room for one is never shown half-filled.
+ */
+export function cardText(key: string | null, t: Translate, name: string | null, delaySecs: number | null): string | null {
+  if (!key || !hasKey(`nofap.${key}`)) return null;
+  // A value this window does not know stays unfilled, and so does a waiting time of zero ("em sem espera" is not
+  // a sentence): the caller then falls back.
+  const vars: Record<string, string> = {};
+  if (name) vars.name = name;
+  if (delaySecs && delaySecs > 0) vars.delay = fmtDelay(delaySecs, t);
+  const text = t(`nofap.${key}`, vars);
+  return /\{\w+\}/.test(text) ? null : text;
+}
+
+/** What the card says after an exception was requested: when it applies, or what is still missing. */
+export function requestedText(t: Translate, delaySecs: number | null): string {
+  if (delaySecs === null) return t('nofap.card.requested');
+  return delaySecs > 0 ? t('nofap.notit.request', { delay: fmtDelay(delaySecs, t) }) : t('nofap.card.request_now');
+}
+
 /** Closes the card window in Tauri; in a browser only a popup opened by script can close itself. */
 async function closeCardWindow(): Promise<void> {
-  if (isTauri()) {
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
-    await getCurrentWindow().close();
-    return;
+  try {
+    if (isTauri()) {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      await getCurrentWindow().close();
+    } else if (typeof window !== 'undefined' && window.opener) window.close();
+  } catch {
+    // A shell that refuses leaves an empty window behind; there is nothing more this page can do about it.
   }
-  if (typeof window !== 'undefined' && window.opener) window.close();
 }
 
 /** Asks for the size the content needs. A shell that sizes the window itself may refuse; the content then scrolls. */
@@ -93,7 +119,11 @@ export function NofapCardPage() {
   const [done, setDone] = useState<string | null>(null);
   const [closed, setClosed] = useState(false);
   const [view, setView] = useState<NofapView | null>(null);
+  /** The view request was answered, or failed. Until then a sentence that names the product cannot be written. */
+  const [viewTried, setViewTried] = useState(false);
   const [support, setSupport] = useState<SupportView | null>(null);
+  /** The support request was answered, or failed: only then may the page say that no contact list came. */
+  const [supportTried, setSupportTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const cardId = useRef(id);
   const shown = useRef(false);
@@ -132,7 +162,8 @@ export function NofapCardPage() {
     void nofapIpc
       .view()
       .then((v) => alive && setView(v))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => alive && setViewTried(true));
     return () => {
       alive = false;
     };
@@ -160,8 +191,26 @@ export function NofapCardPage() {
 
   // The values sentence, the plans and the help resources are needed only once a flow opens.
   useEffect(() => {
-    if ((expanded || cardKind === 'blocked_repeat') && !support) void nofapIpc.support().then(setSupport).catch(() => undefined);
-  }, [expanded, cardKind, support]);
+    if (!(expanded || cardKind === 'blocked_repeat') || supportTried) return;
+    let alive = true;
+    void nofapIpc
+      .support()
+      .then((s) => alive && setSupport(s))
+      .catch(() => undefined)
+      .finally(() => alive && setSupportTried(true));
+    return () => {
+      alive = false;
+    };
+  }, [expanded, cardKind, supportTried]);
+
+  // The window has no title bar: Escape is the keyboard's way out of any view. It answers nothing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [close]);
 
   useEffect(() => {
     if (!card) return;
@@ -221,12 +270,15 @@ export function NofapCardPage() {
           const after = await nofapIpc.view().catch(() => null);
           const known = new Set(before?.status.pending.map((p) => p.id));
           const requested = !!after && after.status.pending.some((p) => p.kind === 'add_allow' && !known.has(p.id));
-          acknowledge(requested ? t('nofap.notit.request', { delay: fmtDelay(after.config.delay_secs, t) }) : t('nofap.notit.snoozed'));
+          acknowledge(requested ? requestedText(t, after.config.delay_secs) : t('nofap.notit.snoozed'));
           break;
         }
-        case 'request_exception':
-          acknowledge(t('nofap.notit.request', { delay: fmtDelay(view?.config.delay_secs ?? 600, t) }));
+        case 'request_exception': {
+          // The waiting time is read now: the one this window loaded when it opened may be stale, or missing.
+          const now = await nofapIpc.view().catch(() => view);
+          acknowledge(requestedText(t, now?.config.delay_secs ?? null));
           break;
+        }
         case 'add_to_list':
           acknowledge(t('nofap.card.added'));
           break;
@@ -245,28 +297,34 @@ export function NofapCardPage() {
     }
   };
 
+  const name = view?.display_name ?? null;
+  const delaySecs = view?.config.delay_secs ?? null;
+  // A discreet block says that a page was blocked and nothing about why, whatever key and note came with it.
+  const quiet = card?.kind === 'blocked' && card.discreet;
+
   const message = useMemo(() => {
     if (!card) return '';
-    const vars = { name: view?.display_name ?? '', delay: fmtDelay(view?.config.delay_secs ?? 600, t) };
     // An opened discreet card gets one of the support sentences, the same one for as long as the card lives.
     const rotation = [...card.id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % SUPPORT_MESSAGES.length;
-    const key = mode === 'support' && card.message_key === 'block.discreet' ? (SUPPORT_MESSAGES[rotation] ?? SUPPORT_MESSAGES[0]) : card.message_key;
-    return hasKey(`nofap.${key}`) ? t(`nofap.${key}`, vars) : t('nofap.block.discreet');
-  }, [card, mode, view, t]);
+    const key = !quiet ? card.message_key : mode === 'support' ? (SUPPORT_MESSAGES[rotation] ?? SUPPORT_MESSAGES[0]) : 'block.discreet';
+    return cardText(key, t, name, delaySecs) ?? t('nofap.block.discreet');
+  }, [card, quiet, mode, name, delaySecs, t]);
 
   if (closed) return <div data-testid="card-closed" />;
 
   const plan = support?.plans[0];
   const withReasons = mode === 'support' || (mode === 'card' && card?.kind === 'blocked_repeat');
-  const note = card && mode === 'card' && card.note_key && hasKey(`nofap.${card.note_key}`) ? t(`nofap.${card.note_key}`, { name: view?.display_name ?? '' }) : null;
+  const note = card && mode === 'card' && !quiet ? cardText(card.note_key, t, name, delaySecs) : null;
   const panic: PanicView | null = mode === 'surf' || mode === 'away' || mode === 'talk' ? mode : null;
   const showsMessage = mode === 'card' || mode === 'support' || mode === 'done';
+  // Until the support request has been answered there is no list to show, and no reason yet to say that none came.
+  const resources = support?.resources ?? (supportTried ? [] : null);
 
   return (
     <div className="fixed inset-0 bg-transparent" data-testid="page-nofap-card">
       <section data-tauri-drag-region aria-label={t('nofap.card.window_label')} className="relative flex h-full w-full flex-col overflow-hidden rounded-[16px] border border-line-2 bg-panel shadow-float">
         <div className="pointer-events-none absolute inset-0" style={{ background: 'var(--hero-glow)' }} aria-hidden />
-        {card && (
+        {card && viewTried && (
           <div className="scroll-thin relative flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-3.5">
             <div className="flex items-start gap-3" data-tauri-drag-region>
               <div className="flex shrink-0 items-center justify-center overflow-visible" style={{ width: 48, height: 48 }} aria-hidden>
@@ -285,6 +343,20 @@ export function NofapCardPage() {
                 </div>
               ) : (
                 <p className="min-w-0 flex-1 self-center text-sm font-medium text-ink">UBI</p>
+              )}
+              {expanded && (
+                <div className="flex shrink-0 items-center gap-1">
+                  {/* A person to talk to is one step from every view that does not already offer it. */}
+                  {mode !== 'support' && mode !== 'talk' && (
+                    <Button size="sm" variant="ghost" onClick={() => setMode('talk')} data-testid="card-talk">
+                      {t('nofap.btn.talk')}
+                    </Button>
+                  )}
+                  {/* The window has no title bar, and a flow can be longer than the window: the way out stays on top. */}
+                  <IconButton label={t('nofap.card.close')} size="sm" onClick={close} data-testid="card-close">
+                    <X className="size-4" strokeWidth={1.75} aria-hidden />
+                  </IconButton>
+                </div>
               )}
             </div>
 
@@ -338,12 +410,12 @@ export function NofapCardPage() {
               </div>
             )}
 
-            {panic && <PanicSheet key={panic} start={panic} countPanic={false} values={support?.values ?? ''} plans={support?.plans ?? []} resources={support?.resources ?? []} record={record} onClose={close} />}
+            {panic && <PanicSheet key={panic} start={panic} countPanic={false} values={support?.values ?? ''} plans={support?.plans ?? []} resources={resources} record={record} onClose={close} />}
 
             {mode === 'help' && (
               <div className="flex flex-col gap-3" data-testid="card-help">
                 <p className="text-[13px] leading-5 text-ink">{t('nofap.help.how')}</p>
-                <ResourceList resources={support?.resources ?? []} />
+                {resources ? <ResourceList resources={resources} /> : <Skeleton className="h-24" />}
                 <p className="text-xs leading-5 text-ink-3">{t('nofap.help.limits')}</p>
                 <div className="flex justify-end">
                   <Button size="sm" onClick={close}>

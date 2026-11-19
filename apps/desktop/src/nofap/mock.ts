@@ -123,7 +123,14 @@ let S: State = freshState();
 
 const nowIso = (): IsoDateTime => new Date().toISOString();
 const plus = (iso: IsoDateTime, secs: number): IsoDateTime => new Date(new Date(iso).getTime() + secs * 1000).toISOString();
-const nextId = (prefix: string): Id => `${prefix}-${(S.seq += 1)}`;
+/** A fresh id: never one a site, a waiting request or a card of the state already has (a scenario starts from the fixtures, which bring their own). */
+function nextId(prefix: string): Id {
+  const taken = (id: Id): boolean => S.cards.has(id) || [...S.sites.blocked, ...S.sites.allowed, ...S.config.pending].some((entry) => entry.id === id);
+  let id: Id;
+  do id = `${prefix}-${(S.seq += 1)}`;
+  while (taken(id));
+  return id;
+}
 
 /* ------------------------------------------------------------------ */
 /* events                                                              */
@@ -780,6 +787,8 @@ export const __nofapMock = {
   },
   /** Shows a card the way the engine would. */
   present,
+  /** Sends an event the way the engine would. */
+  emit,
   /** The fixture card of `kind`, under a fresh id. */
   sampleCard(kind: NofapCard['kind']): NofapCard {
     const sample = views.cards.find((c) => c.kind === kind) ?? views.cards[0];

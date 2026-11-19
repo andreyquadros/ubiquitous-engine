@@ -6,9 +6,10 @@ import { views } from './fixtures/golden';
 import { cardSize } from './labels';
 import { nofapIpc } from './ipc';
 import { __nofapMock } from './mock';
-import { CARD_DONE_CLOSE_MS, NofapCardPage } from './NofapCard';
+import { translate } from '../i18n';
+import { CARD_DONE_CLOSE_MS, cardText, NofapCardPage, requestedText } from './NofapCard';
 import { calls, renderCard, resetNofap } from './testing';
-import type { NofapCard, UserEvent } from './types';
+import type { NofapCard, SupportView, UserEvent } from './types';
 
 /** Shows a fixture card in the window, the way the engine does: remembered under an id, opened by that id. */
 async function open(kind: NofapCard['kind'], patch: Partial<NofapCard> = {}) {
@@ -152,7 +153,7 @@ describe('the card window', () => {
     expect(crisis.textContent).not.toMatch(/ligue/);
   });
 
-  it('answers a ready request from the card: keep, or turn off', async () => {
+  it('answers a ready request from the card: "Manter proteção" cancels it', async () => {
     resetNofap('ready');
     await open('pending_ready');
     fireEvent.click(screen.getByRole('button', { name: 'Manter proteção' }));
@@ -161,13 +162,41 @@ describe('the card window', () => {
     expect(__nofapMock.state().config.enabled).toBe(true);
   });
 
-  it('closes when the engine takes the card away, and shows the next one it sends', async () => {
-    const { card } = await open('drift');
+  it('answers a ready request from the card: "Desligar" confirms it', async () => {
+    resetNofap('ready');
+    const { card } = await open('pending_ready');
+    fireEvent.click(screen.getByRole('button', { name: 'Desligar' }));
+    await screen.findByTestId('card-closed');
+    expect(calls('card_action')).toEqual([{ cmd: 'card_action', args: { id: card.id, action: 'turn_off' } }]);
+    expect(__nofapMock.state().config.enabled).toBe(false);
+  });
+
+  it('shows the next card the engine sends in the same window', async () => {
+    await open('drift');
     act(() => void __nofapMock.present(__nofapMock.sampleCard('reminder')));
     await waitFor(() => expect(screen.getByTestId('card-message')).toHaveTextContent('O NoFap está ligado neste computador.'));
     fireEvent.click(screen.getByRole('button', { name: 'Como desligar' }));
     expect(await screen.findByTestId('card-how-off')).toHaveTextContent('Em Proteção, peça o desligamento.');
-    expect(card.kind).toBe('drift');
+  });
+
+  it('closes when the engine takes its card away, and only then', async () => {
+    const { card } = await open('drift');
+    // Another card's end is not this window's business.
+    act(() => __nofapMock.emit({ type: 'card_closed', id: 'some-other-card' }));
+    expect(screen.getByTestId('card-message')).toBeInTheDocument();
+    act(() => __nofapMock.emit({ type: 'card_closed', id: card.id }));
+    expect(await screen.findByTestId('card-closed')).toBeInTheDocument();
+    expect(calls('card_action')).toEqual([]);
+  });
+
+  it('Escape closes the window from any view and answers nothing', async () => {
+    await open('blocked');
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir apoio' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Respirar 3 min' }));
+    await screen.findByTestId('surf-timer');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(await screen.findByTestId('card-closed')).toBeInTheDocument();
+    expect(calls('record').map((c) => c.args.event)).toEqual(['surf_started']);
   });
 
   it('a late answer to the first request never resets a flow the person already opened', async () => {
@@ -217,6 +246,78 @@ describe('the card window', () => {
     await waitFor(() => expect(screen.getByTestId('card-message')).toHaveTextContent('O NoFap está ligado neste computador.'));
   });
 
+  it('keeps the way out and a person to talk to on top of every view a button opens', async () => {
+    await open('blocked');
+    // The card itself has only its two buttons.
+    expect(screen.queryByTestId('card-close')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir apoio' }));
+    await screen.findByTestId('card-support');
+    expect(screen.getByRole('button', { name: 'Fechar aviso' })).toBeInTheDocument();
+    // Support already offers "Falar com alguém" among its own buttons: one such button, not two.
+    expect(screen.getAllByRole('button', { name: 'Falar com alguém' })).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Respirar 3 min' }));
+    await screen.findByTestId('surf-timer');
+    expect(screen.getByRole('button', { name: 'Fechar aviso' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Falar com alguém' })); // one step from the exercise
+    expect(await screen.findByTestId('crisis-card')).toHaveTextContent('ligue 188.');
+    expect(screen.queryByTestId('card-talk')).toBeNull();
+
+    // Leaving an exercise half-way is not finishing it.
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar aviso' }));
+    expect(await screen.findByTestId('card-closed')).toBeInTheDocument();
+    expect(calls('record').map((c) => c.args.event)).toEqual(['surf_started']);
+  });
+
+  it('offers the way out and a person to talk to on the step-away, help and how-to-turn-off views too', async () => {
+    const first = await open('blocked');
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir apoio' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Sair da tela por 10 min' }));
+    await screen.findByTestId('step-away');
+    expect(screen.getByTestId('card-close')).toBeInTheDocument();
+    expect(screen.getByTestId('card-talk')).toBeInTheDocument();
+    first.unmount();
+    for (const [kind, label, view] of [['help', 'Ver opções de ajuda', 'card-help'], ['reminder', 'Como desligar', 'card-how-off']] as const) {
+      const { unmount } = await open(kind);
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      await screen.findByTestId(view);
+      expect(screen.getByTestId('card-close'), kind).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('card-talk'));
+      expect(await screen.findByTestId('crisis-card'), kind).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('says nothing about a missing contact list while the list is still on its way', async () => {
+    let answer: (value: SupportView) => void = () => undefined;
+    const held = vi.spyOn(nofapIpc, 'support').mockReturnValue(new Promise<SupportView>((resolve) => (answer = resolve)));
+    try {
+      await open('help');
+      fireEvent.click(screen.getByRole('button', { name: 'Ver opções de ajuda' }));
+      const help = await screen.findByTestId('card-help');
+      expect(help).not.toHaveTextContent('A lista de contatos de apoio não veio nesta versão do app.');
+      expect(within(help).queryByTestId('resource-list')).toBeNull();
+      await act(async () => {
+        answer({ values: '', plans: [], progress: { window_days: 30, days: 0, streak: null, after_reset: false }, checkin_today: null, help_due: true, resources: [{ id: 'crp', country: 'BR', name: 'CRP', phone: null, url: null, note_pt: 'Procure um psicólogo com registro ativo no CRP.', note_en: 'Look for a psychologist with an active CRP registration.' }] });
+        await Promise.resolve();
+      });
+      expect(await within(help).findByTestId('resource-list')).toHaveTextContent('Procure um psicólogo com registro ativo no CRP.');
+    } finally {
+      held.mockRestore();
+    }
+  });
+
+  it('says that no contact list came only once the request has failed', async () => {
+    const failed = vi.spyOn(nofapIpc, 'support').mockRejectedValue(new Error('unavailable'));
+    try {
+      await open('help');
+      fireEvent.click(screen.getByRole('button', { name: 'Ver opções de ajuda' }));
+      await waitFor(() => expect(screen.getByTestId('card-help')).toHaveTextContent('A lista de contatos de apoio não veio nesta versão do app.'));
+    } finally {
+      failed.mockRestore();
+    }
+  });
+
   it('asks for the size of the design for each card', () => {
     const size = (kind: NofapCard['kind'], discreet = false, expanded = false) => cardSize({ kind, discreet }, expanded);
     expect(size('blocked', true)).toEqual({ width: 420, height: 132 });
@@ -227,6 +328,109 @@ describe('the card window', () => {
     expect(size('pending_ready')).toEqual({ width: 420, height: 220 });
     expect(size('resolver_unreachable')).toEqual({ width: 420, height: 220 });
     expect(size('reminder')).toEqual({ width: 420, height: 160 });
+    // The help card is a sentence and two buttons until its list opens.
+    expect(size('help')).toEqual({ width: 420, height: 220 });
+    expect(size('help', false, true)).toEqual({ width: 420, height: 560 });
+    expect(size('blocked_repeat')).toEqual({ width: 420, height: 560 });
+  });
+});
+
+describe('a card never shows a site, a window title or an application', () => {
+  beforeEach(() => resetNofap('on'));
+
+  const SECRETS = ['secret-site.example', 'Secret Window Title', 'SecretApp'];
+  const expectNoSecret = () => {
+    const text = document.body.textContent ?? '';
+    for (const secret of SECRETS) expect(text.includes(secret), secret).toBe(false);
+    expect(text).not.toMatch(/nofap\.|\{\w+\}/);
+    for (const el of document.querySelectorAll('[title], [aria-label], [alt], [data-testid]')) {
+      for (const attr of ['title', 'aria-label', 'alt']) for (const secret of SECRETS) expect((el.getAttribute(attr) ?? '').includes(secret), `${attr}: ${secret}`).toBe(false);
+    }
+  };
+
+  it('ignores fields the contract does not have, whatever a newer or broken engine sends', async () => {
+    const extra = { host: 'secret-site.example', url: 'https://secret-site.example/page', title: 'Secret Window Title', app: 'SecretApp', app_id: 'SecretApp', window_title: 'Secret Window Title' };
+    for (const fixture of views.cards) {
+      const { unmount } = await open(fixture.kind, extra as Partial<NofapCard>);
+      expectNoSecret();
+      for (const button of within(screen.getByTestId('card-actions')).getAllByRole('button')) {
+        if (!['Abrir apoio', 'Ver opções de ajuda', 'Como desligar', 'Respirar 3 min', 'Fazer a onda de 3 min'].includes(button.textContent ?? '')) continue;
+        fireEvent.click(button);
+        await waitFor(() => expect(screen.queryByTestId('card-actions')).toBeNull());
+        expectNoSecret();
+        break;
+      }
+      unmount();
+    }
+  });
+
+  it('shows the neutral sentence for a key that is not a sentence of this app, and no second line for such a note', async () => {
+    for (const key of ['secret-site.example', 'Secret Window Title', '', 'block.no_such_key', '__proto__', 'constructor']) {
+      const { unmount } = await open('vision_closed', { message_key: key, note_key: key });
+      expect(screen.getByTestId('card-message').textContent, key).toBe('Página bloqueada pelo UBI.');
+      expect(screen.queryByTestId('card-note'), key).toBeNull();
+      expectNoSecret();
+      unmount();
+    }
+  });
+
+  it('never fills a sentence that has room for a site: such a key falls back to the neutral sentence', async () => {
+    // Real keys of the namespace whose text has a placeholder a card cannot fill.
+    for (const key of ['pending.allow_host', 'pending.remove_host', 'lists.remove_site', 'dns.previous', 'panic.reason', 'vision.today']) {
+      const { unmount } = await open('vision_closed', { message_key: key, note_key: key });
+      expect(screen.getByTestId('card-message').textContent, key).toBe('Página bloqueada pelo UBI.');
+      expect(screen.queryByTestId('card-note'), key).toBeNull();
+      unmount();
+    }
+  });
+
+  it('a discreet block says only that a page was blocked, whatever key and note came with it', async () => {
+    await open('blocked', { discreet: true, message_key: 'block.default', note_key: 'vision.added' });
+    expect(screen.getByTestId('page-nofap-card').textContent).toBe('Página bloqueada pelo UBI.Abrir apoioOk');
+  });
+
+  it('fills the waiting time into a second line that names it', async () => {
+    await open('vision_closed', { note_key: 'notit.request' });
+    expect(screen.getByTestId('card-note')).toHaveTextContent('Esse site está na lista. Pedi a exceção; ela vale daqui a 10 minutos.');
+  });
+
+  it('with no waiting time, an exception still needs a confirmation, and the card says that instead of "daqui a sem espera"', async () => {
+    __nofapMock.state().config.delay_secs = 0;
+    await open('vision_ask');
+    fireEvent.click(screen.getByRole('button', { name: 'Pedir exceção' }));
+    await waitFor(() => expect(screen.getByTestId('card-message')).toHaveTextContent(/^Pedi a exceção\. Falta você confirmar na página do app\.$/));
+    expect(__nofapMock.state().config.pending.map((p) => p.change.kind)).toEqual(['add_allow']);
+  });
+
+  it('reads the waiting time when the button is pressed, not when the window opened', async () => {
+    await open('vision_ask');
+    __nofapMock.state().config.delay_secs = 1800;
+    fireEvent.click(screen.getByRole('button', { name: 'Pedir exceção' }));
+    await waitFor(() => expect(screen.getByTestId('card-message')).toHaveTextContent('ela vale daqui a 30 minutos.'));
+  });
+
+  it('writes no sentence with a hole where the product name goes when the view cannot be read', async () => {
+    const failed = vi.spyOn(nofapIpc, 'view').mockRejectedValue(new Error('unavailable'));
+    try {
+      const card = __nofapMock.present(__nofapMock.sampleCard('reminder'));
+      renderCard(card.id);
+      const message = await screen.findByTestId('card-message');
+      expect(message.textContent).toBe('Página bloqueada pelo UBI.');
+      expect(document.body.textContent).not.toMatch(/O {2}está|\{name\}/);
+    } finally {
+      failed.mockRestore();
+    }
+  });
+
+  it('names no waiting time it does not know', () => {
+    const t = (key: string, vars?: Record<string, string | number>) => translate('pt-BR', key, vars);
+    expect(requestedText(t, null)).toBe('Pedi a exceção. Ela espera o tempo que você escolheu.');
+    expect(requestedText(t, 0)).toBe('Pedi a exceção. Falta você confirmar na página do app.');
+    expect(requestedText(t, 600)).toBe('Esse site está na lista. Pedi a exceção; ela vale daqui a 10 minutos.');
+    expect(cardText('reminder.on', t, null, 600)).toBeNull();
+    expect(cardText('reminder.on', t, 'Escudo', null)).toBe('O Escudo está ligado neste computador. Veja como desligar.');
+    expect(cardText('notit.request', t, 'Escudo', 0)).toBeNull();
+    expect(cardText(null, t, 'Escudo', 600)).toBeNull();
   });
 });
 

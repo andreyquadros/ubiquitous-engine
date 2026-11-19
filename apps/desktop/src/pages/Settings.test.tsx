@@ -401,6 +401,16 @@ describe('Settings · Privacidade and the nofap module', () => {
     expect(screen.getByText('Domínios bloqueados')).toBeInTheDocument();
   });
 
+  it('shows no such hint when the module has no waiting time: the exclusion then counts at once', async () => {
+    __nofapMock.reset('on');
+    __nofapMock.state().config.delay_secs = 0;
+    renderPage();
+    await screen.findByText('Domínios bloqueados');
+    await waitFor(() => expect(useNofapStore.getState().view?.config.enabled).toBe(true));
+    expect(screen.queryByTestId('nofap-exclusion-hint')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/em sem espera/);
+  });
+
   it('shows no such hint while the module is off', async () => {
     __nofapMock.reset('off');
     renderPage();

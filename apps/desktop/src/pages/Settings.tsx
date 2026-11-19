@@ -871,7 +871,8 @@ function PrivacySection({ draft, patch, view }: SectionProps & { view: SettingsV
 
 /**
  * While the `nofap` module is on, an app or domain excluded here is honoured by that module only after its waiting
- * time: otherwise this list would be a way around it. Nothing is shown while the module is off.
+ * time: otherwise this list would be a way around it. Nothing is shown while the module is off, or has no waiting
+ * time.
  */
 function NofapExclusionHint() {
   const t = useT();
@@ -880,7 +881,8 @@ function NofapExclusionHint() {
   useEffect(() => {
     if (!nofap) void loadNofap();
   }, [nofap, loadNofap]);
-  if (!nofap?.config.enabled) return null;
+  // With no waiting time the exclusion is honoured at once, and there is nothing to warn about.
+  if (!nofap?.config.enabled || nofap.config.delay_secs <= 0) return null;
   return (
     <p className="text-xs text-ink-3" data-testid="nofap-exclusion-hint">
       {t('nofap.exclusion.delay', { name: nofap.display_name, delay: fmtDelay(nofap.config.delay_secs, t) })}

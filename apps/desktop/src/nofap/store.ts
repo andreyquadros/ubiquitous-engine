@@ -12,6 +12,8 @@ interface NofapState {
   error: string | null;
   sites: SitesView | null;
   support: SupportView | null;
+  /** The last support request failed: the page may then say that no contact list came, and not before. */
+  supportFailed: boolean;
   load: () => Promise<NofapView | null>;
   loadSites: () => Promise<SitesView | null>;
   loadSupport: () => Promise<SupportView | null>;
@@ -28,6 +30,7 @@ export const useNofapStore = create<NofapState>((set, get) => ({
   error: null,
   sites: null,
   support: null,
+  supportFailed: false,
 
   load: async () => {
     try {
@@ -51,9 +54,10 @@ export const useNofapStore = create<NofapState>((set, get) => ({
   loadSupport: async () => {
     try {
       const support = await nofapIpc.support();
-      set({ support });
+      set({ support, supportFailed: false });
       return support;
     } catch {
+      set({ supportFailed: true });
       return null;
     }
   },

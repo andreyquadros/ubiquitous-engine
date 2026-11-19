@@ -1,11 +1,11 @@
 import { X } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { Button, IconButton } from '../../components/ui/Button';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Field, Input } from '../../components/ui/Field';
 import { Toggle } from '../../components/ui/Toggle';
 import { useT } from '../../i18n';
-import { fmtDelay } from '../labels';
+import { delayVariant, fmtDelay } from '../labels';
 import type { NofapChange, NofapView, SiteEntry, SitesView } from '../types';
 
 const looksLikeHost = (text: string): boolean => /^[^\s/]+\.[^\s/.]{2,}$/.test(text.trim().replace(/^[a-z]+:\/\//i, '').replace(/[/?#].*$/, ''));
@@ -19,10 +19,12 @@ interface ListProps {
   entries: SiteEntry[];
   onAdd: (host: string) => Promise<void>;
   onRemove: (entry: SiteEntry) => void;
+  /** Something that belongs to this list, shown under it. */
+  footer?: ReactNode;
   testId: string;
 }
 
-function SiteList({ title, subtitle, inputLabel, addLabel, empty, entries, onAdd, onRemove, testId }: ListProps) {
+function SiteList({ title, subtitle, inputLabel, addLabel, empty, entries, onAdd, onRemove, footer, testId }: ListProps) {
   const t = useT();
   const [text, setText] = useState('');
   const [invalid, setInvalid] = useState(false);
@@ -86,6 +88,7 @@ function SiteList({ title, subtitle, inputLabel, addLabel, empty, entries, onAdd
       ) : (
         <p className="mt-3 text-xs text-ink-3">{empty}</p>
       )}
+      {footer && <div className="mt-3 border-t border-line pt-3">{footer}</div>}
     </Card>
   );
 }
@@ -104,24 +107,31 @@ interface Props {
 export function SiteLists({ view, sites, onRequest }: Props) {
   const t = useT();
   const name = view.display_name;
-  const delay = fmtDelay(view.config.delay_secs, t);
+  const delaySecs = view.config.delay_secs;
+  const delay = fmtDelay(delaySecs, t);
   return (
     <div className="flex flex-col gap-5">
       <SiteList
         testId="sites-blocked"
         title={t('nofap.lists.blocked.title')}
-        subtitle={t('nofap.lists.blocked.subtitle', { delay })}
+        subtitle={t(delayVariant('nofap.lists.blocked.subtitle', delaySecs), { delay })}
         inputLabel={t('nofap.lists.blocked.input')}
         addLabel={t('nofap.lists.add_blocked')}
         empty={t('nofap.lists.empty_blocked')}
         entries={sites.blocked}
         onAdd={(host) => onRequest({ kind: 'add_block', host })}
         onRemove={(entry) => void onRequest({ kind: 'remove_block', id: entry.id })}
+        // Where the sites the user types go: into the system list too, which other accounts can read, or only into this app.
+        footer={
+          <Field label={t('nofap.lists.system_sites')} hint={t('nofap.hosts.readable')} inline>
+            {(id) => <Toggle id={id} size="sm" checked={view.config.system.hosts_user_sites} onChange={(on) => void onRequest({ kind: 'set_hosts_user_sites', on })} />}
+          </Field>
+        }
       />
       <SiteList
         testId="sites-allowed"
         title={t('nofap.lists.allowed.title')}
-        subtitle={t('nofap.lists.allowed.subtitle', { name, delay })}
+        subtitle={t(delayVariant('nofap.lists.allowed.subtitle', delaySecs), { name, delay })}
         inputLabel={t('nofap.lists.allowed.input')}
         addLabel={t('nofap.lists.add_allowed')}
         empty={t('nofap.lists.empty_allowed')}
@@ -141,9 +151,6 @@ export function SiteLists({ view, sites, onRequest }: Props) {
             ) : undefined
           }
         />
-        <Field label={t('nofap.lists.system_sites')} hint={t('nofap.hosts.readable')} inline>
-          {(id) => <Toggle id={id} size="sm" checked={view.config.system.hosts_user_sites} onChange={(on) => void onRequest({ kind: 'set_hosts_user_sites', on })} />}
-        </Field>
       </Card>
     </div>
   );

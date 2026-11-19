@@ -1,3 +1,4 @@
+import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Field } from '../../components/ui/Field';
@@ -6,8 +7,9 @@ import { useLocale, useT } from '../../i18n';
 import { DelayPicker } from '../components/DelayPicker';
 import { ResolverChoice } from '../components/ResolverChoice';
 import { SampleFrameView } from '../components/SampleFrameView';
+import { VisionCaps } from '../components/VisionCaps';
 import { VisionScope } from '../components/VisionScope';
-import { fmtDelay, fmtMoney, providerName } from '../labels';
+import { delayVariant, fmtDelay, fmtMoney, providerName, reasonText } from '../labels';
 import type { NofapDialog } from '../NofapPage';
 import type { NofapHost } from '../NofapWizard';
 import type { NofapChange, NofapView, Tier } from '../types';
@@ -48,19 +50,33 @@ export function ProtectionTab({ view, host, onRequest, onOpen }: Props) {
         <ul className="flex flex-col divide-y divide-line">
           {TIERS.map((tier) => {
             const disclosure = DISCLOSURE[tier];
+            const capability = view.capabilities[tier];
+            // A tier this system cannot have is shown as such: no switch, no choice, and no disclosure of
+            // something that is not happening.
+            if (capability.state !== 'available') {
+              return (
+                <li key={tier} className="flex items-start justify-between gap-4 py-3 first:pt-0" data-testid={`protection-tier-${tier}`}>
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-ink">{t(`nofap.layer.${tier}`)}</p>
+                    <p className="text-xs leading-5 text-ink-3">{capability.state === 'gated' ? t('nofap.system.gated') : reasonText(capability.reason, t)}</p>
+                  </div>
+                  <Badge tone={capability.state === 'gated' ? 'violet' : 'neutral'}>{t(capability.state === 'gated' ? 'nofap.tier.gated' : 'nofap.tier.unsupported')}</Badge>
+                </li>
+              );
+            }
             return (
-              <li key={tier} className="flex flex-col gap-2 py-3 first:pt-0">
+              <li key={tier} className="flex flex-col gap-2 py-3 first:pt-0" data-testid={`protection-tier-${tier}`}>
                 {tier === 'resolver' ? (
                   <div className="flex flex-col gap-2">
                     <div>
                       <p className="text-[13px] font-medium text-ink">{t('nofap.layer.resolver')}</p>
                       <p className="text-xs text-ink-3">{t('nofap.layer.resolver.hint')}</p>
                     </div>
-                    <ResolverChoice value={system.resolver} disabled={view.capabilities.resolver.state !== 'available'} onChange={(resolver) => onRequest({ kind: 'set_resolver', resolver })} />
+                    <ResolverChoice value={system.resolver} onChange={(resolver) => onRequest({ kind: 'set_resolver', resolver })} />
                   </div>
                 ) : (
                   <Field label={t(`nofap.layer.${tier}`)} hint={t(`nofap.layer.${tier}.hint`)} inline>
-                    {(id) => <Toggle id={id} checked={chosen[tier]} disabled={view.capabilities[tier].state !== 'available'} onChange={(on) => onRequest(change(tier, on))} />}
+                    {(id) => <Toggle id={id} checked={chosen[tier]} onChange={(on) => onRequest(change(tier, on))} />}
                   </Field>
                 )}
                 {disclosure && chosen[tier] && <p className="panel-raised p-3 text-xs leading-5 text-ink-2">{t(disclosure)}</p>}
@@ -75,7 +91,7 @@ export function ProtectionTab({ view, host, onRequest, onOpen }: Props) {
             </Field>
           </div>
         )}
-        <p className="mt-3 text-xs text-ink-3">{t('nofap.system.loosen_note', { delay })}</p>
+        <p className="mt-3 text-xs text-ink-3">{t(delayVariant('nofap.system.loosen_note', view.config.delay_secs), { delay })}</p>
       </Card>
 
       <Card data-testid="vision-card">
@@ -103,6 +119,9 @@ export function ProtectionTab({ view, host, onRequest, onOpen }: Props) {
               <VisionScope scope={vision} onChange={(scope) => onRequest({ kind: 'set_vision_scope', unknown_sites: scope.unknown_sites, media_apps: scope.media_apps, messaging_apps: scope.messaging_apps, private_windows: scope.private_windows })} />
             </div>
             <SampleFrameView />
+            <div className="border-t border-line pt-4">
+              <VisionCaps caps={vision} delaySecs={view.config.delay_secs} onSave={(caps) => onRequest({ kind: 'set_caps', ...caps })} />
+            </div>
           </div>
         ) : (
           <p className="text-xs leading-5 text-ink-3">{t('nofap.vision.off_note')}</p>

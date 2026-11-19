@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CheckinCard } from './components/CheckinCard';
-import { PendingBanner } from './components/PendingBanner';
+import { PendingBanner, RECHECK_MS } from './components/PendingBanner';
+import { VisionCaps } from './components/VisionCaps';
+import { nofapIpc } from './ipc';
 import { ProgressCard } from './components/ProgressCard';
 import { __nofapMock } from './mock';
 import { useNofapStore } from './store';
@@ -31,6 +33,61 @@ describe('the module page, switched on', () => {
     expect(status).toHaveTextContent('Hoje, 2 páginas barradas.');
     // The status names layers and counts, never a site.
     expect(status.textContent).not.toMatch(/example\./);
+  });
+
+  it('says once, not twice, that the other app holds the protection', async () => {
+    resetNofap('secondary');
+    renderPage();
+    const status = await screen.findByTestId('nofap-status');
+    expect(screen.getByTestId('nofap-overall')).toHaveTextContent('Ativa pelo outro app');
+    expect(status.textContent?.split('A proteção está ativa pelo outro app.')).toHaveLength(2);
+  });
+
+  it('shows a tier this system cannot have as such: no switch, no choice, and no disclosure of what is not happening', async () => {
+    resetNofap('gated');
+    renderPage();
+    const tab = await screen.findByTestId('tab-protection');
+    const hosts = within(tab).getByTestId('protection-tier-hosts');
+    expect(hosts).toHaveTextContent('Em verificação neste sistema. Por enquanto valem o bloqueio no app e a verificação por IA.');
+    expect(within(hosts).queryByRole('switch')).toBeNull();
+    const resolver = within(tab).getByTestId('protection-tier-resolver');
+    expect(within(resolver).queryByRole('radio')).toBeNull();
+    expect(within(tab).getByTestId('protection-tier-policies')).toHaveTextContent('Esta versão não traz essa camada.');
+    // The stored choice still says "Cloudflare", but nothing goes there: the disclosure would be false.
+    expect(__nofapMock.state().config.system.resolver).toBe('cloudflare_family');
+    expect(tab).not.toHaveTextContent('passam pela Cloudflare');
+    expect(tab).not.toHaveTextContent('Gerenciado pela sua organização');
+  });
+
+  it('offers a person to talk to one step from every tab', async () => {
+    renderPage();
+    for (const tab of ['Proteção', 'Apoio', 'Listas', 'Ajuda']) {
+      await openTab(tab);
+      fireEvent.click(screen.getByTestId('nofap-talk')); // 1
+      const dialog = await screen.findByRole('dialog', { name: 'Falar com alguém' });
+      await waitFor(() => expect(within(dialog).getByTestId('crisis-card')).toHaveTextContent('ligue 188. É o CVV: grátis, 24 horas.'));
+      fireEvent.keyDown(window, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Falar com alguém' })).toBeNull());
+    }
+    // Looking for help counts nothing and changes nothing.
+    expect(writes()).toEqual([]);
+  });
+
+  it('says nothing about a missing contact list while the list is still on its way, and says so when it did not come', async () => {
+    let answer: (value: never) => void = () => undefined;
+    const held = vi.spyOn(nofapIpc, 'support').mockReturnValue(new Promise<never>((_, reject) => (answer = reject)));
+    try {
+      renderPage(undefined, '/nofap?tab=help');
+      const tab = await screen.findByTestId('tab-help');
+      expect(tab).not.toHaveTextContent('A lista de contatos de apoio não veio nesta versão do app.');
+      await act(async () => {
+        answer(new Error('unavailable') as never);
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(screen.getByTestId('tab-help')).toHaveTextContent('A lista de contatos de apoio não veio nesta versão do app.'));
+    } finally {
+      held.mockRestore();
+    }
   });
 
   it('opens on the tab the address names', async () => {
@@ -72,6 +129,18 @@ describe('turning protection off', () => {
     expect(__nofapMock.state().config.enabled).toBe(false);
     // One refused while it was waiting, one accepted once it was ready.
     expect(calls('confirm_pending')).toHaveLength(2);
+  });
+
+  it('puts the keyboard on "Manter proteção" when the dialog opens, not on the button that turns off', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByTestId('nofap-off-button'));
+    const dialog = await screen.findByRole('dialog', { name: 'Desligar o NoFap?' });
+    const keep = within(dialog).getByRole('button', { name: 'Manter proteção' });
+    await waitFor(() => expect(keep).toHaveFocus());
+    // Enter on the focused button keeps everything as it is.
+    fireEvent.click(keep);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Desligar o NoFap?' })).toBeNull());
+    expect(writes()).toEqual([]);
   });
 
   it('"Manter proteção" cancels the request in one tap', async () => {
@@ -122,6 +191,46 @@ describe('turning protection off', () => {
   });
 });
 
+describe('with no waiting time', () => {
+  beforeEach(() => {
+    resetNofap('on');
+    __nofapMock.state().config.delay_secs = 0;
+  });
+
+  /** "sem espera" is a label; inside a sentence about waiting it reads as nonsense. */
+  const NONSENSE = /(espera|daqui a|em|waits|in) (sem espera|no wait)/i;
+
+  it('never puts "sem espera" inside a sentence, on any tab, and asks for a confirmation in its place', async () => {
+    renderPage();
+    const protection = await screen.findByTestId('tab-protection');
+    expect(protection).toHaveTextContent('Ligar uma camada vale na hora. Desligar pede uma confirmação.');
+    expect(protection).toHaveTextContent('Aumentar um limite vale na hora. Baixar pede uma confirmação.');
+    expect(document.body.textContent).not.toMatch(NONSENSE);
+    await openTab('Listas');
+    expect(await screen.findByTestId('sites-blocked')).toHaveTextContent('Adicionar vale na hora. Tirar pede uma confirmação.');
+    expect(screen.getByTestId('sites-allowed')).toHaveTextContent('Liberar pede uma confirmação. Tirar daqui vale na hora.');
+    expect(document.body.textContent).not.toMatch(NONSENSE);
+    for (const tab of ['Apoio', 'Ajuda']) {
+      await openTab(tab);
+      expect(document.body.textContent).not.toMatch(NONSENSE);
+    }
+  });
+
+  it('a loosening change is ready at once: the banner asks for the confirmation and no toast talks about waiting', async () => {
+    renderPage();
+    await screen.findByTestId('tab-protection');
+    fireEvent.click(screen.getByRole('switch', { name: 'Lista do sistema' }));
+    const banner = await screen.findByTestId('pending-banner');
+    expect(banner).toHaveTextContent('O tempo de espera terminou. Confirme para aplicar.');
+    expect(document.body.textContent).not.toMatch(NONSENSE);
+    expect(document.body.textContent).not.toContain('Pedido anotado');
+    // Still on until that confirmation.
+    expect(__nofapMock.state().config.system.hosts).toBe(true);
+    fireEvent.click(within(banner).getByRole('button', { name: 'Confirmar' }));
+    await waitFor(() => expect(__nofapMock.state().config.system.hosts).toBe(false));
+  });
+});
+
 describe('the pending countdown', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -138,6 +247,72 @@ describe('the pending countdown', () => {
     act(() => void vi.advanceTimersByTime(2000));
     expect(screen.getByTestId('pending-countdown')).toHaveTextContent('0:00');
     expect(onElapsed).toHaveBeenCalledTimes(1);
+  });
+
+  it('says the truth when the clock ran out before the engine called the request ready, and keeps asking', () => {
+    const onElapsed = vi.fn();
+    const waiting = { id: 'p', kind: 'disable' as const, requested_at: '2026-09-17T15:00:00Z', ready_at: '2026-09-17T15:10:00Z', ready: false, remaining_secs: 0, expires_at: null };
+    const fake = { display_name: 'NoFap', config: { pending: [], values: '' }, status: { pending: [waiting] } } as unknown as NofapView;
+    render(<PendingBanner view={fake} sites={null} onCancel={() => undefined} onConfirm={() => undefined} onSurf={() => undefined} onElapsed={onElapsed} />);
+    const banner = screen.getByTestId('pending-banner');
+    expect(banner).toHaveTextContent('O tempo passou. A espera só conta com o app aberto, então pode faltar um pouco.');
+    expect(banner.textContent).not.toMatch(/sem espera/);
+    // Not ready: nothing to confirm yet, and the way back is still there.
+    expect(within(banner).queryByRole('button', { name: 'Desligar' })).toBeNull();
+    expect(within(banner).getByRole('button', { name: 'Manter proteção' })).toBeEnabled();
+    expect(onElapsed).not.toHaveBeenCalled();
+    act(() => void vi.advanceTimersByTime(RECHECK_MS));
+    expect(onElapsed).toHaveBeenCalledTimes(1);
+    act(() => void vi.advanceTimersByTime(RECHECK_MS));
+    expect(onElapsed).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the limits of the AI check', () => {
+  beforeEach(() => resetNofap('on'));
+
+  const field = (name: string) => within(screen.getByTestId('vision-caps')).getByLabelText(name);
+  const save = () => fireEvent.click(within(screen.getByTestId('vision-caps')).getByRole('button', { name: 'Salvar limites' }));
+
+  it('raising a limit applies at once', async () => {
+    renderPage();
+    await screen.findByTestId('vision-caps');
+    expect(field('Verificações por dia')).toHaveValue('120');
+    expect(field('Gasto por mês (US$)')).toHaveValue('2,00');
+    expect(within(screen.getByTestId('vision-caps')).getByRole('button', { name: 'Salvar limites' })).toBeDisabled();
+    fireEvent.change(field('Verificações por dia'), { target: { value: '200' } });
+    fireEvent.change(field('Gasto por mês (US$)'), { target: { value: '3,5' } });
+    save();
+    await waitFor(() => expect(__nofapMock.state().config.vision.max_per_day).toBe(200));
+    expect(calls('request')).toEqual([{ cmd: 'request', args: { kind: 'set_caps', max_per_hour: 20, max_per_day: 200, monthly_cap_usd: 3.5 } }]);
+    expect(__nofapMock.state().config.pending).toEqual([]);
+    await waitFor(() => expect(field('Gasto por mês (US$)')).toHaveValue('3,50'));
+  });
+
+  it('lowering one waits, and the fields go back to what is in force', async () => {
+    renderPage();
+    await screen.findByTestId('vision-caps');
+    fireEvent.change(field('Verificações por hora'), { target: { value: '5' } });
+    save();
+    expect(await screen.findByTestId('pending-banner')).toHaveTextContent('Baixar os limites da verificação');
+    expect(__nofapMock.state().config.vision.max_per_hour).toBe(20);
+    expect(field('Verificações por hora')).toHaveValue('20');
+  });
+
+  it('sends nothing outside the ranges of the design', () => {
+    const onSave = vi.fn();
+    render(<VisionCaps caps={{ max_per_hour: 20, max_per_day: 120, monthly_cap_usd: 2 }} delaySecs={600} onSave={onSave} />);
+    const button = screen.getByRole('button', { name: 'Salvar limites' });
+    for (const [label, value] of [['Verificações por hora', '61'], ['Verificações por hora', '0'], ['Verificações por hora', '2.5'], ['Verificações por dia', '1001'], ['Gasto por mês (US$)', '0,1'], ['Gasto por mês (US$)', '21'], ['Gasto por mês (US$)', 'muito']] as const) {
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+      expect(button, `${label} = ${value}`).toBeDisabled();
+      expect(screen.getByLabelText(label)).toHaveAttribute('aria-invalid', 'true');
+      expect(screen.getByTestId('vision-caps')).toHaveTextContent('Use números dentro das faixas indicadas.');
+      fireEvent.change(screen.getByLabelText(label), { target: { value: label === 'Gasto por mês (US$)' ? '2,00' : label === 'Verificações por dia' ? '120' : '20' } });
+    }
+    fireEvent.change(screen.getByLabelText('Verificações por hora'), { target: { value: '60' } });
+    fireEvent.click(button);
+    expect(onSave.mock.calls).toEqual([[{ max_per_hour: 60, max_per_day: 120, monthly_cap_usd: 2 }]]);
   });
 });
 
@@ -322,7 +497,21 @@ describe('lists', () => {
     expect(__nofapMock.state().sites.allowed.map((s) => s.host)).toEqual(['example.org']);
 
     expect(screen.getByTestId('sites-learned')).toHaveTextContent('3 sites foram aprendidos pela verificação por IA. Os nomes não aparecem em lugar nenhum.');
-    expect(screen.getByTestId('sites-learned')).toHaveTextContent('outras contas deste computador conseguem ler');
+    // A site the user adds keeps its own row and its own id next to the ones that were there.
+    const ids = __nofapMock.state().sites.blocked.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(within(screen.getByTestId('sites-blocked')).getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('says where the typed sites go, next to the list they belong to, and lets them stay in the app only', async () => {
+    renderPage();
+    await openTab('Listas');
+    const blocked = await screen.findByTestId('sites-blocked');
+    expect(blocked).toHaveTextContent('Os sites que você adiciona entram na lista do sistema, que outras contas deste computador conseguem ler.');
+    fireEvent.click(within(blocked).getByRole('switch', { name: 'Incluir meus sites na lista do sistema' }));
+    // Taking them out of the system list loosens the protection: it waits.
+    expect(await screen.findByTestId('pending-banner')).toHaveTextContent('Tirar seus sites da lista do sistema');
+    expect(__nofapMock.state().config.system.hosts_user_sites).toBe(true);
   });
 
   it('refuses something that is not an address without sending it', async () => {

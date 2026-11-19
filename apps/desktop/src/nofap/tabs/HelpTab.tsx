@@ -8,7 +8,8 @@ import type { HelpResource, NofapView } from '../types';
 
 interface Props {
   view: NofapView;
-  resources: HelpResource[];
+  /** `null` while the list is still on its way. */
+  resources: HelpResource[] | null;
   host?: NofapHost;
   onOpen: (dialog: NofapDialog) => void;
   onExport: () => void;
@@ -64,7 +65,7 @@ export function HelpTab({ view, resources, host, onOpen, onExport, onTestCard }:
             {t('nofap.data.test_card')}
           </Button>
         </div>
-        <p className="mt-3 text-xs leading-5 text-ink-3">{t('nofap.data.reset_body', { name })}</p>
+        <p className="mt-3 text-xs leading-5 text-ink-3">{t('nofap.data.reset_note', { name })}</p>
       </Card>
     </div>
   );

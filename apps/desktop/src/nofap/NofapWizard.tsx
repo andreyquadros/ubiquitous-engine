@@ -18,7 +18,10 @@ import type { AiReadiness, EnableOptions, NofapView, Tier, TierCapability, Visio
 
 /** What the host app lends the module: things that live outside it. */
 export interface NofapHost {
-  /** "Abrir junto com o computador": the host owns the setting. On by default, a visible switch, never forced. */
+  /**
+   * "Abrir junto com o computador": the host owns the setting. The page changes it at once; the wizard shows the
+   * switch on by default, never forces it, and hands the choice over only with its last button.
+   */
   autostart?: { value: boolean; onChange: (value: boolean) => void };
   /** Opens the host's own settings (AI provider and key, local-only mode). */
   openSettings?: () => void;
@@ -75,6 +78,8 @@ export function NofapWizard({ view, host, onEnabled }: Props) {
   const [values, setValues] = useState(view.config.values);
   const [delay, setDelay] = useState(view.config.delay_secs);
   const [detailed, setDetailed] = useState(!view.config.ui.discreet);
+  // On by default (design 5.2), whatever the host has now; nothing is told to the host before the last button.
+  const [autostart, setAutostart] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,7 +105,9 @@ export function NofapWizard({ view, host, onEnabled }: Props) {
     setBusy(true);
     setError(null);
     try {
-      onEnabled(await nofapIpc.enable(options));
+      const enabled = await nofapIpc.enable(options);
+      if (host?.autostart && host.autostart.value !== autostart) host.autostart.onChange(autostart);
+      onEnabled(enabled);
     } catch (e) {
       setError(ipcErrorMessage(e));
     } finally {
@@ -159,7 +166,7 @@ export function NofapWizard({ view, host, onEnabled }: Props) {
 
           {host?.autostart && (
             <Field label={t('nofap.system.autostart')} hint={t('nofap.system.autostart_hint')} inline>
-              {(id) => <Toggle id={id} checked={host.autostart?.value ?? false} onChange={(v) => host.autostart?.onChange(v)} />}
+              {(id) => <Toggle id={id} checked={autostart} onChange={setAutostart} />}
             </Field>
           )}
 
@@ -246,6 +253,7 @@ export function NofapWizard({ view, host, onEnabled }: Props) {
             <h3 className="text-[13px] font-medium text-ink">{t('nofap.wizard.summary.choices')}</h3>
             <p className="mt-1 text-[13px] leading-5 text-ink-2">{t('nofap.wizard.summary.layers', { layers })}</p>
             <p className="text-[13px] leading-5 text-ink-2">{t('nofap.wizard.summary.delay', { delay: fmtDelay(delay, t) })}</p>
+            {host?.autostart && <p className="text-[13px] leading-5 text-ink-2">{t(autostart ? 'nofap.wizard.summary.autostart_on' : 'nofap.wizard.summary.autostart_off')}</p>}
           </section>
           {(['data', 'off', 'remove'] as const).map((part) => (
             <section key={part}>

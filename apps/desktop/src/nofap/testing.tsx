@@ -11,7 +11,7 @@ import type { NofapCmd, NofapCommand } from './types';
 
 export function resetNofap(scenario: Scenario): void {
   __nofapMock.reset(scenario);
-  useNofapStore.setState({ view: null, error: null, sites: null, support: null });
+  useNofapStore.setState({ view: null, error: null, sites: null, support: null, supportFailed: false });
 }
 
 export const renderPage = (host?: NofapHost, entry = '/nofap') =>

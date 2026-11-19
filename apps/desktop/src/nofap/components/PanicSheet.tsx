@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
+import { Skeleton } from '../../components/ui/misc';
 import { useLocale, useT } from '../../i18n';
 import { crisisText, fmtClock, quoted } from '../labels';
 import type { HelpResource, IfThenPlan, UserEvent } from '../types';
@@ -13,7 +14,8 @@ export type PanicView = 'options' | 'surf' | 'away' | 'talk';
 interface Props {
   values: string;
   plans: IfThenPlan[];
-  resources: HelpResource[];
+  /** `null` while the list is still on its way: nothing is said about it until it is known. */
+  resources: HelpResource[] | null;
   record: (event: UserEvent) => void;
   onClose: () => void;
   /** Opens directly on one of the three options (the card window's buttons). */
@@ -23,15 +25,15 @@ interface Props {
 }
 
 /** The crisis sentence with the numbers of the resources payload, and the list itself. One step from every screen. */
-export function CrisisCard({ resources }: { resources: HelpResource[] }) {
+export function CrisisCard({ resources }: { resources: HelpResource[] | null }) {
   const t = useT();
   const locale = useLocale();
-  const text = crisisText(locale, resources);
+  const text = resources ? crisisText(locale, resources) : null;
   return (
     <div className="flex flex-col gap-3" data-testid="crisis-card">
       <h3 className="text-sm font-semibold text-ink">{t('nofap.crisis.title')}</h3>
       {text && <p className="text-[13px] leading-5 text-ink">{text}</p>}
-      <ResourceList resources={resources} />
+      {resources ? <ResourceList resources={resources} /> : <Skeleton className="h-24" />}
     </div>
   );
 }
