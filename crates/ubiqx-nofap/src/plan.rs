@@ -35,6 +35,13 @@ pub const EXIT_PARTIAL: i32 = 3;
 pub const EXIT_FAILED: i32 = 4;
 pub const EXIT_GATED: i32 = 5;
 
+/// How often the verify pass re-reads the system tiers (unprivileged; it never elevates).
+pub const VERIFY_EVERY_SECS: u64 = 120;
+/// How often the canary is resolved while the hosts block is applied.
+pub const CANARY_EVERY_SECS: i64 = 1_800;
+/// The drift card is shown once per drift episode and at most once in this long.
+pub const DRIFT_CARD_EVERY_SECS: i64 = 21_600;
+
 /// [`ARG_BUDGET_WINDOWS`] or [`ARG_BUDGET_UNIX`].
 pub fn arg_budget(os: Os) -> usize {
     todo!()

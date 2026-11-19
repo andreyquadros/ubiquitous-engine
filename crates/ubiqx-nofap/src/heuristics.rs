@@ -7,12 +7,121 @@
 //! | Signal | a signal-grade whole token or TLD: raises vision priority, never blocks |
 //! | Never | words that are not used at all (`sex`, `anal`, `gay`, `teen`, …) |
 //!
-//! Seeded by the foundation unit: signatures only. The word lists are data of this file
-//! and are written by its owner from the design's table and
-//! `docs/nofap/research/research-blocklists.md` section 9.
+//! Seeded by the foundation unit: the word lists of the design's table and of
+//! `docs/nofap/research/research-blocklists.md` section 9.1, and the signatures. The owner
+//! of this file tunes the lists against the false-positive traps of design section 3.6.
 #![allow(unused_variables)]
 
 use crate::matcher::BlockSource;
+
+/// Top-level domains that block.
+pub const BLOCK_TLDS: &[&str] = &["xxx", "porn", "sex", "sexy", "adult"];
+
+/// Block-grade substrings, safe anywhere in a name.
+pub const BLOCK_SUBSTRINGS: &[&str] = &[
+    "porn",
+    "xxx",
+    "hentai",
+    "blowjob",
+    "gangbang",
+    "cumshot",
+    "handjob",
+    "bukkake",
+    "deepthroat",
+    "creampie",
+    "camgirl",
+    "shemale",
+    "upskirt",
+    "masturbat",
+    "bokep",
+    "phimsex",
+    "nudes",
+    "putas",
+    "escorts",
+    // PT-BR
+    "putaria",
+    "buceta",
+    "bucetinha",
+    "siririca",
+    "contoseroticos",
+    "brasileirinhas",
+    "pornozao",
+    "safadas",
+    "novinhas",
+    "gostosas",
+    "peladas",
+    "transando",
+    "gozando",
+];
+
+/// Brand stems, block-grade as substrings after [`fold_lookalikes`].
+pub const BRAND_STEMS: &[&str] = &[
+    "pornhub",
+    "xvideos",
+    "xnxx",
+    "xhamster",
+    "redtube",
+    "youporn",
+    "spankbang",
+    "eporner",
+    "chaturbate",
+    "stripchat",
+    "bongacams",
+    "livejasmin",
+    "cam4",
+    "myfreecams",
+    "onlyfans",
+    "fansly",
+    "brazzers",
+    "missav",
+    "nhentai",
+    "hanime",
+    "rule34",
+    "e-hentai",
+    "fapello",
+    "erome",
+    "coomer",
+    "kemono",
+    "simpcity",
+    "noodlemagazine",
+    "sxyprn",
+    "faphouse",
+    "javhd",
+    "supjav",
+];
+
+/// Signal-grade whole tokens: they raise vision priority and never block. `pussy` counts
+/// only when it is not followed by digits.
+pub const SIGNAL_TOKENS: &[&str] = &[
+    "milf",
+    "sexy",
+    "adult",
+    "escort",
+    "naked",
+    "nude",
+    "pussy",
+    "sexo",
+    "bdsm",
+    "webcam",
+    "cams",
+    "erotic",
+    "erotica",
+    "fetish",
+    "voyeur",
+    "fuck",
+    "amadoras",
+    "acompanhantes",
+];
+
+/// Signal-grade top-level domains.
+pub const SIGNAL_TLDS: &[&str] = &["cam", "webcam", "tube"];
+
+/// Words that are not used at all, neither to block nor as a signal. `gay` is never a
+/// signal: an orientation is not a risk marker.
+pub const NEVER_WORDS: &[&str] = &[
+    "sex", "anal", "cum", "ass", "cock", "dick", "tits", "cam", "jav", "gay", "teen", "incest",
+    "pau", "rola", "pica", "puta", "bunda", "pelada", "foda",
+];
 
 /// What the rules say about a host that nothing else decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
