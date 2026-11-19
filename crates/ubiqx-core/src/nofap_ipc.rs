@@ -11,8 +11,8 @@
 //!   kind of change and of user event);
 //! * `apps/desktop/src/nofap/fixtures/views.json`: one value per return type, one event per
 //!   [`NofapEvent`] variant, one card per kind, statuses covering every tier state and
-//!   issue, and under `enums` every value of every closed set on the wire, so the frontend
-//!   can check its union types in both directions;
+//!   issue, every line a preview can hold, and under `enums` every value of every closed
+//!   set on the wire, so the frontend can check its union types in both directions;
 //! * `apps/desktop/src/nofap/fixtures/golden.ts`: the same two values as TypeScript
 //!   literals (`as const`). A JSON import widens every string to `string`, so it cannot be
 //!   checked against a union of literals; this module can
@@ -408,7 +408,19 @@ pub struct GoldenViews {
     /// One per variant.
     pub events: Vec<NofapEvent>,
     pub statuses: Vec<NofapStatus>,
+    /// Every line `system_preview` can return (`ubiqx_core::nofap::preview::LINES`): the
+    /// frontend needs a sentence for each key and fills its one placeholder with `detail`.
+    pub preview_lines: Vec<PreviewLine>,
     pub enums: GoldenEnums,
+}
+
+/// One entry of `ubiqx_core::nofap::preview::LINES`, as the fixture carries it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PreviewLine {
+    pub key: String,
+    pub tier: Tier,
+    /// Name of the placeholder `detail` fills; `None` for a line without one.
+    pub placeholder: Option<String>,
 }
 
 /// Every value of every closed set that crosses the boundary as a bare string, each list
@@ -433,6 +445,9 @@ pub struct GoldenEnums {
     pub os: Vec<Os>,
     pub tier: Vec<Tier>,
     pub resolver: Vec<ResolverId>,
+    /// `ubiqx_core::nofap::reason::ALL`. Unlike the other lists this one is not the whole
+    /// type (a reason travels as a string): a code outside it gets the neutral sentence.
+    pub reason: Vec<String>,
 }
 
 /// Representative values of every wire type. They are the source of the two fixture files;
@@ -442,7 +457,8 @@ pub mod sample {
 
     use super::*;
     use crate::nofap::{
-        GuardState, TierCapability, TierReport, TierState, VisionConsent, VisionState, DISPLAY_NAME,
+        preview, reason, GuardState, TierCapability, TierReport, TierState, VisionConsent,
+        VisionState, DISPLAY_NAME,
     };
 
     /// 2026-09-17 15:00 UTC plus `mins` minutes (the repository's fixed test clock).
@@ -687,24 +703,40 @@ pub mod sample {
         }
     }
 
+    /// A first apply of all three tiers on a machine with a DNS set by hand.
     pub fn planned_changes() -> Vec<PlannedChange> {
+        let line = |tier, key: &str, detail: Option<&str>| PlannedChange {
+            tier,
+            text_key: key.into(),
+            detail: detail.map(Into::into),
+        };
         vec![
-            PlannedChange {
-                tier: Tier::Hosts,
-                text_key: "preview.hosts".into(),
-                detail: Some("8003".into()),
-            },
-            PlannedChange {
-                tier: Tier::Resolver,
-                text_key: "dns.previous".into(),
-                detail: Some("192.168.0.2".into()),
-            },
-            PlannedChange {
-                tier: Tier::Policies,
-                text_key: "policies.disclosure".into(),
-                detail: None,
-            },
+            line(Tier::Hosts, preview::HOSTS_ADD, Some("8003")),
+            line(Tier::Hosts, preview::HOSTS_READABLE, None),
+            line(
+                Tier::Resolver,
+                preview::RESOLVER_SET,
+                Some("Cloudflare for Families"),
+            ),
+            line(Tier::Resolver, preview::DNS_PREVIOUS, Some("192.168.0.2")),
+            line(
+                Tier::Policies,
+                preview::POLICIES_SET,
+                Some("Chrome, Firefox"),
+            ),
+            line(Tier::Policies, preview::POLICIES_DISCLOSURE, None),
         ]
+    }
+
+    pub fn preview_lines() -> Vec<PreviewLine> {
+        preview::LINES
+            .into_iter()
+            .map(|(key, tier, placeholder)| PreviewLine {
+                key: key.into(),
+                tier,
+                placeholder: placeholder.map(Into::into),
+            })
+            .collect()
     }
 
     pub fn apply_outcomes() -> Vec<ApplyOutcome> {
@@ -925,6 +957,7 @@ pub mod sample {
             },
             events: events(),
             statuses: statuses(),
+            preview_lines: preview_lines(),
             enums: enums(),
         }
     }
@@ -946,6 +979,7 @@ pub mod sample {
             os: Os::ALL.to_vec(),
             tier: Tier::ALL.to_vec(),
             resolver: ResolverId::ALL.to_vec(),
+            reason: reason::ALL.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -1240,7 +1274,7 @@ mod tests {
         // Every list is non-empty, free of duplicates and made of bare strings.
         let enums = serde_json::to_value(sample::enums()).unwrap();
         let lists = enums.as_object().unwrap();
-        assert_eq!(lists.len(), 15);
+        assert_eq!(lists.len(), 16);
         for (name, list) in lists {
             let values: Vec<&str> = list
                 .as_array()
@@ -1255,6 +1289,69 @@ mod tests {
         assert_eq!(enums["mood"], json!(["ok", "meh", "hard", "very_bad"]));
         assert_eq!(enums["ai_provider"][1], "openai");
         assert_eq!(enums["product"], json!(["ubiqx", "shield"]));
+    }
+
+    /// Every reason code a serialised value carries: the `reason` of an unsupported state
+    /// and of a tier report, and the `detail` of an unavailable outcome.
+    fn reason_codes(value: &Value, out: &mut Vec<String>) {
+        match value {
+            Value::Object(map) => {
+                let unsupported = map.get("state").is_some_and(|s| s == "unsupported");
+                let report = map.contains_key("tier") && map.contains_key("ok");
+                if unsupported || report {
+                    if let Some(code) = map.get("reason").and_then(Value::as_str) {
+                        out.push(code.to_string());
+                    }
+                }
+                if map.get("outcome").is_some_and(|o| o == "unavailable") {
+                    out.push(map["detail"].as_str().unwrap().to_string());
+                }
+                map.values().for_each(|inner| reason_codes(inner, out));
+            }
+            Value::Array(items) => items.iter().for_each(|inner| reason_codes(inner, out)),
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn samples_use_only_listed_preview_lines_and_reason_codes() {
+        let views = sample::views();
+        assert_eq!(
+            views.preview_lines.len(),
+            crate::nofap::preview::LINES.len()
+        );
+        for change in &views.planned_changes {
+            let line = views
+                .preview_lines
+                .iter()
+                .find(|l| l.key == change.text_key)
+                .unwrap_or_else(|| panic!("{} is not a preview line", change.text_key));
+            assert_eq!(line.tier, change.tier, "{}", change.text_key);
+            assert_eq!(
+                line.placeholder.is_some(),
+                change.detail.is_some(),
+                "{}: a detail exactly when the line has a placeholder",
+                change.text_key
+            );
+        }
+
+        let mut codes = Vec::new();
+        reason_codes(&serde_json::to_value(&views).unwrap(), &mut codes);
+        // The view, the statuses, a partial apply and an unavailable one all carry a code.
+        assert!(codes.len() >= 4, "{codes:?}");
+        for code in &codes {
+            assert!(
+                views.enums.reason.contains(code),
+                "{code} is not a listed reason"
+            );
+        }
+        // The walker sees a code that is not listed.
+        let mut stray = Vec::new();
+        reason_codes(
+            &json!({ "hosts": { "state": "unsupported", "reason": "made_up" } }),
+            &mut stray,
+        );
+        assert_eq!(stray, ["made_up"]);
     }
 
     #[test]

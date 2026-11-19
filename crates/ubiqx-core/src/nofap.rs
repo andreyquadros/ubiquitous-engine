@@ -672,8 +672,7 @@ pub enum TierState {
     NotApplied,
     /// Closed for this operating system until its checks pass.
     Gated,
-    /// Cannot be done on this machine; `reason` is a short code (`write_refused`,
-    /// `appimage`, `no_resolved`, `flatpak`, `not_built`, …).
+    /// Cannot be done on this machine; `reason` is one of the codes of [`reason`].
     Unsupported {
         reason: String,
     },
@@ -843,6 +842,7 @@ pub enum TierCapability {
     Available,
     /// Closed by the per-OS gate.
     Gated,
+    /// `reason` is one of the codes of [`reason`].
     Unsupported {
         reason: String,
     },
@@ -895,7 +895,8 @@ pub struct SystemObservation {
     pub policies: Vec<PolicyObservation>,
     /// The helper's state file, when present and readable.
     pub state: Option<SystemState>,
-    /// Short code when the state file exists but could not be read or parsed.
+    /// `unreadable` (see [`reason`]) when the state file exists but could not be read or
+    /// parsed.
     pub state_error: Option<String>,
     /// Addresses the hosts canary resolved to through the OS: `None` when this observation
     /// was not asked to look it up ([`ObserveOpts::canary`]), empty when it did not resolve.
@@ -910,8 +911,8 @@ pub struct SystemObservation {
 pub struct HostsObservation {
     /// The hosts file as text (invalid UTF-8 replaced); `None` when it could not be read.
     pub text: Option<String>,
-    /// Short code when the tier cannot work here (`unreadable`, `appimage`,
-    /// `write_refused`, …).
+    /// One of the codes of [`reason`] when the tier cannot work here (`unreadable`,
+    /// `appimage`, `write_refused`).
     pub error: Option<String>,
 }
 
@@ -930,7 +931,8 @@ pub struct ResolverObservation {
     /// ([`ObserveOpts::full`]). A quick read that found nothing usable sets `error`, and the
     /// verify pass then asks for the full read every 10 minutes.
     pub full: bool,
-    /// Short code when DNS could not be read at all.
+    /// One of the codes of [`reason`] when DNS could not be read, or the tier cannot work
+    /// here (`unreadable`, `no_resolved`).
     pub error: Option<String>,
 }
 
@@ -966,7 +968,8 @@ pub struct PolicyObservation {
     /// Linux: the same keys set by a policy file that is not ours.
     #[serde(default)]
     pub foreign: Vec<PolicyValue>,
-    /// Short code when the browser cannot be handled (`flatpak`, `unreadable`, …).
+    /// One of the codes of [`reason`] when the browser cannot be handled (`flatpak`,
+    /// `unreadable`).
     #[serde(default)]
     pub error: Option<String>,
 }
@@ -1015,11 +1018,111 @@ pub struct PolicyCreated {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlannedChange {
     pub tier: Tier,
-    /// Key in the `nofap` i18n namespace.
+    /// Key in the `nofap` i18n namespace: one of the keys of [`preview::LINES`].
     pub text_key: String,
     /// What the sentence is about, computed locally: a count of names, the DNS servers that
-    /// will be replaced, a browser name.
+    /// will be replaced, browser names. Present exactly when the line has a placeholder
+    /// ([`preview::LINES`]), whose value it is.
     pub detail: Option<String>,
+}
+
+/// The lines a preview can hold. A closed list, because two sides have to agree on it
+/// without seeing each other: `ubiqx_nofap::plan::preview` emits only these keys, and the
+/// frontend has a sentence for each.
+pub mod preview {
+    use super::Tier;
+
+    /// The block is written for the first time; `{n}` names.
+    pub const HOSTS_ADD: &str = "preview.hosts_add";
+    /// The block is there and is rewritten; `{n}` names after the change.
+    pub const HOSTS_UPDATE: &str = "preview.hosts_update";
+    /// The block is taken out of the hosts file.
+    pub const HOSTS_REMOVE: &str = "preview.hosts_remove";
+    /// The plan carries sites the user typed (copy bank: other accounts can read them).
+    pub const HOSTS_READABLE: &str = "hosts.readable";
+    /// System DNS is pointed at `{resolver}` (the operator's name from the resolver table).
+    pub const RESOLVER_SET: &str = "preview.resolver_set";
+    /// A DNS set by hand, `{servers}`, is replaced (copy bank).
+    pub const DNS_PREVIOUS: &str = "dns.previous";
+    /// DNS goes back to automatic where it is still ours.
+    pub const RESOLVER_RESET: &str = "preview.resolver_reset";
+    /// Policy values are written for `{browsers}` (names, comma-separated).
+    pub const POLICIES_SET: &str = "preview.policies_set";
+    /// What the browsers will show once managed (copy bank).
+    pub const POLICIES_DISCLOSURE: &str = "policies.disclosure";
+    /// `{browsers}` already carry someone else's policy and are left alone.
+    pub const POLICIES_CONFLICT: &str = "preview.policies_conflict";
+    /// Our policy values and files are deleted.
+    pub const POLICIES_REMOVE: &str = "preview.policies_remove";
+
+    /// Every line: its key, its tier and the name of its one placeholder. The frontend
+    /// renders a line as `t(text_key, { [placeholder]: detail })`.
+    pub const LINES: [(&str, Tier, Option<&str>); 11] = [
+        (HOSTS_ADD, Tier::Hosts, Some("n")),
+        (HOSTS_UPDATE, Tier::Hosts, Some("n")),
+        (HOSTS_REMOVE, Tier::Hosts, None),
+        (HOSTS_READABLE, Tier::Hosts, None),
+        (RESOLVER_SET, Tier::Resolver, Some("resolver")),
+        (DNS_PREVIOUS, Tier::Resolver, Some("servers")),
+        (RESOLVER_RESET, Tier::Resolver, None),
+        (POLICIES_SET, Tier::Policies, Some("browsers")),
+        (POLICIES_DISCLOSURE, Tier::Policies, None),
+        (POLICIES_CONFLICT, Tier::Policies, Some("browsers")),
+        (POLICIES_REMOVE, Tier::Policies, None),
+    ];
+}
+
+/// The short codes that say why something cannot be done: the `reason` of
+/// [`TierState::Unsupported`], [`TierCapability::Unsupported`] and [`TierReport`], the
+/// string of [`ApplyOutcome::Unavailable`] and the `error` fields of an observation. A
+/// closed vocabulary, because the adapters and the decisions write these codes and the
+/// frontend has one sentence for each (and a neutral one for a code it does not know,
+/// written by a newer build).
+pub mod reason {
+    /// The hosts file cannot be written: a read-only store or file system, or security
+    /// software refused the write.
+    pub const WRITE_REFUSED: &str = "write_refused";
+    /// A file the tier depends on could not be read.
+    pub const UNREADABLE: &str = "unreadable";
+    /// The app runs from an AppImage: root cannot read the user's mount, so the helper
+    /// cannot be started with administrator rights.
+    pub const APPIMAGE: &str = "appimage";
+    /// Linux: systemd-resolved is not running, or `/etc/resolv.conf` does not point at it.
+    pub const NO_RESOLVED: &str = "no_resolved";
+    /// Names stopped resolving after the DNS change, and the helper undid it.
+    pub const UNREACHABLE: &str = "unreachable";
+    /// A Flatpak browser: its policy location is out of reach.
+    pub const FLATPAK: &str = "flatpak";
+    /// A browser's policy location holds someone else's value; nothing was written.
+    pub const CONFLICT: &str = "conflict";
+    /// The helper refused a tier that is closed for this operating system.
+    pub const GATED: &str = "gated";
+    /// This build has no back-end for the tier.
+    pub const NOT_BUILT: &str = "not_built";
+    /// There is no back-end for this operating system.
+    pub const UNSUPPORTED_OS: &str = "unsupported_os";
+    /// This host has no system layer at all (the CLI, tests).
+    pub const NO_SYSTEM_LAYER: &str = "no_system_layer";
+    /// Linux: no polkit agent, or no `pkexec`, to ask for the password.
+    pub const NO_POLKIT_AGENT: &str = "no_polkit_agent";
+    /// The helper failed for a reason none of the other codes names.
+    pub const FAILED: &str = "failed";
+
+    pub const ALL: [&str; 13] = [
+        WRITE_REFUSED,
+        UNREADABLE,
+        APPIMAGE,
+        NO_RESOLVED,
+        UNREACHABLE,
+        FLATPAK,
+        CONFLICT,
+        GATED,
+        NOT_BUILT,
+        UNSUPPORTED_OS,
+        NO_SYSTEM_LAYER,
+        NO_POLKIT_AGENT,
+        FAILED,
+    ];
 }
 
 /// What happened to one tier in a helper run.
@@ -1027,8 +1130,7 @@ pub struct PlannedChange {
 pub struct TierReport {
     pub tier: Tier,
     pub ok: bool,
-    /// Short code when `ok` is false (`unreachable`, `write_refused`, `conflict`, `gated`,
-    /// …).
+    /// One of the codes of [`reason`] when `ok` is false.
     pub reason: Option<String>,
 }
 
@@ -1042,8 +1144,8 @@ pub enum ApplyOutcome {
     Partial(Vec<TierReport>),
     /// The user declined the OS prompt.
     Declined,
-    /// Elevation cannot work here; the string is a short code (`no_polkit_agent`,
-    /// `appimage`, `unsupported_os`, …).
+    /// Elevation cannot work here; the string is one of the codes of [`reason`]
+    /// (`no_polkit_agent`, `appimage`, `unsupported_os`, `no_system_layer`).
     Unavailable(String),
 }
 
@@ -2172,6 +2274,43 @@ mod tests {
         assert!(!SYSTEM_ID.to_ascii_lowercase().contains("nofap"));
         assert!(!DISPLAY_NAME.trim().is_empty());
         assert_eq!(crate::product::SHIELD.display_name, DISPLAY_NAME);
+    }
+
+    #[test]
+    fn preview_lines_and_reason_codes_are_closed_lists() {
+        let keys: std::collections::HashSet<&str> =
+            preview::LINES.iter().map(|(key, _, _)| *key).collect();
+        assert_eq!(keys.len(), preview::LINES.len(), "a preview key twice");
+        for (key, _, placeholder) in preview::LINES {
+            // A key is `<group>.<name>` in the `nofap` namespace; a placeholder is one word.
+            let (group, name) = key.split_once('.').expect("a namespaced key");
+            assert!(
+                !group.is_empty() && !name.is_empty() && !name.contains('.'),
+                "{key}"
+            );
+            assert!(placeholder
+                .is_none_or(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_lowercase())));
+        }
+        // Every tier can be added and taken away again.
+        for tier in Tier::ALL {
+            assert!(preview::LINES.iter().filter(|(_, t, _)| *t == tier).count() >= 2);
+        }
+        assert_eq!(
+            preview::LINES
+                .iter()
+                .find(|(k, _, _)| *k == preview::DNS_PREVIOUS),
+            Some(&("dns.previous", Tier::Resolver, Some("servers")))
+        );
+
+        let codes: std::collections::HashSet<&str> = reason::ALL.into_iter().collect();
+        assert_eq!(codes.len(), reason::ALL.len(), "a reason code twice");
+        for code in reason::ALL {
+            assert!(
+                !code.is_empty() && code.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
+                "{code} is not a snake_case code"
+            );
+        }
+        assert!(codes.contains(reason::NO_SYSTEM_LAYER) && codes.contains(reason::GATED));
     }
 
     #[test]

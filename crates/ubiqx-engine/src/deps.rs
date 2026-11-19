@@ -230,7 +230,7 @@ impl NofapPorts {
 }
 
 /// Reason code the inert system layer reports for every tier.
-pub const NO_SYSTEM_LAYER: &str = "no_system_layer";
+pub const NO_SYSTEM_LAYER: &str = ubiqx_core::nofap::reason::NO_SYSTEM_LAYER;
 
 /// [`SystemShield`] of a host without a system layer: every tier is unsupported, nothing
 /// is observed and nothing is ever applied.

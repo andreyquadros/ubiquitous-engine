@@ -537,13 +537,28 @@ export const views = {
   "planned_changes": [
     {
       "tier": "hosts",
-      "text_key": "preview.hosts",
+      "text_key": "preview.hosts_add",
       "detail": "8003"
+    },
+    {
+      "tier": "hosts",
+      "text_key": "hosts.readable",
+      "detail": null
+    },
+    {
+      "tier": "resolver",
+      "text_key": "preview.resolver_set",
+      "detail": "Cloudflare for Families"
     },
     {
       "tier": "resolver",
       "text_key": "dns.previous",
       "detail": "192.168.0.2"
+    },
+    {
+      "tier": "policies",
+      "text_key": "preview.policies_set",
+      "detail": "Chrome, Firefox"
     },
     {
       "tier": "policies",
@@ -1206,6 +1221,63 @@ export const views = {
       "extras_left_out": 0
     }
   ],
+  "preview_lines": [
+    {
+      "key": "preview.hosts_add",
+      "tier": "hosts",
+      "placeholder": "n"
+    },
+    {
+      "key": "preview.hosts_update",
+      "tier": "hosts",
+      "placeholder": "n"
+    },
+    {
+      "key": "preview.hosts_remove",
+      "tier": "hosts",
+      "placeholder": null
+    },
+    {
+      "key": "hosts.readable",
+      "tier": "hosts",
+      "placeholder": null
+    },
+    {
+      "key": "preview.resolver_set",
+      "tier": "resolver",
+      "placeholder": "resolver"
+    },
+    {
+      "key": "dns.previous",
+      "tier": "resolver",
+      "placeholder": "servers"
+    },
+    {
+      "key": "preview.resolver_reset",
+      "tier": "resolver",
+      "placeholder": null
+    },
+    {
+      "key": "preview.policies_set",
+      "tier": "policies",
+      "placeholder": "browsers"
+    },
+    {
+      "key": "policies.disclosure",
+      "tier": "policies",
+      "placeholder": null
+    },
+    {
+      "key": "preview.policies_conflict",
+      "tier": "policies",
+      "placeholder": "browsers"
+    },
+    {
+      "key": "preview.policies_remove",
+      "tier": "policies",
+      "placeholder": null
+    }
+  ],
   "enums": {
     "overall": [
       "off",
@@ -1337,6 +1409,21 @@ export const views = {
     ],
     "resolver": [
       "cloudflare_family"
+    ],
+    "reason": [
+      "write_refused",
+      "unreadable",
+      "appimage",
+      "no_resolved",
+      "unreachable",
+      "flatpak",
+      "conflict",
+      "gated",
+      "not_built",
+      "unsupported_os",
+      "no_system_layer",
+      "no_polkit_agent",
+      "failed"
     ]
   }
 } as const;

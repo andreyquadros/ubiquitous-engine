@@ -180,7 +180,9 @@ pub fn assess(input: &AssessInput<'_>, observation: &SystemObservation) -> Syste
 }
 
 /// The exact list of changes applying `plan` would make on a machine that looks like
-/// `observation`, for the user to read before the OS prompt.
+/// `observation`, for the user to read before the OS prompt. Every line is one of
+/// `ubiqx_core::nofap::preview::LINES`, with a `detail` exactly when the line has a
+/// placeholder; a tier that is gated or unsupported adds no line.
 pub fn preview(plan: &SystemPlan, observation: &SystemObservation, os: Os) -> Vec<PlannedChange> {
     todo!()
 }
