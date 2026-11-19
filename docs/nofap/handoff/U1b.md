@@ -97,4 +97,67 @@ Result on the measured sets: of the unlisted hosts the rules block 1,503 by keyw
 - The open points of U1a stand (the review list has not been read by a person; `extra-ptbr.txt` awaits a human check; the ShadowWhisperer pin can disappear). Its two "design decision needed" points are closed by decisions 7 and 8.
 - A snapshot hook committed my first edits of the rule files, `sources.lock.json`, the script and the three Rust files as `127287d`, before the rebuilt outputs existed; `662df58` brought the outputs in line. Between those two commits `--check` would have failed.
 
+## Reviewer
+
+U1b holds up: every acceptance command passes and no input I tried makes it panic, but I found two ways an adult site was read as "not a site", ordinary names that were blocked, and inputs that took seconds to judge. All of that is fixed and tested; the data was rebuilt once (list version 202611192145).
+
+**What I verified independently**
+- **Acceptance commands**, run by me on the engineer's tree (`40a93d0`): `cargo test -p ubiqx-nofap -- list:: matcher:: heuristics::` (41 passed), `cargo test -p ubiqx-nofap --test embedded` (19 passed), `cargo test -p ubiqx-nofap`, `cargo clippy -p ubiqx-nofap --all-targets -- -D warnings`, `cargo fmt -p ubiqx-nofap -- --check`, `python3 scripts/nofap/build_blocklist.py --check` (rebuilt from the cached sources: byte-identical). The form in design section 13 (`cargo test -p ubiqx-nofap list:: matcher:: heuristics::`) is rejected by cargo, as the engineer says.
+- **My own table of 381 names** the engineer's tests do not contain: 154 adult sites in eight languages (35 Brazilian or Portuguese), 44 look-alike spellings and mirrors, 170 ordinary names with risky letters (towns, surnames, Thai given names, companies, roman numerals, sizes, medical and help sites in Portuguese, English and Spanish) and 13 forms of one host (case, port, user-info, trailing dots, full-width letters and dots, percent-encoding). 17 verdicts were wrong; 15 are fixed, 2 are open points.
+- **Longest match:** all 66 listed names below a rule-file name (section 2 of the review file) are `Blocked(List)`, also with `www.` and two more labels in front; the 14 names above them and an unlisted sibling under each are `Unknown(Mixed)`.
+- **Every Chrome UX Report host** (999,075) through `Matcher::verdict`. I read all 1,512 keyword blocks and all 164 TLD blocks of hosts that are on no list. Ordinary sites among them: `xxx.fandom.com` (a film wiki) and `www.1337xxx.to` (a torrent mirror); two lottery mirrors (`…togel2xxx.org`) and two names of digits before `xxx` that I cannot judge. Everything else is an adult site, an adult shop or an adult app listing.
+- **Hostile input:** 138 strings (empty, dots only, 300-letter labels, 2,000 and 50,000 labels, 100,000 letters, control characters, bidi and zero-width characters, emoji, broken punycode, every IP literal form including octal and hex, IPv6 with zones, bad ports, user-info tricks, browser-internal schemes) through `verdict`, `verdict_for_url`, `in_hosts_tier`, `normalize_host`, `host_rule`, `title_signal`, `path_signal` and `fold_lookalikes`. No panic. One pass over the set took 6.6 s before the fixes and takes 0.07 s now.
+- **Cost (release build):** `Matcher::new` 0.17 ms (0.2 ms with `MatcherData::embedded()`); `verdict` 3 to 6 microseconds (one million hosts in 3.2 s); `verdict_for_url` 9 microseconds; the first `in_hosts_tier` 0.8 ms, later ones 0.3 microseconds.
+- **Rule syntax:** the three forms on the real files, a brand TLD as a name rule, and that no rule line has another shape, are tested by the engineer and I found nothing to add.
+
+**What was wrong, and is fixed** (commits `4381b69`, `568b060`)
+- **An address with a second address in it was not a site.** A browser shows an address without its scheme. `pornhub.com/login?next=https://example.org/` contains `://`, so `verdict_for_url` parsed it as it stood, failed and answered `Unknown(Local)`: never blocked, never looked at. `verdict` and `normalize_host` took the host after the `://`, so the same string was judged as `example.org`. A scheme is now read only at the start of an address.
+- **Reader and source views were not a site.** `about:reader?url=…` (Firefox), `read://…/?url=…` (Edge), `chrome-distiller://…/?url=…` (Chrome) and `view-source:…` show a page under their own scheme, the first three with its pictures. `verdict_for_url` answered `Unknown(Local)`; it now gives the verdict and the path signal of the page they show.
+- **Ordinary names were blocked by a keyword:** `menudesign.com`, `nudesign.com.br` (`nudes`); `chentai.com`, `zhentai.com.cn` (`hentai`); `computaria.com.br`, `disputaria.com` (`putaria`); `seminovinhas.com.br` (`novinhas`); `funeralescorts.com`, `pilotcarescorts.com`, `securityescorts.co.za`, `medicalescorts.org`, `motorcycleescorts.com` (`escorts`). Each word keeps blocking around the exception (`sendmenudes`, `comicshentai`, `telegramputaria`, `londonescorts`); a trade before `escorts` leaves a signal.
+- **Time quadratic in the length of the input.** A title, a query or a label that is one long run of letters with a match at every step (`xxxx…`, `pornporn…`) was walked once per match: seconds for 100,000 letters, minutes for a million, on the thread that runs the guard. A verdict also hashed a name once per label with no bound on the labels. The token is now found once, and a name longer than the DNS carries (253 bytes, 63 a label) is `Unknown(Local)`.
+- **Random tokens in a URL were a signal.** 0.44% of addresses with a 160-character identifier spelled `xxx` by chance, which sends a search or a video page to the screen check for nothing. An unproven match now counts in free text only in a piece made of letters; the rate is 0.04%.
+- **Data:** `xxx.fandom.com` is on `never-block.txt` (a keyword collision, like `xxxlutz.de`); `1337xxx.to` is on `mixed.txt` beside its siblings; four Brazilian sites that no public list names are on `extra-ptbr.txt` (`pornodoido.com.br` and `xvideoporno.com.br`, both among the 50,000 most visited hosts, `fotosporno.blog.br`, `videospornosbr.com.br`), so they are also in the hosts tier.
+- **Vocabulary.** Adult sites with Portuguese, Spanish and Russian compound names were only a signal (`pornodoido`, `xvideoporno`, `fotosporno`, `pornoespanol`, `ruporno`, `incestoporno`, `hqporner`). I added about 170 words to `SITE_WORDS` and `HEAD_WORDS` and the endings `er`, `ers`, `uha` after `porn`. Measured as the engineer did: on the 906,811 Chrome UX Report hosts that are on no list the keyword blocks go from 1,512 to 1,567; I read the 55 new ones and all are adult sites. On the names of the public lists the blocks go from 40,426 to 42,394, and the two names that stopped blocking are ordinary (`commercialmedicalescorts.com`, `jp-chentaiji.net`).
+
+**Numbers now (list version 202611192145)**
+
+| Item | Value |
+|---|---|
+| `core.bin` | 239,525 keys, 1,916,224 bytes |
+| `popular.bin` | 94,089 keys, 752,736 bytes |
+| `hosts-tier.txt` | 20,000 lines |
+| Rules | never-block 386, mixed 103, never-capture 272 |
+| Tests | 47 unit tests (list 7, matcher 23, heuristics 17), 22 in `tests/embedded.rs` |
+
+Commands on the final tree, all passing: the five cargo commands above, `python3 scripts/nofap/build_blocklist.py --offline` (all gates, second run byte-identical) and `--check`, `cargo check -p ubiqx-platform -p ubiqx-engine --all-targets`. `cargo clippy --workspace --all-targets -- -D warnings` also passed on the final tree, with the other units' files as they stood at that moment.
+
+### Deviations from the design (the reviewer's)
+
+- The engineer's deviations stand; I checked each against the code and found none hidden.
+- `verdict_for_url` unwraps `view-source:` and the three reader views. The design does not mention them.
+- `normalize_host` refuses a name over 253 bytes or with a label over 63, so such a name is `Unknown(Local)`.
+- Five more block words have exceptions (`nudes`, `hentai`, `putaria`, `novinhas`, `escorts`), written as "not after" and "not before" lists in `heuristics.rs`.
+- A weak match (a word in a place that does not prove it) is a title or path signal only in a piece without digits. `/r/EarthPorn/` is a signal; `/r/EarthPorn2/` is not.
+- `tests/embedded.rs` reads `docs/nofap/research/blocklist-top10k-review.txt` (section 2) at run time, besides `data/core.meta.json`.
+
+### Contract notes for other units (changes since the engineer's notes)
+
+- **U5:** hand `verdict_for_url` whatever the address bar holds. It now handles an address without a scheme that carries another address in its query, `view-source:` and the reader views of Firefox, Edge and Chrome. Any other string without a usable host is still `(Unknown(Local), false)`.
+- **U5 (learning):** hash the name `normalize_host` returns. It returns `None` for a name the DNS cannot carry.
+- **U2, U5:** nothing changed in `Verdict`, `HostClass`, `HostRule` or any signature. `Allowed(Snooze)` must still be sampled at signal cadence (the engineer's first note); the integrator has not yet written that into `INTEGRATOR.md`.
+- **U2, U4:** `never_block()` now also covers `xxx.fandom.com`.
+- **U9:** `cargo test -p ubiqx-nofap --test embedded` needs `docs/nofap/research/blocklist-top10k-review.txt` in the checkout. It reads the file by lines, so line endings do not matter to it.
+- Counts changed again; tests read them from `core.meta.json`.
+
+### Open points (the reviewer's)
+
+- **`shentai`** blocks. Shen Tai is a Chinese company name (`shentai.cn` in my table), but four names on the public lists are adult sites called so, and the rule cannot tell them apart.
+- **`skokka.com.br`** and other adult sites without a telling word in their name (`videosdesexo.blog`, `amadorasbrasil.com`, `camerahot.com.br`, `24video.net`, `mmsbee.com` in my table) are plain unknown sites when no list names them. `br.skokka.com` is covered. Only the screen check catches the others.
+- **A token that is `xxx` alone blocks**, also after a hyphen or digits: `superbowl-xxx.com` and `vol-xxx.example.org` would block, and the lottery mirrors and `0145xxx.com` do. I found no such ordinary site among the visited hosts, so I left the rule.
+- **Words I only suspect:** `bukkake` (a noodle dish), `shemale` inside a Persian surname, `camgirl` in "camgirlfriend", `handjob` in a German compound, `deepthroat` (Watergate), `bokep` in "bokephoto", `transando`, `safadas`, `gostosas` at the start of a label. All are invented names; none is among the 906,811 visited hosts.
+- **Web proxies** are out of reach of a name rule. Google Translate's proxy shows `beeg-com.translate.goog`; only a name with a brand or a keyword in it is caught there.
+- **The vocabulary is a long tail.** After my additions 27,944 names of the public lists are still only a signal. Each new word buys a few dozen names. The engineer's open point stands: a hand-kept general supplement, read by a person, would do more than more words.
+- **Not checked by me:** any CI run; the frontend.
+- The engineer's open points stand, except "subdomain labels count" for `xxx.fandom.com`, which is now on `never-block.txt`.
+
 Files: `/home/user/ubiquitous-engine/crates/ubiqx-nofap/src/list.rs`, `matcher.rs`, `heuristics.rs`; `/home/user/ubiquitous-engine/crates/ubiqx-nofap/tests/embedded.rs`; `/home/user/ubiquitous-engine/crates/ubiqx-nofap/data/`; `/home/user/ubiquitous-engine/scripts/nofap/build_blocklist.py`; `/home/user/ubiquitous-engine/docs/nofap/research/blocklist-top10k-review.txt`.
