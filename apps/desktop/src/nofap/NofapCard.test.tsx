@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SURF_STEP_SECS, SURF_STEPS, SurfTimer } from './components/SurfTimer';
 import { views } from './fixtures/golden';
 import { cardSize } from './labels';
@@ -231,26 +231,44 @@ describe('the card window', () => {
 });
 
 describe('the card window closes by itself only while untouched', () => {
+  // Fake timers all the way, so the outcome never depends on how long the machine takes: the modules the page
+  // imports on demand are loaded beforehand, and `settle` lets its promises run without real time passing.
+  beforeAll(async () => {
+    await import('../lib/mock');
+  });
   beforeEach(() => {
     resetNofap('on');
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers();
   });
   afterEach(() => vi.useRealTimers());
 
+  const advance = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+  const settle = async () => {
+    for (let i = 0; i < 10; i++) await advance(1);
+  };
+
   it('after the seconds the card names', async () => {
-    await open('blocked', { auto_close_secs: 600 });
-    act(() => void vi.advanceTimersByTime(300_000));
+    const card = __nofapMock.present(__nofapMock.sampleCard('blocked'));
+    expect(card.auto_close_secs).toBe(12);
+    renderCard(card.id);
+    await settle();
+    expect(screen.getByTestId('card-message')).toBeInTheDocument();
+    await advance(11_000);
     expect(screen.queryByTestId('card-closed')).toBeNull();
-    act(() => void vi.advanceTimersByTime(301_000));
+    await advance(1_000);
     expect(screen.getByTestId('card-closed')).toBeInTheDocument();
   });
 
   it('not once the user opened support', async () => {
-    await open('blocked', { auto_close_secs: 600 });
+    const card = __nofapMock.present(__nofapMock.sampleCard('blocked'));
+    renderCard(card.id);
+    await settle();
     fireEvent.click(screen.getByRole('button', { name: 'Abrir apoio' }));
-    await screen.findByTestId('card-support');
-    act(() => void vi.advanceTimersByTime(1_200_000));
+    await settle();
+    expect(screen.getByTestId('card-support')).toBeInTheDocument();
+    await advance(600_000);
     expect(screen.queryByTestId('card-closed')).toBeNull();
+    expect(screen.getByTestId('card-support')).toBeInTheDocument();
   });
 });
 
