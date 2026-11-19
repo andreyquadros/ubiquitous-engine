@@ -284,8 +284,17 @@ impl std::fmt::Display for PlanError {
 
 impl std::error::Error for PlanError {}
 
-/// Decodes a `--plan-b64` value. Checks the length and the encoding only; [`validate`]
-/// does the rest.
+/// The members of a plan's JSON object: exactly these, each once.
+const PLAN_FIELDS: [&str; 6] = ["v", "owner", "hosts", "extra", "resolver", "policies"];
+
+/// Decodes a `--plan-b64` value. Checks the length, the encoding and the shape only;
+/// [`validate`] does the rest.
+///
+/// The shape is closed, because this is read with administrator rights: one JSON object
+/// with exactly the members of [`SystemPlan`], each once and of its type. A member this
+/// build does not know, a missing member (also `resolver`, which is written as `null`)
+/// and a repeated member are all [`PlanError::Malformed`]: a plan that says something
+/// this helper cannot read is refused rather than applied in part.
 pub fn decode_plan(arg: &str) -> Result<SystemPlan, PlanError> {
     if arg.len() > HELPER_ARG_MAX {
         return Err(PlanError::TooLong { len: arg.len() });
@@ -293,7 +302,17 @@ pub fn decode_plan(arg: &str) -> Result<SystemPlan, PlanError> {
     let json = BASE64URL_NOPAD
         .decode(arg.as_bytes())
         .map_err(|_| PlanError::Malformed)?;
-    serde_json::from_slice(&json).map_err(|_| PlanError::Malformed)
+    // The typed read refuses a wrong type, a value outside a closed set and a repeated
+    // member; the untyped one shows which members were written.
+    let plan: SystemPlan = serde_json::from_slice(&json).map_err(|_| PlanError::Malformed)?;
+    let members: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_slice(&json).map_err(|_| PlanError::Malformed)?;
+    let closed = members.len() == PLAN_FIELDS.len()
+        && PLAN_FIELDS.iter().all(|field| members.contains_key(*field));
+    if !closed {
+        return Err(PlanError::Malformed);
+    }
+    Ok(plan)
 }
 
 /// Whether one user-typed name may be written to the hosts file: it passes
@@ -1443,6 +1462,141 @@ mod tests {
                 len: HELPER_ARG_MAX + 1
             })
         );
+    }
+
+    #[test]
+    fn the_shape_of_a_plan_is_closed() {
+        let raw = |json: &str| BASE64URL_NOPAD.encode(json.as_bytes());
+        let good = r#"{"v":1,"owner":"shield","hosts":true,"extra":["a.example"],"resolver":"cloudflare_family","policies":true}"#;
+        assert!(decode_plan(&raw(good)).is_ok());
+        // The order of the members and blanks between them do not matter.
+        let reordered = r#" { "policies": true, "resolver": null, "extra": [], "hosts": false, "owner": "ubiqx", "v": 1 } "#;
+        assert!(decode_plan(&raw(reordered)).is_ok());
+
+        let deep = format!(
+            r#"{{"v":1,"owner":"ubiqx","hosts":true,"extra":[],"resolver":null,"policies":false,"x":{}{}}}"#,
+            "[".repeat(5_000),
+            "]".repeat(5_000)
+        );
+        for not_a_plan in [
+            // A member this build does not know.
+            r#"{"v":1,"owner":"ubiqx","hosts":true,"extra":[],"resolver":null,"policies":false,"run":"/bin/sh"}"#,
+            r#"{"v":1,"owner":"ubiqx","hosts":true,"extra":[],"resolver":null,"policies":false,"Hosts":false}"#,
+            deep.as_str(),
+            // A member left out, `resolver` included: "no resolver" is written as null.
+            r#"{"v":1,"owner":"ubiqx","hosts":true,"extra":[],"policies":false}"#,
+            r#"{"v":1,"owner":"ubiqx","hosts":true,"extra":[],"resolver":null}"#,
+            r#"{"owner":"ubiqx","hosts":true,"extra":[],"resolver":null,"policies":false}"#,
+            r#"{"v":1,"owner":"ubiqx","hosts":true,"resolver":null,"policies":false}"#,
+            // A member written twice, with the same or with another value.
+            r#"{"v":1,"v":1,"owner":"ubiqx","hosts":true,"extra":[],"resolver":null,"policies":false}"#,
+            r#"{"v":1,"owner":"ubiqx","owner":"shield","hosts":true,"extra":[],"resolver":null,"policies":false}"#,
+            r#"{"v":1,"owner":"ubiqx","hosts":false,"extra":[],"resolver":null,"policies":false,"hosts":true}"#,
+            // The members as a list, a plan inside something else, two plans, a tail.
+            r#"[1,"ubiqx",true,[],null,false]"#,
+            r#"[{"v":1,"owner":"ubiqx","hosts":true,"extra":[],"resolver":null,"policies":false}]"#,
+            r#"{"v":1,"owner":"ubiqx","hosts":true,"extra":[],"resolver":null,"policies":false}{"v":1,"owner":"ubiqx","hosts":true,"extra":[],"resolver":null,"policies":false}"#,
+            r#"{"v":1,"owner":"ubiqx","hosts":true,"extra":[],"resolver":null,"policies":false} x"#,
+            // Values of another type or spelling.
+            r#"{"v":"1","owner":"ubiqx","hosts":true,"extra":[],"resolver":null,"policies":false}"#,
+            r#"{"v":1.5,"owner":"ubiqx","hosts":true,"extra":[],"resolver":null,"policies":false}"#,
+            r#"{"v":1,"owner":"Ubiqx","hosts":true,"extra":[],"resolver":null,"policies":false}"#,
+            r#"{"v":1,"owner":"ubiqx","hosts":1,"extra":[],"resolver":null,"policies":false}"#,
+            r#"{"v":1,"owner":"ubiqx","hosts":true,"extra":null,"resolver":null,"policies":false}"#,
+            r#"{"v":1,"owner":"ubiqx","hosts":true,"extra":[["a.example"]],"resolver":null,"policies":false}"#,
+            r#"{"v":1,"owner":"ubiqx","hosts":true,"extra":[],"resolver":["cloudflare_family"],"policies":false}"#,
+            r#"{"v":1,"owner":"ubiqx","hosts":true,"extra":[],"resolver":{"address":"9.9.9.9"},"policies":false}"#,
+            r#"{"v":1,"owner":"ubiqx","hosts":true,"extra":[],"resolver":"CloudflareFamily","policies":false}"#,
+            r#"{"v":1,"owner":"ubiqx","hosts":true,"extra":[],"resolver":null,"policies":"false"}"#,
+        ] {
+            assert_eq!(
+                decode_plan(&raw(not_a_plan)),
+                Err(PlanError::Malformed),
+                "{}",
+                &not_a_plan[..not_a_plan.len().min(120)]
+            );
+        }
+        // Bytes that are not UTF-8, and a byte-order mark in front of a good plan.
+        assert_eq!(
+            decode_plan(&BASE64URL_NOPAD.encode(&[0xFF, 0xFE, b'{', b'}'])),
+            Err(PlanError::Malformed)
+        );
+        assert_eq!(
+            decode_plan(&raw(&format!("\u{feff}{good}"))),
+            Err(PlanError::Malformed)
+        );
+    }
+
+    #[test]
+    fn the_closed_shape_is_the_shape_that_is_sent() {
+        // Whatever `encode_plan` writes has exactly the members `decode_plan` asks for,
+        // so a member added to `SystemPlan` fails here until it is listed.
+        let sent = serde_json::to_value(plan(&["example.com"])).unwrap();
+        let mut members: Vec<&str> = sent
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        members.sort_unstable();
+        let mut listed = PLAN_FIELDS.to_vec();
+        listed.sort_unstable();
+        assert_eq!(members, listed);
+        // And every plan the app can build decodes: both owners, with and without a
+        // resolver, every flag.
+        for owner in ProductId::ALL {
+            for resolver in [None, Some(ResolverId::CloudflareFamily)] {
+                for flags in 0..4u8 {
+                    let built = SystemPlan {
+                        v: CONFIG_VERSION,
+                        owner,
+                        hosts: flags & 1 != 0,
+                        extra: vec!["a.example".to_owned()],
+                        resolver,
+                        policies: flags & 2 != 0,
+                    };
+                    assert_eq!(decode_plan(&encode_plan(&built)), Ok(built));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn decoding_never_panics_on_damaged_arguments() {
+        // Every single-character change, every cut and every doubling of a good argument
+        // is either refused or decodes to a plan; nothing panics. A cut is never a plan.
+        let good = encode_plan(&plan(&["example.com", "other.example"]));
+        let chars: Vec<char> = good.chars().collect();
+        for index in 0..chars.len() {
+            for other in ['A', '_', '-', '=', '+', '/', ' ', '\n', '\0', 'é'] {
+                let mut changed = chars.clone();
+                changed[index] = other;
+                let argument: String = changed.into_iter().collect();
+                if let Ok(decoded) = decode_plan(&argument) {
+                    // What still decodes is judged like any plan.
+                    let _ = validate(&decoded, &rules(), &open(Os::Linux));
+                }
+            }
+            let cut: String = chars[..index].iter().collect();
+            assert_eq!(
+                decode_plan(&cut),
+                Err(PlanError::Malformed),
+                "cut at {index}"
+            );
+        }
+        for wrapped in [
+            format!("{good}{good}"),
+            format!("{good}="),
+            format!("{good}\n"),
+            format!(" {good}"),
+            format!("\"{good}\""),
+        ] {
+            assert_eq!(
+                decode_plan(&wrapped),
+                Err(PlanError::Malformed),
+                "{wrapped}"
+            );
+        }
     }
 
     // -- validation as root ----------------------------------------------------------------

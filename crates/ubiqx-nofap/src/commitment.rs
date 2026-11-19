@@ -325,11 +325,16 @@ pub fn expire(config: &mut NofapConfig, now: DateTime<Utc>) -> Vec<Id> {
 }
 
 /// How a waiting request is shown: its kind and its clock, never its payload.
+///
+/// `ready` is exactly "[`confirm`] would accept it now": a request whose confirmation
+/// window has closed is not ready any more, also in the moments before [`expire`] drops
+/// it (the app was closed for longer than the window), so the page never offers a
+/// confirmation that would then be refused.
 pub fn pending_view(pending: &PendingChange, now: DateTime<Utc>) -> PendingView {
-    let ready = is_ready(pending, now);
+    let ready = is_ready(pending, now) && !is_expired(pending, now);
     let by_clock = (pending.ready_at - now).num_seconds().max(0);
     let by_running = i64::from(observed_needed(pending).saturating_sub(pending.observed_secs));
-    let remaining_secs = if ready {
+    let remaining_secs = if ready || is_expired(pending, now) {
         0
     } else {
         u32::try_from(by_clock.max(by_running)).unwrap_or(u32::MAX)
@@ -829,6 +834,113 @@ mod tests {
         let mut waiting = enabled();
         request(&mut waiting, NofapChange::Disable, "p1".into(), at(0)).unwrap();
         assert!(expire(&mut waiting, at(10 * 86_400)).is_empty());
+    }
+
+    #[test]
+    fn a_request_whose_window_closed_while_the_app_was_shut_is_not_offered() {
+        let mut config = enabled();
+        request(&mut config, NofapChange::Disable, "p1".into(), at(0)).unwrap();
+        run(&mut config, 0, 600, 120);
+        assert!(pending_view(&config.pending[0], at(600)).ready);
+        // The app is closed for two days: no verify pass ran, so nothing dropped the
+        // request yet. The view and `confirm` must agree that it is over.
+        let later = 600 + 2 * 86_400;
+        let view = pending_view(&config.pending[0], at(later));
+        assert!(!view.ready);
+        assert_eq!(view.remaining_secs, 0);
+        assert_eq!(view.expires_at, Some(at(600 + 86_400)));
+        assert!(confirm(&mut config.clone(), "p1", at(later)).is_err());
+        // In the last second of the window both still say yes.
+        let last = 600 + 86_399;
+        assert!(pending_view(&config.pending[0], at(last)).ready);
+        assert!(confirm(&mut config.clone(), "p1", at(last)).is_ok());
+        // The first verify pass after the start drops it, and the module is still on.
+        assert!(tick(&mut config, 120, at(later)).is_empty());
+        assert_eq!(expire(&mut config, at(later)), vec!["p1".to_owned()]);
+        assert!(config.enabled && config.pending.is_empty());
+    }
+
+    #[test]
+    fn a_walk_with_clock_jumps_restarts_and_gaps_never_shortens_the_wait() {
+        // A random walk over what can happen to a waiting request: verify passes of any
+        // length, the clock set forward or back by minutes to more than a year, the app
+        // closed for a while (time passes, no pass runs), a restart (the configuration is
+        // what was stored). Whenever `confirm` would accept: the wall clock has reached
+        // `ready_at`, and at least `min(delay, 15 minutes)` of running time was credited,
+        // at most 150 seconds per pass. Without a clock change the full delay has passed.
+        struct Walk(u64);
+        impl Walk {
+            fn below(&mut self, n: u64) -> u64 {
+                self.0 ^= self.0 << 13;
+                self.0 ^= self.0 >> 7;
+                self.0 ^= self.0 << 17;
+                self.0 % n
+            }
+            fn pick<T: Copy>(&mut self, items: &[T]) -> T {
+                items[usize::try_from(self.below(items.len() as u64)).unwrap()]
+            }
+        }
+        let mut walk = Walk(0x0BAD_C0DE_1234_5678);
+        let mut confirmed = 0;
+        for case in 0..1_500 {
+            let delay = walk.pick(&[0u32, 1, 60, 300, 600, 899, 900, 901, 3_600, 86_400]);
+            let mut config = enabled();
+            config.delay_secs = delay;
+            let (mut wall, mut real, mut credited) = (0i64, 0i64, 0i64);
+            let mut honest = true;
+            request(&mut config, NofapChange::Disable, "p".into(), at(wall)).unwrap();
+            for _ in 0..300 {
+                match walk.below(10) {
+                    0 => {
+                        wall += walk.pick(&[1_000i64, 86_400, 3 * 86_400, 400 * 86_400]);
+                        honest = false;
+                    }
+                    1 => {
+                        wall -= walk.pick(&[1_000i64, 86_400, 3 * 86_400, 400 * 86_400]);
+                        honest = false;
+                    }
+                    2 => {
+                        let stored = serde_json::to_string(&config).unwrap();
+                        config = serde_json::from_str(&stored).unwrap();
+                        config.sanitize();
+                    }
+                    3 => {
+                        let gap = walk.pick(&[60i64, 600, 7_200, 90_000]);
+                        wall += gap;
+                        real += gap;
+                    }
+                    _ => {
+                        let elapsed = walk.pick(&[1u32, 30, 120, 120, 150, 151, 500, 100_000]);
+                        wall += i64::from(elapsed);
+                        real += i64::from(elapsed);
+                        credited += i64::from(elapsed.min(OBSERVE_STEP_MAX_SECS));
+                        tick(&mut config, elapsed, at(wall));
+                        expire(&mut config, at(wall));
+                    }
+                }
+                let Some(pending) = config.pending.first() else {
+                    break;
+                };
+                let view = pending_view(pending, at(wall));
+                let accepted = confirm(&mut config.clone(), "p", at(wall)).is_ok();
+                assert_eq!(view.ready, accepted, "case {case}: the view and confirm");
+                if accepted {
+                    confirmed += 1;
+                    assert!(at(wall) >= pending.ready_at, "case {case}");
+                    assert!(
+                        credited >= i64::from(delay.min(OBSERVED_CAP_SECS)),
+                        "case {case}: accepted after {credited} s of running time, delay {delay}"
+                    );
+                    if honest {
+                        assert!(real >= i64::from(delay), "case {case}: {real} s of {delay}");
+                    }
+                }
+            }
+        }
+        assert!(
+            confirmed > 1_000,
+            "the walk reaches the ready state: {confirmed}"
+        );
     }
 
     #[test]

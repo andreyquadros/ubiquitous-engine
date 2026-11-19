@@ -171,8 +171,10 @@ pub fn names_for(tier: &[&str], extras: &[String], os: Os) -> Vec<String> {
     names
 }
 
-/// Whether a name may appear on a line of the block at all: the characters of a hostname
-/// and nothing else. [`render_block`] writes no other name, whatever it is handed.
+/// Whether a field has the shape of a name on a line of the block: the characters of a
+/// hostname and nothing else. This is what a line of our making is recognised by
+/// ([`rendered_names`]); it is deliberately wider than [`is_valid_hostname`], so that a
+/// block written under older validation rules is still found and removed.
 fn is_writable(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= HOSTNAME_MAX_LEN
@@ -181,12 +183,14 @@ fn is_writable(name: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'.')
 }
 
-/// The lines between the markers for `names`, and how many names they carry.
+/// The lines between the markers for `names`, and how many names they carry. Only a name
+/// that passes [`is_valid_hostname`] is written: the renderer is the last code before the
+/// file, so it does not rely on its callers having validated.
 fn body_lines(names: &[String]) -> (Vec<String>, u32) {
     let writable: Vec<&str> = names
         .iter()
         .map(String::as_str)
-        .filter(|name| is_writable(name))
+        .filter(|name| is_valid_hostname(name))
         .collect();
     let mut lines = Vec::with_capacity(1 + 2 * writable.len().div_ceil(NAMES_PER_LINE));
     lines.push(UNDO_HINT.to_owned());
@@ -200,8 +204,9 @@ fn body_lines(names: &[String]) -> (Vec<String>, u32) {
 
 /// The whole block for `names`, markers included, with `\n` line endings and a final
 /// newline. One `0.0.0.0` line and one `::` line per group of [`NAMES_PER_LINE`]. A name
-/// with any character outside `a-z 0-9 - .` is left out, so a line of the block can only
-/// ever hold an address and names.
+/// that fails [`is_valid_hostname`] is left out, whatever the caller handed in, so a line
+/// of the block can only ever hold an address and public hostnames: never `localhost`, an
+/// IP literal, an option-like word or anything with a blank or a control character.
 pub fn render_block(names: &[String]) -> String {
     let (lines, count) = body_lines(names);
     let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
@@ -541,12 +546,10 @@ pub fn splice(existing: &[u8], block: Option<&str>) -> Vec<u8> {
                 if !ended {
                     // The block closes a file that has no final line break: the line
                     // break in front of it goes with it, as long as it is still there.
-                    let own = if first.eol.is_empty() {
-                        tail_eol
-                    } else {
-                        first.eol.len()
-                    };
-                    out.truncate(out.len() - own.min(tail_eol));
+                    // It goes whole, whatever its form: taking one byte of a `\r\n`
+                    // (the block's own lines may end differently after an edit) would
+                    // leave a lone carriage return behind.
+                    out.truncate(out.len() - tail_eol);
                 }
                 tail_eol = 0;
             }
@@ -922,6 +925,129 @@ mod tests {
                 names: 1
             }
         );
+    }
+
+    #[test]
+    fn render_block_writes_public_hostnames_only() {
+        // Names made of hostname characters only, which the renderer is still not to
+        // write: pointing one of them at the null address would break the machine or
+        // mean something else to a parser.
+        let long_label = format!("{}.example", "a".repeat(64));
+        let unwritable = [
+            "localhost",
+            "printer.local",
+            "nas.lan",
+            "127.0.0.1",
+            "0.0.0.0",
+            "example.0x10",
+            "-rf.example",
+            "example-.com",
+            "--help",
+            "single",
+            "a..example",
+            ".example.com",
+            "example.com.",
+            "a.b",
+            long_label.as_str(),
+        ];
+        let mut handed = names(&unwritable);
+        handed.insert(3, "ok.example".to_owned());
+        let block = render_block(&handed);
+        assert_eq!(
+            block.lines().collect::<Vec<_>>()[1..],
+            [UNDO_HINT, "0.0.0.0 ok.example", ":: ok.example", END_MARKER]
+        );
+        assert_eq!(stamp_of(&handed), stamp_of(&names(&["ok.example"])));
+        assert_eq!(block_names(block.as_bytes()), names(&["ok.example"]));
+        // Nothing valid at all: markers and the hint, no address line.
+        let empty = render_block(&names(&unwritable));
+        assert_eq!(empty.lines().count(), 3);
+        assert!(empty.lines().next().unwrap().ends_with(" names=0"));
+    }
+
+    #[test]
+    fn a_block_of_older_rules_is_still_found_and_removed() {
+        // A line recognised as ours needs the shape of a rendered line, not names that
+        // pass today's validation: a block written before a rule was tightened (here a
+        // name that is local today) must still be removable, with its END marker gone too.
+        let old = format!(
+            "{BEGIN_PREFIX} sha256=0 names=2\n{UNDO_HINT}\n0.0.0.0 keep.example intranet.corp\n:: keep.example intranet.corp\n"
+        );
+        let file = format!("127.0.0.1 localhost\n{old}10.0.0.5 nas\n");
+        assert!(!is_valid_hostname("intranet.corp"));
+        assert_eq!(inspect(file.as_bytes()), BlockInspection::Changed);
+        assert_eq!(
+            splice(file.as_bytes(), None),
+            b"127.0.0.1 localhost\n10.0.0.5 nas\n"
+        );
+    }
+
+    #[test]
+    fn removing_a_last_block_never_leaves_half_a_line_ending() {
+        // The file's lines end with CR LF, the block's lines with LF (somebody converted
+        // part of the file), and the block closes the file without a final line break.
+        let block = sample_block();
+        let unended = block.trim_end_matches('\n');
+        for (file, expected) in [
+            (
+                format!("127.0.0.1 localhost\r\n{unended}"),
+                "127.0.0.1 localhost",
+            ),
+            (format!("a\r\nb\r\n{unended}"), "a\r\nb"),
+            // The other way round: an LF file, a block with CR LF lines.
+            (
+                format!("127.0.0.1 localhost\n{}", unended.replace('\n', "\r\n")),
+                "127.0.0.1 localhost",
+            ),
+        ] {
+            let removed = splice(file.as_bytes(), None);
+            assert_eq!(removed, expected.as_bytes(), "{file:?}");
+            assert_eq!(inspect(&removed), BlockInspection::Absent);
+        }
+    }
+
+    #[test]
+    fn property_removal_leaves_no_lone_carriage_return() {
+        // Files with any mix of line endings around and inside a block, with and without
+        // a final line break: what is left after a removal has a carriage return only in
+        // front of a line feed, as the input had.
+        let block = sample_block();
+        let block_lines: Vec<&str> = block.lines().collect();
+        for seed in 1..=2_000u64 {
+            let mut rng = Rng(seed.wrapping_mul(0xA24B_AED4_963E_E407) | 1);
+            let pick_eol = |rng: &mut Rng| if rng.chance(2) { "\n" } else { "\r\n" };
+            let mut file = String::new();
+            for n in 0..rng.below(4) {
+                file.push_str(&format!("10.0.0.{n} host{n}"));
+                file.push_str(pick_eol(&mut rng));
+            }
+            for (index, line) in block_lines.iter().enumerate() {
+                file.push_str(line);
+                if index + 1 < block_lines.len() || rng.chance(2) {
+                    file.push_str(pick_eol(&mut rng));
+                }
+            }
+            if file.ends_with('\n') {
+                for n in 0..rng.below(3) {
+                    file.push_str(&format!("# after {n}"));
+                    file.push_str(pick_eol(&mut rng));
+                }
+            }
+            for new in [None, Some(other_block())] {
+                let out = splice(file.as_bytes(), new.as_deref());
+                let text = String::from_utf8(out).unwrap();
+                assert!(
+                    !text.replace("\r\n", "").contains('\r'),
+                    "seed {seed}: {file:?} became {text:?}"
+                );
+                for line in text.lines() {
+                    assert!(
+                        new.is_some() || !block_lines.contains(&line),
+                        "seed {seed}: {line:?} is left of the block"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
