@@ -231,11 +231,38 @@ REVIEWED_TOP_1K: frozenset[str] = frozenset(
 )
 
 # General-purpose sites that a public list names by mistake and that belong on
-# no rule file (a rule file would also switch the screen check off for them).
-# They are taken off the list and are then ordinary sites.
-#   yandex.by     search portal        kinopoisk.ru  film database
-#   hmv.co.jp     music retailer
-UPSTREAM_MISTAKES: frozenset[str] = frozenset({"yandex.by", "kinopoisk.ru", "hmv.co.jp"})
+# no rule file (a rule file would also switch the screen check off for them or
+# put them under it all the time). They are taken off the list and are then
+# ordinary sites. They were found in the review file and among the covered
+# Chrome UX Report origins of rank bucket 100,000 or better, and judged from
+# the name and from general knowledge: the build sandbox cannot open the
+# sites, so a person should confirm them before a release.
+UPSTREAM_MISTAKES: frozenset[str] = frozenset(
+    """
+    yandex.by kinopoisk.ru mafab.hu startpagina.nl
+    hmv.co.jp tia.com.ec articulo.mercadolibre.com.co more.com freetour.com
+    reservestock.jp
+    marieclaire.it refinery29.com fark.com thechive.com crazydaysandnights.net
+    teenee.com knuddels.de grindr.com
+    my-cima.net igg-games.com steamunlocked.net
+    b-cdn.net
+    """.split()
+)
+#   yandex.by, startpagina.nl    search and start-page portals
+#   kinopoisk.ru, mafab.hu       film databases
+#   hmv.co.jp, tia.com.ec, articulo.mercadolibre.com.co, more.com,
+#   freetour.com, reservestock.jp
+#                                shops, a marketplace, ticket and booking sites
+#   marieclaire.it, refinery29.com, fark.com, thechive.com,
+#   crazydaysandnights.net, teenee.com
+#                                magazines, news and entertainment portals
+#   knuddels.de, grindr.com      chat and dating services with no adult catalogue
+#                                (the lists name no other mainstream dating app)
+#   my-cima.net, igg-games.com, steamunlocked.net
+#                                film streaming and game download sites
+#   b-cdn.net                    a content-delivery suffix shared by unrelated
+#                                sites (not on the Public Suffix List); listed
+#                                subdomains of it stay listed one by one
 
 # ---------------------------------------------------------------------------
 # Block-grade keywords (design 3.5). Used here only to filter 4skinSkywalker,

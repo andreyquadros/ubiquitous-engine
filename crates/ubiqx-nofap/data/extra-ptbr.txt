@@ -14,7 +14,7 @@
 #
 # Before a release a person reads this file, removes what is wrong and adds
 # what is missing. Brazilian coverage is the weakest part of every public
-# list (686 ".br" names among 239 thousand), and this file is where that is
+# list (about 700 ".br" names among 239 thousand), and this file is where that is
 # fixed.
 #
 # One host name per line, lower-case, without "www."; "#" lines and empty

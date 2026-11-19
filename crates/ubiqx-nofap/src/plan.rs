@@ -39,6 +39,11 @@ pub const EXIT_GATED: i32 = 5;
 pub const VERIFY_EVERY_SECS: u64 = 120;
 /// How often the canary is resolved while the hosts block is applied.
 pub const CANARY_EVERY_SECS: i64 = 1_800;
+/// Windows: how often the verify pass asks for the full DNS read (`ObserveOpts::full`),
+/// and how often while the quick registry read finds nothing usable. The full read is
+/// also asked for at apply, when the page opens and on "Verificar agora".
+pub const FULL_READ_EVERY_SECS: i64 = 1_800;
+pub const FULL_READ_RETRY_SECS: i64 = 600;
 /// The drift card is shown once per drift episode and at most once in this long.
 pub const DRIFT_CARD_EVERY_SECS: i64 = 21_600;
 
@@ -167,7 +172,9 @@ pub struct SystemAssessment {
 
 /// Turns an observation into tier states and issues (the tables of design sections 2.2,
 /// 2.3 and 2.4). An interface is "new" when `config.internal.previous_dns` does not name
-/// it.
+/// it. `observation.canary` of `None` means "not looked up", not "fine": the caller puts
+/// the answer of its last lookup there, so `Issue::HostsNotHonoured` does not come and go
+/// between two lookups.
 pub fn assess(input: &AssessInput<'_>, observation: &SystemObservation) -> SystemAssessment {
     todo!()
 }

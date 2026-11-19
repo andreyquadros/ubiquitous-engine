@@ -25,3 +25,13 @@ globo.com
 mercadolivre.com.br
 scarleteen.com
 plannedparenthood.org
+# Shared delivery and hosting names. One site under them may be listed; the
+# name itself never is, or every site it serves would be covered.
+b-cdn.net
+cloudfront.net
+amazonaws.com
+akamaized.net
+googleusercontent.com
+github.io
+pages.dev
+wordpress.com

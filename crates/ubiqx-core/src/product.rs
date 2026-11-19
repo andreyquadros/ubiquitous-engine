@@ -160,6 +160,30 @@ mod tests {
     }
 
     #[test]
+    fn nofap_shell_build_scripts_compile_in_their_own_feed() {
+        // A build script cannot depend on this crate, so each shell repeats its default
+        // feed URL. A shell stamped with the other product's feed would never be offered an
+        // update (the checker ignores a feed that names another product).
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for (script, own, other) in [
+            ("apps/desktop/src-tauri/build.rs", &UBIQX, &SHIELD),
+            ("apps/nofap/src-tauri/build.rs", &SHIELD, &UBIQX),
+        ] {
+            let text = std::fs::read_to_string(root.join(script))
+                .unwrap_or_else(|e| panic!("{script}: {e}"));
+            assert!(
+                text.contains(&format!("\"{}\"", own.feed_url)),
+                "{script} does not default to {}",
+                own.feed_url
+            );
+            assert!(
+                !text.contains(other.feed_url),
+                "{script} names the other product's feed"
+            );
+        }
+    }
+
+    #[test]
     fn nofap_identities_are_in_the_exempt_lists() {
         for p in ALL {
             assert!(

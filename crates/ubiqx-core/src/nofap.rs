@@ -611,6 +611,16 @@ pub enum Overall {
     Secondary,
 }
 
+impl Overall {
+    pub const ALL: [Overall; 5] = [
+        Overall::Off,
+        Overall::Protected,
+        Overall::Reduced,
+        Overall::PendingOff,
+        Overall::Secondary,
+    ];
+}
+
 /// L1, the guard. Wire form: `{ "state": "on" }`, `{ "state": "limited", "reason": … }`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
@@ -887,10 +897,11 @@ pub struct SystemObservation {
     pub state: Option<SystemState>,
     /// Short code when the state file exists but could not be read or parsed.
     pub state_error: Option<String>,
-    /// Addresses the hosts canary resolved to through the OS at the last lookup: `None`
-    /// when not looked up in this observation, empty when it did not resolve.
+    /// Addresses the hosts canary resolved to through the OS: `None` when this observation
+    /// was not asked to look it up ([`ObserveOpts::canary`]), empty when it did not resolve.
     pub canary: Option<Vec<String>>,
-    /// Whether the probe name resolved through the OS; `None` when not looked up.
+    /// Whether the probe name resolved through the OS; `None` when this observation was not
+    /// asked to look it up ([`ObserveOpts::probe`]).
     pub probe_ok: Option<bool>,
 }
 
@@ -915,7 +926,9 @@ pub struct ResolverObservation {
     pub resolved_active: Option<bool>,
     /// Linux: whether `/etc/resolv.conf` points at systemd-resolved.
     pub resolv_conf_uses_resolved: Option<bool>,
-    /// Windows: `true` for the full read (PowerShell), `false` for the quick registry read.
+    /// Windows: `true` for the full read (PowerShell), `false` for the quick registry read
+    /// ([`ObserveOpts::full`]). A quick read that found nothing usable sets `error`, and the
+    /// verify pass then asks for the full read every 10 minutes.
     pub full: bool,
     /// Short code when DNS could not be read at all.
     pub error: Option<String>,
@@ -1034,14 +1047,49 @@ pub enum ApplyOutcome {
     Unavailable(String),
 }
 
+/// How far an unprivileged look at the machine goes. The caller decides, on every call:
+/// the adapter keeps no clock and judges nothing, so "only while the block is applied" and
+/// "every 30 minutes" are rules of the verify pass, not of the adapter. The default is the
+/// cheapest look: files, the quick DNS read, no name lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct ObserveOpts {
+    /// Windows: read DNS with the full read (PowerShell, every adapter that is up) instead
+    /// of the quick registry read of the adapters seen at the last full read. Asked for at
+    /// apply, when the page opens, on "Verificar agora" and every 30 minutes. The other
+    /// systems have one read and ignore it.
+    pub full: bool,
+    /// Resolve the hosts canary through the OS ([`SystemObservation::canary`]). Asked for
+    /// only while the hosts block is applied, so the reserved name never reaches a
+    /// resolver from a machine without the block.
+    pub canary: bool,
+    /// Resolve the probe name through the OS ([`SystemObservation::probe_ok`]). Asked for
+    /// only while the resolver tier is applied.
+    pub probe: bool,
+}
+
+impl ObserveOpts {
+    /// Files and the quick DNS read; no name lookup.
+    pub const QUICK: ObserveOpts = ObserveOpts {
+        full: false,
+        canary: false,
+        probe: false,
+    };
+    /// The full DNS read; no name lookup.
+    pub const FULL: ObserveOpts = ObserveOpts {
+        full: true,
+        canary: false,
+        probe: false,
+    };
+}
+
 /// The system layer: three tiers behind one port. `apply` and `remove` block on the OS
 /// password prompt; nothing else elevates.
 pub trait SystemShield: Send + Sync {
     /// Per tier: available, gated or unsupported.
     fn capabilities(&self) -> SystemCapabilities;
-    /// Unprivileged: hosts text, DNS per interface, the drop-in, policy values, the state
-    /// file, the canary and the probe.
-    fn observe(&self) -> CoreResult<SystemObservation>;
+    /// Unprivileged: hosts text, DNS per interface, the drop-in, policy values and the
+    /// state file; the canary and the probe when `opts` asks for them.
+    fn observe(&self, opts: ObserveOpts) -> CoreResult<SystemObservation>;
     /// The exact list of changes `apply` would make, for the user to read first.
     fn preview(&self, plan: &SystemPlan) -> CoreResult<Vec<PlannedChange>>;
     /// Blocks on the OS prompt.
@@ -1244,6 +1292,16 @@ pub enum AiReadiness {
     LocalOnly,
     NotOnboarded,
     LicenceRequired,
+}
+
+impl AiReadiness {
+    pub const ALL: [AiReadiness; 5] = [
+        AiReadiness::Ready,
+        AiReadiness::NoKey,
+        AiReadiness::LocalOnly,
+        AiReadiness::NotOnboarded,
+        AiReadiness::LicenceRequired,
+    ];
 }
 
 /// What the module reads from its host, read-only: ubiqX's settings and licence, or the
@@ -1477,6 +1535,29 @@ pub trait NofapRepo: Send + Sync {
     /// user's and learned sites stay.
     fn erase_history(&self) -> CoreResult<()>;
 }
+
+/// Asserts that `Type::ALL` is exactly the listed variants, in order. The list is also the
+/// arms of a `match` without a wildcard, so a variant added to the enum does not compile
+/// until it is listed here, and the assertion then fails until it is in `ALL` too. `ALL` is
+/// what the fixtures, the lenient parsers and the frontend's union types are built from.
+#[cfg(test)]
+macro_rules! assert_all_listed {
+    ($ty:ident: $($variant:ident),+ $(,)?) => {{
+        #[allow(dead_code)]
+        fn exhaustive(value: $ty) {
+            match value {
+                $($ty::$variant => {}),+
+            }
+        }
+        assert_eq!(
+            $ty::ALL.to_vec(),
+            vec![$($ty::$variant),+],
+            concat!(stringify!($ty), "::ALL does not list every variant in order")
+        );
+    }};
+}
+#[cfg(test)]
+pub(crate) use assert_all_listed;
 
 #[cfg(test)]
 mod tests {
@@ -1965,11 +2046,142 @@ mod tests {
     }
 
     #[test]
+    fn every_all_constant_lists_every_variant() {
+        assert_all_listed!(Os: Macos, Windows, Linux);
+        assert_all_listed!(Tier: Hosts, Resolver, Policies);
+        assert_all_listed!(ResolverId: CloudflareFamily);
+        assert_all_listed!(BrowserFamily: Chrome, Chromium, Edge, Brave, Firefox);
+        assert_all_listed!(
+            ChangeKind: Disable,
+            AddBlock,
+            RemoveBlock,
+            AddAllow,
+            RemoveAllow,
+            ForgetLearned,
+            SetHosts,
+            SetResolver,
+            SetPolicies,
+            SetHostsUserSites,
+            SetVision,
+            SetVisionScope,
+            SetCaps,
+            SetDelay,
+            SetPrefs,
+            SetValues,
+            SetPlans,
+        );
+        assert_all_listed!(Overall: Off, Protected, Reduced, PendingOff, Secondary);
+        assert_all_listed!(GuardLimit: AutomationDenied, BrowserWithoutUrl, TitleOnly, Wayland);
+        assert_all_listed!(
+            VisionOff: Disabled,
+            ConsentOutdated,
+            NoProvider,
+            NoKey,
+            LocalOnly,
+            NotOnboarded,
+            Licence,
+            ScreenRecording,
+            Wayland,
+            BudgetSpent,
+            CapReached,
+        );
+        assert_all_listed!(
+            Issue: HostsNotHonoured,
+            DnsBypassSuspected,
+            ResolverUnreachable,
+            NewConnectionUnfiltered,
+            PolicyConflict,
+            PolicyAdvisoryOnly,
+            AutomationDenied,
+            ScreenRecordingDenied,
+            VisionBudgetSpent,
+            VisionCapReached,
+            VisionNoProvider,
+            ConsentOutdated,
+            OtherProductPrimary,
+        );
+        assert_all_listed!(
+            CardKind: Blocked,
+            BlockedRepeat,
+            VisionClosed,
+            VisionAsk,
+            Drift,
+            PendingReady,
+            ResolverUnreachable,
+            Reminder,
+            Help,
+        );
+        assert_all_listed!(
+            CardAction: Ok,
+            Support,
+            Surf,
+            CloseWindow,
+            NotIt,
+            RequestException,
+            AddToList,
+            Restore,
+            KeepProtection,
+            TurnOff,
+            RestoreNetwork,
+            Later,
+            Help,
+        );
+        assert_all_listed!(
+            AiReadiness: Ready,
+            NoKey,
+            LocalOnly,
+            NotOnboarded,
+            LicenceRequired,
+        );
+        assert_all_listed!(SiteOrigin: User, Learned, Snooze);
+        assert_all_listed!(
+            DayKind: BlockList,
+            BlockUser,
+            BlockKeyword,
+            VisionCheck,
+            VisionHit,
+            NotIt,
+            SurfStarted,
+            SurfDone,
+            Panic,
+            Lapse,
+            CheckinOk,
+            CheckinMeh,
+            CheckinHard,
+            CheckinVeryBad,
+            TriggerTired,
+            TriggerBored,
+            TriggerStressed,
+            TriggerLonely,
+            TriggerHungry,
+            TriggerAngry,
+            TriggerOther,
+            OverrideRequest,
+            OverrideCancel,
+            QuitOn,
+            NetworkRestore,
+            Drift,
+            HelpShown,
+        );
+        assert_all_listed!(ProductId: Ubiqx, Shield);
+    }
+
+    #[test]
     fn names_follow_the_three_rings() {
         assert_eq!(SYSTEM_ID, "ubiqx-shield");
         assert!(!SYSTEM_ID.to_ascii_lowercase().contains("nofap"));
         assert!(!DISPLAY_NAME.trim().is_empty());
         assert_eq!(crate::product::SHIELD.display_name, DISPLAY_NAME);
+    }
+
+    #[test]
+    fn the_default_observation_is_the_cheapest_one() {
+        // A caller that forgets to choose must not start PowerShell or send a lookup.
+        assert_eq!(ObserveOpts::default(), ObserveOpts::QUICK);
+        assert!(
+            !ObserveOpts::QUICK.full && !ObserveOpts::QUICK.canary && !ObserveOpts::QUICK.probe
+        );
+        assert!(ObserveOpts::FULL.full && !ObserveOpts::FULL.canary && !ObserveOpts::FULL.probe);
     }
 
     #[test]

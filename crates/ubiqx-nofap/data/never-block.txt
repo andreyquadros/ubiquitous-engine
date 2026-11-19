@@ -100,6 +100,8 @@ embrapa.br
 nic.br
 registro.br
 cgi.br
+# A university outside the name spaces above that a public list names.
+unex.es
 
 # --- Operating-system vendors: sign-in, updates, stores, connectivity checks -
 # Apple
@@ -178,7 +180,9 @@ dns.google
 ubuntu.com
 canonical.com
 snapcraft.io
+snapcraftcontent.com
 launchpad.net
+launchpadcontent.net
 debian.org
 fedoraproject.org
 redhat.com
@@ -285,7 +289,9 @@ alipay.com
 # --- Banks and brokers: Brazil -------------------------------------------------
 itau.com.br
 bradesco.com.br
+banco.bradesco
 bb.com.br
+bancodobrasil.com.br
 santander.com.br
 nubank.com.br
 bancointer.com.br

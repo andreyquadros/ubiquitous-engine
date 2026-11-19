@@ -26,8 +26,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ubiqx_core::nofap::{
-    ApplyOutcome, Os, PlannedChange, RemoveScope, SystemCapabilities, SystemObservation,
-    SystemPlan, SystemShield,
+    ApplyOutcome, ObserveOpts, Os, PlannedChange, RemoveScope, SystemCapabilities,
+    SystemObservation, SystemPlan, SystemShield,
 };
 use ubiqx_core::{CoreResult, ProductId};
 use ubiqx_nofap::gate::Gate;
@@ -114,8 +114,10 @@ pub trait OsBackend: Send + Sync {
     /// The environment every child process gets (nothing inherited).
     fn child_env(&self) -> Vec<(String, String)>;
     /// Unprivileged look at the machine: hosts text, DNS per interface, the drop-in,
-    /// policy values, the state file. The canary and the probe are added by the caller.
-    fn observe(&self, runner: &dyn Runner, fs: &dyn Fs) -> SystemObservation;
+    /// policy values, the state file. `full` is `ObserveOpts::full` (Windows: the
+    /// PowerShell read instead of the quick registry read). The canary and the probe are
+    /// added by the caller when its `ObserveOpts` asks for them.
+    fn observe(&self, runner: &dyn Runner, fs: &dyn Fs, full: bool) -> SystemObservation;
     /// Points system DNS at the resolver of `plan` (privileged). Returns the commands'
     /// failure, if any, as a short reason code.
     fn apply_resolver(
@@ -205,7 +207,7 @@ impl SystemShield for NativeSystemShield {
         todo!()
     }
 
-    fn observe(&self) -> CoreResult<SystemObservation> {
+    fn observe(&self, opts: ObserveOpts) -> CoreResult<SystemObservation> {
         todo!()
     }
 

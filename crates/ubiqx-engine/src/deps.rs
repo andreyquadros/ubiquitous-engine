@@ -9,8 +9,9 @@ use parking_lot::Mutex;
 use ubiqx_core::license::{UBIQX_API_BASE_DEFAULT, UBIQX_LICENSE_PUBKEY_HEX};
 use ubiqx_core::nofap::{
     ApplyOutcome, DayCount, DayKind, ExplicitDetector, Frame, FrameOpts, FrameSource, NofapCard,
-    NofapConfig, NofapEvent, NofapPresenter, NofapRepo, NofapSink, NofapSite, PlannedChange,
-    RemoveScope, SiteOrigin, SystemCapabilities, SystemObservation, SystemPlan, SystemShield,
+    NofapConfig, NofapEvent, NofapPresenter, NofapRepo, NofapSink, NofapSite, ObserveOpts,
+    PlannedChange, RemoveScope, SiteOrigin, SystemCapabilities, SystemObservation, SystemPlan,
+    SystemShield,
 };
 use ubiqx_core::ports::*;
 use ubiqx_core::{
@@ -241,7 +242,7 @@ impl SystemShield for NoSystemShield {
         SystemCapabilities::none(NO_SYSTEM_LAYER)
     }
 
-    fn observe(&self) -> CoreResult<SystemObservation> {
+    fn observe(&self, _opts: ObserveOpts) -> CoreResult<SystemObservation> {
         Ok(SystemObservation::default())
     }
 
@@ -268,14 +269,17 @@ impl FrameSource for NoFrameSource {
     }
 }
 
-/// [`NofapPresenter`] that only logs that a card exists (its kind, never what caused it).
-/// It answers `false`, so the service falls back to one neutral OS notification.
+/// [`NofapPresenter`] of a host without a card window: the CLI, tests and the scripted
+/// demo. It answers `false`, so the service falls back to one neutral OS notification.
+///
+/// Named after [`LogInterventionPresenter`], but it writes no line: a card is shown when
+/// something was blocked, and a timestamped line per card, at any level, would be the log
+/// of hits this module must never keep.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct LogNofapPresenter;
 
 impl NofapPresenter for LogNofapPresenter {
-    fn show(&self, card: &NofapCard) -> CoreResult<bool> {
-        tracing::debug!(target: "ubiqx::shield", kind = ?card.kind, "card");
+    fn show(&self, _card: &NofapCard) -> CoreResult<bool> {
         Ok(false)
     }
 }
@@ -474,10 +478,17 @@ mod tests {
             ApplyOutcome::Unavailable(NO_SYSTEM_LAYER.into())
         );
         assert!(ports.system.preview(&plan).unwrap().is_empty());
-        assert_eq!(
-            ports.system.observe().unwrap(),
-            SystemObservation::default()
-        );
+        let everything = ObserveOpts {
+            full: true,
+            canary: true,
+            probe: true,
+        };
+        for opts in [ObserveOpts::QUICK, everything] {
+            assert_eq!(
+                ports.system.observe(opts).unwrap(),
+                SystemObservation::default()
+            );
+        }
         let opts = FrameOpts {
             max_edge: 640,
             crop_top_frac: 0.0,
@@ -485,6 +496,9 @@ mod tests {
         assert!(ports.frames.frame(1, opts).unwrap().is_none());
         assert!(ports.detector.is_none());
         assert!(ports.shared_dir.is_none());
+        // No window: the service is told to fall back to the neutral notification.
+        let card = ubiqx_core::nofap_ipc::sample::card(ubiqx_core::nofap::CardKind::Blocked);
+        assert!(!ports.presenter.show(&card).unwrap());
         // The module is off in a fresh repository.
         assert_eq!(ports.repo.load_config().unwrap(), NofapConfig::default());
         assert!(!ports.repo.load_config().unwrap().enabled);

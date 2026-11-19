@@ -919,5 +919,138 @@
       "hosts_waiting": 0,
       "extras_left_out": 0
     }
-  ]
+  ],
+  "enums": {
+    "overall": [
+      "off",
+      "protected",
+      "reduced",
+      "pending_off",
+      "secondary"
+    ],
+    "guard_limit": [
+      "automation_denied",
+      "browser_without_url",
+      "title_only",
+      "wayland"
+    ],
+    "vision_off": [
+      "disabled",
+      "consent_outdated",
+      "no_provider",
+      "no_key",
+      "local_only",
+      "not_onboarded",
+      "licence",
+      "screen_recording",
+      "wayland",
+      "budget_spent",
+      "cap_reached"
+    ],
+    "issue": [
+      "hosts_not_honoured",
+      "dns_bypass_suspected",
+      "resolver_unreachable",
+      "new_connection_unfiltered",
+      "policy_conflict",
+      "policy_advisory_only",
+      "automation_denied",
+      "screen_recording_denied",
+      "vision_budget_spent",
+      "vision_cap_reached",
+      "vision_no_provider",
+      "consent_outdated",
+      "other_product_primary"
+    ],
+    "change_kind": [
+      "disable",
+      "add_block",
+      "remove_block",
+      "add_allow",
+      "remove_allow",
+      "forget_learned",
+      "set_hosts",
+      "set_resolver",
+      "set_policies",
+      "set_hosts_user_sites",
+      "set_vision",
+      "set_vision_scope",
+      "set_caps",
+      "set_delay",
+      "set_prefs",
+      "set_values",
+      "set_plans"
+    ],
+    "card_kind": [
+      "blocked",
+      "blocked_repeat",
+      "vision_closed",
+      "vision_ask",
+      "drift",
+      "pending_ready",
+      "resolver_unreachable",
+      "reminder",
+      "help"
+    ],
+    "card_action": [
+      "ok",
+      "support",
+      "surf",
+      "close_window",
+      "not_it",
+      "request_exception",
+      "add_to_list",
+      "restore",
+      "keep_protection",
+      "turn_off",
+      "restore_network",
+      "later",
+      "help"
+    ],
+    "mood": [
+      "ok",
+      "meh",
+      "hard",
+      "very_bad"
+    ],
+    "trigger": [
+      "tired",
+      "bored",
+      "stressed",
+      "lonely",
+      "hungry",
+      "angry",
+      "other"
+    ],
+    "ai_readiness": [
+      "ready",
+      "no_key",
+      "local_only",
+      "not_onboarded",
+      "licence_required"
+    ],
+    "ai_provider": [
+      "anthropic",
+      "openai",
+      "xai",
+      "ubi"
+    ],
+    "product": [
+      "ubiqx",
+      "shield"
+    ],
+    "os": [
+      "macos",
+      "windows",
+      "linux"
+    ],
+    "tier": [
+      "hosts",
+      "resolver",
+      "policies"
+    ],
+    "resolver": [
+      "cloudflare_family"
+    ]
+  }
 }

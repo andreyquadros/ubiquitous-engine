@@ -148,6 +148,9 @@ copilot.microsoft.com
 mistral.ai
 perplexity.ai
 deepseek.com
+cohere.com
+groq.com
+openrouter.ai
 poe.com
 meta.ai
 
@@ -219,7 +222,9 @@ metamask.io
 # --- Banks and brokers: Brazil -------------------------------------------------
 itau.com.br
 bradesco.com.br
+banco.bradesco
 bb.com.br
+bancodobrasil.com.br
 santander.com.br
 nubank.com.br
 bancointer.com.br

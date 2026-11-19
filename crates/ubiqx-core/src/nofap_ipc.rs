@@ -10,9 +10,9 @@
 //! * `apps/desktop/src/nofap/fixtures/commands.json`: one request per `cmd` (and one per
 //!   kind of change and of user event);
 //! * `apps/desktop/src/nofap/fixtures/views.json`: one value per return type, one event per
-//!   [`NofapEvent`] variant, one card per kind and statuses covering every tier state and
-//!   issue.
-//!
+//!   [`NofapEvent`] variant, one card per kind, statuses covering every tier state and
+//!   issue, and under `enums` every value of every closed set on the wire, so the frontend
+//!   can check its union types in both directions;
 //! * `apps/desktop/src/nofap/fixtures/golden.ts`: the same two values as TypeScript
 //!   literals (`as const`). A JSON import widens every string to `string`, so it cannot be
 //!   checked against a union of literals; this module can
@@ -26,8 +26,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::{AiProvider, Id};
 use crate::nofap::{
-    AiReadiness, ApplyOutcome, IfThenPlan, NofapCard, NofapChange, NofapConfig, NofapEvent,
-    NofapStatus, PendingChange, ResolverId, SystemCapabilities, SystemPrefs, UiPrefs, VisionPrefs,
+    AiReadiness, ApplyOutcome, CardKind, ChangeKind, GuardLimit, IfThenPlan, Issue, NofapCard,
+    NofapChange, NofapConfig, NofapEvent, NofapStatus, Os, Overall, PendingChange, ResolverId,
+    SystemCapabilities, SystemPrefs, Tier, UiPrefs, VisionOff, VisionPrefs,
 };
 use crate::product::ProductId;
 
@@ -407,6 +408,31 @@ pub struct GoldenViews {
     /// One per variant.
     pub events: Vec<NofapEvent>,
     pub statuses: Vec<NofapStatus>,
+    pub enums: GoldenEnums,
+}
+
+/// Every value of every closed set that crosses the boundary as a bare string, each list
+/// being the type's `ALL`. The other fixtures only show the values their samples happen to
+/// use; with these lists the frontend checks its unions both ways: a value Rust sends that
+/// the union lacks fails `satisfies`, and a member of the union that Rust never sends fails
+/// an `Exclude<Union, (typeof list)[number]>` that must be `never`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoldenEnums {
+    pub overall: Vec<Overall>,
+    pub guard_limit: Vec<GuardLimit>,
+    pub vision_off: Vec<VisionOff>,
+    pub issue: Vec<Issue>,
+    pub change_kind: Vec<ChangeKind>,
+    pub card_kind: Vec<CardKind>,
+    pub card_action: Vec<CardAction>,
+    pub mood: Vec<Mood>,
+    pub trigger: Vec<Trigger>,
+    pub ai_readiness: Vec<AiReadiness>,
+    pub ai_provider: Vec<AiProvider>,
+    pub product: Vec<ProductId>,
+    pub os: Vec<Os>,
+    pub tier: Vec<Tier>,
+    pub resolver: Vec<ResolverId>,
 }
 
 /// Representative values of every wire type. They are the source of the two fixture files;
@@ -416,8 +442,7 @@ pub mod sample {
 
     use super::*;
     use crate::nofap::{
-        CardKind, ChangeKind, GuardLimit, GuardState, Issue, Os, Overall, Tier, TierCapability,
-        TierReport, TierState, VisionConsent, VisionOff, VisionState, DISPLAY_NAME,
+        GuardState, TierCapability, TierReport, TierState, VisionConsent, VisionState, DISPLAY_NAME,
     };
 
     /// 2026-09-17 15:00 UTC plus `mins` minutes (the repository's fixed test clock).
@@ -753,7 +778,9 @@ pub mod sample {
         }
     }
 
-    /// The card of one kind, with the message and buttons section 5.3 gives it.
+    /// The card of one kind, with the message and buttons section 5.3 gives it. The one
+    /// exception is the vision-ask card, shown here as it reads once "Não era isso" has
+    /// become "Pedir exceção" (section 5.4); its usual second button is `not_it`.
     pub fn card(kind: CardKind) -> NofapCard {
         use CardAction as A;
         let (message_key, note_key, actions, auto_close_secs): (&str, Option<&str>, Vec<A>, _) =
@@ -843,13 +870,7 @@ pub mod sample {
                 .into_iter()
                 .map(|reason| VisionState::Off { reason }),
         );
-        let overalls = [
-            Overall::Off,
-            Overall::Protected,
-            Overall::Reduced,
-            Overall::PendingOff,
-            Overall::Secondary,
-        ];
+        let overalls = Overall::ALL;
         Issue::ALL
             .into_iter()
             .enumerate()
@@ -904,6 +925,27 @@ pub mod sample {
             },
             events: events(),
             statuses: statuses(),
+            enums: enums(),
+        }
+    }
+
+    pub fn enums() -> GoldenEnums {
+        GoldenEnums {
+            overall: Overall::ALL.to_vec(),
+            guard_limit: GuardLimit::ALL.to_vec(),
+            vision_off: VisionOff::ALL.to_vec(),
+            issue: Issue::ALL.to_vec(),
+            change_kind: ChangeKind::ALL.to_vec(),
+            card_kind: CardKind::ALL.to_vec(),
+            card_action: CardAction::ALL.to_vec(),
+            mood: Mood::ALL.to_vec(),
+            trigger: Trigger::ALL.to_vec(),
+            ai_readiness: AiReadiness::ALL.to_vec(),
+            ai_provider: AiProvider::ALL.to_vec(),
+            product: ProductId::ALL.to_vec(),
+            os: Os::ALL.to_vec(),
+            tier: Tier::ALL.to_vec(),
+            resolver: ResolverId::ALL.to_vec(),
         }
     }
 }
@@ -918,7 +960,7 @@ mod tests {
     use serde_json::{json, Value};
 
     use super::*;
-    use crate::nofap::{CardKind, ChangeKind, Issue, TierState};
+    use crate::nofap::{assert_all_listed, TierState};
 
     fn fixture(name: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -930,6 +972,13 @@ mod tests {
         let mut text = serde_json::to_string_pretty(value).unwrap();
         text.push('\n');
         text
+    }
+
+    /// A Windows checkout may hand the fixtures over with CRLF line endings
+    /// (`core.autocrlf`); the generated text always uses LF. No fixture value holds a line
+    /// break, so this changes nothing but the line endings.
+    fn unix_newlines(text: &str) -> String {
+        text.replace("\r\n", "\n")
     }
 
     /// Compares `expected` with the committed fixture; `UBIQX_BLESS=1` rewrites the file.
@@ -945,6 +994,7 @@ mod tests {
                 path.display()
             )
         });
+        let committed = unix_newlines(&committed);
         assert!(
             committed == expected,
             "{name} differs from what the Rust types serialise to. If the contract change is \
@@ -997,6 +1047,20 @@ mod tests {
         golden("commands.json", &sample::commands());
         golden("views.json", &sample::views());
         committed("golden.ts", &golden_ts());
+    }
+
+    #[test]
+    fn golden_comparison_ignores_checkout_line_endings_only() {
+        let lf = pretty(&sample::commands());
+        let crlf = lf.replace('\n', "\r\n");
+        assert_ne!(crlf, lf);
+        assert_eq!(unix_newlines(&crlf), lf);
+        assert_eq!(unix_newlines(&lf), lf);
+        // The generated text holds no carriage return of its own, escaped or raw, that the
+        // normalisation could hide a difference behind.
+        for text in [lf, pretty(&sample::views()), golden_ts()] {
+            assert!(!text.contains('\r') && !text.contains("\\r"));
+        }
     }
 
     #[test]
@@ -1163,6 +1227,34 @@ mod tests {
         assert_eq!(event_types.len(), 5);
         assert_eq!(views.apply_outcomes.len(), 4);
         assert_eq!(views.sample_frames[1], None);
+    }
+
+    #[test]
+    fn enum_lists_hold_every_value_once() {
+        assert_all_listed!(Mood: Ok, Meh, Hard, VeryBad);
+        assert_all_listed!(Trigger: Tired, Bored, Stressed, Lonely, Hungry, Angry, Other);
+        // `AiProvider::ALL` belongs to the model; checked here so that a new provider reaches
+        // the fixture.
+        assert_all_listed!(AiProvider: Anthropic, OpenAi, Xai, Ubi);
+
+        // Every list is non-empty, free of duplicates and made of bare strings.
+        let enums = serde_json::to_value(sample::enums()).unwrap();
+        let lists = enums.as_object().unwrap();
+        assert_eq!(lists.len(), 15);
+        for (name, list) in lists {
+            let values: Vec<&str> = list
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap_or_else(|| panic!("{name}: not a string")))
+                .collect();
+            assert!(!values.is_empty(), "{name} is empty");
+            let unique: BTreeSet<&str> = values.iter().copied().collect();
+            assert_eq!(unique.len(), values.len(), "{name} repeats a value");
+        }
+        assert_eq!(enums["mood"], json!(["ok", "meh", "hard", "very_bad"]));
+        assert_eq!(enums["ai_provider"][1], "openai");
+        assert_eq!(enums["product"], json!(["ubiqx", "shield"]));
     }
 
     #[test]

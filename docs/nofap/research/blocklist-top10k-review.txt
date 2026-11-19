@@ -12,7 +12,7 @@
 #      adult site here means a rule is too broad).
 # Columns are separated by tabs.
 
-## 1. Covered origins in the top 10,000 (1094)
+## 1. Covered origins in the top 10,000 (1093)
 # rank bucket	host	listed name that covers it	sources
 1000	18comic.vip	18comic.vip	shadowwhisperer-adult,stevenblack-porn-only
 1000	amp.xnxx.com	xnxx.com	4skinskywalker,shadowwhisperer-adult,stevenblack-porn-only
@@ -725,7 +725,6 @@
 10000	celebjihad.com	celebjihad.com	shadowwhisperer-adult,stevenblack-porn-only
 10000	chezcathy.com	chezcathy.com	shadowwhisperer-adult
 10000	choothub.com	choothub.com	shadowwhisperer-adult
-10000	cima.my-cima.net	my-cima.net	stevenblack-porn-only
 10000	cinepornogratis.com	cinepornogratis.com	4skinskywalker,shadowwhisperer-adult,stevenblack-porn-only
 10000	clubeadulto.net	clubeadulto.net	stevenblack-porn-only
 10000	comics.guru	comics.guru	shadowwhisperer-adult
@@ -1109,7 +1108,7 @@
 10000	zh.stripchat.com	stripchat.com	4skinskywalker,shadowwhisperer-adult,stevenblack-porn-only
 10000	zoofilia.us	zoofilia.us	shadowwhisperer-adult
 
-## 2. Listed names kept below a protected name (63)
+## 2. Listed names kept below a protected name (66)
 # listed name	rule above it	sources
 2022.blog73.fc2.com	mixed.txt: fc2.com	stevenblack-porn-only
 2w3e.blog23.fc2.com	mixed.txt: fc2.com	stevenblack-porn-only
@@ -1140,6 +1139,9 @@ geeseki.itch.io	mixed.txt: itch.io	stevenblack-porn-only
 hiyoko0.x.fc2.com	mixed.txt: fc2.com	stevenblack-porn-only
 idolzone.blog137.fc2.com	mixed.txt: fc2.com	stevenblack-porn-only
 igril.blog46.fc2.com	mixed.txt: fc2.com	stevenblack-porn-only
+img.2chan.net	mixed.txt: 2chan.net	stevenblack-porn-only
+img10.joyreactor.cc	mixed.txt: joyreactor.cc	stevenblack-porn-only
+img10.reactor.cc	mixed.txt: reactor.cc	stevenblack-porn-only
 inaka.x.fc2.com	mixed.txt: fc2.com	stevenblack-porn-only
 jporninfo.blog100.fc2.com	mixed.txt: fc2.com	4skinskywalker,stevenblack-porn-only
 kameronfox.fanbox.cc	mixed.txt: fanbox.cc	shadowwhisperer-adult,stevenblack-porn-only
@@ -1175,39 +1177,70 @@ video.fc2.com	mixed.txt: fc2.com	stevenblack-porn-only
 virginiasanden.deviantart.com	mixed.txt: deviantart.com	stevenblack-porn-only
 winterlook-games.itch.io	mixed.txt: itch.io	stevenblack-porn-only
 
-## 3. Listed names removed (35)
+## 3. Listed names removed (66)
 # name	rule	sources
 1337x.to	mixed.txt: 1337x.to	stevenblack-porn-only
+1337xx.to	mixed.txt: 1337xx.to	stevenblack-porn-only
+2chan.net	mixed.txt: 2chan.net	stevenblack-porn-only
 4chan.org	mixed.txt: 4chan.org	stevenblack-porn-only
+articulo.mercadolibre.com.co	build_blocklist.py: UPSTREAM_MISTAKES	stevenblack-porn-only
+b-cdn.net	build_blocklist.py: UPSTREAM_MISTAKES	stevenblack-porn-only
 boards.4chan.org	mixed.txt: boards.4chan.org	stevenblack-porn-only
 booth.pm	mixed.txt: booth.pm	stevenblack-porn-only
 chomikuj.pl	mixed.txt: chomikuj.pl	shadowwhisperer-adult,stevenblack-porn-only
+crazydaysandnights.net	build_blocklist.py: UPSTREAM_MISTAKES	shadowwhisperer-adult
 derpibooru.org	mixed.txt: derpibooru.org	stevenblack-porn-only
 dlsite.com	mixed.txt: dlsite.com	shadowwhisperer-adult,stevenblack-porn-only
+dmhy.org	mixed.txt: dmhy.org	shadowwhisperer-adult
 dmm.com	mixed.txt: dmm.com	shadowwhisperer-adult
 ekstrabladet.dk	mixed.txt: ekstrabladet.dk	stevenblack-porn-only
 escortsgroup.com	never-block.txt: escortsgroup.com	shadowwhisperer-adult
 escortskubota.com	never-block.txt: escortskubota.com	shadowwhisperer-adult
 eyny.com	mixed.txt: eyny.com	stevenblack-porn-only
 fantia.jp	mixed.txt: fantia.jp	shadowwhisperer-adult,stevenblack-porn-only
+fark.com	build_blocklist.py: UPSTREAM_MISTAKES	shadowwhisperer-adult
 fc2.com	mixed.txt: fc2.com	stevenblack-porn-only
+freetour.com	build_blocklist.py: UPSTREAM_MISTAKES	stevenblack-porn-only
+grindr.com	build_blocklist.py: UPSTREAM_MISTAKES	shadowwhisperer-adult
 hmv.co.jp	build_blocklist.py: UPSTREAM_MISTAKES	shadowwhisperer-adult
+igg-games.com	build_blocklist.py: UPSTREAM_MISTAKES	stevenblack-porn-only
 imgbox.com	mixed.txt: imgbox.com	stevenblack-porn-only
 jkforum.net	mixed.txt: jkforum.net	shadowwhisperer-adult,stevenblack-porn-only
+joyreactor.cc	mixed.txt: joyreactor.cc	stevenblack-porn-only
 jutiporn.ac.th	never-block.txt: ac.*	shadowwhisperer-adult
+katcr.to	mixed.txt: katcr.to	stevenblack-porn-only
+kickasstorrents.to	mixed.txt: kickasstorrents.to	stevenblack-porn-only
 kinopoisk.ru	build_blocklist.py: UPSTREAM_MISTAKES	stevenblack-porn-only
+knuddels.de	build_blocklist.py: UPSTREAM_MISTAKES	stevenblack-porn-only
+mafab.hu	build_blocklist.py: UPSTREAM_MISTAKES	stevenblack-porn-only
 mangago.me	mixed.txt: mangago.me	stevenblack-porn-only
 manhwaweb.com	mixed.txt: manhwaweb.com	stevenblack-porn-only
+marieclaire.it	build_blocklist.py: UPSTREAM_MISTAKES	shadowwhisperer-adult
 melonbooks.co.jp	mixed.txt: melonbooks.co.jp	shadowwhisperer-adult,stevenblack-porn-only
+more.com	build_blocklist.py: UPSTREAM_MISTAKES	shadowwhisperer-adult
+my-cima.net	build_blocklist.py: UPSTREAM_MISTAKES	stevenblack-porn-only
 my.mail.ru	mixed.txt: my.mail.ru	stevenblack-porn-only
 quoka.de	mixed.txt: quoka.de	shadowwhisperer-adult
+rargb.to	mixed.txt: rargb.to	stevenblack-porn-only
+reactor.cc	mixed.txt: reactor.cc	stevenblack-porn-only
+refinery29.com	build_blocklist.py: UPSTREAM_MISTAKES	stevenblack-porn-only
+reservestock.jp	build_blocklist.py: UPSTREAM_MISTAKES	shadowwhisperer-adult
 rutor.info	mixed.txt: rutor.info	stevenblack-porn-only
+rutracker.net	mixed.txt: rutracker.net	stevenblack-porn-only
 scarleteen.com	never-block.txt: scarleteen.com	shadowwhisperer-adult
 seaart.ai	mixed.txt: seaart.ai	shadowwhisperer-adult
+startpagina.nl	build_blocklist.py: UPSTREAM_MISTAKES	stevenblack-porn-only
+steamunlocked.net	build_blocklist.py: UPSTREAM_MISTAKES	stevenblack-porn-only
 suruga-ya.jp	mixed.txt: suruga-ya.jp	shadowwhisperer-adult
 sxxx.gov.cn	never-block.txt: gov.*	stevenblack-porn-only
 sys.4chan.org	mixed.txt: sys.4chan.org	stevenblack-porn-only
+teenee.com	build_blocklist.py: UPSTREAM_MISTAKES	shadowwhisperer-adult
+thechive.com	build_blocklist.py: UPSTREAM_MISTAKES	stevenblack-porn-only
+thepiratebay0.org	mixed.txt: thepiratebay0.org	stevenblack-porn-only
+tia.com.ec	build_blocklist.py: UPSTREAM_MISTAKES	shadowwhisperer-adult
 toomics.com	mixed.txt: toomics.com	shadowwhisperer-adult,stevenblack-porn-only
+torrentdownloads.pro	mixed.txt: torrentdownloads.pro	stevenblack-porn-only
+unex.es	never-block.txt: unex.es	shadowwhisperer-adult
 uos.ac.uk	never-block.txt: ac.*	shadowwhisperer-adult
 vk.com	mixed.txt: vk.com	stevenblack-porn-only
 xxx.lanl.gov	never-block.txt: gov	stevenblack-porn-only
