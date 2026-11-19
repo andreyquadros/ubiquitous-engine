@@ -7,8 +7,9 @@
 # user can block any of them whole in "modo estrito"; that is a user block, so
 # nothing here is on never-block.txt.
 #
-# Syntax: the same as never-block.txt (NAME, TLD and COUNTRY rules; "#" lines
-# and empty lines ignored; no end-of-line comments). Only NAME rules are used.
+# Syntax: the same as never-block.txt (NAME, TLD and SECOND-LEVEL rules; "#"
+# lines and empty lines ignored; no end-of-line comments). Only NAME rules are
+# used here.
 #
 # Image search: Google and Bing serve image results from the same host as web
 # search, so they cannot be listed here without putting every search under the

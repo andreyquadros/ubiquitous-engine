@@ -9,7 +9,8 @@
 #
 #   example.com   NAME: two or more labels. Covers the name and every subdomain.
 #   gov           TLD: one label. Covers every name whose last label is it.
-#   gov.*         COUNTRY FORM: "*" is exactly one label of exactly two letters.
+#   gov.*         SECOND-LEVEL FORM: covers every name that has the label "gov"
+#                 immediately before its last label (x.gov.br, x.gov.wales).
 #
 # "#" lines and empty lines are ignored; there are no end-of-line comments.
 # Banks, payment services, the public sector and the AI providers are repeated

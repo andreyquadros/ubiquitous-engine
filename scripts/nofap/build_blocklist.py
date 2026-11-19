@@ -89,18 +89,20 @@ All files live in `crates/ubiqx-nofap/data/`.
        example.com   NAME: two or more labels, no `*`. Covers the name and
                      every subdomain.
        gov           TLD: one label. Covers every name whose last label is it.
-       gov.*         COUNTRY FORM: one or more labels followed by `.*`. The `*`
-                     stands for exactly one label of exactly two letters (a
-                     country code). Covers `gov.br`, `x.gov.br`, `a.b.gov.uk`;
-                     does not cover `gov.com` or `gov.info`.
+       gov.*         SECOND-LEVEL FORM: one label followed by `.*`. Covers every
+                     name that has that label immediately before its last
+                     label: `gov.br`, `x.gov.br`, `a.b.gov.uk`, `x.gov.wales`.
+                     It does not cover `gov` as a top-level domain (that is the
+                     TLD form) and not `xgov.br` or `gov.example.br`.
+                     This is the reading of `ubiqx_nofap::matcher::RuleSet`.
 
-   A TLD or COUNTRY rule decides at every depth: nothing under it is ever
+   A TLD or SECOND-LEVEL rule decides at every depth: nothing under it is ever
    blocked by the list or by a keyword. For NAME rules the matcher's longest
    match applies (design 3.4): `fc2.com` on never-block does not release a
    listed `adult.contents.fc2.com`. The build follows the same reading: it
    removes a listed name that EQUALS a NAME rule, and every listed name under a
-   TLD or COUNTRY rule, and it fails when a listed name is an ancestor of a NAME
-   rule. Names removed, and listed names kept below a NAME rule, are printed in
+   TLD or SECOND-LEVEL rule, and it fails when a listed name is an ancestor of a
+   NAME rule. Names removed, and listed names kept below a NAME rule, are printed in
    the review file.
 
 7. `canary-block.txt`, `canary-allow.txt`, `extra-ptbr.txt`
@@ -477,7 +479,7 @@ class Rules:
         self.file = path.name
         self.names: set[str] = set()
         self.tlds: set[str] = set()
-        self.country: set[str] = set()
+        self.second_level: set[str] = set()
         self.count = 0
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if line != line.strip():
@@ -489,9 +491,9 @@ class Rules:
                 raise BuildError(f"{where}: a rule is one lower-case ASCII token")
             if line.endswith(".*"):
                 head = line[:-2]
-                if not head or not all(_LABEL.match(part) for part in head.split(".")):
-                    raise BuildError(f"{where}: bad country form")
-                target = self.country
+                if not _LABEL.match(head):
+                    raise BuildError(f"{where}: the second-level form is one label and '.*'")
+                target = self.second_level
                 key = head
             elif "." not in line:
                 if not _LABEL.match(line) or line.isdigit():
@@ -507,15 +509,12 @@ class Rules:
             self.count += 1
 
     def suffix_rule(self, name: str) -> str | None:
-        """The TLD or COUNTRY rule that decides `name` at any depth, or None."""
+        """The TLD or SECOND-LEVEL rule that decides `name` at any depth, or None."""
         labels = name.split(".")
         if labels[-1] in self.tlds:
             return labels[-1]
-        if len(labels[-1]) == 2 and labels[-1].isalpha():
-            for start in range(len(labels) - 1):
-                head = ".".join(labels[start:-1])
-                if head in self.country:
-                    return head + ".*"
+        if len(labels) >= 2 and labels[-2] in self.second_level:
+            return labels[-2] + ".*"
         return None
 
     def name_rule(self, name: str) -> str | None:
@@ -1515,14 +1514,16 @@ def selftest() -> None:
         assert rules.covers("essex.gov.uk") == "gov.*" and rules.covers("gov.br") == "gov.*"
         assert rules.covers("a.b.planalto.gov.br") == "gov.*"
         assert rules.covers("sussex.ac.uk") == "ac.*"
-        assert rules.covers("gov.com") is None and rules.covers("x.gov.info") is None
+        assert rules.covers("x.gov.wales") == "gov.*" and rules.covers("gov.com") == "gov.*"
         assert rules.covers("government.uk") is None and rules.covers("xgov.br") is None
+        assert rules.covers("gov.example.br") is None and rules.covers("ac.example.com") is None
         assert rules.covers("tjsp.jus.br") == "jus.br" and rules.covers("jus.br") == "jus.br"
         assert rules.covers("blog.fc2.com") == "fc2.com" and rules.covers("xfc2.com") is None
         assert rules.removes("fc2.com") == "fc2.com" and rules.removes("adult.contents.fc2.com") is None
         assert rules.removes("x.essex.gov.uk") == "gov.*" and rules.removes("example.org") is None
         assert rules.covers("example.org") is None
-        for bad in ("Gov\n", "a b.com\n", "*.gov\n", "gov.*.br\n", " gov\n", "gov\ngov\n", "x.com # c\n"):
+        for bad in ("Gov\n", "a b.com\n", "*.gov\n", "gov.*.br\n", " gov\n", "gov\ngov\n", "x.com # c\n",
+                    "gov.co.*\n", ".*\n"):
             path.write_text(bad, "utf-8")
             try:
                 Rules(path)

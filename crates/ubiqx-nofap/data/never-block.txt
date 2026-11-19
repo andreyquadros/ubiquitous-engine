@@ -12,16 +12,18 @@
 #
 #   example.com   NAME: two or more labels. Covers the name and every subdomain.
 #   gov           TLD: one label. Covers every name whose last label is it.
-#   gov.*         COUNTRY FORM: labels followed by ".*", where "*" is exactly one
-#                 label of exactly two letters (a country code). Covers gov.br,
-#                 x.gov.br and a.b.gov.uk; does not cover gov.com.
+#   gov.*         SECOND-LEVEL FORM: one label followed by ".*". Covers every
+#                 name that has that label immediately before its last label:
+#                 gov.br, x.gov.br, a.b.gov.uk, x.gov.wales. It does not cover
+#                 "gov" as a top-level domain (write "gov" for that), nor
+#                 xgov.br, nor gov.example.br.
 #
-# A TLD or COUNTRY rule decides at every depth. For a NAME rule the matcher's
-# longest match applies: a more specific listed subdomain (the list keeps
-# adult.contents.fc2.com while fc2.com is allowed) stays blocked.
+# A TLD or SECOND-LEVEL rule decides at every depth. For a NAME rule the
+# matcher's longest match applies: a more specific listed subdomain (the list
+# keeps adult.contents.fc2.com while fc2.com is allowed) stays blocked.
 #
-# The COUNTRY form is matched by shape, without the Public Suffix List, so
-# "ac.*" also covers a private name such as ac.tv. The build prints every
+# The SECOND-LEVEL form is matched by shape, without the Public Suffix List, so
+# "gov.*" also covers a private name such as gov.com. The build prints every
 # listed name such a rule removed (section 3 of
 # docs/nofap/research/blocklist-top10k-review.txt) so that a person can see it.
 #
