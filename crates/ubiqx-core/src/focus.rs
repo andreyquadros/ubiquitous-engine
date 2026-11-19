@@ -31,10 +31,22 @@ pub const PROMPT_COOLDOWN_MINS: i64 = 45;
 /// Bundle id of ubiqX itself: the guard never acts on its own windows.
 pub const SELF_BUNDLE_ID: &str = "ai.ubiqx.app";
 
-/// Application ids the guard never enforces, whatever the list says: the shell that hosts
-/// UBI, the Finder, System Settings and the login window.
+/// Bundle id of the standalone app of the `nofap` module (`ubiqx_core::product::SHIELD`):
+/// neither product ever acts on the other's windows.
+pub const SHIELD_BUNDLE_ID: &str = "ai.ubiqx.shield";
+
+/// Application ids the guard never enforces, whatever the list says: both products built
+/// from this workspace (bundle ids on macOS, executable stems elsewhere; kept equal to
+/// `ubiqx_core::product` by a test there), the Finder, System Settings and the login
+/// window.
 pub const EXEMPT_APP_IDS: &[&str] = &[
     SELF_BUNDLE_ID,
+    SHIELD_BUNDLE_ID,
+    "ubiqx",
+    "ubiqx-desktop",
+    "ubiqx_desktop",
+    "ubiqx-shield",
+    "ubiqx_shield",
     "com.apple.finder",
     "com.apple.systempreferences",
     "com.apple.SystemPreferences",
@@ -44,6 +56,8 @@ pub const EXEMPT_APP_IDS: &[&str] = &[
 /// Application names that mean the same as [`EXEMPT_APP_IDS`] when the id is missing.
 pub const EXEMPT_APP_NAMES: &[&str] = &[
     "ubiqX",
+    crate::nofap::DISPLAY_NAME,
+    "ubiqx-shield",
     "Finder",
     "System Settings",
     "System Preferences",
@@ -190,9 +204,9 @@ pub fn find_hit<'a>(
         })
 }
 
-/// Apps the guard leaves alone: ubiqX, Finder, System Settings, the login window, and the
-/// Terminal during the first [`TERMINAL_GRACE_SECS`] of a session (`session_age_secs`,
-/// `None` when no session runs).
+/// Apps the guard leaves alone: ubiqX and the standalone `nofap` app, Finder, System
+/// Settings, the login window, and the Terminal during the first [`TERMINAL_GRACE_SECS`] of
+/// a session (`session_age_secs`, `None` when no session runs).
 pub fn is_exempt_app(app_id: &str, app_name: &str, session_age_secs: Option<i64>) -> bool {
     if EXEMPT_APP_IDS
         .iter()

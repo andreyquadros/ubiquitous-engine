@@ -1,0 +1,923 @@
+{
+  "view": {
+    "status": {
+      "overall": "protected",
+      "guard": {
+        "state": "on"
+      },
+      "hosts": {
+        "state": "applied"
+      },
+      "resolver": {
+        "state": "applied"
+      },
+      "policies": {
+        "state": "gated"
+      },
+      "vision": {
+        "state": "on"
+      },
+      "issues": [],
+      "pending": [
+        {
+          "id": "pending-1",
+          "kind": "add_allow",
+          "requested_at": "2026-09-17T15:00:00Z",
+          "ready_at": "2026-09-17T15:10:00Z",
+          "ready": false,
+          "remaining_secs": 480,
+          "expires_at": null
+        }
+      ],
+      "hosts_waiting": 0,
+      "extras_left_out": 0
+    },
+    "config": {
+      "v": 1,
+      "enabled": true,
+      "enabled_at": "2026-09-17T14:00:00Z",
+      "self_use_at": "2026-09-17T13:59:00Z",
+      "system": {
+        "hosts": true,
+        "resolver": "cloudflare_family",
+        "policies": false,
+        "hosts_user_sites": true,
+        "network_restored": false
+      },
+      "vision": {
+        "enabled": true,
+        "consent": {
+          "provider": "anthropic",
+          "managed": false,
+          "at": "2026-09-17T14:00:00Z"
+        },
+        "unknown_sites": true,
+        "media_apps": true,
+        "messaging_apps": false,
+        "private_windows": true,
+        "max_per_hour": 20,
+        "max_per_day": 120,
+        "monthly_cap_usd": 2.0
+      },
+      "delay_secs": 600,
+      "pending": [
+        {
+          "id": "pending-1",
+          "change": {
+            "kind": "add_allow",
+            "host": "example.org"
+          },
+          "requested_at": "2026-09-17T15:00:00Z",
+          "ready_at": "2026-09-17T15:10:00Z",
+          "observed_secs": 120,
+          "ready_since": null
+        }
+      ],
+      "ui": {
+        "discreet": true,
+        "show_streak": false,
+        "daily_checkin": false
+      },
+      "values": "Quero estar presente com quem eu amo.",
+      "plans": [
+        {
+          "when": "estiver sem sono de madrugada",
+          "then": "levantar e beber água"
+        }
+      ]
+    },
+    "capabilities": {
+      "os": "linux",
+      "hosts": {
+        "state": "available"
+      },
+      "resolver": {
+        "state": "unsupported",
+        "reason": "no_resolved"
+      },
+      "policies": {
+        "state": "gated"
+      },
+      "unverified": [
+        "hosts"
+      ]
+    },
+    "today": {
+      "blocks": 2,
+      "checks": 14
+    },
+    "display_name": "NoFap",
+    "product": "ubiqx",
+    "provider": "anthropic",
+    "ai": "ready",
+    "cost_line": {
+      "month_usd": 0.21,
+      "month_checks": 300,
+      "cap_usd": 2.0
+    }
+  },
+  "change_outcomes": [
+    {
+      "applied": {
+        "status": {
+          "overall": "protected",
+          "guard": {
+            "state": "on"
+          },
+          "hosts": {
+            "state": "applied"
+          },
+          "resolver": {
+            "state": "applied"
+          },
+          "policies": {
+            "state": "gated"
+          },
+          "vision": {
+            "state": "on"
+          },
+          "issues": [],
+          "pending": [
+            {
+              "id": "pending-1",
+              "kind": "add_allow",
+              "requested_at": "2026-09-17T15:00:00Z",
+              "ready_at": "2026-09-17T15:10:00Z",
+              "ready": false,
+              "remaining_secs": 480,
+              "expires_at": null
+            }
+          ],
+          "hosts_waiting": 0,
+          "extras_left_out": 0
+        },
+        "config": {
+          "v": 1,
+          "enabled": true,
+          "enabled_at": "2026-09-17T14:00:00Z",
+          "self_use_at": "2026-09-17T13:59:00Z",
+          "system": {
+            "hosts": true,
+            "resolver": "cloudflare_family",
+            "policies": false,
+            "hosts_user_sites": true,
+            "network_restored": false
+          },
+          "vision": {
+            "enabled": true,
+            "consent": {
+              "provider": "anthropic",
+              "managed": false,
+              "at": "2026-09-17T14:00:00Z"
+            },
+            "unknown_sites": true,
+            "media_apps": true,
+            "messaging_apps": false,
+            "private_windows": true,
+            "max_per_hour": 20,
+            "max_per_day": 120,
+            "monthly_cap_usd": 2.0
+          },
+          "delay_secs": 600,
+          "pending": [
+            {
+              "id": "pending-1",
+              "change": {
+                "kind": "add_allow",
+                "host": "example.org"
+              },
+              "requested_at": "2026-09-17T15:00:00Z",
+              "ready_at": "2026-09-17T15:10:00Z",
+              "observed_secs": 120,
+              "ready_since": null
+            }
+          ],
+          "ui": {
+            "discreet": true,
+            "show_streak": false,
+            "daily_checkin": false
+          },
+          "values": "Quero estar presente com quem eu amo.",
+          "plans": [
+            {
+              "when": "estiver sem sono de madrugada",
+              "then": "levantar e beber água"
+            }
+          ]
+        },
+        "capabilities": {
+          "os": "linux",
+          "hosts": {
+            "state": "available"
+          },
+          "resolver": {
+            "state": "unsupported",
+            "reason": "no_resolved"
+          },
+          "policies": {
+            "state": "gated"
+          },
+          "unverified": [
+            "hosts"
+          ]
+        },
+        "today": {
+          "blocks": 2,
+          "checks": 14
+        },
+        "display_name": "NoFap",
+        "product": "ubiqx",
+        "provider": "anthropic",
+        "ai": "ready",
+        "cost_line": {
+          "month_usd": 0.21,
+          "month_checks": 300,
+          "cap_usd": 2.0
+        }
+      }
+    },
+    {
+      "pending": {
+        "id": "pending-1",
+        "kind": "add_allow",
+        "requested_at": "2026-09-17T15:00:00Z",
+        "ready_at": "2026-09-17T15:10:00Z",
+        "ready": false,
+        "remaining_secs": 480,
+        "expires_at": null
+      }
+    }
+  ],
+  "planned_changes": [
+    {
+      "tier": "hosts",
+      "text_key": "preview.hosts",
+      "detail": "8003"
+    },
+    {
+      "tier": "resolver",
+      "text_key": "dns.previous",
+      "detail": "192.168.0.2"
+    },
+    {
+      "tier": "policies",
+      "text_key": "policies.disclosure",
+      "detail": null
+    }
+  ],
+  "apply_outcomes": [
+    {
+      "outcome": "applied"
+    },
+    {
+      "outcome": "partial",
+      "detail": [
+        {
+          "tier": "hosts",
+          "ok": true,
+          "reason": null
+        },
+        {
+          "tier": "resolver",
+          "ok": false,
+          "reason": "unreachable"
+        }
+      ]
+    },
+    {
+      "outcome": "declined"
+    },
+    {
+      "outcome": "unavailable",
+      "detail": "no_polkit_agent"
+    }
+  ],
+  "sites": {
+    "blocked": [
+      {
+        "id": "site-1",
+        "host": "example.com",
+        "created_at": "2026-09-17T13:00:00Z"
+      }
+    ],
+    "allowed": [
+      {
+        "id": "site-2",
+        "host": "example.org",
+        "created_at": "2026-09-17T14:30:00Z"
+      }
+    ],
+    "learned_count": 3
+  },
+  "support": {
+    "values": "Quero estar presente com quem eu amo.",
+    "plans": [
+      {
+        "when": "estiver sem sono de madrugada",
+        "then": "levantar e beber água"
+      }
+    ],
+    "progress": {
+      "window_days": 30,
+      "days": 26,
+      "streak": 5,
+      "after_reset": true
+    },
+    "checkin_today": "meh",
+    "help_due": false,
+    "resources": [
+      {
+        "id": "cvv",
+        "country": "BR",
+        "name": "CVV",
+        "phone": "188",
+        "url": "https://cvv.org.br/chat",
+        "note_pt": "Grátis, 24 horas.",
+        "note_en": "Free, 24 hours."
+      },
+      {
+        "id": "crp",
+        "country": "BR",
+        "name": "CRP",
+        "phone": null,
+        "url": null,
+        "note_pt": "Procure um psicólogo com registro ativo no CRP.",
+        "note_en": "Look for a psychologist with an active CRP registration."
+      }
+    ]
+  },
+  "cards": [
+    {
+      "id": "card-1",
+      "kind": "blocked",
+      "message_key": "block.discreet",
+      "note_key": null,
+      "discreet": true,
+      "actions": [
+        "support",
+        "ok"
+      ],
+      "auto_close_secs": 12,
+      "expires_at": "2026-09-17T15:10:00Z"
+    },
+    {
+      "id": "card-1",
+      "kind": "blocked_repeat",
+      "message_key": "block.repeat",
+      "note_key": null,
+      "discreet": false,
+      "actions": [
+        "surf",
+        "ok"
+      ],
+      "auto_close_secs": null,
+      "expires_at": "2026-09-17T15:10:00Z"
+    },
+    {
+      "id": "card-1",
+      "kind": "vision_closed",
+      "message_key": "vision.closed",
+      "note_key": "vision.added",
+      "discreet": false,
+      "actions": [
+        "ok",
+        "not_it",
+        "surf",
+        "add_to_list"
+      ],
+      "auto_close_secs": null,
+      "expires_at": "2026-09-17T15:10:00Z"
+    },
+    {
+      "id": "card-1",
+      "kind": "vision_ask",
+      "message_key": "vision.soft",
+      "note_key": null,
+      "discreet": false,
+      "actions": [
+        "close_window",
+        "request_exception"
+      ],
+      "auto_close_secs": 60,
+      "expires_at": "2026-09-17T15:10:00Z"
+    },
+    {
+      "id": "card-1",
+      "kind": "drift",
+      "message_key": "drift.card",
+      "note_key": null,
+      "discreet": false,
+      "actions": [
+        "restore",
+        "later"
+      ],
+      "auto_close_secs": null,
+      "expires_at": "2026-09-17T15:10:00Z"
+    },
+    {
+      "id": "card-1",
+      "kind": "pending_ready",
+      "message_key": "pending.ready",
+      "note_key": null,
+      "discreet": false,
+      "actions": [
+        "keep_protection",
+        "turn_off"
+      ],
+      "auto_close_secs": null,
+      "expires_at": "2026-09-17T15:10:00Z"
+    },
+    {
+      "id": "card-1",
+      "kind": "resolver_unreachable",
+      "message_key": "resolver.unreachable",
+      "note_key": null,
+      "discreet": false,
+      "actions": [
+        "restore_network",
+        "later"
+      ],
+      "auto_close_secs": null,
+      "expires_at": "2026-09-17T15:10:00Z"
+    },
+    {
+      "id": "card-1",
+      "kind": "reminder",
+      "message_key": "reminder.on",
+      "note_key": null,
+      "discreet": false,
+      "actions": [
+        "ok",
+        "help"
+      ],
+      "auto_close_secs": null,
+      "expires_at": "2026-09-17T15:10:00Z"
+    },
+    {
+      "id": "card-1",
+      "kind": "help",
+      "message_key": "help.pattern",
+      "note_key": null,
+      "discreet": false,
+      "actions": [
+        "help",
+        "ok"
+      ],
+      "auto_close_secs": null,
+      "expires_at": "2026-09-17T15:10:00Z"
+    }
+  ],
+  "sample_frames": [
+    {
+      "mime": "image/jpeg",
+      "base64": "/9j/4AAQSkZJRg==",
+      "width": 640,
+      "height": 400
+    },
+    null
+  ],
+  "export": {
+    "path": "/home/ana/.local/share/ubiqx/exports/shield-2026-09-17.json"
+  },
+  "events": [
+    {
+      "type": "status",
+      "status": {
+        "overall": "protected",
+        "guard": {
+          "state": "on"
+        },
+        "hosts": {
+          "state": "applied"
+        },
+        "resolver": {
+          "state": "applied"
+        },
+        "policies": {
+          "state": "gated"
+        },
+        "vision": {
+          "state": "on"
+        },
+        "issues": [],
+        "pending": [
+          {
+            "id": "pending-1",
+            "kind": "add_allow",
+            "requested_at": "2026-09-17T15:00:00Z",
+            "ready_at": "2026-09-17T15:10:00Z",
+            "ready": false,
+            "remaining_secs": 480,
+            "expires_at": null
+          }
+        ],
+        "hosts_waiting": 0,
+        "extras_left_out": 0
+      }
+    },
+    {
+      "type": "card",
+      "card": {
+        "id": "card-1",
+        "kind": "blocked",
+        "message_key": "block.discreet",
+        "note_key": null,
+        "discreet": true,
+        "actions": [
+          "support",
+          "ok"
+        ],
+        "auto_close_secs": 12,
+        "expires_at": "2026-09-17T15:10:00Z"
+      }
+    },
+    {
+      "type": "card_closed",
+      "id": "card-1"
+    },
+    {
+      "type": "pending_changed"
+    },
+    {
+      "type": "sites_changed"
+    }
+  ],
+  "statuses": [
+    {
+      "overall": "off",
+      "guard": {
+        "state": "on"
+      },
+      "hosts": {
+        "state": "off"
+      },
+      "resolver": {
+        "state": "changed"
+      },
+      "policies": {
+        "state": "gated"
+      },
+      "vision": {
+        "state": "on"
+      },
+      "issues": [
+        "hosts_not_honoured"
+      ],
+      "pending": [
+        {
+          "id": "pending-1",
+          "kind": "disable",
+          "requested_at": "2026-09-17T15:00:00Z",
+          "ready_at": "2026-09-17T15:10:00Z",
+          "ready": true,
+          "remaining_secs": 0,
+          "expires_at": "2026-09-18T15:10:00Z"
+        }
+      ],
+      "hosts_waiting": 0,
+      "extras_left_out": 0
+    },
+    {
+      "overall": "protected",
+      "guard": {
+        "state": "off"
+      },
+      "hosts": {
+        "state": "applied"
+      },
+      "resolver": {
+        "state": "missing"
+      },
+      "policies": {
+        "state": "unsupported",
+        "reason": "write_refused"
+      },
+      "vision": {
+        "state": "degraded",
+        "until": "2026-09-17T15:15:00Z"
+      },
+      "issues": [
+        "dns_bypass_suspected"
+      ],
+      "pending": [],
+      "hosts_waiting": 1,
+      "extras_left_out": 1
+    },
+    {
+      "overall": "reduced",
+      "guard": {
+        "state": "limited",
+        "reason": "automation_denied"
+      },
+      "hosts": {
+        "state": "update_pending"
+      },
+      "resolver": {
+        "state": "not_applied"
+      },
+      "policies": {
+        "state": "in_use_by_other"
+      },
+      "vision": {
+        "state": "off",
+        "reason": "disabled"
+      },
+      "issues": [
+        "resolver_unreachable"
+      ],
+      "pending": [],
+      "hosts_waiting": 2,
+      "extras_left_out": 0
+    },
+    {
+      "overall": "pending_off",
+      "guard": {
+        "state": "limited",
+        "reason": "browser_without_url"
+      },
+      "hosts": {
+        "state": "changed"
+      },
+      "resolver": {
+        "state": "gated"
+      },
+      "policies": {
+        "state": "off"
+      },
+      "vision": {
+        "state": "off",
+        "reason": "consent_outdated"
+      },
+      "issues": [
+        "new_connection_unfiltered"
+      ],
+      "pending": [],
+      "hosts_waiting": 0,
+      "extras_left_out": 1
+    },
+    {
+      "overall": "secondary",
+      "guard": {
+        "state": "limited",
+        "reason": "title_only"
+      },
+      "hosts": {
+        "state": "missing"
+      },
+      "resolver": {
+        "state": "unsupported",
+        "reason": "write_refused"
+      },
+      "policies": {
+        "state": "applied"
+      },
+      "vision": {
+        "state": "off",
+        "reason": "no_provider"
+      },
+      "issues": [
+        "policy_conflict"
+      ],
+      "pending": [
+        {
+          "id": "pending-1",
+          "kind": "disable",
+          "requested_at": "2026-09-17T15:00:00Z",
+          "ready_at": "2026-09-17T15:10:00Z",
+          "ready": true,
+          "remaining_secs": 0,
+          "expires_at": "2026-09-18T15:10:00Z"
+        }
+      ],
+      "hosts_waiting": 1,
+      "extras_left_out": 0
+    },
+    {
+      "overall": "off",
+      "guard": {
+        "state": "limited",
+        "reason": "wayland"
+      },
+      "hosts": {
+        "state": "not_applied"
+      },
+      "resolver": {
+        "state": "in_use_by_other"
+      },
+      "policies": {
+        "state": "update_pending"
+      },
+      "vision": {
+        "state": "off",
+        "reason": "no_key"
+      },
+      "issues": [
+        "policy_advisory_only"
+      ],
+      "pending": [],
+      "hosts_waiting": 2,
+      "extras_left_out": 1
+    },
+    {
+      "overall": "protected",
+      "guard": {
+        "state": "on"
+      },
+      "hosts": {
+        "state": "gated"
+      },
+      "resolver": {
+        "state": "off"
+      },
+      "policies": {
+        "state": "changed"
+      },
+      "vision": {
+        "state": "off",
+        "reason": "local_only"
+      },
+      "issues": [
+        "automation_denied"
+      ],
+      "pending": [],
+      "hosts_waiting": 0,
+      "extras_left_out": 0
+    },
+    {
+      "overall": "reduced",
+      "guard": {
+        "state": "off"
+      },
+      "hosts": {
+        "state": "unsupported",
+        "reason": "write_refused"
+      },
+      "resolver": {
+        "state": "applied"
+      },
+      "policies": {
+        "state": "missing"
+      },
+      "vision": {
+        "state": "off",
+        "reason": "not_onboarded"
+      },
+      "issues": [
+        "screen_recording_denied"
+      ],
+      "pending": [],
+      "hosts_waiting": 1,
+      "extras_left_out": 1
+    },
+    {
+      "overall": "pending_off",
+      "guard": {
+        "state": "limited",
+        "reason": "automation_denied"
+      },
+      "hosts": {
+        "state": "in_use_by_other"
+      },
+      "resolver": {
+        "state": "update_pending"
+      },
+      "policies": {
+        "state": "not_applied"
+      },
+      "vision": {
+        "state": "off",
+        "reason": "licence"
+      },
+      "issues": [
+        "vision_budget_spent"
+      ],
+      "pending": [
+        {
+          "id": "pending-1",
+          "kind": "disable",
+          "requested_at": "2026-09-17T15:00:00Z",
+          "ready_at": "2026-09-17T15:10:00Z",
+          "ready": true,
+          "remaining_secs": 0,
+          "expires_at": "2026-09-18T15:10:00Z"
+        }
+      ],
+      "hosts_waiting": 2,
+      "extras_left_out": 0
+    },
+    {
+      "overall": "secondary",
+      "guard": {
+        "state": "limited",
+        "reason": "browser_without_url"
+      },
+      "hosts": {
+        "state": "off"
+      },
+      "resolver": {
+        "state": "changed"
+      },
+      "policies": {
+        "state": "gated"
+      },
+      "vision": {
+        "state": "off",
+        "reason": "screen_recording"
+      },
+      "issues": [
+        "vision_cap_reached"
+      ],
+      "pending": [],
+      "hosts_waiting": 0,
+      "extras_left_out": 1
+    },
+    {
+      "overall": "off",
+      "guard": {
+        "state": "limited",
+        "reason": "title_only"
+      },
+      "hosts": {
+        "state": "applied"
+      },
+      "resolver": {
+        "state": "missing"
+      },
+      "policies": {
+        "state": "unsupported",
+        "reason": "write_refused"
+      },
+      "vision": {
+        "state": "off",
+        "reason": "wayland"
+      },
+      "issues": [
+        "vision_no_provider"
+      ],
+      "pending": [],
+      "hosts_waiting": 1,
+      "extras_left_out": 0
+    },
+    {
+      "overall": "protected",
+      "guard": {
+        "state": "limited",
+        "reason": "wayland"
+      },
+      "hosts": {
+        "state": "update_pending"
+      },
+      "resolver": {
+        "state": "not_applied"
+      },
+      "policies": {
+        "state": "in_use_by_other"
+      },
+      "vision": {
+        "state": "off",
+        "reason": "budget_spent"
+      },
+      "issues": [
+        "consent_outdated"
+      ],
+      "pending": [],
+      "hosts_waiting": 2,
+      "extras_left_out": 1
+    },
+    {
+      "overall": "reduced",
+      "guard": {
+        "state": "on"
+      },
+      "hosts": {
+        "state": "changed"
+      },
+      "resolver": {
+        "state": "gated"
+      },
+      "policies": {
+        "state": "off"
+      },
+      "vision": {
+        "state": "off",
+        "reason": "cap_reached"
+      },
+      "issues": [
+        "other_product_primary"
+      ],
+      "pending": [
+        {
+          "id": "pending-1",
+          "kind": "disable",
+          "requested_at": "2026-09-17T15:00:00Z",
+          "ready_at": "2026-09-17T15:10:00Z",
+          "ready": true,
+          "remaining_secs": 0,
+          "expires_at": "2026-09-18T15:10:00Z"
+        }
+      ],
+      "hosts_waiting": 0,
+      "extras_left_out": 0
+    }
+  ]
+}

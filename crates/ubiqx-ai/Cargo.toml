@@ -24,4 +24,6 @@ tracing.workspace = true
 [dev-dependencies]
 parking_lot.workspace = true
 tokio.workspace = true
+# The capture subscriber of the "no log line per check" tests (`explicit`).
+tracing-subscriber.workspace = true
 wiremock = "0.6"

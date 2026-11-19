@@ -15,6 +15,10 @@
 //!   the machine). [`lang`] names the UI language every generated text follows,
 //!   [`update`] decides when a published build is newer than the running one and
 //!   [`license`] verifies signed license keys offline (plans, claims, enforcement).
+//! * The `nofap` module's contract: [`nofap`] (configuration, status, the system plan, cards
+//!   and the ports its runtime is built from), [`nofap_ipc`] (the wire types of its one IPC
+//!   command, with the fixtures the frontend checks against) and [`product`] (the identity
+//!   of the two products built from this workspace). The decisions are in `ubiqx-nofap`.
 //!
 //! This crate must never depend on an operating-system API, a database driver or an HTTP client.
 
@@ -26,8 +30,11 @@ pub mod lang;
 pub mod learning;
 pub mod license;
 pub mod model;
+pub mod nofap;
+pub mod nofap_ipc;
 pub mod normalize;
 pub mod ports;
+pub mod product;
 pub mod redact;
 pub mod report;
 pub mod rules;
@@ -43,4 +50,5 @@ pub use license::{
     LICENSE_ENFORCEMENT,
 };
 pub use model::*;
+pub use product::{ProductId, ProductIdentity};
 pub use update::{BuildInfo, ReleaseInfo, UpdateFeed, UpdateStatus};

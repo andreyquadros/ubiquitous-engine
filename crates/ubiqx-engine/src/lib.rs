@@ -31,7 +31,8 @@ pub mod tracker;
 pub mod update;
 
 pub use deps::{
-    AiPorts, EngineDeps, LicenseDeps, LicenseServer, LogInterventionPresenter, NoLicenseServer,
+    AiPorts, EngineDeps, LicenseDeps, LicenseServer, LogInterventionPresenter, LogNofapPresenter,
+    MemoryNofapRepo, NoFrameSource, NoLicenseServer, NoSystemShield, NofapPorts, NullNofapSink,
     PlatformPorts, Repos,
 };
 pub use engine::{Engine, LoopConfig};

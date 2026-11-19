@@ -382,6 +382,8 @@ impl App {
                 .filter(|u| !u.trim().is_empty())
                 .unwrap_or_else(|| ubiqx_core::update::DEFAULT_FEED_URL.to_string()),
             license,
+            nofap: ubiqx_engine::NofapPorts::inert(),
+            identity: &ubiqx_core::product::UBIQX,
         };
         let engine = Engine::start(deps)?;
         Ok(App {

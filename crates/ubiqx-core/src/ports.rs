@@ -20,12 +20,26 @@ use crate::update::UpdateFeed;
 pub trait ActivitySource: Send + Sync {
     /// `Ok(None)` when nothing is in the foreground (login window, screensaver, no session).
     fn foreground(&self) -> CoreResult<Option<ForegroundWindow>>;
+
+    /// The foreground window for a reader other than the tracker's sampler (the `nofap`
+    /// guard). Real platforms answer like [`foreground`](Self::foreground); a scripted
+    /// platform overrides it to return the step `foreground` last served, so the guard
+    /// never consumes tracker steps.
+    fn peek_foreground(&self) -> CoreResult<Option<ForegroundWindow>> {
+        self.foreground()
+    }
 }
 
 /// Resolves the URL of the active tab for supported browsers.
 pub trait BrowserUrlResolver: Send + Sync {
     fn supports(&self, app_id: &str) -> bool;
     fn resolve(&self, window: &ForegroundWindow) -> CoreResult<Option<String>>;
+
+    /// Like [`resolve`](Self::resolve), but never answered from a cache: read immediately
+    /// before an action is taken on the tab. Resolvers that cache override it.
+    fn resolve_fresh(&self, window: &ForegroundWindow) -> CoreResult<Option<String>> {
+        self.resolve(window)
+    }
 }
 
 /// Seconds since the last user input event.
@@ -257,6 +271,12 @@ pub trait ScreenshotRepo: Send + Sync {
     fn count_sent_since(&self, since: DateTime<Utc>) -> CoreResult<u64>;
     /// Returns the deleted rows so the caller can remove files from disk.
     fn delete_before(&self, before: DateTime<Utc>) -> CoreResult<Vec<Screenshot>>;
+    /// Deletes every screenshot taken while `block_id` was active and returns the deleted
+    /// rows so the caller can remove the files. A store that keeps no screenshots deletes
+    /// nothing, which is what the default says.
+    fn delete_for_block(&self, _block_id: &str) -> CoreResult<Vec<Screenshot>> {
+        Ok(Vec::new())
+    }
 }
 
 pub trait ReportRepo: Send + Sync {
@@ -351,15 +371,28 @@ pub enum AiUsageKind {
     Vision,
     Report,
     Advice,
+    /// One screen check of the `nofap` module. Kept apart from every other kind: it has its
+    /// own monthly cap, the productivity budget does not count it, its ledger rows carry
+    /// the hour instead of the exact time and the clients log nothing for it.
+    NofapVision,
 }
 
 impl AiUsageKind {
+    pub const ALL: [AiUsageKind; 5] = [
+        AiUsageKind::Classify,
+        AiUsageKind::Vision,
+        AiUsageKind::Report,
+        AiUsageKind::Advice,
+        AiUsageKind::NofapVision,
+    ];
+
     pub fn as_str(&self) -> &'static str {
         match self {
             AiUsageKind::Classify => "classify",
             AiUsageKind::Vision => "vision",
             AiUsageKind::Report => "report",
             AiUsageKind::Advice => "advice",
+            AiUsageKind::NofapVision => "nofap_vision",
         }
     }
 
@@ -369,6 +402,7 @@ impl AiUsageKind {
             "vision" => Some(Self::Vision),
             "report" => Some(Self::Report),
             "advice" => Some(Self::Advice),
+            "nofap_vision" => Some(Self::NofapVision),
             _ => None,
         }
     }
@@ -398,6 +432,13 @@ pub struct AiUsageTotals {
 pub trait UsageRepo: Send + Sync {
     fn record(&self, usage: &AiUsage) -> CoreResult<()>;
     fn totals(&self, range: TimeRange) -> CoreResult<AiUsageTotals>;
+    /// The totals of `range` split by what the calls were for; kinds without a call are
+    /// absent. The `nofap` module caps its own kind with it, and the productivity budget
+    /// sums every other kind. The default knows no split and answers with nothing, which
+    /// reads as "no spend": every ledger that feeds a budget must override it.
+    fn totals_by_kind(&self, _range: TimeRange) -> CoreResult<Vec<(AiUsageKind, AiUsageTotals)>> {
+        Ok(Vec::new())
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

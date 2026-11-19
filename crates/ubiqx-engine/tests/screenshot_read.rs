@@ -79,6 +79,8 @@ fn fixture() -> Fixture {
         build: ubiqx_core::BuildInfo::dev(),
         update_feed_url: String::new(),
         license: LicenseDeps::default(),
+        nofap: ubiqx_engine::NofapPorts::inert(),
+        identity: &ubiqx_core::product::UBIQX,
     };
     let state = EngineState::new(deps, Settings::default(), None);
     Fixture {

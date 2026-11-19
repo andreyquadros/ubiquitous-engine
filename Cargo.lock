@@ -5516,6 +5516,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-single-instance"
+version = "2.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db817fe9295e19b7d8357e900af31edb93703dd9fb6de524b007b47b6afc63b0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "windows-sys 0.60.2",
+ "zbus 5.19.0",
+]
+
+[[package]]
 name = "tauri-plugin-updater"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6112,6 +6128,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "ubiqx-core",
  "wiremock",
 ]
@@ -6126,12 +6143,14 @@ dependencies = [
  "parking_lot",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "ubiqx-ai",
  "ubiqx-core",
  "ubiqx-engine",
+ "ubiqx-nofap",
  "ubiqx-platform",
  "ubiqx-storage",
 ]
@@ -6184,12 +6203,14 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tauri-plugin-process",
+ "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tokio",
  "tracing",
  "ubiqx-app",
  "ubiqx-core",
  "ubiqx-engine",
+ "ubiqx-platform",
  "url",
 ]
 
@@ -6202,6 +6223,7 @@ dependencies = [
  "chrono",
  "ed25519-dalek",
  "parking_lot",
+ "rand 0.8.8",
  "serde",
  "serde_json",
  "tempfile",
@@ -6209,10 +6231,51 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
  "ubiqx-ai",
  "ubiqx-core",
+ "ubiqx-nofap",
  "ubiqx-platform",
  "ubiqx-storage",
+]
+
+[[package]]
+name = "ubiqx-nofap"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "data-encoding",
+ "serde",
+ "serde_json",
+ "sha2",
+ "ubiqx-core",
+ "url",
+]
+
+[[package]]
+name = "ubiqx-nofap-desktop"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-log",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tauri-plugin-process",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "tokio",
+ "tracing",
+ "ubiqx-app",
+ "ubiqx-core",
+ "ubiqx-engine",
+ "ubiqx-nofap",
+ "ubiqx-platform",
 ]
 
 [[package]]
@@ -6238,6 +6301,7 @@ dependencies = [
  "tokio",
  "tracing",
  "ubiqx-core",
+ "ubiqx-nofap",
  "windows 0.62.2",
  "x11rb",
  "xcap",

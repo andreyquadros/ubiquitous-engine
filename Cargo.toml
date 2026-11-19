@@ -3,18 +3,21 @@ resolver = "2"
 members = [
     "crates/ubiqx-core",
     "crates/ubiqx-storage",
+    "crates/ubiqx-nofap",
     "crates/ubiqx-platform",
     "crates/ubiqx-ai",
     "crates/ubiqx-engine",
     "crates/ubiqx-app",
     "crates/ubiqx-cli",
     "apps/desktop/src-tauri",
+    "apps/nofap/src-tauri",
 ]
-# The desktop app needs webkit/gtk on Linux; keep it out of the default build set so
+# The two desktop shells need webkit/gtk on Linux; keep them out of the default build set so
 # `cargo test` / `cargo clippy` in CI exercise the portable crates only.
 default-members = [
     "crates/ubiqx-core",
     "crates/ubiqx-storage",
+    "crates/ubiqx-nofap",
     "crates/ubiqx-platform",
     "crates/ubiqx-ai",
     "crates/ubiqx-engine",
@@ -33,6 +36,7 @@ authors = ["Andrey Quadros"]
 [workspace.dependencies]
 ubiqx-core = { path = "crates/ubiqx-core" }
 ubiqx-storage = { path = "crates/ubiqx-storage" }
+ubiqx-nofap = { path = "crates/ubiqx-nofap" }
 ubiqx-platform = { path = "crates/ubiqx-platform" }
 ubiqx-ai = { path = "crates/ubiqx-ai" }
 ubiqx-engine = { path = "crates/ubiqx-engine" }

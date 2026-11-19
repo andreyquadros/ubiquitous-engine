@@ -1,0 +1,268 @@
+[
+  {
+    "cmd": "view"
+  },
+  {
+    "cmd": "enable",
+    "args": {
+      "self_use": true,
+      "hosts": true,
+      "resolver": "cloudflare_family",
+      "policies": false,
+      "vision": true,
+      "vision_consent": {
+        "provider": "anthropic",
+        "managed": false
+      },
+      "vision_scope": {
+        "unknown_sites": true,
+        "media_apps": true,
+        "messaging_apps": false,
+        "private_windows": true
+      },
+      "delay_secs": 600,
+      "values": "Quero estar presente com quem eu amo.",
+      "discreet": true
+    }
+  },
+  {
+    "cmd": "consent_vision",
+    "args": {
+      "provider": "ubi",
+      "managed": true
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "disable"
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "add_block",
+      "host": "example.com"
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "remove_block",
+      "id": "site-1"
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "add_allow",
+      "host": "example.org"
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "remove_allow",
+      "id": "site-2"
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "forget_learned"
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "set_hosts",
+      "on": true
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "set_resolver",
+      "resolver": "cloudflare_family"
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "set_policies",
+      "on": false
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "set_hosts_user_sites",
+      "on": false
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "set_vision",
+      "on": true
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "set_vision_scope",
+      "unknown_sites": true,
+      "media_apps": true,
+      "messaging_apps": false,
+      "private_windows": true
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "set_caps",
+      "max_per_hour": 20,
+      "max_per_day": 120,
+      "monthly_cap_usd": 2.0
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "set_delay",
+      "secs": 1800
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "set_prefs",
+      "prefs": {
+        "discreet": true,
+        "show_streak": true,
+        "daily_checkin": false
+      }
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "set_values",
+      "text": "Quero estar presente com quem eu amo."
+    }
+  },
+  {
+    "cmd": "request",
+    "args": {
+      "kind": "set_plans",
+      "plans": [
+        {
+          "when": "estiver sem sono de madrugada",
+          "then": "levantar e beber água"
+        }
+      ]
+    }
+  },
+  {
+    "cmd": "confirm_pending",
+    "args": {
+      "id": "pending-1"
+    }
+  },
+  {
+    "cmd": "cancel_pending",
+    "args": {
+      "id": "pending-1"
+    }
+  },
+  {
+    "cmd": "system_preview"
+  },
+  {
+    "cmd": "system_apply"
+  },
+  {
+    "cmd": "system_remove"
+  },
+  {
+    "cmd": "restore_network"
+  },
+  {
+    "cmd": "sites"
+  },
+  {
+    "cmd": "support"
+  },
+  {
+    "cmd": "record",
+    "args": {
+      "event": "lapse",
+      "triggers": [
+        "tired",
+        "lonely"
+      ]
+    }
+  },
+  {
+    "cmd": "record",
+    "args": {
+      "event": "checkin",
+      "mood": "hard",
+      "triggers": [
+        "stressed"
+      ]
+    }
+  },
+  {
+    "cmd": "record",
+    "args": {
+      "event": "surf_started"
+    }
+  },
+  {
+    "cmd": "record",
+    "args": {
+      "event": "surf_done"
+    }
+  },
+  {
+    "cmd": "record",
+    "args": {
+      "event": "panic"
+    }
+  },
+  {
+    "cmd": "record",
+    "args": {
+      "event": "step_away"
+    }
+  },
+  {
+    "cmd": "card",
+    "args": {
+      "id": "card-1"
+    }
+  },
+  {
+    "cmd": "card_action",
+    "args": {
+      "id": "card-1",
+      "action": "not_it"
+    }
+  },
+  {
+    "cmd": "sample_frame"
+  },
+  {
+    "cmd": "erase_history"
+  },
+  {
+    "cmd": "reset"
+  },
+  {
+    "cmd": "export"
+  },
+  {
+    "cmd": "test_card"
+  }
+]

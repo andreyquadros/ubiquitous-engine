@@ -299,6 +299,21 @@ fn version_components(v: &str) -> Vec<u64> {
         .collect()
 }
 
+/// The `product` value of feeds published before the field existed: they were all ubiqX's.
+pub const LEGACY_FEED_PRODUCT: &str = "ubiqX";
+
+/// Whether `feed` was published for the product whose feed name is `product`
+/// (`ProductIdentity::feed_product`). The checker ignores any other feed, so one product
+/// can never be offered the other's installer, whatever URL it was pointed at. A feed that
+/// names no product predates the field and counts as ubiqX's.
+pub fn feed_matches_product(feed: &UpdateFeed, product: &str) -> bool {
+    let named = feed.product.trim();
+    if named.is_empty() {
+        return product == LEGACY_FEED_PRODUCT;
+    }
+    named == product
+}
+
 /// Whether a feed entry (`version`, commit `epoch`) is an update for `current`: a greater
 /// version, or the same version built from a later commit.
 pub fn is_newer(feed_version: &str, feed_epoch: i64, current: &BuildInfo) -> bool {
@@ -596,6 +611,30 @@ mod tests {
         assert_eq!(minimal.schema, 1);
         assert_eq!(minimal.platforms["darwin-aarch64"].kind, "dmg");
         assert_eq!(minimal.published_at, None);
+    }
+
+    #[test]
+    fn nofap_feed_matches_product() {
+        use crate::product::{SHIELD, UBIQX};
+        let mut feed: UpdateFeed = serde_json::from_str(FEED).unwrap();
+        assert!(feed_matches_product(&feed, UBIQX.feed_product));
+        assert!(!feed_matches_product(&feed, SHIELD.feed_product));
+
+        feed.product = "ubiqx-shield".into();
+        assert!(feed_matches_product(&feed, SHIELD.feed_product));
+        assert!(!feed_matches_product(&feed, UBIQX.feed_product));
+
+        // Case matters: the publish script writes the exact name.
+        feed.product = "UBIQX".into();
+        assert!(!feed_matches_product(&feed, UBIQX.feed_product));
+
+        // A feed from before the field existed is ubiqX's and nobody else's.
+        for blank in ["", "  "] {
+            feed.product = blank.into();
+            assert!(feed_matches_product(&feed, UBIQX.feed_product));
+            assert!(!feed_matches_product(&feed, SHIELD.feed_product));
+        }
+        assert_eq!(UBIQX.feed_product, LEGACY_FEED_PRODUCT);
     }
 
     #[test]

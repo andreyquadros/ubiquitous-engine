@@ -267,6 +267,8 @@ async fn harness_with(opts: HarnessOptions) -> Harness {
         build: ubiqx_core::BuildInfo::dev(),
         update_feed_url: String::new(),
         license: opts.license,
+        nofap: ubiqx_engine::NofapPorts::inert(),
+        identity: &ubiqx_core::product::UBIQX,
     };
     let cfg = LoopConfig {
         classify_every: Duration::from_millis(200),
@@ -278,6 +280,8 @@ async fn harness_with(opts: HarnessOptions) -> Harness {
         focus_every: Duration::from_secs(3600),
         license_initial_delay: Duration::from_secs(3600),
         license_every: Duration::from_secs(3600),
+        nofap_every: Duration::from_secs(3600),
+        nofap_verify_every: Duration::from_secs(3600),
         without_sampler: true,
     };
     let (handle, tx) = Engine::start_with(deps, cfg).unwrap();

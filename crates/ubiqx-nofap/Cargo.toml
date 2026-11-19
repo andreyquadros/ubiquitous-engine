@@ -1,0 +1,19 @@
+[package]
+name = "ubiqx-nofap"
+description = "ubiqX nofap module: pure decisions and embedded data (blocklist matcher, hosts block, system plan, commitment delay, vision sampling, counselling data). No I/O."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ubiqx-core.workspace = true
+chrono.workspace = true
+# base64url of the plan argument handed to the elevated helper (`plan::encode_plan`).
+data-encoding.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+url.workspace = true

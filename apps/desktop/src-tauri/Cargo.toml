@@ -19,6 +19,8 @@ tauri-build = { version = "2", features = [] }
 ubiqx-app.workspace = true
 ubiqx-core.workspace = true
 ubiqx-engine.workspace = true
+# `main` hands `--shield-helper` runs to `ubiqx_platform::sysblock::helper` before Tauri starts.
+ubiqx-platform.workspace = true
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -33,3 +35,4 @@ tauri-plugin-autostart = "2"
 tauri-plugin-log = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-single-instance = "2"

@@ -33,11 +33,13 @@ pub mod app_id;
 pub mod browser;
 pub mod browser_url;
 pub mod catalog;
+pub mod frame;
 pub mod image_util;
 pub mod mock;
 pub mod notify;
 pub mod secrets;
 pub mod secrets_file;
+pub mod sysblock;
 pub mod update_feed;
 
 #[cfg(target_os = "macos")]

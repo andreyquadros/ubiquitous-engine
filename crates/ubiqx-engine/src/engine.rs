@@ -32,6 +32,11 @@ pub struct LoopConfig {
     /// license only), then every `license_every`.
     pub license_initial_delay: Duration,
     pub license_every: Duration,
+    /// How often the `nofap` guard looks at the foreground window (independent of the
+    /// focus guard, tracking, pause, private mode and quiet hours).
+    pub nofap_every: Duration,
+    /// How often the `nofap` module re-reads the system tiers (never elevates).
+    pub nofap_verify_every: Duration,
     /// Skip the sampler thread (the caller feeds samples itself).
     pub without_sampler: bool,
 }
@@ -48,6 +53,8 @@ impl Default for LoopConfig {
             focus_every: Duration::from_secs(2),
             license_initial_delay: Duration::from_secs(5),
             license_every: Duration::from_secs(3600),
+            nofap_every: Duration::from_secs(2),
+            nofap_verify_every: Duration::from_secs(120),
             without_sampler: false,
         }
     }

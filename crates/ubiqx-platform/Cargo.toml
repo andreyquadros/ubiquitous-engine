@@ -10,6 +10,9 @@ authors.workspace = true
 
 [dependencies]
 ubiqx-core.workspace = true
+# The system layer (`sysblock`): plan validation, hosts splice, policy values and the gate
+# are decided there; this crate only runs the commands.
+ubiqx-nofap.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 image.workspace = true
