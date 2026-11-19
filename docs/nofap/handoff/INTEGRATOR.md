@@ -53,3 +53,16 @@ own `docs/nofap/handoff/<unit>.md` when it finishes (deviations, contract notes,
 13. **The frontend type-checks the fixtures through `fixtures/golden.ts`** (`satisfies` on a JSON
     import cannot work; hand-off U0).
 14. **"Verificar agora" needs no command.** The service does the full read when `view` is called.
+
+## During wave B
+
+15. **A frontend test fails in CI and under load** (U6 and its reviewer). On commit `40a93d0` the
+    job "Frontend (Vite + TypeScript)" failed in `src/nofap/NofapCard.test.tsx`, "the card window
+    closes by itself only while untouched > not once the user opened support": the card was closed
+    after the 60 s advance. It passes when the file runs alone and fails when the whole suite runs
+    (`pnpm test -- --run`, reproduced here twice). A trace showed `close` called from a timer
+    (`callTimer` of the fake clock), so a close timer is still armed, or armed again, after support
+    opens. Find the cause in the component or in the test's use of `shouldAdvanceTime`, fix it,
+    and prove it with the whole suite run several times, not with the single file. The integrator
+    added a guard so that a late answer to the first `card` request cannot reset an open flow
+    (`shown` in `NofapCard.tsx`); it is a real fix but not the cause of this failure.
