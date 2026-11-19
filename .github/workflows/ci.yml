@@ -49,9 +49,9 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --workspace --exclude ubiqx-desktop --all-targets -- -D warnings
+        run: cargo clippy --workspace --exclude ubiqx-desktop --exclude ubiqx-nofap-desktop --all-targets -- -D warnings
       - name: Tests
-        run: cargo test --workspace --exclude ubiqx-desktop
+        run: cargo test --workspace --exclude ubiqx-desktop --exclude ubiqx-nofap-desktop
       - name: Type-check macOS platform code
         run: cargo check -p ubiqx-platform --target aarch64-apple-darwin
       - name: Type-check Windows platform code
@@ -211,7 +211,7 @@ jobs:
       - name: Updater signing key (warns and builds without it)
         run: bash scripts/ci-updater-signing.sh
       - name: Rust tests (portable crates and the Windows adapters)
-        run: cargo test --workspace --exclude ubiqx-desktop
+        run: cargo test --workspace --exclude ubiqx-desktop --exclude ubiqx-nofap-desktop
       - name: Clippy on the desktop shell (Windows)
         # rust-linux cannot type-check ubiqx-desktop for MSVC (ring and libsqlite3-sys compile C there).
         run: cargo clippy -p ubiqx-desktop -- -D warnings
