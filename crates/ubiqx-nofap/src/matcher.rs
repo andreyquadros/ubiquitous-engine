@@ -178,7 +178,7 @@ pub fn never_block() -> &'static RuleSet {
 }
 
 /// Everything a [`Matcher`] reads besides the user's sites.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MatcherData {
     /// A table in the format of [`crate::list`], tag [`crate::list::CORE_TAG`].
     pub core: &'static [u8],
@@ -189,6 +189,20 @@ pub struct MatcherData {
     pub never_capture: RuleSet,
     /// The names of the hosts tier, for [`Matcher::in_hosts_tier`].
     pub hosts_tier: &'static [&'static str],
+}
+
+/// Sizes only: the tables are megabytes and the tier is a list of adult sites.
+impl std::fmt::Debug for MatcherData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MatcherData")
+            .field("core_bytes", &self.core.len())
+            .field("popular_bytes", &self.popular.len())
+            .field("never_block", &self.never_block.len())
+            .field("mixed", &self.mixed.len())
+            .field("never_capture", &self.never_capture.len())
+            .field("hosts_tier", &self.hosts_tier.len())
+            .finish()
+    }
 }
 
 impl MatcherData {
@@ -206,7 +220,6 @@ impl MatcherData {
 }
 
 /// Decides hosts. Rebuilt only when `nofap_sites` changes; the list never enters SQLite.
-#[derive(Debug)]
 pub struct Matcher {
     data: MatcherData,
     core: HashTable<'static>,
@@ -218,6 +231,22 @@ pub struct Matcher {
     snoozed: HashSet<[u8; 16]>,
     /// The hosts tier without its `www.` twins, indexed on the first bypass check.
     hosts_tier: OnceLock<HashSet<&'static str>>,
+}
+
+/// Counts only: a matcher printed into a log must not name the sites the user typed, nor
+/// show the salt their learned sites are hashed with.
+impl std::fmt::Debug for Matcher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Matcher")
+            .field("data", &self.data)
+            .field("core", &self.core)
+            .field("popular", &self.popular)
+            .field("user_block", &self.user_block.len())
+            .field("user_allow", &self.user_allow.len())
+            .field("learned", &self.learned.len())
+            .field("snoozed", &self.snoozed.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl Matcher {
@@ -966,6 +995,17 @@ mod tests {
             m.verdict("blog.tumblr.com"),
             Verdict::Blocked(BlockSource::User)
         );
+        // Printed, a matcher counts the user's sites and names none of them.
+        let printed = format!("{m:?}");
+        assert!(
+            printed.contains("user_block: 3") && printed.contains("user_allow: 3"),
+            "{printed}"
+        );
+        assert!(
+            !printed.contains("strict.example") && !printed.contains("tumblr"),
+            "{printed}"
+        );
+        assert!(printed.len() < 600, "{printed}");
         // A user allow also lifts the keyword rules for its name.
         let m = matcher(&[site(SiteList::Allow, SiteOrigin::User, "porno365.golf")]);
         assert_eq!(
@@ -994,6 +1034,7 @@ mod tests {
         assert_eq!(m.verdict("other-name.example"), PLAIN);
         // The matcher holds the key, never the name.
         assert!(!format!("{m:?}").contains("quiet-name"));
+        assert!(format!("{m:?}").contains("learned: 1"));
         // Another salt gives another key: the same row decides nothing.
         let other = Matcher::new(data(), &[learned], &[9; 16], now()).unwrap();
         assert_eq!(other.verdict("quiet-name.example"), PLAIN);

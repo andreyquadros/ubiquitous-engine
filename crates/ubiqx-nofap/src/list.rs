@@ -43,12 +43,22 @@ static CANARY_ALLOW_TXT: &str = include_str!("../data/canary-allow.txt");
 
 /// A parsed table: a view over the bytes it was parsed from (memory equals file size; a
 /// lookup is a binary search).
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct HashTable<'a> {
     tag: &'static [u8],
     keys: &'a [u8],
     count: usize,
     list_version: u64,
+}
+
+/// The size and version only: the keys are megabytes of numbers.
+impl std::fmt::Debug for HashTable<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HashTable")
+            .field("count", &self.count)
+            .field("list_version", &self.list_version)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a> HashTable<'a> {
@@ -256,6 +266,11 @@ mod tests {
         // The tag is part of the key.
         let other = HashTable::parse(&bytes, POPULAR_TAG).unwrap();
         assert!(!other.contains("one.example"));
+        // Printing a table shows its size, not its keys.
+        assert_eq!(
+            format!("{parsed:?}"),
+            "HashTable { count: 4, list_version: 202611191200, .. }"
+        );
     }
 
     #[test]
