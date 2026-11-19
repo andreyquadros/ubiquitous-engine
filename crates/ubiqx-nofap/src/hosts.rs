@@ -801,8 +801,55 @@ mod tests {
             "site.test",
             long_label.as_str(),
             too_long.as_str(),
+            // Letters that only look like ASCII, and characters nobody sees.
+            "\u{0435}xample.com",
+            "ex\u{0430}mple.com",
+            "exampl\u{0131}.com",
+            "\u{ff45}xample.com",
+            "example\u{3002}com",
+            "example\u{ff0e}com",
+            "ex\u{200b}ample.com",
+            "ex\u{202e}ample.com",
+            "ex\u{0301}ample.com",
+            "\u{00a0}example.com",
+            "\u{feff}example.com",
+            // Every other way to end a line or to ring a bell.
+            "example.com\u{000b}",
+            "example.com\u{000c}",
+            "example.com\u{0085}",
+            "example.com\u{2028}0.0.0.0 bank.example",
+            "exa\u{0007}mple.com",
+            "example\u{007f}.com",
+            "example.com\u{001b}[2J",
+            // More spellings of an address, and of a list.
+            "2130706433",
+            "0x7f000001",
+            "example.123",
+            "example.0X1F",
+            "1.2.3.4.",
+            "::ffff:1.2.3.4",
+            "2606:4700:4700::1113",
+            "[2606:4700:4700::1113]",
+            "example.com,evil.example",
+            "example.com evil.example",
+            "example.com%00",
+            "example.COM",
+            "_dmarc.example.com",
+            "example.-com",
+            "example.com-",
         ] {
             assert!(!is_valid_hostname(name), "{name:?} should be refused");
+            // Nor does the renderer write it, whoever hands it in.
+            assert_eq!(
+                render_block(&[name.to_owned()]).lines().count(),
+                3,
+                "{name:?} was written"
+            );
+            assert_eq!(
+                names_for(&[name], &[name.to_owned()], Os::Windows),
+                [CANARY_NAME],
+                "{name:?}"
+            );
         }
     }
 
