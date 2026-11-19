@@ -66,3 +66,11 @@ own `docs/nofap/handoff/<unit>.md` when it finishes (deviations, contract notes,
     and prove it with the whole suite run several times, not with the single file. The integrator
     added a guard so that a late answer to the first `card` request cannot reset an open flow
     (`shown` in `NofapCard.tsx`); it is a real fix but not the cause of this failure.
+
+    **Cause found and fixed by the integrator** (`NofapCard.tsx`): React runs the cleanup of the
+    auto-close effect in a later task than the render that shows the opened flow, and that task is a
+    real `setImmediate` the fake clock does not control. Under load the test advanced 60 s before
+    the cleanup had run, so the old timer fired. The same gap exists in the product for a click that
+    lands just before the timer is due. The timer now asks when it fires whether the card is still
+    untouched (`touched`, `modeNow`). The whole suite passed three times in a row here afterwards.
+    U6's reviewer: keep this behaviour, and check the other timers of the module for the same gap.

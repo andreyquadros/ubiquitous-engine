@@ -97,9 +97,15 @@ export function NofapCardPage() {
   const [busy, setBusy] = useState(false);
   const cardId = useRef(id);
   const shown = useRef(false);
+  /** A button of this card was pressed (its request may still be on its way). */
+  const touched = useRef(false);
+  /** The mode of the latest render, for the timer that outlives a render. */
+  const modeNow = useRef<Mode>(mode);
+  modeNow.current = mode;
 
   const show = useCallback((next: NofapCard) => {
     shown.current = true;
+    touched.current = false;
     cardId.current = next.id;
     setCard(next);
     // A block card with detailed messages on opens directly as the support card.
@@ -163,10 +169,15 @@ export function NofapCardPage() {
     void resizeCardWindow(size.width, size.height);
   }, [card, expanded]);
 
-  // The card closes by itself only while nobody touched it.
+  // The card closes by itself only while nobody touched it. Clearing the timer is not enough: React runs
+  // this effect's cleanup a moment after the click is handled and painted, and a timer that falls due in that
+  // moment would close a card the person has just opened. So the timer asks, when it fires, whether the card
+  // is still untouched.
   useEffect(() => {
     if (!card || mode !== 'card' || !card.auto_close_secs) return;
-    const timer = setTimeout(close, card.auto_close_secs * 1000);
+    const timer = setTimeout(() => {
+      if (!touched.current && modeNow.current === 'card') close();
+    }, card.auto_close_secs * 1000);
     return () => clearTimeout(timer);
   }, [card, mode, close]);
 
@@ -186,6 +197,7 @@ export function NofapCardPage() {
   /** Every button tells the engine first (it holds what the button needs); the flows then run in this window. */
   const act = async (action: CardAction) => {
     if (!card) return;
+    touched.current = true;
     setBusy(true);
     try {
       const before = action === 'not_it' ? await nofapIpc.view().catch(() => null) : null;
