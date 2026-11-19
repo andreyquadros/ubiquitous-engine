@@ -2178,10 +2178,10 @@ mod tests {
     fn the_default_observation_is_the_cheapest_one() {
         // A caller that forgets to choose must not start PowerShell or send a lookup.
         assert_eq!(ObserveOpts::default(), ObserveOpts::QUICK);
-        assert!(
-            !ObserveOpts::QUICK.full && !ObserveOpts::QUICK.canary && !ObserveOpts::QUICK.probe
-        );
-        assert!(ObserveOpts::FULL.full && !ObserveOpts::FULL.canary && !ObserveOpts::FULL.probe);
+        let quick = ObserveOpts::QUICK;
+        assert!(!quick.full && !quick.canary && !quick.probe);
+        let full = ObserveOpts::FULL;
+        assert!(full.full && !full.canary && !full.probe);
     }
 
     #[test]
