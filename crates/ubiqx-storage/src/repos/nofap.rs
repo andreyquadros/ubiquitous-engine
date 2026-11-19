@@ -12,8 +12,14 @@
 //!   prune compares days as text;
 //! * rows a newer build wrote with a value this build does not know (a counter kind, a site
 //!   list or origin) are skipped instead of failing the read;
-//! * erasing the history overwrites the freed pages, so the counters do not stay readable
-//!   in the file.
+//! * a stored configuration has to be a JSON object: serde would read an array as the
+//!   fields in order, and an empty one as the default;
+//! * the retention prune refuses a cutoff that is not a calendar day, for the same reason a
+//!   counter needs one: a malformed cutoff compared as text would delete the wrong days;
+//! * whatever is deleted or replaced in the module's tables is overwritten in the file, and
+//!   erasing the history also folds the write-ahead log back, so that afterwards neither
+//!   the erased rows nor anything deleted earlier (an expired snooze, a pruned day, a
+//!   sentence the person cleared) stays readable in the file.
 
 use chrono::{DateTime, Utc};
 use rusqlite::{named_params, params, Connection, Row};
@@ -125,39 +131,66 @@ fn unreadable_config(err: &serde_json::Error) -> StorageError {
     ))
 }
 
-/// Runs `f` with SQLite overwriting every page it frees, then restores the connection's
-/// setting and checkpoints the log.
-fn with_secure_delete(
+/// Reads a stored configuration. Only a JSON object is one: serde's derived reader also
+/// accepts an array as the fields in order, so `[]` would read as the default ("module
+/// off") and `[1, true]` as a configuration nobody wrote.
+fn parse_config(raw: &str) -> StorageResult<NofapConfig> {
+    if !raw.trim_start().starts_with('{') {
+        return Err(StorageError::Decode(
+            "the stored nofap configuration does not parse (not a JSON object)".into(),
+        ));
+    }
+    serde_json::from_str(raw).map_err(|e| unreadable_config(&e))
+}
+
+/// The day as it is stored and compared: a calendar day written `YYYY-MM-DD`, and nothing
+/// else ([`StorageError::Invalid`]).
+fn calendar_day<'a>(day: &'a str, what: &str) -> StorageResult<&'a str> {
+    match date(day).map(date_str) {
+        Ok(canonical) if canonical == day => Ok(day),
+        _ => Err(StorageError::Invalid(format!("nofap {what} `{day}`"))),
+    }
+}
+
+/// Runs `f` with SQLite overwriting whatever it frees (deleted rows, the old version of a
+/// replaced one), then restores the connection's setting. Every statement that deletes or
+/// replaces a row of the module's tables runs through this, so nothing of them stays in the
+/// main file; what the write-ahead log still holds goes with the checkpoint of
+/// [`NofapRepo::erase_history`].
+fn overwriting<R>(
     conn: &mut Connection,
-    f: impl FnOnce(&mut Connection) -> StorageResult<()>,
-) -> StorageResult<()> {
+    f: impl FnOnce(&mut Connection) -> StorageResult<R>,
+) -> StorageResult<R> {
     let before: i64 = query_one(conn, SECURE_DELETE, [], |row| Ok(row.get(0)?))?;
     conn.pragma_update(None, "secure_delete", 1)?;
     let outcome = f(conn);
     conn.pragma_update(None, "secure_delete", before)?;
-    outcome?;
-    // The checkpoint answers with a row (busy, log frames, checkpointed frames).
-    query_one(conn, CHECKPOINT, [], |_| Ok(()))
+    outcome
 }
 
 impl NofapRepo for SqliteStore {
     /// [`NofapConfig::default`] until the first save. Fields missing from a stored document
     /// (written by an older build) take their serde defaults. A document that does not
-    /// parse is an error, never the default.
+    /// parse, or that is not a JSON object, is an error, never the default.
     fn load_config(&self) -> CoreResult<NofapConfig> {
         self.with(|conn| {
             let raw: Option<String> = query_opt(conn, SELECT_CONFIG, [], |row| Ok(row.get(0)?))?;
             match raw {
-                Some(raw) => serde_json::from_str(&raw).map_err(|e| unreadable_config(&e)),
+                Some(raw) => parse_config(&raw),
                 None => Ok(NofapConfig::default()),
             }
         })
     }
 
+    /// The document it replaces is overwritten in the file, so a sentence or a plan the
+    /// person cleared is not left behind in it.
     fn save_config(&self, config: &NofapConfig) -> CoreResult<()> {
         self.with(|conn| {
-            execute(conn, UPSERT_CONFIG, params![json(config)?, ms(Utc::now())])?;
-            Ok(())
+            let document = json(config)?;
+            overwriting(conn, |conn| {
+                execute(conn, UPSERT_CONFIG, params![document, ms(Utc::now())])?;
+                Ok(())
+            })
         })
     }
 
@@ -177,59 +210,66 @@ impl NofapRepo for SqliteStore {
                 SiteOrigin::User => site.host.as_deref(),
                 SiteOrigin::Learned | SiteOrigin::Snooze => None,
             };
-            let tx = conn.transaction()?;
-            execute(
-                &tx,
-                DELETE_SITE_FOR_UPSERT,
-                named_params! {
-                    ":id": site.id,
-                    ":list": site.list.as_str(),
-                    ":host_key": site.host_key.as_slice(),
-                },
-            )?;
-            execute(
-                &tx,
-                INSERT_SITE,
-                named_params! {
-                    ":id": site.id,
-                    ":list": site.list.as_str(),
-                    ":origin": site.origin.as_str(),
-                    ":host": host,
-                    ":host_key": site.host_key.as_slice(),
-                    ":created_at": ms(site.created_at),
-                    ":expires_at": opt_ms(site.expires_at),
-                },
-            )?;
-            tx.commit()?;
-            Ok(())
+            overwriting(conn, |conn| {
+                let tx = conn.transaction()?;
+                execute(
+                    &tx,
+                    DELETE_SITE_FOR_UPSERT,
+                    named_params! {
+                        ":id": site.id,
+                        ":list": site.list.as_str(),
+                        ":host_key": site.host_key.as_slice(),
+                    },
+                )?;
+                execute(
+                    &tx,
+                    INSERT_SITE,
+                    named_params! {
+                        ":id": site.id,
+                        ":list": site.list.as_str(),
+                        ":origin": site.origin.as_str(),
+                        ":host": host,
+                        ":host_key": site.host_key.as_slice(),
+                        ":created_at": ms(site.created_at),
+                        ":expires_at": opt_ms(site.expires_at),
+                    },
+                )?;
+                tx.commit()?;
+                Ok(())
+            })
         })
     }
 
     fn delete_site(&self, id: &str) -> CoreResult<()> {
         self.with(|conn| {
-            execute(conn, DELETE_SITE, params![id])?;
-            Ok(())
+            overwriting(conn, |conn| {
+                execute(conn, DELETE_SITE, params![id])?;
+                Ok(())
+            })
         })
     }
 
     fn delete_sites_by_origin(&self, origin: SiteOrigin) -> CoreResult<u64> {
-        self.with(|conn| execute(conn, DELETE_SITES_BY_ORIGIN, params![origin.as_str()]))
+        self.with(|conn| {
+            overwriting(conn, |conn| {
+                execute(conn, DELETE_SITES_BY_ORIGIN, params![origin.as_str()])
+            })
+        })
     }
 
     fn purge_expired_sites(&self, now: DateTime<Utc>) -> CoreResult<u64> {
-        self.with(|conn| execute(conn, DELETE_EXPIRED_SITES, params![ms(now)]))
+        self.with(|conn| {
+            overwriting(conn, |conn| {
+                execute(conn, DELETE_EXPIRED_SITES, params![ms(now)])
+            })
+        })
     }
 
     /// `day` must be a calendar day (`YYYY-MM-DD`) and `hour` an hour of the day:
     /// [`ubiqx_core::CoreError::Invalid`] otherwise, and nothing is written.
     fn bump_day(&self, day: &str, hour: u8, kind: DayKind, by: u32) -> CoreResult<()> {
         self.with(|conn| {
-            let canonical = date(day)
-                .map(date_str)
-                .map_err(|_| StorageError::Invalid(format!("nofap counter day `{day}`")))?;
-            if canonical != day {
-                return Err(StorageError::Invalid(format!("nofap counter day `{day}`")));
-            }
+            let day = calendar_day(day, "counter day")?;
             if hour > 23 {
                 return Err(StorageError::Invalid(format!("nofap counter hour {hour}")));
             }
@@ -245,21 +285,31 @@ impl NofapRepo for SqliteStore {
         })
     }
 
+    /// Keeps `day` itself. `day` must be a calendar day (`YYYY-MM-DD`), like the days it
+    /// is compared with: [`ubiqx_core::CoreError::Invalid`] otherwise, and nothing is
+    /// deleted.
     fn delete_days_before(&self, day: &str) -> CoreResult<u64> {
-        self.with(|conn| execute(conn, DELETE_DAYS_BEFORE, params![day]))
+        self.with(|conn| {
+            let day = calendar_day(day, "retention cutoff")?;
+            overwriting(conn, |conn| execute(conn, DELETE_DAYS_BEFORE, params![day]))
+        })
     }
 
-    /// Every counter and every snooze, in one transaction, with the freed pages
-    /// overwritten. The configuration and the user's and learned sites stay.
+    /// Every counter and every snooze, in one transaction, overwritten in the file, and
+    /// then the write-ahead log folded back: with it goes what the log still held of rows
+    /// deleted or replaced earlier. The configuration and the user's and learned sites
+    /// stay.
     fn erase_history(&self) -> CoreResult<()> {
         self.with(|conn| {
-            with_secure_delete(conn, |conn| {
+            overwriting(conn, |conn| {
                 let tx = conn.transaction()?;
                 tx.execute(DELETE_ALL_DAYS, [])?;
                 tx.execute(DELETE_SITES_BY_ORIGIN, [SiteOrigin::Snooze.as_str()])?;
                 tx.commit()?;
                 Ok(())
             })?;
+            // The checkpoint answers with a row (busy, log frames, checkpointed frames).
+            query_one(conn, CHECKPOINT, [], |_| Ok(()))?;
             tracing::debug!("nofap history erased");
             Ok(())
         })

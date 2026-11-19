@@ -294,6 +294,53 @@ fn an_unreadable_config_is_an_error_never_the_default() {
 }
 
 #[test]
+fn a_stored_document_that_is_not_an_object_is_an_error() {
+    let s = store();
+    let repo: &dyn NofapRepo = &s;
+    raw(
+        &s,
+        "INSERT INTO nofap_state (id, config, updated_at) VALUES (1, '{}', 1)",
+    );
+    assert_eq!(
+        repo.load_config().expect("an empty object"),
+        NofapConfig::default()
+    );
+
+    // serde reads an array as the fields in order: `[]` would be the default, which is
+    // "module off", and `[1, true]` a configuration nobody wrote.
+    for document in [
+        "[]",
+        " [ ] ",
+        "[1, true]",
+        "null",
+        "true",
+        "7",
+        "\"{}\"",
+        "",
+    ] {
+        s.db()
+            .with(|c| {
+                c.execute("UPDATE nofap_state SET config = ?1", [document])?;
+                Ok(())
+            })
+            .expect("write the document");
+        let err = repo
+            .load_config()
+            .expect_err("only an object is a configuration");
+        assert!(matches!(err, CoreError::Storage(_)), "{document:?}: {err}");
+        assert!(err.to_string().contains("does not parse"), "{document:?}");
+    }
+
+    // Whitespace before the object is still an object.
+    raw(
+        &s,
+        r#"UPDATE nofap_state SET config = '
+  {"enabled": true}'"#,
+    );
+    assert!(repo.load_config().expect("an object").enabled);
+}
+
+#[test]
 fn a_pending_change_with_a_host_round_trips() {
     let s = store();
     let repo: &dyn NofapRepo = &s;
@@ -619,6 +666,36 @@ fn retention_deletes_the_days_before_the_given_one() {
         "the day itself is kept"
     );
     assert_eq!(repo.delete_days_before("2026-06-20").expect("again"), 0);
+}
+
+#[test]
+fn the_cutoff_of_the_prune_must_be_a_calendar_day() {
+    let s = store();
+    let repo: &dyn NofapRepo = &s;
+    repo.bump_day("2026-09-17", 15, DayKind::VisionCheck, 1)
+        .expect("bump");
+    repo.bump_day("2026-12-31", 23, DayKind::Lapse, 1)
+        .expect("bump");
+
+    // Compared as text, each of these would delete days it should keep: `2026-9-18` sorts
+    // after every day of 2026, `zzzz` after every day there is.
+    for cutoff in [
+        "2026-9-18",
+        "2026-09-18T00:00:00Z",
+        "2026-09-18 ",
+        "18/09/2026",
+        "2026-02-30",
+        "zzzz",
+        "",
+    ] {
+        assert!(
+            matches!(repo.delete_days_before(cutoff), Err(CoreError::Invalid(_))),
+            "{cutoff:?}"
+        );
+        assert_eq!(rows(&s, "nofap_day"), 2, "{cutoff:?} deleted nothing");
+    }
+    assert_eq!(repo.delete_days_before("2026-09-18").expect("prune"), 1);
+    assert_eq!(rows(&s, "nofap_day"), 1);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1002,5 +1079,167 @@ fn the_store_behaves_like_the_reference_step_by_step() {
     assert_eq!(
         repo.days_between("0000-01-01", "9999-12-31").expect("all"),
         reference.days_between("0000-01-01", "9999-12-31")
+    );
+}
+
+/// Does `act` on a database that also holds rows the erase keeps (so no page is emptied by
+/// the erase itself), erases the history, and says whether `marker` is still in the file.
+fn left_behind_after_erase(
+    marker: &[u8],
+    seed: impl Fn(&dyn NofapRepo),
+    act: impl Fn(&dyn NofapRepo),
+) -> bool {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("shield.sqlite");
+    let s = SqliteStore::new(Db::open(&path).expect("open"));
+    let repo: &dyn NofapRepo = &s;
+    for n in 1..=3u8 {
+        repo.upsert_site(&user_site(
+            &format!("u{n}"),
+            SiteList::Block,
+            &format!("mantido-{n}.example"),
+            n,
+        ))
+        .expect("kept site");
+    }
+    repo.bump_day("2031-06-01", 9, DayKind::BlockList, 1)
+        .expect("kept day");
+    seed(repo);
+    assert!(on_disk(&path, marker), "the search finds what is stored");
+    act(repo);
+    repo.erase_history().expect("erase");
+    let kept = repo.list_sites().expect("sites");
+    assert!(
+        (1..=3).all(|n| kept.iter().any(|site| site.id == format!("u{n}"))),
+        "the erase keeps the user's sites"
+    );
+    on_disk(&path, marker)
+}
+
+#[test]
+fn what_was_deleted_before_the_erase_does_not_stay_in_the_file_either() {
+    // Each of these left the tables before the person asked for the history to be erased.
+    // An erase that only overwrote what it deletes itself would leave them in the file.
+    let purged = *b"PURGED-SNOOZE-16";
+    assert!(
+        !left_behind_after_erase(
+            &purged,
+            |repo| {
+                repo.upsert_site(&NofapSite {
+                    host_key: purged,
+                    ..snooze("z1", 0, at(10))
+                })
+                .expect("snooze");
+            },
+            |repo| assert_eq!(repo.purge_expired_sites(at(11)).expect("purge"), 1),
+        ),
+        "a snooze that expired and was purged"
+    );
+
+    let deleted = *b"DELETED-BY-ID-16";
+    assert!(
+        !left_behind_after_erase(
+            &deleted,
+            |repo| {
+                repo.upsert_site(&NofapSite {
+                    host_key: deleted,
+                    ..learned_site("l1", 0)
+                })
+                .expect("learned");
+            },
+            |repo| repo.delete_site("l1").expect("delete"),
+        ),
+        "a site deleted by id"
+    );
+
+    let forgotten = *b"FORGOTTEN-SITE16";
+    assert!(
+        !left_behind_after_erase(
+            &forgotten,
+            |repo| {
+                repo.upsert_site(&NofapSite {
+                    host_key: forgotten,
+                    ..learned_site("l1", 0)
+                })
+                .expect("learned");
+            },
+            |repo| {
+                assert_eq!(
+                    repo.delete_sites_by_origin(SiteOrigin::Learned)
+                        .expect("forget"),
+                    1
+                );
+            },
+        ),
+        "the learned sites the person asked to forget"
+    );
+
+    let replaced = *b"REPLACED-ROW--16";
+    assert!(
+        !left_behind_after_erase(
+            &replaced,
+            |repo| {
+                repo.upsert_site(&NofapSite {
+                    host_key: replaced,
+                    ..learned_site("l1", 0)
+                })
+                .expect("learned");
+                // A row written after it, so the old row is not at the edge of the page's
+                // free space, where the next write would land on it anyway.
+                repo.upsert_site(&user_site("u4", SiteList::Block, "depois.example", 4))
+                    .expect("later row");
+            },
+            // The new row is longer than the old one, so it cannot land on its bytes.
+            |repo| {
+                repo.upsert_site(&NofapSite {
+                    id: "l1".into(),
+                    ..user_site(
+                        "l1",
+                        SiteList::Allow,
+                        "um-nome-bem-mais-comprido-do-que-a-linha-antiga.example",
+                        9,
+                    )
+                })
+                .expect("replace");
+            },
+        ),
+        "a row replaced by a newer one of the same id"
+    );
+
+    // A day the retention pruned: enough rows to fill pages of their own, which the prune
+    // hands back to the file whole.
+    assert!(
+        !left_behind_after_erase(
+            b"2031-03-09",
+            |repo| {
+                for hour in 0..24 {
+                    for kind in DayKind::ALL {
+                        repo.bump_day("2031-03-09", hour, kind, 1).expect("bump");
+                    }
+                }
+            },
+            |repo| {
+                assert_eq!(
+                    repo.delete_days_before("2031-03-10").expect("prune"),
+                    24 * 27
+                );
+            },
+        ),
+        "a day the retention pruned"
+    );
+
+    // The person's own sentence, long enough to need pages of its own, then cleared.
+    let sentence = "FRASE-QUE-A-PESSOA-ESCREVEU ".repeat(400);
+    let with_sentence = NofapConfig {
+        values: sentence,
+        ..sample::config()
+    };
+    assert!(
+        !left_behind_after_erase(
+            b"FRASE-QUE-A-PESSOA-ESCREVEU",
+            |repo| repo.save_config(&with_sentence).expect("config"),
+            |repo| repo.save_config(&sample::config()).expect("cleared"),
+        ),
+        "a sentence the person cleared"
     );
 }
