@@ -24,15 +24,16 @@ pub mod idle;
 pub mod keychain;
 pub mod permissions;
 
-/// Builds the real macOS services.
-pub fn services() -> PlatformServices {
+/// Builds the real macOS services. `keyring_service` is the Keychain service name the
+/// product's keys are stored under.
+pub fn services(keyring_service: &str) -> PlatformServices {
     PlatformServices {
         activity: Arc::new(frontmost::AppKitActivitySource),
         urls: Arc::new(crate::browser::OsascriptUrlResolver::default()),
         idle: Arc::new(idle::CgIdleDetector),
         capturer: Arc::new(capture::CgScreenCapturer),
         permissions: Arc::new(permissions::MacPermissions),
-        secrets: Arc::new(keychain::KeychainSecretStore::default()),
+        secrets: Arc::new(keychain::KeychainSecretStore::with_service(keyring_service)),
         notifier: Arc::new(crate::notify::LogNotifier),
         update_feed: Arc::new(crate::update_feed::HttpUpdateFeed::new()),
         apps: Arc::new(apps::MacAppCatalog::default()),

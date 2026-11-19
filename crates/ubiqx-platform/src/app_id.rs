@@ -4,9 +4,17 @@
 //! Focus targets, rules and the app catalogue all use this key, so every adapter derives it
 //! through [`exe_stem`] and nothing else.
 
-/// Executable stems the desktop shell may run under (Tauri names the binary after the
-/// product on Windows and kebab-cases it on Linux; a `cargo run` uses the crate name).
-pub const SELF_STEMS: &[&str] = &["ubiqx", "ubiqx-desktop", "ubiqx_desktop"];
+/// Executable stems the two products' shells may run under: ubiqX (Tauri names the binary
+/// after the product on Windows and kebab-cases it on Linux; a `cargo run` uses the crate
+/// name) and the standalone app, whose binary carries the machine id. The same stems as
+/// `ubiqx_core::product::{UBIQX, SHIELD}.exe_stems`, which a test below compares.
+pub const SELF_STEMS: &[&str] = &[
+    "ubiqx",
+    "ubiqx-desktop",
+    "ubiqx_desktop",
+    "ubiqx-shield",
+    "ubiqx_shield",
+];
 
 /// The app id of an executable path: the file name without directory and extension,
 /// lower-cased. Accepts both separators, so a Windows path parsed on any host gives the
@@ -26,7 +34,7 @@ pub fn exe_stem(path: &str) -> String {
     stem.to_lowercase()
 }
 
-/// Whether an app id belongs to ubiqX itself (never enforced, never hidden).
+/// Whether an app id belongs to one of the two products (never enforced, never hidden).
 pub fn is_self_stem(app_id: &str) -> bool {
     SELF_STEMS.iter().any(|s| s.eq_ignore_ascii_case(app_id))
 }
@@ -60,5 +68,21 @@ mod tests {
         assert!(is_self_stem("UbiqX"));
         assert!(is_self_stem("ubiqx-desktop"));
         assert!(!is_self_stem("chrome"));
+    }
+
+    #[test]
+    fn both_products_are_exempt() {
+        assert!(is_self_stem("ubiqx-shield"));
+        assert!(is_self_stem("UBIQX_SHIELD"));
+        for product in ubiqx_core::product::ALL {
+            for stem in product.exe_stems {
+                assert!(SELF_STEMS.contains(stem), "{stem} is missing");
+            }
+        }
+        let known: usize = ubiqx_core::product::ALL
+            .iter()
+            .map(|product| product.exe_stems.len())
+            .sum();
+        assert_eq!(SELF_STEMS.len(), known, "a stem no product declares");
     }
 }

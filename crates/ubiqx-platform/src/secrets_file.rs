@@ -148,6 +148,14 @@ impl Default for KeyringStore {
 
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 impl KeyringStore {
+    /// A store under another service name: each product keeps its keys under its own
+    /// (`ProductIdentity::keyring_service`).
+    pub fn with_service(service: &str) -> Self {
+        Self {
+            service: service.into(),
+        }
+    }
+
     fn entry(&self, key: &str) -> CoreResult<keyring::Entry> {
         keyring::Entry::new(&self.service, key)
             .map_err(|e| CoreError::Platform(format!("keyring: {e}")))

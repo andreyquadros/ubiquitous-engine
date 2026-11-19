@@ -192,6 +192,33 @@ impl BrowserUrlResolver for OsascriptUrlResolver {
     }
 
     fn resolve(&self, window: &ForegroundWindow) -> CoreResult<Option<String>> {
+        self.resolve_with(window, true)
+    }
+
+    /// Asks the browser now, whatever the cache holds: the answer decides whether a tab is
+    /// closed, and a 20-second-old URL may belong to a page the user already left. The
+    /// denial back-off still applies, and the fresh answer replaces the cached one.
+    fn resolve_fresh(&self, window: &ForegroundWindow) -> CoreResult<Option<String>> {
+        self.resolve_with(window, false)
+    }
+}
+
+impl OsascriptUrlResolver {
+    /// The cached answer for `key` when `use_cache` allows one and it is young enough.
+    fn cached(&self, key: &CacheKey, use_cache: bool) -> Option<Option<String>> {
+        if !use_cache {
+            return None;
+        }
+        let cache = self.cache.lock();
+        let (at, url) = cache.get(key)?;
+        (at.elapsed() < CACHE_TTL).then(|| url.clone())
+    }
+
+    fn resolve_with(
+        &self,
+        window: &ForegroundWindow,
+        use_cache: bool,
+    ) -> CoreResult<Option<String>> {
         let Some(script) = script_for(&window.app_id) else {
             return Ok(None);
         };
@@ -201,10 +228,8 @@ impl BrowserUrlResolver for OsascriptUrlResolver {
             }
         }
         let key = (window.app_id.clone(), window.window_title.clone());
-        if let Some((at, url)) = self.cache.lock().get(&key) {
-            if at.elapsed() < CACHE_TTL {
-                return Ok(url.clone());
-            }
+        if let Some(url) = self.cached(&key, use_cache) {
+            return Ok(url);
         }
         // On `Err` (timeout) the browser stays uncontacted, so the next call is again a
         // long first-contact attempt rather than a 1.5 s one that kills the consent alert.
@@ -274,6 +299,60 @@ mod tests {
         assert_eq!(r.budget_for("com.apple.Safari"), short);
         // Per browser: Chrome has not been contacted yet.
         assert_eq!(r.budget_for("com.google.Chrome"), FIRST_CONTACT_TIMEOUT);
+    }
+
+    fn chrome_window(title: &str) -> ForegroundWindow {
+        ForegroundWindow {
+            app_name: "Google Chrome".into(),
+            app_id: "com.google.Chrome".into(),
+            window_title: title.into(),
+            pid: Some(1),
+            window_id: Some(2),
+            bounds: None,
+        }
+    }
+
+    #[test]
+    fn resolve_fresh_bypasses_the_cache() {
+        let r = OsascriptUrlResolver::default();
+        let key = ("com.google.Chrome".to_string(), "Page".to_string());
+        r.cache.lock().insert(
+            key.clone(),
+            (Instant::now(), Some("https://stale.example/".into())),
+        );
+        // The cache answers `resolve`: no process is started for it.
+        assert_eq!(
+            r.resolve(&chrome_window("Page")).unwrap().as_deref(),
+            Some("https://stale.example/")
+        );
+        assert_eq!(
+            r.cached(&key, true),
+            Some(Some("https://stale.example/".to_string()))
+        );
+        // The fresh read is never answered from it, however young the entry is.
+        assert_eq!(r.cached(&key, false), None);
+        // An entry past its time is not served to either.
+        r.cache.lock().insert(
+            key.clone(),
+            (
+                Instant::now() - CACHE_TTL - Duration::from_secs(1),
+                Some("https://stale.example/".into()),
+            ),
+        );
+        assert_eq!(r.cached(&key, true), None);
+    }
+
+    #[test]
+    fn resolve_fresh_still_honours_a_denial_and_unsupported_apps() {
+        let r = OsascriptUrlResolver::default();
+        r.denied
+            .lock()
+            .insert("com.google.Chrome".into(), Instant::now());
+        // Backing off: no script is run, so this returns at once on any OS.
+        assert_eq!(r.resolve_fresh(&chrome_window("Page")).unwrap(), None);
+        let mut firefox = chrome_window("Page");
+        firefox.app_id = "org.mozilla.firefox".into();
+        assert_eq!(r.resolve_fresh(&firefox).unwrap(), None);
     }
 
     #[test]

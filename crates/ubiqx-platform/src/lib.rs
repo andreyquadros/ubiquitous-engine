@@ -14,7 +14,12 @@
 //!   Secret Service (with a file fallback), `.desktop` entries and XTest.
 //! * [`mock`]: a scripted platform that replays a scenario, plus a fixed app catalogue and a
 //!   recording enforcer. It is what the CLI and the engine tests use on Linux/CI, and what
-//!   the desktop app falls back to on unsupported systems.
+//!   the desktop app falls back to on unsupported systems. [`mock_nofap`] holds the
+//!   scripted system layer and frame source of the `nofap` module.
+//! * [`sysblock`] (compiled on every OS): the system layer of the `nofap` module, i.e. the
+//!   hosts block, the family resolver and the browser policies behind the port
+//!   `SystemShield`, and the privileged helper that applies them. [`frame`] is the module's
+//!   frame source: one reduced image of one window, in memory only.
 //! * Portable helpers: [`image_util`] (downscale + JPEG encode), [`browser`] (AppleScript
 //!   snippets and URL parsing), [`browser_url`] (address-bar and title parsing for the
 //!   other OSes), [`app_id`] (executable stems), [`catalog`] (catalogue cache and order),
@@ -36,6 +41,7 @@ pub mod catalog;
 pub mod frame;
 pub mod image_util;
 pub mod mock;
+pub mod mock_nofap;
 pub mod notify;
 pub mod secrets;
 pub mod secrets_file;
@@ -75,22 +81,29 @@ impl PlatformServices {
         Self::native_in(None)
     }
 
-    /// The real platform of this OS. `data_dir` is where Windows and Linux keep the
-    /// secrets file they fall back to when the OS keyring is unavailable (see
+    /// The real platform of this OS for ubiqX. `data_dir` is where Windows and Linux keep
+    /// the secrets file they fall back to when the OS keyring is unavailable (see
     /// [`secrets_file`]); `None` picks a per-user default.
-    #[allow(unused_variables)]
     pub fn native_in(data_dir: Option<&Path>) -> Self {
+        Self::native_for(&ubiqx_core::product::UBIQX, data_dir)
+    }
+
+    /// The real platform of this OS for one of the two products: the same adapters, with
+    /// the product's own keyring service, so the standalone app and ubiqX never read each
+    /// other's keys.
+    #[allow(unused_variables)]
+    pub fn native_for(identity: &ubiqx_core::ProductIdentity, data_dir: Option<&Path>) -> Self {
         #[cfg(target_os = "macos")]
         {
-            macos::services()
+            macos::services(identity.keyring_service)
         }
         #[cfg(target_os = "windows")]
         {
-            windows::services(data_dir)
+            windows::services(data_dir, identity.keyring_service)
         }
         #[cfg(target_os = "linux")]
         {
-            linux::services(data_dir)
+            linux::services(data_dir, identity.keyring_service)
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {

@@ -47,6 +47,28 @@ pub const TITLE_SUFFIXES: &[&str] = &[
     " - Mozilla Firefox Private Browsing",
 ];
 
+/// The URL of the page a Windows browser window shows, given what its address bar holds.
+///
+/// While the bar has the keyboard focus its text may be something the user is still
+/// typing, so it is not read. The answer is then the URL last read from this window while
+/// the bar was not focused (`last_committed`: that URL and the window title it was read
+/// under), as long as the title has not changed since; a new title means another page, and
+/// nothing is known about it. Answering nothing whenever the bar is focused would let one
+/// click on the address bar keep a page open that a guard wants closed.
+pub fn committed_url(
+    has_keyboard_focus: bool,
+    bar_text: Option<&str>,
+    last_committed: Option<(&str, &str)>,
+    title: &str,
+) -> Option<String> {
+    if !has_keyboard_focus {
+        return bar_text.and_then(normalize_typed_url);
+    }
+    last_committed
+        .filter(|(_, committed_title)| *committed_title == title)
+        .map(|(url, _)| url.to_owned())
+}
+
 /// Turns the text of a browser's address bar into a URL. `None` when the field holds
 /// something that is not a URL (a search in progress, a placeholder, an empty field).
 /// A bare `host/path` gets `https://` prepended; internal pages (`chrome://`, `about:`,
@@ -142,6 +164,54 @@ fn looks_like_domain(host: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn committed_url_reads_the_bar_only_while_it_is_not_focused() {
+        let last = Some(("https://listed.example/watch", "A page - Google Chrome"));
+        // Bar not focused: the bar text, whatever was read before.
+        assert_eq!(
+            committed_url(
+                false,
+                Some("other.example/x"),
+                last,
+                "Other - Google Chrome"
+            )
+            .as_deref(),
+            Some("https://other.example/x")
+        );
+        assert_eq!(
+            committed_url(false, Some("how to cook rice"), last, "t"),
+            None
+        );
+        assert_eq!(committed_url(false, None, last, "t"), None);
+        // Focused with the same title: the last committed URL, not what is being typed.
+        assert_eq!(
+            committed_url(
+                true,
+                Some("innocent.example"),
+                last,
+                "A page - Google Chrome"
+            )
+            .as_deref(),
+            Some("https://listed.example/watch")
+        );
+        assert_eq!(
+            committed_url(true, None, last, "A page - Google Chrome").as_deref(),
+            Some("https://listed.example/watch")
+        );
+        // Focused after a title change: another page, nothing known.
+        assert_eq!(
+            committed_url(
+                true,
+                Some("listed.example/watch"),
+                last,
+                "New tab - Google Chrome"
+            ),
+            None
+        );
+        // Focused with nothing read before.
+        assert_eq!(committed_url(true, Some("listed.example"), None, "t"), None);
+    }
 
     #[test]
     fn typed_values_become_urls() {

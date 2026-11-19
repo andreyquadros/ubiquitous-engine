@@ -34,8 +34,9 @@ pub mod secrets;
 pub mod x11;
 
 /// Builds the real Linux services. `data_dir` hosts the secrets file used when the Secret
-/// Service is unavailable (see [`crate::secrets_file`]).
-pub fn services(data_dir: Option<&Path>) -> PlatformServices {
+/// Service is unavailable (see [`crate::secrets_file`]); `keyring_service` is the name the
+/// product's keys are stored under.
+pub fn services(data_dir: Option<&Path>, keyring_service: &str) -> PlatformServices {
     let apps = Arc::new(apps::LinuxAppCatalog::default());
     PlatformServices {
         activity: Arc::new(frontmost::X11ActivitySource::new(apps.clone())),
@@ -43,7 +44,7 @@ pub fn services(data_dir: Option<&Path>) -> PlatformServices {
         idle: Arc::new(idle::X11IdleDetector),
         capturer: Arc::new(capture::X11ScreenCapturer),
         permissions: Arc::new(permissions::LinuxPermissions),
-        secrets: Arc::new(secrets::secret_store(data_dir)),
+        secrets: Arc::new(secrets::secret_store(data_dir, keyring_service)),
         notifier: Arc::new(crate::notify::LogNotifier),
         update_feed: Arc::new(crate::update_feed::HttpUpdateFeed::new()),
         apps,

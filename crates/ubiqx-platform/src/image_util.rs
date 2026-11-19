@@ -1,4 +1,5 @@
-//! Image helpers shared by every capturer: downscale to a maximum edge and encode as JPEG.
+//! Image helpers shared by every capturer: downscale to a maximum edge and encode as JPEG;
+//! plus the top crop and the difference hash of the `nofap` frame source ([`crate::frame`]).
 
 use image::imageops::FilterType;
 use image::{DynamicImage, RgbaImage};
@@ -67,9 +68,88 @@ pub fn is_uniform(img: &RgbaImage) -> bool {
     (differing as f64) / (total as f64) < 0.01
 }
 
+/// Largest fraction [`crop_top`] removes: a browser's chrome never covers more than this.
+pub const MAX_TOP_CROP: f32 = 0.5;
+
+/// `img` without its top `frac` (a browser's tab strip, address bar and bookmarks, which
+/// show other tabs' titles). `frac` is clamped to `0.0..=MAX_TOP_CROP`; a fraction that is
+/// not a number crops nothing. At least one row always remains.
+pub fn crop_top(img: &RgbaImage, frac: f32) -> RgbaImage {
+    let (w, h) = img.dimensions();
+    let frac = if frac.is_finite() {
+        frac.clamp(0.0, MAX_TOP_CROP)
+    } else {
+        0.0
+    };
+    let cut = ((h as f32 * frac).round() as u32).min(h.saturating_sub(1));
+    if cut == 0 {
+        return img.clone();
+    }
+    image::imageops::crop_imm(img, 0, cut, w, h - cut).to_image()
+}
+
+/// 64-bit difference hash: the image reduced to 9x8 grey pixels, one bit per pair of
+/// horizontal neighbours (set when the left one is brighter). It survives re-encoding and
+/// rescaling, and changes when the picture does; two frames are compared by the number of
+/// differing bits.
+pub fn dhash(img: &RgbaImage) -> u64 {
+    const COLS: u32 = 9;
+    const ROWS: u32 = 8;
+    let (w, h) = img.dimensions();
+    if w == 0 || h == 0 {
+        return 0;
+    }
+    let small = image::imageops::resize(img, COLS, ROWS, FilterType::Triangle);
+    let grey = |x: u32, y: u32| {
+        let p = small.get_pixel(x, y);
+        299 * u32::from(p[0]) + 587 * u32::from(p[1]) + 114 * u32::from(p[2])
+    };
+    let mut hash = 0u64;
+    for y in 0..ROWS {
+        for x in 0..COLS - 1 {
+            hash = (hash << 1) | u64::from(grey(x, y) > grey(x + 1, y));
+        }
+    }
+    hash
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn crop_top_removes_the_fraction_and_keeps_the_rest() {
+        // Rows are numbered in the red channel.
+        let img = RgbaImage::from_fn(40, 100, |_, y| image::Rgba([y as u8, 0, 0, 255]));
+        let cropped = crop_top(&img, 0.12);
+        assert_eq!(cropped.dimensions(), (40, 88));
+        assert_eq!(cropped.get_pixel(0, 0)[0], 12, "the first kept row");
+        assert_eq!(cropped.get_pixel(39, 87)[0], 99, "the last row is kept");
+        assert_eq!(crop_top(&img, 0.0), img);
+        // Clamped and safe on odd input.
+        assert_eq!(crop_top(&img, 0.9).height(), 50);
+        assert_eq!(crop_top(&img, -1.0), img);
+        assert_eq!(crop_top(&img, f32::NAN), img);
+        let line = RgbaImage::from_pixel(5, 1, image::Rgba([1, 2, 3, 255]));
+        assert_eq!(crop_top(&line, 0.5).dimensions(), (5, 1));
+    }
+
+    #[test]
+    fn dhash_tells_pictures_apart_and_survives_scaling() {
+        let left_bright = RgbaImage::from_fn(320, 200, |x, _| {
+            let v = 255 - (x * 255 / 319) as u8;
+            image::Rgba([v, v, v, 255])
+        });
+        let right_bright = RgbaImage::from_fn(320, 200, |x, _| {
+            let v = (x * 255 / 319) as u8;
+            image::Rgba([v, v, v, 255])
+        });
+        assert_eq!(dhash(&left_bright), u64::MAX);
+        assert_eq!(dhash(&right_bright), 0);
+        let smaller = image::imageops::resize(&left_bright, 160, 100, FilterType::Triangle);
+        assert_eq!(dhash(&smaller), dhash(&left_bright));
+        assert_eq!(dhash(&RgbaImage::new(0, 0)), 0);
+    }
 
     #[test]
     fn downscales_to_max_edge_and_encodes_jpeg() {

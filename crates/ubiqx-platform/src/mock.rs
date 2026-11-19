@@ -1,5 +1,6 @@
 //! A scripted platform: replays a scenario of foreground windows so the whole engine can run
-//! on Linux/CI and in tests without any OS integration.
+//! on Linux/CI and in tests without any OS integration. The scripted halves of the `nofap`
+//! module's ports live in [`crate::mock_nofap`] and are re-exported here.
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -7,6 +8,8 @@ use async_trait::async_trait;
 use parking_lot::Mutex;
 use ubiqx_core::ports::*;
 use ubiqx_core::{CoreError, CoreResult, ForegroundWindow, InstalledApp, UpdateFeed};
+
+pub use crate::mock_nofap::{MockSystemShield, ScriptedFrameSource, SystemCall};
 
 /// One step of a scenario: what is in the foreground for `samples` consecutive samples.
 #[derive(Debug, Clone, PartialEq)]
@@ -145,6 +148,9 @@ pub struct ScriptedPlatform {
     /// Sample index inside the current step.
     offset: AtomicUsize,
     permissions: Mutex<PermissionStatus>,
+    /// What `foreground()` last answered (`None` before its first call), for
+    /// `peek_foreground`.
+    served: Mutex<Option<Option<ForegroundWindow>>>,
 }
 
 impl ScriptedPlatform {
@@ -158,6 +164,7 @@ impl ScriptedPlatform {
                 automation: PermissionState::Granted,
                 accessibility: PermissionState::Granted,
             }),
+            served: Mutex::new(None),
         }
     }
 
@@ -166,6 +173,7 @@ impl ScriptedPlatform {
         *self.scenario.lock() = scenario;
         self.cursor.store(0, Ordering::SeqCst);
         self.offset.store(0, Ordering::SeqCst);
+        *self.served.lock() = None;
     }
 
     pub fn set_permissions(&self, status: PermissionStatus) {
@@ -222,7 +230,19 @@ impl ActivitySource for ScriptedPlatform {
     fn foreground(&self) -> CoreResult<Option<ForegroundWindow>> {
         let step = self.current();
         self.advance();
-        Ok(step.and_then(|s| s.window))
+        let window = step.and_then(|s| s.window);
+        *self.served.lock() = Some(window.clone());
+        Ok(window)
+    }
+
+    /// The window `foreground()` last served, without consuming a sample: a second reader
+    /// (the `nofap` guard) sees what the tracker's sampler saw and never moves the
+    /// scenario. Before the first sample it is the window of the first step.
+    fn peek_foreground(&self) -> CoreResult<Option<ForegroundWindow>> {
+        if let Some(served) = self.served.lock().clone() {
+            return Ok(served);
+        }
+        Ok(self.current().and_then(|s| s.window))
     }
 }
 
@@ -458,6 +478,54 @@ mod tests {
         assert!(p.finished());
         // After the end the last step is repeated.
         assert_eq!(p.foreground().unwrap().unwrap().app_id, "com.google.Chrome");
+    }
+
+    #[test]
+    fn peek_foreground_does_not_advance_the_scenario() {
+        let p = ScriptedPlatform::new(Scenario::new(vec![
+            Step::app("A", "a", "t1", 1),
+            Step::browser("Chrome", "com.google.Chrome", "t2", "https://x.y/", 1),
+            Step::app("C", "c", "t3", 1),
+        ]));
+        // Before any sample: the first step, however often it is asked.
+        for _ in 0..3 {
+            assert_eq!(p.peek_foreground().unwrap().unwrap().app_id, "a");
+        }
+        assert_eq!(p.foreground().unwrap().unwrap().app_id, "a");
+        let w = p.foreground().unwrap().unwrap();
+        assert_eq!(w.app_id, "com.google.Chrome");
+        // Ten peeks later the sampler still gets the third step next, and the URL of the
+        // step that was served is still the one resolved.
+        for _ in 0..10 {
+            assert_eq!(p.peek_foreground().unwrap().unwrap(), w);
+        }
+        assert_eq!(p.resolve(&w).unwrap().as_deref(), Some("https://x.y/"));
+        assert_eq!(
+            p.resolve_fresh(&w).unwrap().as_deref(),
+            Some("https://x.y/")
+        );
+        assert!(!p.finished());
+        assert_eq!(p.foreground().unwrap().unwrap().app_id, "c");
+        assert_eq!(p.peek_foreground().unwrap().unwrap().app_id, "c");
+        // A new scenario starts from its own first step.
+        p.load(Scenario::new(vec![Step::app("Z", "z", "t", 1)]));
+        assert_eq!(p.peek_foreground().unwrap().unwrap().app_id, "z");
+    }
+
+    #[test]
+    fn peek_foreground_repeats_an_empty_foreground() {
+        let p = ScriptedPlatform::new(Scenario::new(vec![
+            Step {
+                window: None,
+                url: None,
+                idle_secs: 0.0,
+                samples: 1,
+            },
+            Step::app("A", "a", "t", 1),
+        ]));
+        assert_eq!(p.foreground().unwrap(), None);
+        assert_eq!(p.peek_foreground().unwrap(), None);
+        assert_eq!(p.foreground().unwrap().unwrap().app_id, "a");
     }
 
     #[test]

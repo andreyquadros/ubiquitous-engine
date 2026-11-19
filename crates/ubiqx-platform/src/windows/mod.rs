@@ -25,8 +25,9 @@ pub mod secrets;
 pub mod util;
 
 /// Builds the real Windows services. `data_dir` hosts the secrets file used when the
-/// Credential Manager refuses (see [`crate::secrets_file`]).
-pub fn services(data_dir: Option<&Path>) -> PlatformServices {
+/// Credential Manager refuses (see [`crate::secrets_file`]); `keyring_service` is the name
+/// the product's keys are stored under.
+pub fn services(data_dir: Option<&Path>, keyring_service: &str) -> PlatformServices {
     let apps = Arc::new(apps::WindowsAppCatalog::default());
     PlatformServices {
         activity: Arc::new(frontmost::WindowsActivitySource),
@@ -34,7 +35,7 @@ pub fn services(data_dir: Option<&Path>) -> PlatformServices {
         idle: Arc::new(idle::WindowsIdleDetector),
         capturer: Arc::new(capture::WindowsScreenCapturer),
         permissions: Arc::new(permissions::WindowsPermissions),
-        secrets: Arc::new(secrets::secret_store(data_dir)),
+        secrets: Arc::new(secrets::secret_store(data_dir, keyring_service)),
         notifier: Arc::new(crate::notify::LogNotifier),
         update_feed: Arc::new(crate::update_feed::HttpUpdateFeed::new()),
         apps,

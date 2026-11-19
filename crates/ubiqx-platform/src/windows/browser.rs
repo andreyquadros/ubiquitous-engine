@@ -7,6 +7,10 @@
 //! value that does not parse as one yields `None`; a UI Automation failure of any kind also
 //! yields `Ok(None)` (the tracker keeps the window title), never an error.
 //!
+//! While the address bar has the keyboard focus its text is not read at all: the resolver
+//! answers the URL it last read from that window while the bar was not focused, as long as
+//! the window title is unchanged (`browser_url::committed_url`).
+//!
 //! Cost: once a UIA client connects, Chromium exposes the whole page tree, so the search
 //! is done with a cache request that brings the bounding rectangle and the value of every
 //! candidate back in the same cross-process call (one round trip instead of one per
@@ -26,13 +30,14 @@ use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationCacheRequest, IUIAutomationElement,
     IUIAutomationValuePattern, TreeScope_Descendants, UIA_AutomationIdPropertyId,
     UIA_BoundingRectanglePropertyId, UIA_ControlTypePropertyId, UIA_EditControlTypeId,
-    UIA_IsValuePatternAvailablePropertyId, UIA_ValuePatternId, UIA_ValueValuePropertyId,
+    UIA_HasKeyboardFocusPropertyId, UIA_IsValuePatternAvailablePropertyId, UIA_ValuePatternId,
+    UIA_ValueValuePropertyId,
 };
 use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
 use super::frontmost::{hwnd_from_id, window_rect};
 use super::util::ensure_com;
-use crate::browser_url::{is_firefox, normalize_typed_url, WINDOWS_BROWSERS};
+use crate::browser_url::{committed_url, is_firefox, WINDOWS_BROWSERS};
 
 /// The address bar sits within this many pixels of the window's top edge.
 pub const TOOLBAR_HEIGHT_PX: i32 = 120;
@@ -60,13 +65,14 @@ fn automation() -> Option<IUIAutomation> {
     })
 }
 
-/// A cache request that brings back, with every found element, its bounding rectangle
-/// and the current value of its `ValuePattern`.
+/// A cache request that brings back, with every found element, its bounding rectangle,
+/// whether it has the keyboard focus and the current value of its `ValuePattern`.
 fn value_cache(automation: &IUIAutomation) -> Option<IUIAutomationCacheRequest> {
     // SAFETY: COM calls on a live interface; every result is checked.
     unsafe {
         let cache = automation.CreateCacheRequest().ok()?;
         cache.AddProperty(UIA_BoundingRectanglePropertyId).ok()?;
+        cache.AddProperty(UIA_HasKeyboardFocusPropertyId).ok()?;
         cache.AddPattern(UIA_ValuePatternId).ok()?;
         cache.AddProperty(UIA_ValueValuePropertyId).ok()?;
         Some(cache)
@@ -88,8 +94,23 @@ fn read_value(element: &IUIAutomationElement) -> Option<String> {
     }
 }
 
-/// The text of the address bar of the browser window `hwnd`, raw (not yet a URL).
-pub fn address_bar_text(hwnd: HWND, firefox: bool) -> Option<String> {
+/// Whether an element found with [`value_cache`] has the keyboard focus: cached, else
+/// asked live. A failed read counts as focused, so a text that may be half typed is never
+/// taken for the page's URL.
+fn has_keyboard_focus(element: &IUIAutomationElement) -> bool {
+    // SAFETY: COM calls on a live interface pointer; failures come back as `Err`.
+    unsafe {
+        element
+            .CachedHasKeyboardFocus()
+            .or_else(|_| element.CurrentHasKeyboardFocus())
+            .map(|focused| focused.as_bool())
+            .unwrap_or(true)
+    }
+}
+
+/// The address bar of the browser window `hwnd`: its raw text (not yet a URL) and whether
+/// it has the keyboard focus.
+pub fn address_bar(hwnd: HWND, firefox: bool) -> Option<(String, bool)> {
     let automation = automation()?;
     let top = window_rect(hwnd).map(|(_, y, _, _)| y).unwrap_or(0);
     // SAFETY: COM calls on interfaces created here; every result is checked.
@@ -103,7 +124,7 @@ pub fn address_bar_text(hwnd: HWND, firefox: bool) -> Option<String> {
             let element = root
                 .FindFirstBuildCache(TreeScope_Descendants, &condition, &cache)
                 .ok()?;
-            return read_value(&element);
+            return Some((read_value(&element)?, has_keyboard_focus(&element)));
         }
         let is_edit = automation
             .CreatePropertyCondition(
@@ -131,7 +152,7 @@ pub fn address_bar_text(hwnd: HWND, firefox: bool) -> Option<String> {
                 continue;
             }
             if rect.top >= top && rect.top - top <= TOOLBAR_HEIGHT_PX {
-                return read_value(&element);
+                return Some((read_value(&element)?, has_keyboard_focus(&element)));
             }
         }
         None
@@ -143,10 +164,17 @@ type CacheKey = (String, String);
 /// When the URL was resolved and what it was.
 type CacheEntry = (Instant, Option<String>);
 
+/// `(app_id, window handle)`.
+type WindowKey = (String, usize);
+/// The URL last read from a window while its address bar was not focused, and the window
+/// title it was read under.
+type Committed = (String, String);
+
 /// `BrowserUrlResolver` over UI Automation, cached per (app, title) for [`CACHE_TTL`].
 #[derive(Debug, Default)]
 pub struct UiaUrlResolver {
     cache: Mutex<HashMap<CacheKey, CacheEntry>>,
+    committed: Mutex<HashMap<WindowKey, Committed>>,
 }
 
 impl UiaUrlResolver {
@@ -157,6 +185,62 @@ impl UiaUrlResolver {
             _ => unsafe { GetForegroundWindow() },
         }
     }
+
+    /// Reads the address bar now and decides what the page's URL is
+    /// ([`committed_url`]); remembers a URL read while the bar was not focused.
+    fn read(&self, window: &ForegroundWindow) -> Option<String> {
+        let hwnd = Self::hwnd_for(window);
+        if hwnd.0.is_null() {
+            return None;
+        }
+        let bar = address_bar(hwnd, is_firefox(&window.app_id));
+        // No bar found is read like a focused one: nothing new is known about the page.
+        let (text, focused) = match &bar {
+            Some((text, focused)) => (Some(text.as_str()), *focused),
+            None => (None, true),
+        };
+        let key = (window.app_id.to_lowercase(), hwnd.0 as usize);
+        let mut committed = self.committed.lock();
+        let last = committed
+            .get(&key)
+            .map(|(url, title)| (url.as_str(), title.as_str()));
+        let url = committed_url(focused, text, last, &window.window_title);
+        if !focused {
+            if committed.len() > 256 {
+                committed.clear();
+            }
+            match &url {
+                Some(url) => {
+                    committed.insert(key, (url.clone(), window.window_title.clone()));
+                }
+                None => {
+                    committed.remove(&key);
+                }
+            }
+        }
+        url
+    }
+
+    fn resolve_with(&self, window: &ForegroundWindow, use_cache: bool) -> Option<String> {
+        if !self.supports(&window.app_id) {
+            return None;
+        }
+        let key = (window.app_id.to_lowercase(), window.window_title.clone());
+        if use_cache {
+            if let Some((at, url)) = self.cache.lock().get(&key) {
+                if at.elapsed() < CACHE_TTL {
+                    return url.clone();
+                }
+            }
+        }
+        let url = self.read(window);
+        let mut cache = self.cache.lock();
+        if cache.len() > 256 {
+            cache.clear();
+        }
+        cache.insert(key, (Instant::now(), url.clone()));
+        url
+    }
 }
 
 impl BrowserUrlResolver for UiaUrlResolver {
@@ -166,26 +250,12 @@ impl BrowserUrlResolver for UiaUrlResolver {
     }
 
     fn resolve(&self, window: &ForegroundWindow) -> CoreResult<Option<String>> {
-        if !self.supports(&window.app_id) {
-            return Ok(None);
-        }
-        let key = (window.app_id.to_lowercase(), window.window_title.clone());
-        if let Some((at, url)) = self.cache.lock().get(&key) {
-            if at.elapsed() < CACHE_TTL {
-                return Ok(url.clone());
-            }
-        }
-        let hwnd = Self::hwnd_for(window);
-        if hwnd.0.is_null() {
-            return Ok(None);
-        }
-        let url = address_bar_text(hwnd, is_firefox(&window.app_id))
-            .and_then(|text| normalize_typed_url(&text));
-        let mut cache = self.cache.lock();
-        if cache.len() > 256 {
-            cache.clear();
-        }
-        cache.insert(key, (Instant::now(), url.clone()));
-        Ok(url)
+        Ok(self.resolve_with(window, true))
+    }
+
+    /// Reads the address bar now, whatever the cache holds: the answer decides whether a
+    /// keystroke is sent to the window, and a 20-second-old URL may belong to another tab.
+    fn resolve_fresh(&self, window: &ForegroundWindow) -> CoreResult<Option<String>> {
+        Ok(self.resolve_with(window, false))
     }
 }

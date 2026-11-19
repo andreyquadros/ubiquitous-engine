@@ -21,9 +21,6 @@ use crate::browser::{run_osascript, script_for};
 const TAB_TIMEOUT: Duration = Duration::from_secs(5);
 const HIDE_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Bundle id of ubiqX: never hidden with the others.
-const SELF_BUNDLE_ID: &str = ubiqx_core::focus::SELF_BUNDLE_ID;
-
 /// How a browser exposes its tabs to AppleScript.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BrowserFamily {
@@ -69,19 +66,36 @@ pub fn blank_tab_script(bundle_id: &str) -> Option<String> {
     })
 }
 
-/// AppleScript that hides every visible process except `keep_bundle_id`, ubiqX and (when
-/// known) the front app's process name, through System Events.
+/// AppleScript that hides every visible process except `keep_bundle_id`, the two products
+/// built from this workspace (ubiqX and the standalone app, by bundle id and by name, so
+/// neither ever hides the other) and, when known, the front app's process name, through
+/// System Events.
 pub fn hide_others_script(keep_bundle_id: &str, keep_name: Option<&str>) -> String {
     let keep = escape(keep_bundle_id.trim());
-    let mut conditions = format!(
-        "visible is true and bundle identifier is not \"{keep}\" and bundle identifier is not \"{SELF_BUNDLE_ID}\" and name is not \"ubiqX\""
-    );
+    let mut conditions = format!("visible is true and bundle identifier is not \"{keep}\"");
+    for product in ubiqx_core::product::ALL {
+        conditions.push_str(&format!(
+            " and bundle identifier is not \"{}\"",
+            escape(product.bundle_id)
+        ));
+        for name in product.app_names {
+            conditions.push_str(&format!(" and name is not \"{}\"", escape(name)));
+        }
+    }
     if let Some(name) = keep_name.map(str::trim).filter(|n| !n.is_empty()) {
         conditions.push_str(&format!(" and name is not \"{}\"", escape(name)));
     }
     format!(
         "tell application \"System Events\" to set visible of every process whose {conditions} to false"
     )
+}
+
+/// Whether a bundle id is one of the two products of this workspace: never quit, never
+/// hidden.
+fn is_own_bundle(bundle_id: &str) -> bool {
+    ubiqx_core::product::ALL
+        .iter()
+        .any(|product| product.bundle_id.eq_ignore_ascii_case(bundle_id))
 }
 
 /// Escapes a string for use inside an AppleScript string literal.
@@ -118,7 +132,7 @@ pub struct MacEnforcer;
 impl Enforcer for MacEnforcer {
     fn quit_app(&self, bundle_id: &str) -> CoreResult<bool> {
         let id = bundle_id.trim();
-        if id.is_empty() || id.eq_ignore_ascii_case(SELF_BUNDLE_ID) {
+        if id.is_empty() || is_own_bundle(id) {
             return Ok(false);
         }
         let apps = running_apps(id);
@@ -225,6 +239,13 @@ mod tests {
         assert!(s.contains("bundle identifier is not \"com.microsoft.VSCode\""));
         assert!(s.contains("bundle identifier is not \"ai.ubiqx.app\""));
         assert!(s.contains("name is not \"ubiqX\""));
+        // The standalone app is never hidden either, whichever of the two products runs.
+        assert!(s.contains("bundle identifier is not \"ai.ubiqx.shield\""));
+        assert!(s.contains(&format!(
+            "name is not \"{}\"",
+            ubiqx_core::nofap::DISPLAY_NAME
+        )));
+        assert!(s.contains("name is not \"ubiqx-shield\""));
         assert!(s.contains("name is not \"Code \\\"x\\\"\""));
         assert!(s.ends_with("to false"));
         assert!(!hide_others_script("x", Some("  ")).contains("name is not \"  \""));
