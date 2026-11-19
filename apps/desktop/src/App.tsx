@@ -10,6 +10,7 @@ import { SettingsPage } from './pages/Settings';
 import { Onboarding } from './pages/Onboarding';
 import { FocusPage } from './pages/Focus';
 import { InterventionPage } from './pages/Intervention';
+import { UbiqxNofapCard, UbiqxNofapPage } from './nofap/ubiqx';
 
 export default function App() {
   return (
@@ -17,6 +18,8 @@ export default function App() {
       <Routes>
         {/* The floating intervention panel (second Tauri window): no gate, no shell. */}
         <Route path="/intervention" element={<InterventionPage />} />
+        {/* The module's floating card window (second Tauri window, label `shield-card`): no gate, no shell. */}
+        <Route path="/nofap-card" element={<UbiqxNofapCard />} />
         <Route element={<Gate />}>
           <Route path="/onboarding" element={<Onboarding />} />
           <Route element={<AppShell />}>
@@ -28,6 +31,7 @@ export default function App() {
             <Route path="/insights" element={<Insights />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/focus" element={<FocusPage />} />
+            <Route path="/nofap" element={<UbiqxNofapPage />} />
             <Route path="*" element={<Dashboard />} />
           </Route>
         </Route>

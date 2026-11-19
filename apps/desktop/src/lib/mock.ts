@@ -56,6 +56,8 @@ import {
 } from './types';
 import { PROVIDER_IDS, SITE_URL, UBI_MODELS, licenseAllowsManaged, reconcileModels } from './providers';
 import type { InAppUpdate, UpdateProgress } from './updater';
+import { handle as handleNofap } from '../nofap/mock';
+import type { NofapCommand } from '../nofap/types';
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                             */
@@ -2150,6 +2152,8 @@ const commands: Record<string, Cmd> = {
   test_intervention: () => {
     openInterventionPreview('test');
   },
+  // The `nofap` module has its own in-memory backend; its one command is delegated to it.
+  nofap: (a) => handleNofap(a.command as NofapCommand),
 };
 
 export async function handle<T>(cmd: string, args: Record<string, unknown>): Promise<T> {

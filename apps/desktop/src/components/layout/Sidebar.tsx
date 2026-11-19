@@ -1,8 +1,9 @@
 import clsx from 'clsx';
-import { Clock, FileText, LayoutDashboard, ListChecks, Moon, Settings, Shield, Sparkles, Sun, Tags, type LucideIcon } from 'lucide-react';
+import { Clock, FileText, LayoutDashboard, ListChecks, Moon, Settings, Shield, ShieldCheck, Sparkles, Sun, Tags, type LucideIcon } from 'lucide-react';
 import { useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAppStore } from '../../lib/store';
+import { useNofapStore } from '../../nofap/store';
 import { useT } from '../../i18n';
 import { IconButton } from '../ui/Button';
 import { TrackerPill } from './TrackerPill';
@@ -48,12 +49,19 @@ export function Sidebar({ needsReview }: { needsReview: number }) {
   const updatePending = useAppStore((s) => hasPendingUpdate(s.updateStatus));
   const sessionActive = useAppStore((s) => !!s.focusStatus?.session && !s.focusStatus.session.ended_at);
   const loadFocusStatus = useAppStore((s) => s.loadFocusStatus);
+  // The module's entry is labelled with the display name the engine sends, so it shows once that is known.
+  const nofapName = useNofapStore((s) => s.view?.display_name);
+  const loadNofap = useNofapStore((s) => s.load);
   const t = useT();
 
   // Once per shell mount; afterwards the `focus_session` events keep it fresh.
   useEffect(() => {
     void loadFocusStatus();
   }, [loadFocusStatus]);
+
+  useEffect(() => {
+    void loadNofap();
+  }, [loadNofap]);
 
   const items: Item[] = [
     { to: '/', label: t('nav.today'), Icon: LayoutDashboard },
@@ -64,6 +72,7 @@ export function Sidebar({ needsReview }: { needsReview: number }) {
     { to: '/insights', label: t('nav.insights'), Icon: Sparkles },
     { to: '/settings', label: t('nav.settings'), Icon: Settings, dot: updatePending, dotLabel: t('updates.banner.badge'), dotTestId: 'nav-update-dot' },
     { to: '/focus', label: t('nav.focus'), Icon: Shield, dot: sessionActive, dotLabel: t('nav.focus_session_active'), dotTestId: 'nav-focus-dot' },
+    ...(nofapName ? [{ to: '/nofap', label: nofapName, Icon: ShieldCheck }] : []),
   ];
 
   return (

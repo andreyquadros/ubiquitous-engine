@@ -24,6 +24,8 @@ import { useToast } from '../lib/toast';
 import { LICENSE_KEY_PREFIX, SITE_URL, isManagedProvider, keyStatus, licenseAllowsManaged, providerInfo, providerLabel, providerPitch, reconcileModels, sameModels } from '../lib/providers';
 import type { AiModels, AiProvider, LicenseStatus, PermissionKind, PermissionState, Platform, Plan, PrivateModeDuration, Settings, SettingsView, VisionPolicy } from '../lib/types';
 import { useAsync } from '../lib/useAsync';
+import { fmtDelay } from '../nofap/labels';
+import { useNofapStore } from '../nofap/store';
 import { getUbiStatus, subscribeUbiStatus, ubiStatusLabel } from '../components/ubi/status';
 
 export const REPO_URL = 'https://github.com/andreyquadros/ubiquitous-engine';
@@ -849,6 +851,7 @@ function PrivacySection({ draft, patch, view }: SectionProps & { view: SettingsV
           {(id) => <TagInput id={id} value={draft.blocked_domains} onChange={(v) => patch({ blocked_domains: v })} placeholder={t('settings.blocked_domains.placeholder')} />}
         </Field>
       </div>
+      <NofapExclusionHint />
 
       <Divider />
 
@@ -863,6 +866,25 @@ function PrivacySection({ draft, patch, view }: SectionProps & { view: SettingsV
 
       <AiSentDialog open={aiSentOpen} onClose={() => setAiSentOpen(false)} />
     </Section>
+  );
+}
+
+/**
+ * While the `nofap` module is on, an app or domain excluded here is honoured by that module only after its waiting
+ * time: otherwise this list would be a way around it. Nothing is shown while the module is off.
+ */
+function NofapExclusionHint() {
+  const t = useT();
+  const nofap = useNofapStore((s) => s.view);
+  const loadNofap = useNofapStore((s) => s.load);
+  useEffect(() => {
+    if (!nofap) void loadNofap();
+  }, [nofap, loadNofap]);
+  if (!nofap?.config.enabled) return null;
+  return (
+    <p className="text-xs text-ink-3" data-testid="nofap-exclusion-hint">
+      {t('nofap.exclusion.delay', { name: nofap.display_name, delay: fmtDelay(nofap.config.delay_secs, t) })}
+    </p>
   );
 }
 
