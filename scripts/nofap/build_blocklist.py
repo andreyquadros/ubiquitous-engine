@@ -146,6 +146,7 @@ from __future__ import annotations
 import argparse
 import bisect
 import csv
+import datetime
 import gzip
 import hashlib
 import io
@@ -699,6 +700,12 @@ def fetch_all(lock: dict, offline: bool, ca_bundle: str | None) -> dict[str, byt
     return blobs
 
 
+def next_minute(list_version: int) -> int:
+    """The `YYYYMMDDHHMM` value one minute after `list_version`."""
+    moment = datetime.datetime.strptime(str(list_version), "%Y%m%d%H%M")
+    return int((moment + datetime.timedelta(minutes=1)).strftime("%Y%m%d%H%M"))
+
+
 def pin(ca_bundle: str | None, now_version: int) -> None:
     """Move every source to its repository's HEAD and record hashes."""
     lock = load_lock()
@@ -718,7 +725,7 @@ def pin(ca_bundle: str | None, now_version: int) -> None:
         CACHE.mkdir(parents=True, exist_ok=True)
         cache_path(src).write_bytes(data)
         print(f"pinned {src['id']}: {src['commit'][:12]} sha256 {src['sha256'][:16]} {len(data)} bytes")
-    lock["list_version"] = max(now_version, lock["list_version"] + 1)
+    lock["list_version"] = max(now_version, next_minute(lock["list_version"]))
     write_atomic(DATA / "sources.lock.json", dump_json(lock))
     print(f"list_version {lock['list_version']}; now run the build")
 
@@ -1468,11 +1475,13 @@ def run_check(args) -> int:
     else:
         outputs, failures, _ = build(lock, blobs)
         problems += failures
+        differing = []
         for name, data in outputs.items():
             path = output_path(name)
             if not path.is_file() or path.read_bytes() != data:
+                differing.append(name)
                 problems.append(f"{name}: differs from a fresh build")
-        if not failures:
+        if not failures and not differing:
             print("rebuilt from the cached sources: byte-identical")
     problems = list(dict.fromkeys(problems))
     if problems:
@@ -1592,6 +1601,8 @@ def selftest() -> None:
     assert block_grade("sex.example.com", 1) is None and block_grade("camara.leg.br", 2) is None
     assert block_grade("porn.example", 2) is None
     assert fold_lookalikes("123xvv1d30s9") == "xwideos"
+    assert next_minute(202611192000) == 202611192001
+    assert next_minute(202612312359) == 202701010000
     index = {"porn-only": {"sourcesdata": [
         {"homeurl": url, "license": licence} for url, licence in STEVENBLACK_UPSTREAMS.items()]}}
     assert stevenblack_upstreams_changed(json.dumps(index).encode()) == []
@@ -1624,7 +1635,6 @@ def main() -> int:
         if args.check:
             return run_check(args)
         if args.pin:
-            import datetime
             now = int(datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M"))
             pin(args.ca_bundle, args.list_version or now)
             return 0
