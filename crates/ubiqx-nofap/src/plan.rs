@@ -297,15 +297,17 @@ pub fn decode_plan(arg: &str) -> Result<SystemPlan, PlanError> {
 }
 
 /// Whether one user-typed name may be written to the hosts file: it passes
-/// `hosts::is_valid_hostname` and is not under `never_block`. The helper applies this to
-/// the names of a plan and again to the names it reads back from its state file.
+/// `hosts::is_valid_hostname`, and neither it nor its `www.` twin (which the helper writes
+/// along with it) is under `never_block`. The helper applies this to the names of a plan
+/// and again to the names it reads back from its state file.
 pub fn admissible(name: &str, never_block: &RuleSet) -> Result<(), PlanError> {
     if !hosts::is_valid_hostname(name) {
         return Err(PlanError::InvalidName {
             name: name.to_owned(),
         });
     }
-    if never_block.covers(name) {
+    let twin_protected = !name.starts_with("www.") && never_block.covers(&format!("www.{name}"));
+    if never_block.covers(name) || twin_protected {
         return Err(PlanError::NeverBlock {
             name: name.to_owned(),
         });
@@ -722,13 +724,23 @@ fn assess_resolver(input: &AssessInput<'_>, observation: &SystemObservation) -> 
     if !input.gate.open(Tier::Resolver) {
         return (TierState::Gated, false);
     }
-    if system.network_restored {
-        return (TierState::NotApplied, false);
-    }
     if let Some(code) = resolver_unsupported(observed, input.os) {
         return (unsupported(code), false);
     }
-    match resolver_in_place(observed, id, input.os) {
+    let in_place = resolver_in_place(observed, id, input.os);
+    if system.network_restored {
+        // "Restaurar minha rede" took this product's resolver off. It is not applied for
+        // this product whatever the machine shows, and that is not drift; the machine may
+        // still be filtered for the other product.
+        let kept_by_other = wanted.other && in_place == InPlace::All;
+        let restored = if kept_by_other {
+            TierState::InUseByOther
+        } else {
+            TierState::NotApplied
+        };
+        return (restored, false);
+    }
+    match in_place {
         InPlace::All => (wanted.in_place(), false),
         InPlace::NoInterface => {
             let judged = if wanted.mine {
@@ -1547,6 +1559,23 @@ mod tests {
             );
             assert_eq!(error.exit_code(), EXIT_INVALID_PLAN);
         }
+        // The helper writes the `www.` twin of every name, so a name whose twin is
+        // protected is refused too.
+        let twin_rule = RuleSet::parse(["www.portal.example"]);
+        assert_eq!(
+            validate(&plan(&["portal.example"]), &twin_rule, &open(Os::Linux)),
+            Err(PlanError::NeverBlock {
+                name: "portal.example".to_owned()
+            })
+        );
+        assert_eq!(
+            validate(
+                &plan(&["other.portal.example"]),
+                &twin_rule,
+                &open(Os::Linux)
+            ),
+            Ok(())
+        );
         // A sibling of a protected name is not protected.
         assert_eq!(
             validate(
@@ -2117,6 +2146,30 @@ mod tests {
         let assessment = assessed(&restored, &observation, Os::Macos);
         assert_eq!(assessment.resolver, TierState::NotApplied);
         assert!(assessment.issues.is_empty(), "restoring is not drift");
+        // Whatever the machine still shows right after the button, and whatever a stale
+        // state file says: not applied, no drift, no "unreachable".
+        let stale = dns_observation(
+            vec![
+                interface("Wi-Fi", true, &CF_SERVERS),
+                interface("New dongle", true, &[]),
+            ],
+            &[(ProductId::Ubiqx, my_wants())],
+        );
+        let assessment = assessed_with(&restored, &stale, Os::Macos, &open(Os::Macos), 9);
+        assert_eq!(assessment.resolver, TierState::NotApplied);
+        assert!(assessment.issues.is_empty());
+        // The other product still keeps the machine filtered: the page says so.
+        let kept = dns_observation(
+            vec![interface("Wi-Fi", true, &CF_SERVERS)],
+            &[
+                (ProductId::Ubiqx, wants(true, None, true, &[])),
+                (ProductId::Shield, wants(false, Some(CF), false, &[])),
+            ],
+        );
+        assert_eq!(
+            assessed(&restored, &kept, Os::Macos).resolver,
+            TierState::InUseByOther
+        );
         // Chosen and never applied (the prompt was declined).
         assert_eq!(
             assessed(&resolver_only(), &observation, Os::Macos).resolver,
