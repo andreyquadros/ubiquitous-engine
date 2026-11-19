@@ -181,9 +181,13 @@ export function NofapCardPage() {
     return () => clearTimeout(timer);
   }, [card, mode, close]);
 
+  // The same question at firing time as above: a new card may have replaced the acknowledgement in a render
+  // whose effects have not run yet.
   useEffect(() => {
     if (mode !== 'done') return;
-    const timer = setTimeout(close, CARD_DONE_CLOSE_MS);
+    const timer = setTimeout(() => {
+      if (modeNow.current === 'done') close();
+    }, CARD_DONE_CLOSE_MS);
     return () => clearTimeout(timer);
   }, [mode, close]);
 

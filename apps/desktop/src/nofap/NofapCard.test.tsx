@@ -6,7 +6,7 @@ import { views } from './fixtures/golden';
 import { cardSize } from './labels';
 import { nofapIpc } from './ipc';
 import { __nofapMock } from './mock';
-import { NofapCardPage } from './NofapCard';
+import { CARD_DONE_CLOSE_MS, NofapCardPage } from './NofapCard';
 import { calls, renderCard, resetNofap } from './testing';
 import type { NofapCard, UserEvent } from './types';
 
@@ -256,6 +256,41 @@ describe('the card window closes by itself only while untouched', () => {
     await advance(11_000);
     expect(screen.queryByTestId('card-closed')).toBeNull();
     await advance(1_000);
+    expect(screen.getByTestId('card-closed')).toBeInTheDocument();
+  });
+
+  it('not while a pressed button is still being answered', async () => {
+    const card = __nofapMock.present(__nofapMock.sampleCard('blocked'));
+    renderCard(card.id);
+    await settle();
+    // The engine takes its time with the button; the 12 seconds run out meanwhile.
+    let answer: (value: null) => void = () => undefined;
+    const held = vi.spyOn(nofapIpc, 'cardAction').mockReturnValue(new Promise<null>((resolve) => (answer = resolve)));
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Abrir apoio' }));
+      await advance(20_000);
+      expect(screen.queryByTestId('card-closed')).toBeNull();
+      await act(async () => {
+        answer(null);
+        await Promise.resolve();
+      });
+      await settle();
+      expect(screen.getByTestId('card-support')).toBeInTheDocument();
+    } finally {
+      held.mockRestore();
+    }
+  });
+
+  it('an acknowledgement closes the window after a few seconds', async () => {
+    const card = __nofapMock.present(__nofapMock.sampleCard('vision_closed'));
+    renderCard(card.id);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar à minha lista' }));
+    await settle();
+    expect(screen.getByTestId('card-message')).toHaveTextContent('Adicionado à sua lista.');
+    await advance(CARD_DONE_CLOSE_MS - 100);
+    expect(screen.queryByTestId('card-closed')).toBeNull();
+    await advance(200);
     expect(screen.getByTestId('card-closed')).toBeInTheDocument();
   });
 
