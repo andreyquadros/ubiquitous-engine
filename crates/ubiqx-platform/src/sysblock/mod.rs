@@ -16,24 +16,47 @@
 //! The adapter holds no decision: validation, the hosts splice, the policy values, the
 //! gate and the judgement of an observation are `ubiqx_nofap`.
 //!
-//! Seeded by the foundation unit: the traits and the constructor signatures. The
-//! back-ends (`macos.rs`, `windows.rs`, `linux.rs`), `elevate.rs`, `sys.rs` and the body of
-//! `helper.rs` belong to the owner of this module.
-#![allow(unused_variables, dead_code)]
+//! | File | Content |
+//! |---|---|
+//! | `shield.rs` | [`NativeSystemShield`]: the unprivileged side |
+//! | `helper.rs` | the privileged side: verbs, argument parsing, exit codes |
+//! | `converge.rs` | brings the machine to what the owners in the state file want |
+//! | `hostsfile.rs`, `state.rs`, `observe.rs` | the hosts file, the state directory, the look at the machine |
+//! | `macos.rs`, `windows.rs`, `linux.rs`, `policy_reg.rs`, `policy_files.rs` | the back-ends |
+//! | `parse.rs` | parsers of what the system tools print |
+//! | `elevate.rs` | the elevation command lines and their exit codes |
+//! | `sys.rs` | the real ports; the only file with `cfg` |
 
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use ubiqx_core::nofap::{
-    ApplyOutcome, ObserveOpts, Os, PlannedChange, RemoveScope, SystemCapabilities,
-    SystemObservation, SystemPlan, SystemShield,
+    Os, PolicyCreated, PolicyObservation, ResolverId, ResolverObservation, SystemObservation,
 };
-use ubiqx_core::{CoreResult, ProductId};
-use ubiqx_nofap::gate::Gate;
 use ubiqx_nofap::state_dir::DirMeta;
 
+pub mod elevate;
 pub mod helper;
+pub mod linux;
+pub mod macos;
+pub mod parse;
+pub mod sys;
+pub mod windows;
+
+mod converge;
+mod hostsfile;
+mod observe;
+mod policy_files;
+mod policy_reg;
+mod shield;
+mod state;
+
+#[cfg(test)]
+mod testing;
+#[cfg(test)]
+mod tests;
+
+pub use shield::NativeSystemShield;
 
 /// What a system tool printed and how it exited.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -104,7 +127,8 @@ pub trait NameLookup: Send + Sync {
 
 /// One operating system's way of doing each tier: paths, argv builders, the fixed scripts
 /// and the parsers of what the tools print. Implementations hold no `cfg`: all three
-/// compile on every OS.
+/// compile on every OS. The hosts file and the state file are handled by shared code
+/// (`hostsfile`, `state`) from the paths given here.
 pub trait OsBackend: Send + Sync {
     fn os(&self) -> Os;
     /// The hosts file.
@@ -113,113 +137,93 @@ pub trait OsBackend: Send + Sync {
     fn state_dir(&self) -> PathBuf;
     /// The environment every child process gets (nothing inherited).
     fn child_env(&self) -> Vec<(String, String)>;
-    /// Unprivileged look at the machine: hosts text, DNS per interface, the drop-in,
-    /// policy values, the state file. `full` is `ObserveOpts::full` (Windows: the
-    /// PowerShell read instead of the quick registry read). The canary and the probe are
-    /// added by the caller when its `ObserveOpts` asks for them.
-    fn observe(&self, runner: &dyn Runner, fs: &dyn Fs, full: bool) -> SystemObservation;
-    /// Points system DNS at the resolver of `plan` (privileged). Returns the commands'
-    /// failure, if any, as a short reason code.
+    /// Absolute path of the tool the elevation command starts (`osascript`, PowerShell,
+    /// `pkexec`).
+    fn elevation_tool(&self) -> String;
+    /// Unprivileged look at system DNS. `full` is `ObserveOpts::full` (Windows: the
+    /// PowerShell read instead of the quick registry read; ignored elsewhere).
+    fn observe_resolver(&self, runner: &dyn Runner, fs: &dyn Fs, full: bool)
+        -> ResolverObservation;
+    /// Unprivileged look at the browsers' policy locations.
+    fn observe_policies(&self, runner: &dyn Runner, fs: &dyn Fs) -> Vec<PolicyObservation>;
+    /// Points system DNS at the resolver `id` (privileged). `observed` is a fresh look.
+    /// A failure is one of the codes of `ubiqx_core::nofap::reason`.
     fn apply_resolver(
         &self,
-        plan: &SystemPlan,
+        id: ResolverId,
+        observed: &ResolverObservation,
         runner: &dyn Runner,
         fs: &dyn Fs,
     ) -> Result<(), String>;
-    /// Resets to automatic the interfaces whose servers are still exactly ours, and removes
-    /// the drop-in (privileged).
+    /// Resets to automatic the interfaces whose servers are still exactly a provider's
+    /// set, and removes the drop-in (privileged). No recorded value is ever written back.
+    /// `Ok(true)` when something was undone.
     fn remove_resolver(
         &self,
-        observation: &SystemObservation,
+        observed: &SystemObservation,
         runner: &dyn Runner,
         fs: &dyn Fs,
-    ) -> Result<(), String>;
-    /// Writes the browser policy values (privileged); returns what it created.
+    ) -> Result<bool, String>;
+    /// Writes the policy values of the browsers that are present, can be managed and hold
+    /// nobody else's choice (privileged). `created` is what the state file lists as ours;
+    /// the answer is the list after this run.
     fn apply_policies(
         &self,
-        observation: &SystemObservation,
+        observed: &[PolicyObservation],
+        created: &[PolicyCreated],
         runner: &dyn Runner,
         fs: &dyn Fs,
-    ) -> Result<Vec<ubiqx_core::nofap::PolicyCreated>, String>;
-    /// Deletes the policy values and files listed in `created` that still equal ours
-    /// (privileged).
+    ) -> Result<Vec<PolicyCreated>, String>;
+    /// Deletes our own policy files, and the values `created` lists that still equal ours
+    /// (privileged). `Ok(true)` when something was deleted.
     fn remove_policies(
         &self,
-        created: &[ubiqx_core::nofap::PolicyCreated],
+        observed: &[PolicyObservation],
+        created: &[PolicyCreated],
         runner: &dyn Runner,
         fs: &dyn Fs,
-    ) -> Result<(), String>;
-    /// Flushes the system's name caches after the hosts file changed (failures ignored).
+    ) -> Result<bool, String>;
+    /// Flushes the system's name caches after a change (failures ignored).
     fn flush_dns(&self, runner: &dyn Runner);
 }
 
-/// The system layer of this machine: implements [`SystemShield`] over an [`OsBackend`] and
-/// the four ports. `apply` and `remove` re-run `exe` elevated; everything else is
-/// unprivileged.
-pub struct NativeSystemShield {
-    os: Box<dyn OsBackend>,
-    runner: Arc<dyn Runner>,
-    fs: Arc<dyn Fs>,
-    elevator: Arc<dyn Elevator>,
-    names: Arc<dyn NameLookup>,
-    exe: PathBuf,
-    owner: ProductId,
-    gate: Gate,
-}
-
-impl NativeSystemShield {
-    /// Builds the shield from explicit parts (tests use fakes for every port). `exe` is the
-    /// executable that is re-run elevated; `owner` is the product whose wants `apply`
-    /// records; `gate` is the per-OS gate with the tester's override.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        os: Box<dyn OsBackend>,
-        runner: Arc<dyn Runner>,
-        fs: Arc<dyn Fs>,
-        elevator: Arc<dyn Elevator>,
-        names: Arc<dyn NameLookup>,
-        exe: PathBuf,
-        owner: ProductId,
-        gate: Gate,
-    ) -> Self {
-        Self {
-            os,
-            runner,
-            fs,
-            elevator,
-            names,
-            exe,
-            owner,
-            gate,
+/// The back-end of the operating system this binary runs on; `None` where there is none,
+/// or where Windows does not say where its system directories are.
+pub fn native_backend() -> Option<Box<dyn OsBackend>> {
+    Some(match Os::current()? {
+        Os::Macos => Box::new(macos::MacosBackend),
+        Os::Linux => Box::new(linux::LinuxBackend),
+        Os::Windows => {
+            let (system32, program_files) = sys::windows_dirs()?;
+            Box::new(windows::WindowsBackend::new(&system32, &program_files))
         }
-    }
+    })
+}
 
-    /// The shield of the operating system this binary runs on, with the real ports, the
-    /// current executable and the gate read from the environment. `None` on a system
-    /// without a back-end.
-    pub fn native(owner: ProductId) -> Option<Self> {
-        todo!()
+/// The path separator of `os`. Paths of the system layer are built and taken apart as
+/// text with it, never with the host's own rules, so the Windows back-end gives the same
+/// paths when its tests run on Linux.
+fn separator(os: Os) -> char {
+    match os {
+        Os::Windows => '\\',
+        Os::Macos | Os::Linux => '/',
     }
 }
 
-impl SystemShield for NativeSystemShield {
-    fn capabilities(&self) -> SystemCapabilities {
-        todo!()
-    }
+/// `base` + separator + `name`.
+pub(crate) fn join(os: Os, base: &Path, name: &str) -> PathBuf {
+    let base = base.to_string_lossy();
+    let base = base.trim_end_matches(separator(os));
+    PathBuf::from(format!("{base}{}{name}", separator(os)))
+}
 
-    fn observe(&self, opts: ObserveOpts) -> CoreResult<SystemObservation> {
-        todo!()
-    }
-
-    fn preview(&self, plan: &SystemPlan) -> CoreResult<Vec<PlannedChange>> {
-        todo!()
-    }
-
-    fn apply(&self, plan: &SystemPlan) -> CoreResult<ApplyOutcome> {
-        todo!()
-    }
-
-    fn remove(&self, owner: ProductId, scope: RemoveScope) -> CoreResult<ApplyOutcome> {
-        todo!()
-    }
+/// The directory that holds `path`; `None` for a path without a separator.
+pub(crate) fn parent(os: Os, path: &Path) -> Option<PathBuf> {
+    let text = path.to_string_lossy();
+    let (dir, _) = text.rsplit_once(separator(os))?;
+    Some(PathBuf::from(if dir.is_empty() {
+        separator(os).to_string()
+    } else {
+        dir.to_owned()
+    }))
 }

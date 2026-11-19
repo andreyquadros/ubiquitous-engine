@@ -1,0 +1,9 @@
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome
+    DnsOverHttpsMode    REG_SZ    off
+    ForceGoogleSafeSearch    REG_DWORD    0x1
+    HomepageLocation    REG_SZ    https://intranet.example/start page
+    RestoreOnStartupURLs    REG_MULTI_SZ    https://a.example\0https://b.example
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist
+
