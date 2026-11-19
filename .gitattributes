@@ -1,0 +1,6 @@
+# Files that tests and the build compare or embed byte for byte. Without this, a Windows checkout
+# (core.autocrlf) rewrites them with CRLF and the comparison fails there and nowhere else.
+apps/desktop/src/nofap/fixtures/*.json text eol=lf
+crates/ubiqx-nofap/data/*.txt text eol=lf
+crates/ubiqx-nofap/data/*.json text eol=lf
+crates/ubiqx-nofap/data/*.bin binary
