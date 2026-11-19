@@ -1,0 +1,52 @@
+# SAMPLE ONLY (first 50 lines) of StevenBlack/hosts 'porn-only' alternate, MIT licence.
+# Source: https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts (fetched 2026-11-19)
+# Title: StevenBlack/hosts extension porn
+#
+# This hosts file is a merged collection of hosts from reputable sources,
+# with a dash of crowd sourcing via GitHub
+#
+# Date: 15 November 2026 20:29:27 (UTC)
+# The unified hosts file was not used while generating this file.
+# Extensions used to generate this file: porn
+# Number of unique domains: 76,811
+#
+# Fetch the latest version of this file: https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts
+# Project home page: https://github.com/StevenBlack/hosts
+# Project releases: https://github.com/StevenBlack/hosts/releases
+#
+# ===============================================================
+
+# Custom host records are listed here.
+
+
+# End of custom host records.
+# Title: hostsVN Adult VN
+# Last modified: 08 Nov 2026 22:51 UTC+7
+# Version: 2611082251
+# Blocked: 1.961 domains
+# Only include adult domains (Vietnamese language)
+# Homepage: https://bigdargon.github.io/hostsVN/
+# GitHub: https://github.com/bigdargon/hostsVN
+# Report issues: https://github.com/bigdargon/hostsVN/issues
+# Download: https://github.com/bigdargon/hostsVN/raw/master/extensions/adult/hosts-VN
+#
+# =====================================================
+0.0.0.0 0310love.com
+0.0.0.0 1001truyen.blogspot.com
+0.0.0.0 102model.com
+0.0.0.0 123sex.top
+0.0.0.0 12hdem.com
+0.0.0.0 210vn.net
+0.0.0.0 247live.mobi
+0.0.0.0 2jav.net
+0.0.0.0 2ola.pro
+0.0.0.0 3xvn.pro
+0.0.0.0 444live.link
+0.0.0.0 567live.online
+0.0.0.0 567live.win
+0.0.0.0 567lives.top
+0.0.0.0 6666.net
+0.0.0.0 6789live.com
+0.0.0.0 7sex.org
+0.0.0.0 820mm.live
+0.0.0.0 825mm.live
