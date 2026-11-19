@@ -230,5 +230,18 @@ mod tests {
                 );
             }
         }
+        // The bundler falls back to the manifest's description for the installers.
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../apps/nofap/src-tauri/Cargo.toml");
+        let manifest = std::fs::read_to_string(&manifest).unwrap();
+        let description = manifest
+            .lines()
+            .find(|line| line.starts_with("description"))
+            .expect("the standalone shell has a description");
+        assert!(description.contains(crate::nofap::SYSTEM_ID));
+        assert!(
+            !description.to_ascii_lowercase().contains("nofap"),
+            "the installer description names the module"
+        );
     }
 }

@@ -1,6 +1,9 @@
 [package]
 name = "ubiqx-nofap-desktop"
-description = "Standalone desktop shell (Tauri 2) of the ubiqX nofap module: tray, the two IPC commands and the card window. Starts no productivity engine."
+# Tauri's bundler falls back to this line for the description of the installers (the package
+# description of the .deb) when `tauri.conf.json` sets none, so it stays in the neutral machine
+# ring whatever the display name is: see `ubiqx_core::nofap`.
+description = "ubiqx-shield desktop app (Tauri 2 shell): tray, the two IPC commands and the card window. Starts no productivity engine."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
