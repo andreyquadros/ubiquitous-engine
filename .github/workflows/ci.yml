@@ -326,13 +326,15 @@ jobs:
 
   publish-continuous:
     name: Publish continuous release
-    # Every pushed commit becomes the rolling "continuous" release: the six installers and one latest.json
+    # Every commit pushed to main becomes the rolling "continuous" release: the six installers and one latest.json
     # listing the three platforms, written in a single run so the feed never shows a half-published build.
     # Pull requests only build. Codemagic (macOS only) may publish the same commit too: publish-release.mjs
     # merges the platforms when the epochs match, so whoever finishes last does not erase the others.
     runs-on: ubuntu-latest
     needs: [macos-app, windows-app, linux-app]
-    if: github.event_name == 'push'
+    # Only main publishes. Installed apps update themselves from this release, so a feature branch must not
+    # reach them: its commits are built and tested by the jobs above, and published when they are merged.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       # The script moves the "continuous" tag and rewrites the release assets.
       contents: write
