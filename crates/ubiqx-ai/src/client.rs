@@ -371,10 +371,12 @@ fn image_marker(base64: &str) -> Value {
     Value::String(format!("<image: {} bytes>", base64_decoded_len(base64)))
 }
 
-/// The base64 payload of a `data:` URL, when `text` is one.
+/// The base64 payload of a `data:` URL, when `text` is one: whatever follows its
+/// `;base64,` marker. The media type in front of it is the caller's and is not trusted to
+/// be well formed (a comma in it must not let the payload through).
 fn data_url_payload(text: &str) -> Option<&str> {
-    let (header, payload) = text.strip_prefix("data:")?.split_once(',')?;
-    header.ends_with(";base64").then_some(payload)
+    let (_, payload) = text.strip_prefix("data:")?.split_once(";base64,")?;
+    Some(payload)
 }
 
 /// A copy of a request body that is safe to log: every image is replaced by
@@ -1498,8 +1500,53 @@ mod tests {
             data_url_payload("data:image/jpeg;base64,QUJD"),
             Some("QUJD")
         );
+        assert_eq!(
+            data_url_payload("data:image/jpeg,image/png;base64,QUJD"),
+            Some("QUJD")
+        );
         assert_eq!(data_url_payload("data:text/plain,hello"), None);
+        assert_eq!(data_url_payload("data: is not an image"), None);
         assert_eq!(data_url_payload("https://example.com/x;base64,QUJD"), None);
+    }
+
+    #[test]
+    fn an_image_is_redacted_whatever_media_type_the_caller_passed() {
+        // The clients do not check the media type (the callers do), so a body can carry one
+        // with a comma or a parameter in it. The image must not reach the trace line for
+        // that.
+        let payload = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=";
+        for media_type in [
+            "image/jpeg",
+            "image/jpeg,image/png",
+            "image/svg+xml;charset=utf-8",
+            "a,b;c,d",
+            "",
+        ] {
+            let req = LlmRequest {
+                messages: vec![LlmMessage::user(vec![
+                    LlmContent::Image {
+                        media_type: media_type.into(),
+                        base64: payload.into(),
+                    },
+                    LlmContent::Text("look".into()),
+                ])],
+                ..request("some-model")
+            };
+            for body in [
+                request_body(&req),
+                crate::openai::request_body(AiProvider::OpenAi, &req),
+                crate::openai::request_body(AiProvider::Xai, &req),
+            ] {
+                assert!(body.to_string().contains(payload), "the body carries it");
+                let logged = redact_images(&body).to_string();
+                assert!(!logged.contains(payload), "{media_type:?}: {logged}");
+                assert!(
+                    logged.contains("<image: 26 bytes>"),
+                    "{media_type:?}: {logged}"
+                );
+                assert!(logged.contains("look"), "{media_type:?}: {logged}");
+            }
+        }
     }
 
     #[test]
