@@ -55,8 +55,8 @@ All files live in `crates/ubiqx-nofap/data/`.
    label is never tested. The table holds no public suffix (ICANN or private
    section of the Public Suffix List), so the walk needs no suffix list. Entries
    are suffix-deduplicated: no entry has a listed ancestor. At build time the
-   prefixes `www.`, `m.` and `mobile.` were removed from listed names (one
-   prefix, only when two labels remain), so those hosts match through the walk.
+   leading labels `www.`, `m.` and `mobile.` were removed from listed names
+   (while a registrable name remains), so those hosts match through the walk.
    An entry is never collapsed to its registrable domain: a name listed as
    `adult.contents.fc2.com` stays at that depth.
 
@@ -114,11 +114,13 @@ PIPELINE (design 3.2)
 
 fetch at the pinned commits, verify SHA-256 -> parse (drop comments and the
 address column; lower-case; strip trailing dots; drop IP literals and invalid
-names) -> strip `www.`, `m.`, `mobile.` when two labels remain -> drop public
-suffixes (ICANN and private) -> drop `*.tumblr.com` and `*.blogspot.*` ->
+names: a label is `a-z 0-9 -` only, so the few upstream names with `_` go) ->
+strip `www.`, `m.`, `mobile.` while a registrable name remains -> drop public suffixes
+(ICANN and private) -> drop `*.tumblr.com` and `*.blogspot.*` ->
 4skinSkywalker: keep only names with a block-grade keyword -> drop names that a
-rule file protects -> never collapse to the registrable domain -> add
-`extra-ptbr.txt` -> suffix-deduplicate -> gates -> write.
+rule file protects and the names in UPSTREAM_MISTAKES -> never collapse to the
+registrable domain -> add `extra-ptbr.txt` -> suffix-deduplicate -> gates ->
+write.
 
 `list_version` is read from `sources.lock.json`, never from the clock, so the
 same inputs give the same bytes. `--pin` sets it; raise it by hand when only a
@@ -127,9 +129,14 @@ hand-maintained file changed.
 Gates (any failure writes nothing): canaries; no public suffix, single label or
 IP literal; count within -10% / +25% of the previous `core.meta.json`; absolute
 bounds; no listed name covers a Chrome UX Report top-1,000 origin unless it is
-in REVIEWED_TOP_1K below; the false-positive traps of design 3.6 looked up in
-the built table; a second run in a fresh interpreter with another hash seed
-gives the same bytes.
+in REVIEWED_TOP_1K below; no listed name at or above a NAME rule; the
+false-positive traps of design 3.6 looked up in the built table; the upstream
+lists inside StevenBlack's file and their licences are the ones the notices
+name; THIRD-PARTY-NOTICES carries every copyright line; a second run in a
+fresh interpreter with another hash seed gives the same bytes.
+
+The build also writes docs/nofap/research/blocklist-top10k-review.txt, the list
+a person reads before a release.
 """
 
 from __future__ import annotations
@@ -321,10 +328,14 @@ def is_hosts_name(name: str) -> bool:
     return clean_name(name) == name and 4 <= len(name) <= 253
 
 
-def strip_prefix(name: str) -> str:
-    for prefix in _STRIP_PREFIXES:
-        if name.startswith(prefix) and name.count(".") >= 2:
-            return name[len(prefix):]
+def strip_prefix(name: str, psl: "Psl") -> str:
+    """Remove leading `www.`, `m.`, `mobile.` labels while what remains is still a
+    registrable name (`www.example.com` -> `example.com`; `mobile.co.uk` stays)."""
+    while name.startswith(_STRIP_PREFIXES):
+        rest = name.split(".", 1)[1]
+        if psl.registrable(rest) is None:
+            break
+        name = rest
     return name
 
 
@@ -802,7 +813,7 @@ def build(lock: dict, blobs: dict[str, bytes]) -> tuple[dict[str, bytes], list[s
             continue
         names, parse_stats = parse_list(blobs[src["id"]].decode("utf-8", "replace"), src["format"])
         unique = set(names)
-        stripped = {strip_prefix(name) for name in unique}
+        stripped = {strip_prefix(name, psl) for name in unique}
         no_suffix = {name for name in stripped if psl.registrable(name) is not None}
         live = {name for name in no_suffix if not _STALE.search(name)}
         if src.get("filter") == "block-grade-keyword":
@@ -843,7 +854,7 @@ def build(lock: dict, blobs: dict[str, bytes]) -> tuple[dict[str, bytes], list[s
     extra_new = 0
     for name in extra:
         why = None
-        if strip_prefix(name) != name:
+        if strip_prefix(name, psl) != name:
             why = "carries a www./m./mobile. prefix"
         elif psl.registrable(name) is None:
             why = "is a public suffix"
@@ -873,8 +884,8 @@ def build(lock: dict, blobs: dict[str, bytes]) -> tuple[dict[str, bytes], list[s
     for name in sorted(core):
         if psl.registrable(name) is None or clean_name(name) != name:
             failures.append(f"core: {name} is a public suffix or not a host name")
-        elif strip_prefix(name) != name and name not in extra:
-            failures.append(f"core: {name} kept a stripped prefix")
+        elif strip_prefix(name, psl) != name:
+            failures.append(f"core: {name} kept a www./m./mobile. prefix")
     for rules in protected:
         for rule_name in sorted(rules.names):
             above = covering(rule_name)
@@ -987,7 +998,7 @@ def build(lock: dict, blobs: dict[str, bytes]) -> tuple[dict[str, bytes], list[s
     if not 1_000 <= len(tier) <= HOSTS_TIER_CAP or len(set(tier)) != len(tier):
         failures.append(f"hosts-tier: {len(tier)} lines")
     for name in tier:
-        if not covering(name) and not covering(strip_prefix(name)):
+        if not covering(name):
             failures.append(f"hosts-tier: {name} is not covered by core")
 
     # Popular table.
@@ -1424,7 +1435,7 @@ def run_check(args) -> int:
             problems.append(f"hosts-tier.txt: invalid name {name!r}")
         elif never_block.covers(name) or mixed.covers(name) or never_capture.covers(name):
             problems.append(f"hosts-tier.txt: {name} is protected by a rule file")
-        elif not in_table(name) and not table_covers(core_keys, TAG_CORE, strip_prefix(name)):
+        elif not in_table(name):
             problems.append(f"hosts-tier.txt: {name} is not covered by core.bin")
 
     blobs = fetch_all(lock, offline=True, ca_bundle=None)
@@ -1457,9 +1468,6 @@ def selftest() -> None:
     for bad in ("localhost", "com", "1.2.3.4", "::1", "a..b", "-a.com", "a_b.com", "x.123",
                 "a." + "b" * 64 + ".com", ""):
         assert clean_name(bad) is None, bad
-    assert strip_prefix("www.x.com") == "x.com" and strip_prefix("m.x.com") == "x.com"
-    assert strip_prefix("mobile.x.com") == "x.com" and strip_prefix("www.com") == "www.com"
-    assert strip_prefix("www.m.x.com") == "m.x.com" and strip_prefix("wwwx.com") == "wwwx.com"
     assert normalize_host("PT.PornHub.com.") == "pt.pornhub.com"
     assert normalize_host("www.xvideos.com:443") == "xvideos.com"
     assert normalize_host("https://user:pw@WWW.Example.com:8443/a?b#c") == "example.com"
@@ -1491,6 +1499,12 @@ def selftest() -> None:
     assert psl.registrable("foo.ck") is None and psl.registrable("a.foo.ck") == "a.foo.ck"
     assert psl.registrable("www.ck") == "www.ck" and psl.registrable("x.unknowntld") == "x.unknowntld"
     assert psl.suffix_labels("a.uol.com.br") == 2
+    for raw, want in (("www.x.com", "x.com"), ("m.x.com", "x.com"), ("mobile.x.com", "x.com"),
+                      ("www.com", "www.com"), ("www.m.x.com", "x.com"), ("wwwx.com", "wwwx.com"),
+                      ("m.www.com", "www.com"), ("mobile.co.uk", "mobile.co.uk"),
+                      ("www.x.co.uk", "x.co.uk"), ("m.com.br", "m.com.br"),
+                      ("www.x.blogspot.com", "x.blogspot.com"), ("www.blogspot.com", "www.blogspot.com")):
+        assert strip_prefix(raw, psl) == want, raw
     # Rules.
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / "rules.txt"

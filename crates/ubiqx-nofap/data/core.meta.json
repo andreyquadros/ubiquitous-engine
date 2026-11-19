@@ -58,12 +58,12 @@
       "lines": 76811,
       "invalid": 5,
       "unique": 76806,
-      "after_prefix_strip": 64148,
+      "after_prefix_strip": 64143,
       "public_suffixes_dropped": 0,
       "tumblr_blogspot_dropped": 25,
       "keyword_filter_dropped": 0,
       "protected_dropped": 25,
-      "contributed": 64098
+      "contributed": 64093
     },
     {
       "id": "shadowwhisperer-adult",
@@ -82,16 +82,16 @@
       "lines": 70677,
       "invalid": 4,
       "unique": 70171,
-      "after_prefix_strip": 45154,
-      "public_suffixes_dropped": 2,
-      "tumblr_blogspot_dropped": 6948,
-      "keyword_filter_dropped": 29661,
+      "after_prefix_strip": 45132,
+      "public_suffixes_dropped": 1,
+      "tumblr_blogspot_dropped": 6949,
+      "keyword_filter_dropped": 29647,
       "protected_dropped": 0,
-      "contributed": 8543
+      "contributed": 8535
     }
   ],
   "counts": {
-    "union_before_dedup": 257067,
+    "union_before_dedup": 257054,
     "extra_ptbr_names": 27,
     "extra_ptbr_not_covered_by_public_lists": 27,
     "removed_by_rule_files": 35,
