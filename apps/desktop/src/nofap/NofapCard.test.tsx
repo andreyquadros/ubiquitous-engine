@@ -1,9 +1,12 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SURF_STEP_SECS, SURF_STEPS, SurfTimer } from './components/SurfTimer';
 import { views } from './fixtures/golden';
 import { cardSize } from './labels';
+import { nofapIpc } from './ipc';
 import { __nofapMock } from './mock';
+import { NofapCardPage } from './NofapCard';
 import { calls, renderCard, resetNofap } from './testing';
 import type { NofapCard, UserEvent } from './types';
 
@@ -167,6 +170,53 @@ describe('the card window', () => {
     expect(card.kind).toBe('drift');
   });
 
+  it('a late answer to the first request never resets a flow the person already opened', async () => {
+    const card = __nofapMock.sampleCard('blocked');
+    // The first `card` request is held back until the test lets it answer.
+    let answer: (card: NofapCard) => void = () => undefined;
+    const held = vi.spyOn(nofapIpc, 'card').mockReturnValue(new Promise<NofapCard>((resolve) => (answer = resolve)));
+    try {
+      renderCard(card.id);
+      // The shell's event shows the card first (repeated until the window has subscribed).
+      await waitFor(() => {
+        act(() => void __nofapMock.present(card));
+        expect(screen.getByRole('button', { name: 'Abrir apoio' })).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Abrir apoio' }));
+      await screen.findByTestId('card-support');
+      await act(async () => {
+        answer(card);
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId('card-support')).toBeInTheDocument();
+      expect(screen.queryByTestId('card-actions')).toBeNull();
+    } finally {
+      held.mockRestore();
+    }
+  });
+
+  it('shows the card of a new id when the shell reuses the window', async () => {
+    const first = __nofapMock.present(__nofapMock.sampleCard('drift'));
+    const second = __nofapMock.present(__nofapMock.sampleCard('reminder'));
+    function Go() {
+      const navigate = useNavigate();
+      return (
+        <button type="button" onClick={() => navigate(`/nofap-card?id=${second.id}`)}>
+          go
+        </button>
+      );
+    }
+    render(
+      <MemoryRouter initialEntries={[`/nofap-card?id=${first.id}`]}>
+        <NofapCardPage />
+        <Go />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByTestId('card-message')).toHaveTextContent('A proteção do sistema mudou.'));
+    fireEvent.click(screen.getByRole('button', { name: 'go' }));
+    await waitFor(() => expect(screen.getByTestId('card-message')).toHaveTextContent('O NoFap está ligado neste computador.'));
+  });
+
   it('asks for the size of the design for each card', () => {
     const size = (kind: NofapCard['kind'], discreet = false, expanded = false) => cardSize({ kind, discreet }, expanded);
     expect(size('blocked', true)).toEqual({ width: 420, height: 132 });
@@ -188,18 +238,18 @@ describe('the card window closes by itself only while untouched', () => {
   afterEach(() => vi.useRealTimers());
 
   it('after the seconds the card names', async () => {
-    await open('blocked');
-    act(() => void vi.advanceTimersByTime(11_000));
+    await open('blocked', { auto_close_secs: 600 });
+    act(() => void vi.advanceTimersByTime(300_000));
     expect(screen.queryByTestId('card-closed')).toBeNull();
-    act(() => void vi.advanceTimersByTime(1_500));
+    act(() => void vi.advanceTimersByTime(301_000));
     expect(screen.getByTestId('card-closed')).toBeInTheDocument();
   });
 
   it('not once the user opened support', async () => {
-    await open('blocked');
+    await open('blocked', { auto_close_secs: 600 });
     fireEvent.click(screen.getByRole('button', { name: 'Abrir apoio' }));
     await screen.findByTestId('card-support');
-    act(() => void vi.advanceTimersByTime(60_000));
+    act(() => void vi.advanceTimersByTime(1_200_000));
     expect(screen.queryByTestId('card-closed')).toBeNull();
   });
 });

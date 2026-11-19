@@ -96,8 +96,10 @@ export function NofapCardPage() {
   const [support, setSupport] = useState<SupportView | null>(null);
   const [busy, setBusy] = useState(false);
   const cardId = useRef(id);
+  const shown = useRef(false);
 
   const show = useCallback((next: NofapCard) => {
+    shown.current = true;
     cardId.current = next.id;
     setCard(next);
     // A block card with detailed messages on opens directly as the support card.
@@ -113,10 +115,14 @@ export function NofapCardPage() {
 
   useEffect(() => {
     let alive = true;
+    // The answer may arrive after the shell's `card` event already showed this card and the person opened a
+    // flow in it: only the first card of an id comes from here, so a late answer never resets the flow. A new id
+    // in the address (the shell reusing the window) starts over.
+    shown.current = false;
     void nofapIpc
       .card(id)
-      .then((c) => alive && show(c))
-      .catch(() => alive && show(neutral(id)));
+      .then((c) => alive && !shown.current && show(c))
+      .catch(() => alive && !shown.current && show(neutral(id)));
     void nofapIpc
       .view()
       .then((v) => alive && setView(v))
