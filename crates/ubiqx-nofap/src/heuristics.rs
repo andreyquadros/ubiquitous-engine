@@ -503,7 +503,11 @@ fn collapse_repeats(text: &str) -> String {
 }
 
 /// Free text (a title, a path) is lower-cased, the accented letters of Portuguese and
-/// Spanish lose their accent, and every other character separates words.
+/// Spanish lose their accent, and every other character separates words. A word in a
+/// place that does not prove it ("EarthPorn") counts in a piece made of letters; in a
+/// piece with digits it does not, because the identifiers and tokens a URL carries are
+/// random letters and digits that spell "xxx" now and then. A word in a proven place
+/// ("porno365") counts everywhere.
 fn text_has_block_word(text: &str) -> bool {
     let plain: String = text
         .chars()
@@ -513,7 +517,11 @@ fn text_has_block_word(text: &str) -> bool {
     plain
         .split(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'))
         .filter(|piece| !piece.is_empty())
-        .any(|piece| word_grade(piece.as_bytes()) != Grade::None)
+        .any(|piece| match word_grade(piece.as_bytes()) {
+            Grade::Block => true,
+            Grade::Signal => !piece.bytes().any(|b| b.is_ascii_digit()),
+            Grade::None => false,
+        })
 }
 
 fn unaccent(c: char) -> char {
@@ -1297,6 +1305,42 @@ mod tests {
         let long = format!("{}porn{}", "a".repeat(5_000), "o".repeat(5_000));
         assert!(title_signal(&long));
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    /// The opaque values a URL carries (identifiers, tokens, encoded state) are random
+    /// letters and digits, and random letters spell "xxx" now and then. A page with such
+    /// a value is not a page about the word.
+    #[test]
+    fn random_tokens_in_a_query_are_not_a_signal() {
+        const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut signals = 0;
+        for _ in 0..5_000 {
+            let token: String = (0..160)
+                .map(|_| char::from(ALPHABET[(next() % 64) as usize]))
+                .collect();
+            if path_signal(&format!("/search?q=weather&ei={token}")) {
+                signals += 1;
+            }
+        }
+        assert!(
+            signals <= 5,
+            "{signals} of 5000 random tokens were a signal"
+        );
+        // The words themselves still count, also beside digits.
+        assert!(path_signal("/search?q=xxx"));
+        assert!(path_signal("/search?q=porno365"));
+        assert!(path_signal("/tag/hentai2024"));
+        assert!(title_signal("EarthPorn - Reddit"));
+        assert!(!path_signal("/watch?v=aXXXb12cdEf&t=1"));
+        assert!(!path_signal("/item/8f3exxxa91"));
+        assert!(!title_signal("Order 8f3exxxa91 confirmed"));
     }
 
     /// A long run of letters in which a word matches at every step: the token around a
