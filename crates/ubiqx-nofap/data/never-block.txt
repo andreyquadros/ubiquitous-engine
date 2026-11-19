@@ -407,6 +407,7 @@ stopitnow.org
 safernet.org.br
 childhood.org.br
 cvv.org.br
+findahelpline.com
 # Recovery and self-help (some carry a block-grade keyword in their own name)
 fightthenewdrug.org
 yourbrainonporn.com

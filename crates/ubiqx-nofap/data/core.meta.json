@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "generated_by": "scripts/nofap/build_blocklist.py",
-  "list_version": 202611192039,
+  "list_version": 202611192045,
   "format": {
     "magic_hex": "554258424c310000",
     "format": 1,
@@ -20,12 +20,12 @@
   "core": {
     "count": 239521,
     "bytes": 1916192,
-    "sha256": "001282ae188b9986269aae2c8a5ad4fa589359e53b496490e5d92ab6266a4004"
+    "sha256": "abcaa22dd01b929a5a5482ddf76eb3e80d18090bbade8bdd82e4f2b06a1374bf"
   },
   "popular": {
     "count": 94082,
     "bytes": 752680,
-    "sha256": "36665764759a335fec50c3ad0b0a3090c13e2f1f77e54423cc9846f7da4a0102"
+    "sha256": "7da8a8aa848d4abaf3803594c6e1a41ad821f9651f0286993199af43ac050da5"
   },
   "hosts_tier": {
     "lines": 20000,
@@ -41,10 +41,10 @@
     }
   },
   "notice": {
-    "sha256": "ab111cad8755b65b96fe005859d40ae96cada11b2eb7ef98993286549f779ab4"
+    "sha256": "913a31955763c4527efdf0939c69d92d9e233a8a46948fafbc56ed41c7ea68a8"
   },
   "rules": {
-    "never-block.txt": 386,
+    "never-block.txt": 387,
     "mixed.txt": 106,
     "never-capture.txt": 269
   },
@@ -102,13 +102,13 @@
     "br_entries": 692
   },
   "inputs": {
-    "never-block.txt": "804a6dc1bfe1b1659b04b8e46c5d36eb472cd171dd360a73c28e092b3c488bd8",
+    "never-block.txt": "f363ff91378c9c23d694cba2326800e639e1c9346fe109712d07880b363eb027",
     "mixed.txt": "87c7636b9e51aaa292c9b35c9e5ea4b3bdbf5085e70758a3f9b8fa2fbe2602a9",
     "never-capture.txt": "dc4d8983831233ad1c2403cda76ebc3fb41b8c1ad09c75589305b33a12fba69f",
     "extra-ptbr.txt": "cdbd8dec42268c53ab2a919e870545b98f66e88b2f33e6446ffef0c2170b782e",
     "canary-block.txt": "9919e56c95fb29bbad6c535014b46c2cc5913f231a4f187955371451a7fcc2f5",
     "canary-allow.txt": "4631555f4aa16dc934e9fba2ef7d8e2f9aaeb7e7575d546908fd034cc7b91e14",
-    "sources.lock.json": "d2b4331d36adc9ba76e9972e13fd9212394cfdba923c1a3092ac268a33b42791"
+    "sources.lock.json": "63cfe00230c275a01bf4892499ee7079c3967fdab52d4a6cf5c1755b9a8fb72e"
   },
   "vector": [
     {
