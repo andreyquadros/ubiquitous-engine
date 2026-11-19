@@ -854,6 +854,53 @@ async fn refused_and_truncated_checks_leave_no_log_line_either() {
 }
 
 #[tokio::test]
+async fn a_check_declined_with_an_http_400_is_a_quiet_refusal() {
+    let rig = Rig::start().await;
+    rig.select(AiProvider::OpenAi);
+    Mock::given(method("POST"))
+        .and(path(OPENAI_PATH))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "error": {
+                "message": "Your request was rejected as a result of our safety system.",
+                "type": "invalid_request_error",
+                "param": null,
+                "code": "content_policy_violation"
+            }
+        })))
+        .mount(&rig.server)
+        .await;
+    let (capture, _guard) = Capture::start();
+
+    let out = rig.check("gpt-5-mini").await.unwrap();
+    assert_eq!(
+        out, REFUSED,
+        "declined by the vendor: a refusal, not an outage"
+    );
+    assert_eq!(rig.requests_to(OPENAI_PATH).await.len(), 1, "not retried");
+    assert!(rig.usage.records().is_empty(), "nothing was billed");
+    assert_eq!(
+        capture.text(),
+        "",
+        "a line here would mark the screens a provider declined to look at"
+    );
+    assert_transport_says_nothing(&capture);
+
+    // A productivity call declined the same way is an `AiRefused` too, and is logged.
+    let err = rig
+        .router
+        .complete(&vision_request("gpt-5-mini", AiUsageKind::Vision))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, CoreError::AiRefused), "{err}");
+    let logged = capture.text();
+    assert!(
+        logged.contains("request declined for its content"),
+        "{logged}"
+    );
+    assert!(logged.contains("kind=\"vision\""), "{logged}");
+}
+
+#[tokio::test]
 async fn a_failed_check_is_logged_without_its_kind() {
     let rig = Rig::start().await;
     Mock::given(method("POST"))

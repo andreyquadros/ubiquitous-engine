@@ -45,6 +45,10 @@ pub(crate) struct Reply {
 pub(crate) enum Outcome {
     Ok(String),
     Fatal(CoreError),
+    /// The vendor declined the request for its content instead of answering. Returned as
+    /// [`CoreError::AiRefused`] without a line here: only the caller knows whether a refusal
+    /// may be logged for this kind of call.
+    Refused,
     /// Retry after an optional server-mandated wait (from `retry-after` or the error text).
     Retry {
         error: RetryableError,
@@ -129,6 +133,7 @@ where
                 warn!(vendor, what, attempt, error = %err, "request failed");
                 return Err(err);
             }
+            Outcome::Refused => return Err(CoreError::AiRefused),
             Outcome::Retry { error, wait } => {
                 let backoff = backoff_delay(
                     attempt,

@@ -47,7 +47,9 @@
 //!   [`CoreError::AiRejected`] (billing), never retried;
 //! * other 429 → retried, honouring `retry-after` or a "try again in Ns" hint in the message,
 //!   then [`CoreError::RateLimited`];
-//! * 400/413/422 → [`CoreError::Invalid`];
+//! * 400 with one of [`CONTENT_REFUSAL_CODES`] (the vendor declined the content before any
+//!   model answered) → [`CoreError::AiRefused`], never retried, nothing recorded as usage;
+//! * other 400/413/422 → [`CoreError::Invalid`];
 //! * 408/409/5xx/timeouts/network errors → retried with backoff, then [`CoreError::Ai`].
 //!
 //! Error messages meant for the user are written in pt-BR and keep the vendor's own text.
@@ -78,6 +80,16 @@ pub const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const XAI_BASE_URL: &str = "https://api.x.ai/v1";
 /// Name of the JSON schema sent in `response_format` (the vendors require one).
 pub const SCHEMA_NAME: &str = "ubiqx_output";
+
+/// Error codes of an HTTP 400 with which a vendor declines a request for its content
+/// instead of answering: a refusal in all but its transport. OpenAI's safety system
+/// (`content_policy_violation`), its reasoning models (`invalid_prompt`) and OpenAI-compatible
+/// gateways (`content_filter`).
+pub const CONTENT_REFUSAL_CODES: [&str; 3] = [
+    "content_policy_violation",
+    "invalid_prompt",
+    "content_filter",
+];
 
 /// Model ids containing any of these fragments are not chat models and are dropped from
 /// [`OpenAiCompatClient::list_models`].
@@ -493,6 +505,11 @@ fn rejection(provider: AiProvider, code: u16, body: &str, lang: UiLanguage) -> O
     None
 }
 
+/// Whether the body of an HTTP 400 says the request was declined for its content.
+fn is_content_refusal(body: &str) -> bool {
+    parse_error(body).is_some_and(|err| CONTENT_REFUSAL_CODES.contains(&err.code.as_str()))
+}
+
 fn classify_response(
     provider: AiProvider,
     lang: UiLanguage,
@@ -520,6 +537,7 @@ fn classify_response(
                 wait: hint.map(Duration::from_secs),
             }
         }
+        400 if is_content_refusal(&body) => Outcome::Refused,
         400 | 413 | 422 => Outcome::Fatal(CoreError::Invalid(format!(
             "HTTP {code}: {}",
             error_message(&body)
@@ -673,7 +691,9 @@ impl OpenAiCompatClient {
     /// Returns [`CoreError::AiNotConfigured`] without any HTTP call when no key is available;
     /// otherwise errors map as described in the module docs. A refusal (`message.refusal`
     /// or `finish_reason = content_filter`) yields [`CoreError::AiRefused`] after the usage
-    /// is recorded; `finish_reason = length` is returned as [`StopReason::MaxTokens`].
+    /// is recorded; a request declined with an HTTP 400 for its content yields the same
+    /// error with nothing to record; `finish_reason = length` is returned as
+    /// [`StopReason::MaxTokens`].
     pub async fn complete(&self, req: &LlmRequest) -> CoreResult<LlmResponse> {
         validate_request(req)?;
         let key = self.key()?;
@@ -700,7 +720,7 @@ impl OpenAiCompatClient {
         }
 
         let started = Instant::now();
-        let text = self
+        let sent = self
             .send_with_retry("chat completion", || {
                 self.http
                     .post(&url)
@@ -709,7 +729,19 @@ impl OpenAiCompatClient {
                     .timeout(timeout)
                     .json(&body)
             })
-            .await?;
+            .await;
+        let text = match sent {
+            Ok(text) => text,
+            Err(CoreError::AiRefused) => {
+                // Declined before any model answered: nothing was billed. Like every
+                // refusal, it is logged only for the kinds that may be.
+                if logged {
+                    warn!(vendor, model = %req.model, kind, "request declined for its content");
+                }
+                return Err(CoreError::AiRefused);
+            }
+            Err(e) => return Err(e),
+        };
 
         let parsed: ChatResponse = serde_json::from_str(&text)
             .map_err(|e| CoreError::Ai(format!("unparseable chat completion response: {e}")))?;
@@ -1168,6 +1200,59 @@ mod tests {
         assert_eq!(retry_hint_secs("try again in 2 seconds"), Some(2));
         assert_eq!(retry_hint_secs("slow down"), None);
         assert_eq!(retry_hint_secs("try again in a while"), None);
+    }
+
+    #[test]
+    fn a_400_for_the_content_is_a_refusal() {
+        let classify = |status: StatusCode, body: &str| {
+            classify_response(
+                AiProvider::OpenAi,
+                UiLanguage::PtBr,
+                status,
+                None,
+                body.to_string(),
+            )
+        };
+        for code in CONTENT_REFUSAL_CODES {
+            let body = format!(
+                r#"{{"error":{{"message":"Your request was rejected as a result of our safety system.","type":"invalid_request_error","param":null,"code":"{code}"}}}}"#
+            );
+            assert!(
+                matches!(classify(StatusCode::BAD_REQUEST, &body), Outcome::Refused),
+                "{code}"
+            );
+            // The code alone does not make another status a refusal.
+            assert!(
+                matches!(
+                    classify(StatusCode::INTERNAL_SERVER_ERROR, &body),
+                    Outcome::Retry { .. }
+                ),
+                "{code}"
+            );
+        }
+        // xAI's bare-string envelope with the code as a sibling.
+        assert!(matches!(
+            classify(
+                StatusCode::BAD_REQUEST,
+                r#"{"error":"blocked","code":"content_filter"}"#
+            ),
+            Outcome::Refused
+        ));
+        // Any other 400 is still the request's own fault, whatever its message says.
+        for body in [
+            r#"{"error":{"message":"content_policy_violation","type":"invalid_request_error","code":"invalid_value"}}"#,
+            r#"{"error":{"message":"Invalid image.","type":"invalid_request_error","code":null}}"#,
+            "content_policy_violation",
+            "",
+        ] {
+            assert!(
+                matches!(
+                    classify(StatusCode::BAD_REQUEST, body),
+                    Outcome::Fatal(CoreError::Invalid(_))
+                ),
+                "{body}"
+            );
+        }
     }
 
     #[test]
