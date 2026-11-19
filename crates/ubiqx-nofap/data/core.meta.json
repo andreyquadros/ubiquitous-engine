@@ -23,9 +23,9 @@
     "sha256": "eb447ea48834cb129f47ec9a71c7f886d2dba23714f3aea2fcf320b52629a3f4"
   },
   "popular": {
-    "count": 94063,
-    "bytes": 752528,
-    "sha256": "aecefc281a95535f5c9de116a5333e1fc8a53fb41fd3a0170fa85f127e0e46f1"
+    "count": 94062,
+    "bytes": 752520,
+    "sha256": "269c3766ffd88e4f1265b31c6122453bf8f53bdd2a36243accc177f60907eadb"
   },
   "hosts_tier": {
     "lines": 20000,
@@ -45,7 +45,7 @@
   },
   "rules": {
     "never-block.txt": 381,
-    "mixed.txt": 93,
+    "mixed.txt": 94,
     "never-capture.txt": 264
   },
   "canaries": {
@@ -102,8 +102,8 @@
     "br_entries": 692
   },
   "inputs": {
-    "never-block.txt": "6fb9a0ae97d9f3f9c07ca5b16f5ab1c2c967ca697ef715f82bc2c42ef2e37cb8",
-    "mixed.txt": "b7082098fe03f79aa94ebc2493f2ef67ee27815fc1b0a2e696e82748983d99d5",
+    "never-block.txt": "68c4c372e35df7e898fa1221380bcb95dc50859c4109bd5a3e83e4ae6c3362ad",
+    "mixed.txt": "0b1f4d04ab1d43194a1965fa84e13ca0d105f2b8c302bf06d208008c91591b07",
     "never-capture.txt": "d08d1dced8c55fc5d760620989b425db8f80b1a6ce8b0a1a23178195eae362a9",
     "extra-ptbr.txt": "de2cee5b9f12d3264f8278aa412966e5c819719ffa46839afb8de1592f17e81a",
     "canary-block.txt": "9919e56c95fb29bbad6c535014b46c2cc5913f231a4f187955371451a7fcc2f5",

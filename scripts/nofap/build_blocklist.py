@@ -1242,12 +1242,12 @@ def render_review(lock, review_rows, core, origin_of, removed, protected) -> str
         "#",
         "# For a person to read before a release. Three sections:",
         "#   1. every Chrome UX Report origin with rank bucket <= 10,000 that the list covers",
-        "#      (a general-purpose site here is a false positive: add it to never-block.txt",
-        "#      or mixed.txt and rebuild);",
+        "#      (a general-purpose site here is a false positive: add it to mixed.txt,",
+        "#      to never-block.txt or to UPSTREAM_MISTAKES in the script, and rebuild);",
         "#   2. listed names kept below a NAME rule of a rule file (longest match: the",
         "#      listed subdomain stays blocked, its parent stays allowed);",
-        "#   3. listed names the rule files removed (a dedicated adult site here means a",
-        "#      rule is too broad).",
+        "#   3. listed names removed by a rule file or by UPSTREAM_MISTAKES (a dedicated",
+        "#      adult site here means a rule is too broad).",
         "# Columns are separated by tabs.",
         "",
         f"## 1. Covered origins in the top 10,000 ({len(review_rows)})",
@@ -1264,7 +1264,7 @@ def render_review(lock, review_rows, core, origin_of, removed, protected) -> str
     out += ["", f"## 2. Listed names kept below a protected name ({len(kept)})",
             "# listed name\trule above it\tsources"]
     out += kept
-    out += ["", f"## 3. Listed names removed by the rule files ({len(removed)})",
+    out += ["", f"## 3. Listed names removed ({len(removed)})",
             "# name\trule\tsources"]
     out += [f"{name}\t{removed[name][0]}\t{','.join(sorted(removed[name][1]))}"
             for name in sorted(removed)]

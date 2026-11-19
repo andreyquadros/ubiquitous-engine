@@ -20,6 +20,11 @@
 # longest match applies: a more specific listed subdomain (the list keeps
 # adult.contents.fc2.com while fc2.com is allowed) stays blocked.
 #
+# The COUNTRY form is matched by shape, without the Public Suffix List, so
+# "ac.*" also covers a private name such as ac.tv. The build prints every
+# listed name such a rule removed (section 3 of
+# docs/nofap/research/blocklist-top10k-review.txt) so that a person can see it.
+#
 # What belongs here: names whose blocking would break the computer, sign-in,
 # updates, payments or the product itself; public-sector and academic name
 # spaces; sexual-health, education and recovery sites; ordinary sites whose name

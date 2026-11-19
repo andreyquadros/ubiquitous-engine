@@ -4,12 +4,12 @@
 #
 # For a person to read before a release. Three sections:
 #   1. every Chrome UX Report origin with rank bucket <= 10,000 that the list covers
-#      (a general-purpose site here is a false positive: add it to never-block.txt
-#      or mixed.txt and rebuild);
+#      (a general-purpose site here is a false positive: add it to mixed.txt,
+#      to never-block.txt or to UPSTREAM_MISTAKES in the script, and rebuild);
 #   2. listed names kept below a NAME rule of a rule file (longest match: the
 #      listed subdomain stays blocked, its parent stays allowed);
-#   3. listed names the rule files removed (a dedicated adult site here means a
-#      rule is too broad).
+#   3. listed names removed by a rule file or by UPSTREAM_MISTAKES (a dedicated
+#      adult site here means a rule is too broad).
 # Columns are separated by tabs.
 
 ## 1. Covered origins in the top 10,000 (1094)
@@ -1175,7 +1175,7 @@ video.fc2.com	mixed.txt: fc2.com	stevenblack-porn-only
 virginiasanden.deviantart.com	mixed.txt: deviantart.com	stevenblack-porn-only
 winterlook-games.itch.io	mixed.txt: itch.io	stevenblack-porn-only
 
-## 3. Listed names removed by the rule files (35)
+## 3. Listed names removed (35)
 # name	rule	sources
 1337x.to	mixed.txt: 1337x.to	stevenblack-porn-only
 4chan.org	mixed.txt: 4chan.org	stevenblack-porn-only
