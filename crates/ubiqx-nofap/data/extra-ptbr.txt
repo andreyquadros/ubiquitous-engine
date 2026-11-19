@@ -1,0 +1,61 @@
+# extra-ptbr.txt: our own additions to the public lists.
+#
+# AWAITING A HUMAN CHECK. Nobody has opened these sites: the build sandbox
+# cannot reach them. Each name is here for a reason that can be checked:
+#
+#   [R] named in docs/nofap/research/research-blocklists.md (sections 5.4, 10)
+#       as a gap of the public lists;
+#   [G] a gap the lists show by themselves: a host among the Chrome UX Report's
+#       most visited sites (rank bucket in brackets on the comment line) that is
+#       on none of the lists we ship, and whose name is made of a Portuguese
+#       word that only an adult site uses;
+#   [K] from the maintainer's knowledge of the Brazilian web, with the Chrome UX
+#       Report rank as the only evidence that the site exists.
+#
+# Before a release a person reads this file, removes what is wrong and adds
+# what is missing. Brazilian coverage is the weakest part of every public
+# list (686 ".br" names among 239 thousand), and this file is where that is
+# fixed.
+#
+# One host name per line, lower-case, without "www."; "#" lines and empty
+# lines are ignored. A name here covers itself and its subdomains. The build
+# fails when a name is a public suffix or is protected by never-block.txt,
+# mixed.txt or never-capture.txt. This file is a build input only: it is not
+# embedded as text.
+
+# [R] Brazilian creator-subscription platforms. privacy.com.br is in the top
+# 5,000; closefans.com is not in the top million and is unverified.
+privacy.com.br
+closefans.com
+
+# [R] Erotic stories (the .com.br name is in the top 500,000, the .com name in
+# the top 10,000)
+contoseroticos.com.br
+contoseroticos.com
+
+# [K] Swing social network (top 5,000); its sibling sexlog.com is on the lists
+d4swing.com
+
+# [G] top 500,000 or better, on no shipped list
+contoseroticos.blog
+contoseroticos.blog.br
+contoseroticos69.com
+brasileirinhassp.com.br
+bucetaflix.blog
+bucetagostosa.blog
+bucetando.blog
+bucetaplay.com
+bucetasebundas.net
+coroasgostosas.blog
+novinhas.blog
+novinhasnuas.com
+novinhaspelada.com
+grupodeputaria.net
+gruposdeputaria.red
+gruposputaria.blog
+gruposputaria.com.br
+mixdaputaria.com
+putarianotelegram.com.br
+putariatelegram.com
+putariatelegram.red
+telegramputaria.blog.br

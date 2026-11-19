@@ -1,0 +1,27 @@
+# canary-allow.txt: names the embedded list must never cover.
+#
+# One host name per line; "#" lines and empty lines are ignored. The build
+# script refuses to write a list that covers one of these (itself or through a
+# listed parent), and the Rust test tests/embedded.rs checks each one. They
+# guard against upstream mistakes and against collapsing a listed subdomain to
+# its registrable domain, which once "blocked" apple.com and uol.com.br.
+wikipedia.org
+google.com
+youtube.com
+reddit.com
+x.com
+instagram.com
+facebook.com
+tumblr.com
+blogspot.com
+fc2.com
+archive.org
+amazon.com
+apple.com
+microsoft.com
+github.com
+uol.com.br
+globo.com
+mercadolivre.com.br
+scarleteen.com
+plannedparenthood.org

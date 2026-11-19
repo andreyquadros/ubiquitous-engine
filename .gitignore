@@ -31,3 +31,6 @@ __pycache__/
 
 # Staging dir built by .github/workflows/deploy-site.yml
 /infra/site/.stage/
+
+# Download cache of scripts/nofap/build_blocklist.py
+/scripts/nofap/.cache/

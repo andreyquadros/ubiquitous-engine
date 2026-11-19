@@ -1,0 +1,163 @@
+{
+  "schema": 1,
+  "generated_by": "scripts/nofap/build_blocklist.py",
+  "list_version": 202611192000,
+  "format": {
+    "magic_hex": "554258424c310000",
+    "format": 1,
+    "flags": 0,
+    "header_bytes": 24,
+    "layout": "magic[8] | format u16 | flags u16 | count u32 | list_version u64 | count * key u64, strictly ascending; every integer big-endian",
+    "key": "first 8 bytes of SHA-256(tag || name) as a big-endian u64; the tag ends with one NUL byte, written in this file as the JSON escape \\u0000",
+    "tags": {
+      "core.bin": "ubiqx-nofap-blocklist-v1\u0000",
+      "popular.bin": "ubiqx-nofap-popular-v1\u0000"
+    },
+    "name": "lower-case ASCII, punycode for IDN, no trailing dot, no port, a leading 'www.' removed when two labels remain",
+    "core_lookup": "the host, then the host without its left-most labels, down to two labels; an entry covers itself and its subdomains",
+    "popular_lookup": "the exact normalised host; no parent walk"
+  },
+  "core": {
+    "count": 239409,
+    "bytes": 1915296,
+    "sha256": "eb447ea48834cb129f47ec9a71c7f886d2dba23714f3aea2fcf320b52629a3f4"
+  },
+  "popular": {
+    "count": 94063,
+    "bytes": 752528,
+    "sha256": "aecefc281a95535f5c9de116a5333e1fc8a53fb41fd3a0170fa85f127e0e46f1"
+  },
+  "hosts_tier": {
+    "lines": 20000,
+    "bytes": 329571,
+    "sha256": "fce68b75685fca983bc04b891e93af51629454004b8221a310395517e1292d65",
+    "lines_by_rank_bucket": {
+      "1000": 402,
+      "5000": 830,
+      "10000": 796,
+      "50000": 4109,
+      "100000": 3120,
+      "500000": 10743
+    }
+  },
+  "notice": {
+    "sha256": "6c4dc364b1381d224f1007ceea49da13633e30600ded3e8cfd7156428a4f9a9d"
+  },
+  "rules": {
+    "never-block.txt": 381,
+    "mixed.txt": 93,
+    "never-capture.txt": 264
+  },
+  "canaries": {
+    "block": 14,
+    "allow": 20
+  },
+  "sources": [
+    {
+      "id": "stevenblack-porn-only",
+      "lines": 76811,
+      "invalid": 5,
+      "unique": 76806,
+      "after_prefix_strip": 64148,
+      "public_suffixes_dropped": 0,
+      "tumblr_blogspot_dropped": 25,
+      "keyword_filter_dropped": 0,
+      "protected_dropped": 25,
+      "contributed": 64098
+    },
+    {
+      "id": "shadowwhisperer-adult",
+      "lines": 213982,
+      "invalid": 0,
+      "unique": 213982,
+      "after_prefix_strip": 213982,
+      "public_suffixes_dropped": 6,
+      "tumblr_blogspot_dropped": 0,
+      "keyword_filter_dropped": 0,
+      "protected_dropped": 16,
+      "contributed": 213960
+    },
+    {
+      "id": "4skinskywalker",
+      "lines": 70677,
+      "invalid": 4,
+      "unique": 70171,
+      "after_prefix_strip": 45154,
+      "public_suffixes_dropped": 2,
+      "tumblr_blogspot_dropped": 6948,
+      "keyword_filter_dropped": 29661,
+      "protected_dropped": 0,
+      "contributed": 8543
+    }
+  ],
+  "counts": {
+    "union_before_dedup": 257067,
+    "extra_ptbr_names": 27,
+    "extra_ptbr_not_covered_by_public_lists": 27,
+    "removed_by_rule_files": 35,
+    "top10k_hosts_covered": 1094,
+    "top1k_hosts_covered": 219,
+    "crux_hosts": 998744,
+    "hosts_tier_skipped_protected": 8,
+    "br_entries": 692
+  },
+  "inputs": {
+    "never-block.txt": "6fb9a0ae97d9f3f9c07ca5b16f5ab1c2c967ca697ef715f82bc2c42ef2e37cb8",
+    "mixed.txt": "b7082098fe03f79aa94ebc2493f2ef67ee27815fc1b0a2e696e82748983d99d5",
+    "never-capture.txt": "d08d1dced8c55fc5d760620989b425db8f80b1a6ce8b0a1a23178195eae362a9",
+    "extra-ptbr.txt": "de2cee5b9f12d3264f8278aa412966e5c819719ffa46839afb8de1592f17e81a",
+    "canary-block.txt": "9919e56c95fb29bbad6c535014b46c2cc5913f231a4f187955371451a7fcc2f5",
+    "canary-allow.txt": "2181b7f4a40d286de9ed0f97708da64e38d6f2fce32a2b2a7cc9753b9e3d7ad4",
+    "sources.lock.json": "93e704a55c4acec9e19320b194f46631d5d638286c083e14c3a9006fc859eeb4"
+  },
+  "vector": [
+    {
+      "table": "core.bin",
+      "tag": "ubiqx-nofap-blocklist-v1\u0000",
+      "name": "example.com",
+      "key": "da53077605c4bf53"
+    },
+    {
+      "table": "core.bin",
+      "tag": "ubiqx-nofap-blocklist-v1\u0000",
+      "name": "sub.example.co.uk",
+      "key": "ecf2108cf4da9d63"
+    },
+    {
+      "table": "core.bin",
+      "tag": "ubiqx-nofap-blocklist-v1\u0000",
+      "name": "xn--bcher-kva.example",
+      "key": "e871f6f6523b4628"
+    },
+    {
+      "table": "core.bin",
+      "tag": "ubiqx-nofap-blocklist-v1\u0000",
+      "name": "a.b",
+      "key": "2aac543e0fc9c53c"
+    },
+    {
+      "table": "popular.bin",
+      "tag": "ubiqx-nofap-popular-v1\u0000",
+      "name": "example.com",
+      "key": "10e6d953785ff652"
+    },
+    {
+      "table": "popular.bin",
+      "tag": "ubiqx-nofap-popular-v1\u0000",
+      "name": "sub.example.co.uk",
+      "key": "5b4e610be1bb32bd"
+    },
+    {
+      "table": "popular.bin",
+      "tag": "ubiqx-nofap-popular-v1\u0000",
+      "name": "xn--bcher-kva.example",
+      "key": "b0ea765e6c1bed28"
+    },
+    {
+      "table": "popular.bin",
+      "tag": "ubiqx-nofap-popular-v1\u0000",
+      "name": "a.b",
+      "key": "b86fc0e1105c8369"
+    }
+  ]
+}
