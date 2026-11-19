@@ -19,7 +19,10 @@
 //! of letters between hyphens and digits (`porno365` holds the token `porno`). The *tail*
 //! of a word is what follows it inside its token.
 //!
-//! * Long, unambiguous words (`hentai`, `putaria`, …) count anywhere in a label.
+//! * Long, unambiguous words (`bokep`, `phimsex`, …) count anywhere in a label; where such
+//!   a word is also part of an ordinary one, the ordinary form is named and skipped
+//!   ("computaria" is a computer shop, "menudesign" a menu design, "Chentai" a Chinese
+//!   company name, funeral and pilot-car escorts are trades).
 //! * `porn` and `xxx` count when the rest of their token reads as the words adult sites
 //!   are named with: nothing or [`HEAD_WORDS`] before, nothing or [`SITE_WORDS`] after.
 //!   `freeporn`, `pornovideos` and `xxxtube` block; `pornichet`, `odpornosc`, `siriporn`,
@@ -117,6 +120,16 @@ pub const SITE_WORDS: &[&str] = &[
     "deutsch", "rus", "russkoe",
     // Brands that are built on the word.
     "hat", "hwa", "xp", "dig", "db", "sub", "trex", "pornhub", "xvideos", "xnxx", "xhamster",
+    // More of what the site offers and calls itself.
+    "dvd", "dvds", "toons", "models", "studio", "host", "factory", "maker", "lib", "dot", "wap",
+    "tgp", "bbs", "fap", "jizz", "nude", "babe", "gals", "av", "jav", "zilla", "heaven", "hunter",
+    "rabbit", "captain", "geek", "bomb", "doido",
+    // Where people pass it on (Portuguese and Spanish names).
+    "zap", "whatsapp", "telegram", "grupo", "grupos", "celebs", "famosas", "vazados", "vazadas",
+    // Where it is from, and who is in it, in Portuguese and Spanish.
+    "br", "ru", "espanol", "italiano", "mexicano", "argentino", "colombiano", "portugues",
+    "brasileira", "brasileiras", "brasileiros", "nacional", "amadores", "amadoras", "caseiros",
+    "casero", "caseros", "novinhas", "gostosas", "maduras", "coroas",
 ];
 
 /// The words that stand before `porn` and `xxx` in the names of adult sites. A head made of
@@ -152,6 +165,22 @@ pub const HEAD_WORDS: &[&str] = &[
     "black", "latina", "brasil",
     // Brands.
     "xnxx", "xvideos", "xhamster",
+    // More of the same, from the names the public lists carry.
+    "foto", "fotos", "clip", "clips", "movie", "chat", "web", "world", "home", "star", "mix",
+    "mult", "viral", "uhd", "raw", "rough", "wet", "wild", "kinky", "busty", "cute", "huge",
+    "hottest", "pretty", "perfect", "beauty", "famous", "celebrity", "exclusive", "rare", "paid",
+    "pay", "cheap", "casting", "college", "stepmom", "mama", "matures", "swinger", "ladyboy",
+    "tgirl", "transen", "transexual", "cum", "inzest", "incesto", "sexo", "privat", "alle",
+    "legal", "giga", "red", "sun", "rex", "gig", "got", "servi", "xvideo", "fans",
+    // Where it is from, in more languages.
+    "ru", "uz", "br", "pak", "paki", "bangladeshi", "telugu", "naija", "bolly", "phim", "truyen",
+    "turkish", "german", "italian", "korea", "oriental", "dansk", "nederlandse", "domashnee",
+    "krasivoe", "zrelie", "dojki", "darmowe", "besplatno",
+    // Portuguese and Spanish.
+    "ver", "videosde", "fotosde", "filmesde", "contos", "relatos", "peliculas", "pelis", "grupo",
+    "grupos", "novinha", "novinhas", "coroas", "amador", "amadoras", "caseiro", "caseiros",
+    "casero", "caseros", "brasileiro", "brasileira", "brasileiras", "latino", "latinas",
+    "mexicano", "mexicanas", "colombianas",
 ];
 
 /// Single letters that stand alone before `porn` and `xxx` (`eporn`, `xporn`). Never `s`:
@@ -173,6 +202,9 @@ enum Before {
     LabelStart,
     /// The head is empty or made of [`HEAD_WORDS`].
     HeadWords,
+    /// The head does not end with one of these: with them the letters spell an ordinary
+    /// word or name a trade.
+    NotAfter(&'static [&'static str]),
 }
 
 /// What must stand after a word.
@@ -186,6 +218,9 @@ enum After {
     SiteWords(&'static [&'static str]),
     /// The word ends its label.
     LabelEnd,
+    /// The tail does not start with one of these: with them the letters spell an ordinary
+    /// word.
+    NotBefore(&'static [&'static str]),
 }
 
 /// A block-grade word or brand stem and the place where it counts.
@@ -248,7 +283,7 @@ const BLOCK_WORDS: &[Rule] = &[
     Rule::placed(
         "porn",
         Before::HeadWords,
-        After::SiteWords(&["o", "os", "s"]),
+        After::SiteWords(&["o", "os", "s", "er", "ers", "uha"]),
     )
     .weak_signal(),
     Rule {
@@ -256,7 +291,12 @@ const BLOCK_WORDS: &[Rule] = &[
         ..Rule::placed("xxx", Before::HeadWords, After::SiteWords(&[]))
     }
     .weak_signal(),
-    Rule::anywhere("hentai"),
+    // Chen Tai and Zhen Tai are Chinese company names. (So is Shen Tai, but adult sites
+    // are named "shentai" too, and the lists carry them.)
+    Rule {
+        innocent_starts: &["chentai", "zhentai"],
+        ..Rule::anywhere("hentai")
+    },
     Rule::anywhere("blowjob"),
     Rule::anywhere("gangbang"),
     Rule::anywhere("cumshot"),
@@ -269,10 +309,11 @@ const BLOCK_WORDS: &[Rule] = &[
     Rule::anywhere("masturbat"),
     Rule::anywhere("bokep"),
     Rule::anywhere("phimsex"),
-    // "denudes" is an English verb.
+    // "denudes" is an English verb; "menudesign" is a menu design and "nudestix" a
+    // make-up brand.
     Rule {
         innocent_starts: &["denudes"],
-        ..Rule::anywhere("nudes")
+        ..Rule::placed("nudes", Before::Any, After::NotBefore(&["ign", "tix"]))
     },
     // "disputas", "computas", "imputas" and the Latvian "atputas" are ordinary words.
     Rule::placed(
@@ -281,13 +322,20 @@ const BLOCK_WORDS: &[Rule] = &[
         After::Any,
     ),
     // A token that is the word alone is also a tractor maker and a car model: it is a
-    // signal token instead.
+    // signal token instead. Funeral, security, medical and pilot-car escorts are trades:
+    // after such a word it is a signal.
     Rule {
         innocent_tokens: &["escorts"],
-        ..Rule::anywhere("escorts")
-    },
+        ..Rule::placed("escorts", Before::NotAfter(ESCORT_TRADES), After::Any)
+    }
+    .weak_signal(),
     // PT-BR
-    Rule::anywhere("putaria"),
+    // "computaria" is a name for a computer shop; "disputaria" and "imputaria" are verbs.
+    Rule::placed(
+        "putaria",
+        Before::NotAfter(&["com", "dis", "im"]),
+        After::Any,
+    ),
     Rule::anywhere("buceta"),
     Rule::anywhere("bucetinha"),
     Rule::anywhere("siririca"),
@@ -295,10 +343,37 @@ const BLOCK_WORDS: &[Rule] = &[
     Rule::anywhere("brasileirinhas"),
     Rule::anywhere("pornozao"),
     Rule::anywhere("safadas"),
-    Rule::anywhere("novinhas"),
+    // "seminovinhas" are second-hand clothes.
+    Rule::placed("novinhas", Before::NotAfter(&["semi"]), After::Any),
     // "receitas gostosas" are tasty recipes: the adjective follows its noun.
     Rule::placed("gostosas", Before::LabelStart, After::Any).weak_signal(),
     Rule::anywhere("transando"),
+];
+
+/// What stands before "escorts" when it names a trade and not an adult service.
+const ESCORT_TRADES: &[&str] = &[
+    "funeral",
+    "security",
+    "safety",
+    "police",
+    "military",
+    "armed",
+    "medical",
+    "patient",
+    "nurse",
+    "student",
+    "car",
+    "motorcycle",
+    "motor",
+    "bike",
+    "vehicle",
+    "traffic",
+    "load",
+    "convoy",
+    "transport",
+    "pilot",
+    "airport",
+    "tractor",
 ];
 
 /// Brand stems of `research-blocklists.md` 9.1. Of its 32, `e-hentai` is covered by
@@ -542,11 +617,16 @@ impl Rule {
     fn grade_in(&self, label: &[u8], needle: &[u8]) -> Grade {
         let mut grade = Grade::None;
         let mut from = 0;
+        // The token of the last match: a match that lies inside it is in the same token,
+        // so a long run of letters is walked once and not once per match.
+        let (mut token_from, mut token_to) = (0, 0);
         while let Some(at) = find(label, needle, from) {
             from = at + 1;
             let end = at + needle.len();
-            let token_from = token_start(label, at);
-            let token_to = token_end(label, end);
+            if at < token_from || end > token_to {
+                token_from = token_start(label, at);
+                token_to = token_end(label, end);
+            }
             let token = &label[token_from..token_to];
             if self
                 .innocent_tokens
@@ -572,12 +652,18 @@ impl Rule {
                 }
                 Before::LabelStart => at == 0,
                 Before::HeadWords => head_is_site_words(head),
+                Before::NotAfter(words) => {
+                    !words.iter().any(|word| head.ends_with(word.as_bytes()))
+                }
             };
             let after = match self.after {
                 After::Any => true,
                 After::TokenEnd => tail.is_empty(),
                 After::SiteWords(links) => tail_is_site_words(tail, links),
                 After::LabelEnd => end == label.len(),
+                After::NotBefore(words) => {
+                    !words.iter().any(|word| tail.starts_with(word.as_bytes()))
+                }
             };
             if before && after && !run_broken {
                 return Grade::Block;
@@ -789,8 +875,66 @@ mod tests {
             "escorts.co.in",
             "erp.escorts.co.in",
             "ford-escorts.co.uk",
+            // found by the review: words inside ordinary words, and trades
+            "menudesign.com",
+            "venudesign.com.br",
+            "nudesign.com.br",
+            "nudestix.com",
+            "chentai.com",
+            "zhentai.com.cn",
+            "jp-chentaiji.net",
+            "computaria.com.br",
+            "disputaria.com",
+            "seminovinhas.com.br",
+            "funeralescorts.com",
+            "pilotcarescorts.com",
+            "securityescorts.co.za",
+            "medicalescorts.org",
+            "motorcycleescorts.com",
+            // "xxx" is also how kisses are written
+            "withlovexxx.com",
+            "kissesxxx.co.uk",
+            // names of people and of help against the habit
+            "supaporn.net",
+            "kittiporn.com",
+            "pornchai.co.th",
+            "vencerapornografia.com.br",
+            "livredapornografia.com.br",
+            "yourbrainonporn.com",
+            "xxxchurch.com",
+            "antipornografia.org",
         ] {
             assert!(!blocks(host), "{host}: {:?}", host_rule(host));
+        }
+    }
+
+    /// The exceptions above are narrow: the same words still block around them.
+    #[test]
+    fn the_exceptions_for_ordinary_words_are_narrow() {
+        for host in [
+            "sendmenudes.example",
+            "packsdenudes.example",
+            "nudesdozap.example",
+            "nudesexpics.example",
+            "comicshentai.example",
+            "shentai.example",
+            "telegramputaria.example",
+            "gruposdeputaria.example",
+            "soputaria.example",
+            "novinhasnuas.example",
+            "londonescorts.example",
+            "bradfordescorts.example",
+            "escortsinlondon.example",
+        ] {
+            assert_eq!(host_rule(host), KEYWORD, "{host}");
+        }
+        // A trade before "escorts" leaves a signal, like the word alone.
+        for host in ["funeralescorts.com", "pilotcarescorts.com"] {
+            assert_eq!(host_rule(host), HostRule::Signal, "{host}");
+        }
+        // The other ordinary words carry nothing.
+        for host in ["menudesign.com", "chentai.com", "computaria.com.br"] {
+            assert_eq!(host_rule(host), HostRule::None, "{host}");
         }
     }
 
@@ -854,6 +998,29 @@ mod tests {
             "videosxxx.example",
             "xxx18.example",
             "sexxxx.example.xxx",
+        ] {
+            assert!(blocks(host), "{host}: {:?}", host_rule(host));
+        }
+        // Names of the kind the public lists do not carry: Portuguese, Spanish and
+        // Russian compounds, and the "-er" brands.
+        for host in [
+            "pornodoido.example",
+            "xvideoporno.example",
+            "fotosporno.example",
+            "videospornosbr.example",
+            "pornobrasileiro.example",
+            "pornoespanol.example",
+            "incestoporno.example",
+            "grupoporno.example",
+            "contosporno.example",
+            "ruporno.example",
+            "uzporno.example",
+            "pornuha.example",
+            "hqporner.example",
+            "hdporner.example",
+            "viralxxx.example",
+            "pakxxx.example",
+            "phimxxx.example",
         ] {
             assert!(blocks(host), "{host}: {:?}", host_rule(host));
         }
@@ -1130,5 +1297,28 @@ mod tests {
         let long = format!("{}porn{}", "a".repeat(5_000), "o".repeat(5_000));
         assert!(title_signal(&long));
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    /// A long run of letters in which a word matches at every step: the token around a
+    /// match is found once per token, not once per match (that took minutes for a title
+    /// or a query of this size).
+    #[test]
+    fn a_long_run_of_matches_is_read_in_linear_time() {
+        let started = std::time::Instant::now();
+        let kisses = "x".repeat(300_000);
+        assert!(title_signal(&kisses));
+        assert!(path_signal(&format!("/search?q={kisses}")));
+        assert_eq!(host_rule(&format!("{kisses}.example")), HostRule::Signal);
+        let chant = "porn".repeat(75_000);
+        assert!(title_signal(&chant));
+        assert_eq!(host_rule(&format!("{chant}.example")), HostRule::Signal);
+        let brands = "pornhub".repeat(40_000);
+        assert!(title_signal(&brands));
+        assert_eq!(host_rule(&format!("{brands}.example")), KEYWORD);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "{:?}",
+            started.elapsed()
+        );
     }
 }

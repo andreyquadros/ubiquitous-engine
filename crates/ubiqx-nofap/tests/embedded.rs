@@ -140,6 +140,60 @@ fn an_entry_is_kept_at_its_listed_depth() {
     }
 }
 
+/// Section 2 of the review file the build writes: every listed name that sits below a name
+/// rule of a rule file, with that rule. The longest match keeps each of them blocked, with
+/// its subdomains, while the name above it and its other subdomains stay what the rule
+/// file says.
+#[test]
+fn every_listed_name_below_a_rule_file_name_stays_blocked() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/nofap/research/blocklist-top10k-review.txt"
+    );
+    let review = std::fs::read_to_string(path).unwrap();
+    let (_, section) = review
+        .split_once("## 2. Listed names kept below a protected name (")
+        .expect("section 2 of the review file");
+    let (announced, section) = section.split_once(')').unwrap();
+    let section = section.split("\n## ").next().unwrap();
+    let rows: Vec<(&str, &str, &str)> = section
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| {
+            let mut columns = line.split('\t');
+            let listed = columns.next().unwrap();
+            let (file, rule) = columns.next().unwrap().split_once(": ").unwrap();
+            (listed, file, rule)
+        })
+        .collect();
+    assert!(!rows.is_empty());
+    assert_eq!(rows.len(), announced.parse::<usize>().unwrap());
+
+    let m = matcher(&[]);
+    for (listed, file, rule) in rows {
+        assert!(
+            listed.ends_with(&format!(".{rule}")),
+            "{listed} under {rule}"
+        );
+        for host in [
+            listed.to_owned(),
+            format!("www.{listed}"),
+            format!("a.b.{listed}"),
+        ] {
+            assert_eq!(m.verdict(&host), LIST, "{host}");
+        }
+        let above = match file {
+            "mixed.txt" => MIXED,
+            "never-capture.txt" => NEVER_CAPTURE,
+            "never-block.txt" => BUILT_IN,
+            other => panic!("{listed}: unknown rule file {other}"),
+        };
+        for host in [rule.to_owned(), format!("unlisted-sibling.{rule}")] {
+            assert_eq!(m.verdict(&host), above, "{host}");
+        }
+    }
+}
+
 #[test]
 fn block_grade_rules_and_look_alikes_block() {
     let m = matcher(&[]);
@@ -274,10 +328,104 @@ fn ordinary_names_are_not_blocked() {
         "escortskubota.com",
         "escortsgroup.com",
         "ford-escorts.co.uk",
+        // Found by the review of this unit.
+        "menudesign.com",
+        "venudesign.com.br",
+        "nudesign.com.br",
+        "nudestix.com",
+        "chentai.com",
+        "zhentai.com.cn",
+        "computaria.com.br",
+        "disputaria.com",
+        "seminovinhas.com.br",
+        "funeralescorts.com",
+        "pilotcarescorts.com",
+        "securityescorts.co.za",
+        "medicalescorts.org",
+        "motorcycleescorts.com",
+        "xxx.fandom.com",
+        "www.1337xxx.to",
+        "supaporn.net",
+        "kittiporn.com",
+        "vencerapornografia.com.br",
+        "yourbrainonporn.com",
+        "xxxchurch.com",
+        "superbowlxxx.com",
+        "mmxxx.org",
+        "xxxl.de",
+        "tamanhoxxxg.com.br",
+        "exameanal.com.br",
+        "cockermouth.org.uk",
+        "analandia.sp.gov.br",
+        "picapau.com.br",
+        "dickssportinggoods.com",
+        "expertsexchange.com",
+        "adultswim.com",
     ] {
         let verdict = m.verdict(host);
         assert!(!verdict.is_blocked(), "{host}: {verdict:?}");
     }
+    // Two of them by data: the film wiki is a known keyword collision, the torrent index
+    // a mixed platform like its siblings.
+    assert_eq!(m.verdict("xxx.fandom.com"), BUILT_IN);
+    assert_eq!(m.verdict("1337xxx.to"), MIXED);
+}
+
+/// Adult sites the public lists do not name: the Brazilian supplement and the keyword
+/// rules cover them, the first also at the DNS level.
+#[test]
+fn unlisted_adult_sites_are_blocked() {
+    let m = matcher(&[]);
+    for host in [
+        "pornodoido.com.br",
+        "www.xvideoporno.com.br",
+        "fotosporno.blog.br",
+        "videospornosbr.com.br",
+        "privacy.com.br",
+        "contoseroticos.com.br",
+    ] {
+        assert_eq!(m.verdict(host), LIST, "{host}");
+    }
+    assert!(m.in_hosts_tier("pornodoido.com.br"));
+    let core = HashTable::parse(list::embedded_core(), CORE_TAG).unwrap();
+    for host in [
+        "pornoespanol.es",
+        "ruporno.tv",
+        "incestoporno.com",
+        "fansporno.com",
+        "multporn.com",
+        "viralxxx.hair",
+        "www.hdporner.org",
+        "pornhubb.com",
+        "xvide0s.com",
+        "0nlyf4ns.com",
+        "ch4turbate.com",
+        "sp4nkbang.com",
+        "brazzzers.net",
+        "missav01.com",
+        "bucetas.net.br",
+        "putariabrasileira.com",
+        "gostosasnozap.com.br",
+    ] {
+        let expected = if parents_listed(&core, host) {
+            LIST
+        } else {
+            Verdict::Blocked(BlockSource::Keyword)
+        };
+        assert_eq!(m.verdict(host), expected, "{host}");
+    }
+    // The rules themselves are exercised: these are on no list.
+    for host in ["ruporno.tv", "pornhubb.com", "0nlyf4ns.com"] {
+        assert!(!parents_listed(&core, host), "{host}");
+    }
+}
+
+/// Whether the table names `host` or a parent of it.
+fn parents_listed(core: &HashTable<'_>, host: &str) -> bool {
+    let host = host.strip_prefix("www.").unwrap_or(host);
+    ubiqx_nofap::matcher::parents(host)
+        .into_iter()
+        .any(|name| core.contains(name))
 }
 
 #[test]
@@ -299,6 +447,34 @@ fn a_keyword_in_a_path_is_a_signal_never_a_block() {
         m.verdict_for_url("https://www.google.com/search?q=weather"),
         (POPULAR, false)
     );
+}
+
+#[test]
+fn an_address_without_its_scheme_and_a_reader_view_are_judged_by_their_page() {
+    let m = matcher(&[]);
+    // As a browser shows an address: no scheme, and another address in the query.
+    assert_eq!(
+        m.verdict_for_url("www.xvideos.com/out?to=https://www.wikipedia.org/"),
+        (LIST, false)
+    );
+    assert_eq!(
+        m.verdict_for_url("www.wikipedia.org/wiki/Special:Search?go=https://www.xvideos.com/"),
+        (POPULAR, true)
+    );
+    // The reader and source views show the page under another scheme.
+    for url in [
+        "view-source:https://www.xvideos.com/",
+        "about:reader?url=https%3A%2F%2Fwww.xvideos.com%2Fnew%2F1",
+        "read://https_www.xvideos.com/?url=https%3A%2F%2Fwww.xvideos.com%2Fnew%2F1",
+        "chrome-distiller://0a1b_2c3d/?url=https%3A%2F%2Fwww.xvideos.com%2Fnew%2F1",
+    ] {
+        assert_eq!(m.verdict_for_url(url), (LIST, false), "{url}");
+    }
+    assert_eq!(
+        m.verdict_for_url("about:reader?url=https%3A%2F%2Fwww.wikipedia.org%2Fwiki%2FEssex"),
+        (POPULAR, false)
+    );
+    assert_eq!(m.verdict_for_url("about:blank"), (LOCAL, false));
 }
 
 #[test]

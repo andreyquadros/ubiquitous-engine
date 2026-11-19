@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "generated_by": "scripts/nofap/build_blocklist.py",
-  "list_version": 202611192117,
+  "list_version": 202611192145,
   "format": {
     "magic_hex": "554258424c310000",
     "format": 1,
@@ -18,34 +18,34 @@
     "popular_lookup": "the exact normalised host; no parent walk"
   },
   "core": {
-    "count": 239521,
-    "bytes": 1916192,
-    "sha256": "2b6cb3a7007817872fc1546f03d6a732bb1fe0c12822d4e1a576ff5246e79a76"
+    "count": 239525,
+    "bytes": 1916224,
+    "sha256": "ffa4ca9a5b53cc3799ef911a56a1cb586b0808ace8f67403b83f38f03ccb7001"
   },
   "popular": {
-    "count": 94091,
-    "bytes": 752752,
-    "sha256": "4118581bd2fafad47027a761ebaeba01a95d30d889ae42c314ad781364d5a32a"
+    "count": 94089,
+    "bytes": 752736,
+    "sha256": "9d2f5281b6d257e25429946cf07acd9eea658088213d3cfcb7f56680c0ef0fee"
   },
   "hosts_tier": {
     "lines": 20000,
-    "bytes": 329636,
-    "sha256": "2a6c1145dec40052187325cac171f9e368aaede714ba0aa1459041e2da8b1b4a",
+    "bytes": 329654,
+    "sha256": "0266326b905ae51c9df801c212177b2c15f22ade7a9da1567ce85f60ff356aff",
     "lines_by_rank_bucket": {
       "1000": 402,
       "5000": 830,
       "10000": 793,
-      "50000": 4069,
+      "50000": 4073,
       "100000": 3095,
-      "500000": 10811
+      "500000": 10807
     }
   },
   "notice": {
-    "sha256": "908ba3eb9135a5c58be461cd68bbaae2e0b0969d07264fd65dea1195f8fa6a55"
+    "sha256": "e6840189b89235ff657a022b3fe36a7527c9a25988ca2d3ae9d9256740edc31b"
   },
   "rules": {
-    "never-block.txt": 385,
-    "mixed.txt": 102,
+    "never-block.txt": 386,
+    "mixed.txt": 103,
     "never-capture.txt": 272
   },
   "canaries": {
@@ -91,24 +91,24 @@
     }
   ],
   "counts": {
-    "union_before_dedup": 257005,
-    "extra_ptbr_names": 27,
-    "extra_ptbr_not_covered_by_public_lists": 27,
+    "union_before_dedup": 257009,
+    "extra_ptbr_names": 31,
+    "extra_ptbr_not_covered_by_public_lists": 31,
     "removed_by_rule_files": 84,
     "top10k_hosts_covered": 1093,
     "top1k_hosts_covered": 219,
     "crux_hosts": 998744,
     "hosts_tier_skipped_protected": 9,
-    "br_entries": 692
+    "br_entries": 696
   },
   "inputs": {
-    "never-block.txt": "34dee45ce1caf6d1de28797808c11aaf8187d2d9d737322517b84721d4e87750",
-    "mixed.txt": "8cdd55a9d16c39220e3295d37504f4bae7f66794058f87424bf360e1017082ae",
+    "never-block.txt": "1ebf4509d1e4ce78af09f2ee126bfdde600e6908b2de36ae65eb84e733df4ce1",
+    "mixed.txt": "a93746ce5f27a0d13f896745cb8c521d86852625b87620474f12dd0b1dd4e235",
     "never-capture.txt": "89ea50d0b11b4f24305cb382243d3e7b42bd59659dc344eddc0f45d7ff7e463b",
-    "extra-ptbr.txt": "cdbd8dec42268c53ab2a919e870545b98f66e88b2f33e6446ffef0c2170b782e",
+    "extra-ptbr.txt": "44c0a3947e2c421617aeceefdb1959915bf23389f72ed6c1543459026339367f",
     "canary-block.txt": "9919e56c95fb29bbad6c535014b46c2cc5913f231a4f187955371451a7fcc2f5",
     "canary-allow.txt": "4631555f4aa16dc934e9fba2ef7d8e2f9aaeb7e7575d546908fd034cc7b91e14",
-    "sources.lock.json": "70c575a7883baf602e75985dad4e8315bb935bbd4d136c25246796b87cca2dbb"
+    "sources.lock.json": "3339b42c4bfb57f646d0e1dfff202990f2d29eb6658ffce3f4a863df0e16bac2"
   },
   "vector": [
     {

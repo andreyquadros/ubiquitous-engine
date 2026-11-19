@@ -372,10 +372,14 @@ impl Matcher {
 
     /// The verdict for a URL, and whether its path or query carries a block-grade word (a
     /// signal, never a block). A string that is not a URL with a host is `Unknown(Local)`.
-    /// An address typed without its scheme (`example.com/page`) is read as `https`.
+    /// An address typed without its scheme (`example.com/page`) is read as `https`. The
+    /// source view and the reader views of the browsers show a page under their own
+    /// scheme: the verdict is the one of the page they show.
     pub fn verdict_for_url(&self, url: &str) -> (Verdict, bool) {
         let url = url.trim();
-        let parsed = if url.contains("://") {
+        let shown = shown_page(url);
+        let url = shown.as_deref().unwrap_or(url);
+        let parsed = if scheme_end(url).is_some() {
             url::Url::parse(url)
         } else {
             url::Url::parse(&format!("https://{url}"))
@@ -406,6 +410,48 @@ impl Matcher {
         });
         parents(&host).into_iter().any(|name| tier.contains(name))
     }
+}
+
+/// The longest name the DNS carries, and the longest label of one.
+const MAX_NAME_LEN: usize = 253;
+const MAX_LABEL_LEN: usize = 63;
+
+/// Where the `://` of a leading scheme ends (`https://example.com` → 8). A `://` further
+/// in, as in `example.com/go?to=https://other.example`, is part of a path or a query and
+/// not a scheme.
+fn scheme_end(text: &str) -> Option<usize> {
+    let (scheme, _) = text.split_once("://")?;
+    let mut bytes = scheme.bytes();
+    let valid = bytes.next().is_some_and(|b| b.is_ascii_alphabetic())
+        && bytes.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'));
+    valid.then_some(scheme.len() + 3)
+}
+
+/// The address of the page behind a browser's wrapper, when `url` is one: the source view
+/// (`view-source:https://…`) and the reader views of Firefox (`about:reader?url=…`), Edge
+/// (`read://…/?url=…`) and Chrome (`chrome-distiller://…/?url=…`), which show the text and
+/// the pictures of the page named in `url`.
+fn shown_page(url: &str) -> Option<String> {
+    const SOURCE_VIEW: &str = "view-source:";
+    if url
+        .get(..SOURCE_VIEW.len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(SOURCE_VIEW))
+    {
+        return Some(url[SOURCE_VIEW.len()..].to_owned());
+    }
+    let parsed = url::Url::parse(url).ok()?;
+    let reader = match parsed.scheme() {
+        "about" => parsed.path() == "reader",
+        "read" | "chrome-distiller" => true,
+        _ => false,
+    };
+    if !reader {
+        return None;
+    }
+    parsed
+        .query_pairs()
+        .find(|(key, _)| key == "url")
+        .map(|(_, page)| page.into_owned())
 }
 
 /// Names that never leave the machine or the local network.
@@ -471,13 +517,14 @@ fn strip_www(name: &str) -> &str {
     }
 }
 
-/// Normalises a host as rule 1 says; `None` for an empty or unusable string. A scheme, a
-/// path, a query, user-info and a port are dropped, an internationalised name becomes
-/// punycode, and an IP literal comes back in its canonical form without brackets.
+/// Normalises a host as rule 1 says; `None` for an empty or unusable string, and for a
+/// name longer than the DNS carries (253 bytes, 63 a label). A leading scheme, a path, a
+/// query, user-info and a port are dropped, an internationalised name becomes punycode,
+/// and an IP literal comes back in its canonical form without brackets.
 pub fn normalize_host(host: &str) -> Option<String> {
     let mut text = host.trim();
-    if let Some((_, rest)) = text.split_once("://") {
-        text = rest;
+    if let Some(end) = scheme_end(text) {
+        text = &text[end..];
     }
     text = text.split(['/', '?', '#']).next().unwrap_or_default();
     if let Some((_, rest)) = text.rsplit_once('@') {
@@ -506,7 +553,14 @@ pub fn normalize_host(host: &str) -> Option<String> {
     match url::Host::parse(text).ok()? {
         url::Host::Domain(name) => {
             let name = name.trim_end_matches('.');
-            if name.is_empty() || name.split('.').any(str::is_empty) {
+            // A name the DNS cannot carry is not a website (and a verdict hashes the
+            // name once per label, so its length is bounded here).
+            if name.is_empty()
+                || name.len() > MAX_NAME_LEN
+                || name
+                    .split('.')
+                    .any(|label| label.is_empty() || label.len() > MAX_LABEL_LEN)
+            {
                 return None;
             }
             Some(strip_www(name).to_owned())
@@ -876,6 +930,113 @@ mod tests {
                 "{not_a_site:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_scheme_is_read_only_at_the_start_of_an_address() {
+        let m = matcher(&[]);
+        // As a browser shows it, without its scheme, with another address in the query.
+        assert_eq!(
+            m.verdict_for_url("pornhub.com/login?next=https://notlisted.example/"),
+            (LIST, false)
+        );
+        assert_eq!(
+            m.verdict_for_url("www.xvideos.com:443/out?to=http://notlisted.example"),
+            (LIST, false)
+        );
+        // And the other way round: the page is the first host, not the one in the query
+        // (whose name is still a signal).
+        assert_eq!(
+            m.verdict_for_url("notlisted.example/go?to=https://pornhub.com/"),
+            (PLAIN, true)
+        );
+        assert_eq!(
+            m.verdict_for_url("https://notlisted.example/go?to=https://listed.example/"),
+            (PLAIN, false)
+        );
+        assert_eq!(
+            m.verdict("pornhub.com/login?next=https://notlisted.example/"),
+            LIST
+        );
+        assert_eq!(
+            m.verdict("notlisted.example/go?to=https://pornhub.com/"),
+            PLAIN
+        );
+        assert_eq!(
+            normalize_host("example.com/r?u=https://other.example").as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(
+            normalize_host("HTTPS://Example.com/r?u=ftp://other.example").as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(scheme_end("https://example.com"), Some(8));
+        assert_eq!(scheme_end("chrome-extension://abc"), Some(19));
+        assert_eq!(scheme_end("example.com/a?b=c://d"), None);
+        assert_eq!(scheme_end("://example.com"), None);
+        assert_eq!(scheme_end("1http://example.com"), None);
+        assert_eq!(scheme_end("example.com"), None);
+    }
+
+    #[test]
+    fn source_and_reader_views_get_the_verdict_of_the_page_they_show() {
+        let m = matcher(&[]);
+        for url in [
+            "view-source:https://pt.pornhub.com/view",
+            "VIEW-SOURCE:pt.pornhub.com/view",
+            "about:reader?url=https%3A%2F%2Fpt.pornhub.com%2Fview",
+            "read://https_pt.pornhub.com/?url=https%3A%2F%2Fpt.pornhub.com%2Fview",
+            "chrome-distiller://0a1b_2c3d/?title=A+page&url=https%3A%2F%2Fpt.pornhub.com%2Fview",
+        ] {
+            assert_eq!(m.verdict_for_url(url), (LIST, false), "{url}");
+        }
+        // The class and the path signal are the page's too.
+        assert_eq!(
+            m.verdict_for_url("about:reader?url=https%3A%2F%2Fwww.reddit.com%2Fr%2FEarthPorn%2F"),
+            (Verdict::Unknown(HostClass::Mixed), true)
+        );
+        assert_eq!(
+            m.verdict_for_url("about:reader?url=https%3A%2F%2Fnotlisted.example%2Fnews"),
+            (PLAIN, false)
+        );
+        // Anything else under those schemes is still not a site.
+        for url in [
+            "about:reader",
+            "about:reader?url=",
+            "about:blank?url=https%3A%2F%2Fpt.pornhub.com%2F",
+            "about:config",
+            "read://",
+            "view-source:",
+        ] {
+            assert_eq!(m.verdict_for_url(url), (LOCAL, false), "{url:?}");
+        }
+    }
+
+    #[test]
+    fn a_name_the_dns_cannot_carry_is_not_a_site() {
+        let m = matcher(&[]);
+        let label63 = "a".repeat(63);
+        let label64 = "a".repeat(64);
+        assert_eq!(m.verdict(&format!("{label63}.pornhub.com")), LIST);
+        assert_eq!(m.verdict(&format!("{label64}.pornhub.com")), LOCAL);
+        assert_eq!(normalize_host(&format!("{label64}.example")), None);
+        // 253 bytes pass, 254 do not.
+        let name253 = format!("{}.pornhub.com", ["a"; 121].join("."));
+        assert_eq!(name253.len(), 253);
+        assert_eq!(m.verdict(&name253), LIST);
+        assert_eq!(m.verdict(&format!("b{name253}")), LOCAL);
+        // A verdict hashes a name once per label: a name of a hundred thousand labels
+        // must be refused, not hashed a hundred thousand times.
+        let started = std::time::Instant::now();
+        let endless = format!("{}pornhub.com", "x.".repeat(100_000));
+        assert_eq!(m.verdict(&endless), LOCAL);
+        assert_eq!(m.verdict_for_url(&format!("https://{endless}/")).0, LOCAL);
+        assert!(!m.in_hosts_tier(&endless));
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
     }
 
     #[test]
