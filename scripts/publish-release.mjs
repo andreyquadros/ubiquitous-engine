@@ -1,5 +1,18 @@
 #!/usr/bin/env node
-// Publishes the rolling "continuous" GitHub release the desktop app polls for updates.
+// Publishes the rolling GitHub release a desktop app polls for updates.
+//
+// Two products are built from this workspace (crates/ubiqx-core/src/product.rs), each with its own
+// rolling release, and `--product` says which one this call publishes:
+//
+//   --product ubiqx (the default)  tag "continuous",        files ubiqX-<os>-<arch>.<ext>
+//   --product shield               tag "shield-continuous", files ubiqx-shield-<os>-<arch>.<ext>
+//
+// The standalone app is published under its machine id, never under its display name. The two never
+// mix: a file that carries the other product's name is refused, a release whose latest.json names the
+// other product is left alone, and the app itself ignores a feed that names another product
+// (`ubiqx_core::update::feed_matches_product`). The rows of the two products are `PRODUCTS` in
+// scripts/app-version.mjs. Everything below describes ubiqX; the standalone app is the same with its
+// own prefix and tag.
 //
 // Each CI build of a commit calls this script with the installers it just produced (one or several
 // --asset, platform and kind inferred from the file name). The script moves the release tag to the
@@ -43,18 +56,17 @@ import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'n
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { DEFAULT_PRODUCT, PRODUCTS, resolveProduct } from './app-version.mjs';
+
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, '..');
 
+// What differs between the two products (tag, release name, file prefix, feed name, the DMG a bare call
+// publishes) is in `PRODUCTS`; these are the same for both.
 const DEFAULTS = Object.freeze({
-  tag: 'continuous',
-  /** Used only when neither --asset nor --dmg is given (the historical macOS-only call). */
-  dmg: 'target/release/bundle/dmg/*.dmg',
   out: 'target/release/bundle',
   api: 'https://api.github.com',
   uploads: 'https://uploads.github.com',
-  releaseName: 'ubiqX (build contínuo)',
-  product: 'ubiqX',
   feedSchema: 1,
   notesMaxLines: 40,
   retries: 3,
@@ -63,12 +75,18 @@ const DEFAULTS = Object.freeze({
 
 export const USAGE = `Uso: node scripts/publish-release.mjs [opções]
 
-Publica (ou atualiza) a release contínua do ubiqX no GitHub com os instaladores recém-compilados e o
-latest.json que o app lê para avisar que há uma atualização.
+Publica (ou atualiza) a release contínua de um dos dois produtos no GitHub com os instaladores
+recém-compilados e o latest.json que o app lê para avisar que há uma atualização.
 
 Opções:
+  --product <ubiqx|shield>
+                        qual produto publicar (padrão: ${DEFAULT_PRODUCT}). ubiqx: tag "${PRODUCTS.ubiqx.tag}",
+                        arquivos ${PRODUCTS.ubiqx.assetPrefix}-<os>-<arch>.<ext>. shield (o app separado): tag
+                        "${PRODUCTS.shield.tag}", arquivos ${PRODUCTS.shield.assetPrefix}-<os>-<arch>.<ext>. Um arquivo
+                        com o nome do outro produto é recusado, e uma release cujo latest.json é do outro
+                        produto não é tocada
   --repo <owner/repo>   repositório (padrão: GITHUB_REPOSITORY, CM_REPO_SLUG ou o remote origin)
-  --tag <tag>           tag da release rolante (padrão: ${DEFAULTS.tag})
+  --tag <tag>           tag da release rolante (padrão: a do produto)
   --asset <caminho|glob>
                         instalador a publicar; repita para vários. Plataforma e tipo vêm do nome do
                         arquivo: ubiqX-macos-<arch>.dmg, ubiqX-macos-<arch>.app.zip,
@@ -77,11 +95,12 @@ Opções:
                         extensão também servem: o tipo vem da extensão e a arquitetura de --arch).
                         Artefatos de atualização (.app.tar.gz, -setup.nsis.zip, .AppImage.tar.gz) vão
                         para o updater.json e exigem o <arquivo>.sig que o Tauri grava ao lado
-  --dmg <caminho|glob>  atalho para --asset de um .dmg (padrão, sem --asset: ${DEFAULTS.dmg})
+  --dmg <caminho|glob>  atalho para --asset de um .dmg (padrão do ubiqx, sem --asset:
+                        ${PRODUCTS.ubiqx.defaultDmg}; o shield não tem padrão)
   --app-zip <caminho>   atalho para --asset de um .app.zip feito com ditto
   --out <dir>           onde escrever latest.json e updater.json (padrão: ${DEFAULTS.out})
   --arch <arch>         aarch64 ou x86_64 para nomes sem arquitetura (padrão: a desta máquina)
-  --version <x.y.z>     versão do produto (padrão: UBIQX_VERSION, depois a de tauri.conf.json)
+  --version <x.y.z>     versão do produto (padrão: UBIQX_VERSION, depois a do tauri.conf.json do produto)
   --api <url>           base da API do GitHub (padrão: ${DEFAULTS.api})
   --uploads <url>       base de upload de assets (padrão: ${DEFAULTS.uploads})
   --strict              falha (exit 1) quando GITHUB_TOKEN está ausente, em vez de pular
@@ -100,8 +119,8 @@ Ambiente:
 // Arguments and environment
 
 export function parseArgs(argv) {
-  const opts = { ...DEFAULTS, dmg: null, appZip: null, assets: [], repo: null, arch: null, version: null, strict: false, help: false, root: REPO_ROOT };
-  const takesValue = { '--repo': 'repo', '--tag': 'tag', '--dmg': 'dmg', '--app-zip': 'appZip', '--asset': 'assets', '--out': 'out', '--arch': 'arch', '--version': 'version', '--api': 'api', '--uploads': 'uploads', '--root': 'root' };
+  const opts = { ...DEFAULTS, product: DEFAULT_PRODUCT, tag: null, dmg: null, appZip: null, assets: [], repo: null, arch: null, version: null, strict: false, help: false, root: REPO_ROOT };
+  const takesValue = { '--product': 'product', '--repo': 'repo', '--tag': 'tag', '--dmg': 'dmg', '--app-zip': 'appZip', '--asset': 'assets', '--out': 'out', '--arch': 'arch', '--version': 'version', '--api': 'api', '--uploads': 'uploads', '--root': 'root' };
   const set = (key, value) => {
     if (key === 'assets') opts.assets.push(value);
     else opts[key] = value;
@@ -127,6 +146,13 @@ export function parseArgs(argv) {
   }
   opts.api = opts.api.replace(/\/+$/, '');
   opts.uploads = opts.uploads.replace(/\/+$/, '');
+  // An unknown product is a mistake in the call, like an unknown option. The tag follows the product
+  // unless the call names one, and never names the other product's release: installed apps of that
+  // product update themselves from it.
+  const product = resolveProduct(opts.product);
+  opts.tag ??= product.tag;
+  const owner = Object.values(PRODUCTS).find((p) => p.id !== product.id && p.tag === opts.tag);
+  if (owner) throw new Error(`A tag "${opts.tag}" é a release do produto ${owner.id}; --product ${product.id} não publica nela`);
   return opts;
 }
 
@@ -188,17 +214,17 @@ export function parseRepo(value) {
 }
 
 /**
- * The version both feeds carry. tauri.conf.json comes first because that is the version the app was built
- * with — the one Settings shows and the one tauri-plugin-updater compares — and CI rewrites it per run
- * (`node scripts/app-version.mjs --write`, see scripts/app-version.mjs). `--version` and `UBIQX_VERSION`
- * override it; `[workspace.package]` in Cargo.toml is the last resort.
+ * The version both feeds carry. The product's tauri.conf.json comes first because that is the version the
+ * app was built with — the one Settings shows and the one tauri-plugin-updater compares — and CI rewrites
+ * it per run (`node scripts/app-version.mjs --write`, see scripts/app-version.mjs). `--version` and
+ * `UBIQX_VERSION` override it; `[workspace.package]` in Cargo.toml is the last resort.
  */
-export function productVersion(opts, root, env = {}) {
+export function productVersion(opts, root, env = {}, product = PRODUCTS[DEFAULT_PRODUCT]) {
   if (opts.version) return opts.version;
   const fromEnv = String(env.UBIQX_VERSION ?? '').trim();
   if (fromEnv) return fromEnv;
   try {
-    const conf = JSON.parse(readFileSync(path.join(root, 'apps/desktop/src-tauri/tauri.conf.json'), 'utf8'));
+    const conf = JSON.parse(readFileSync(path.join(root, product.tauriConf), 'utf8'));
     if (conf.version) return String(conf.version);
   } catch { /* fall through */ }
   try {
@@ -253,36 +279,43 @@ export function resolveGlob(pattern, root) {
  * value crates/ubiqx-core/src/update.rs::current_target() produces), `os` the word in the stable asset name,
  * `rank` decides which kind becomes the platform's primary `url` when two are published (lower wins; the
  * other goes to `alternates`). `app_zip` is not an installer: it rides along as `app_zip_url` of the DMG.
+ * `stableName(arch, prefix)` is the published file name; the prefix is the product's (`ubiqX` unless given).
  */
+const UBIQX_PREFIX = PRODUCTS.ubiqx.assetPrefix;
 export const ASSET_KINDS = Object.freeze([
-  { kind: 'app_zip', os: 'macos', platform: 'darwin', test: /\.app\.zip$/i, rank: 9, stableName: (arch) => `ubiqX-macos-${arch}.app.zip` },
-  { kind: 'dmg', os: 'macos', platform: 'darwin', test: /\.dmg$/i, rank: 0, stableName: (arch) => `ubiqX-macos-${arch}.dmg` },
-  { kind: 'exe', os: 'windows', platform: 'windows', test: /\.exe$/i, rank: 0, stableName: (arch) => `ubiqX-windows-${arch}-setup.exe` },
-  { kind: 'msi', os: 'windows', platform: 'windows', test: /\.msi$/i, rank: 1, stableName: (arch) => `ubiqX-windows-${arch}.msi` },
-  { kind: 'appimage', os: 'linux', platform: 'linux', test: /\.appimage$/i, rank: 0, stableName: (arch) => `ubiqX-linux-${arch}.AppImage` },
-  { kind: 'deb', os: 'linux', platform: 'linux', test: /\.deb$/i, rank: 1, stableName: (arch) => `ubiqX-linux-${arch}.deb` },
+  { kind: 'app_zip', os: 'macos', platform: 'darwin', test: /\.app\.zip$/i, rank: 9, stableName: (arch, prefix = UBIQX_PREFIX) => `${prefix}-macos-${arch}.app.zip` },
+  { kind: 'dmg', os: 'macos', platform: 'darwin', test: /\.dmg$/i, rank: 0, stableName: (arch, prefix = UBIQX_PREFIX) => `${prefix}-macos-${arch}.dmg` },
+  { kind: 'exe', os: 'windows', platform: 'windows', test: /\.exe$/i, rank: 0, stableName: (arch, prefix = UBIQX_PREFIX) => `${prefix}-windows-${arch}-setup.exe` },
+  { kind: 'msi', os: 'windows', platform: 'windows', test: /\.msi$/i, rank: 1, stableName: (arch, prefix = UBIQX_PREFIX) => `${prefix}-windows-${arch}.msi` },
+  { kind: 'appimage', os: 'linux', platform: 'linux', test: /\.appimage$/i, rank: 0, stableName: (arch, prefix = UBIQX_PREFIX) => `${prefix}-linux-${arch}.AppImage` },
+  { kind: 'deb', os: 'linux', platform: 'linux', test: /\.deb$/i, rank: 1, stableName: (arch, prefix = UBIQX_PREFIX) => `${prefix}-linux-${arch}.deb` },
   // Updater artifacts (`bundle.createUpdaterArtifacts: "v1Compatible"`): what tauri-plugin-updater downloads
   // and installs by itself. They never appear in latest.json — they are listed in updater.json, each with the
   // minisign signature Tauri wrote next to the file (`<arquivo>.sig`).
-  { kind: 'app_tar_gz', updater: true, os: 'macos', platform: 'darwin', test: /\.app\.tar\.gz$/i, rank: 99, stableName: (arch) => `ubiqX-macos-${arch}.app.tar.gz` },
-  { kind: 'nsis_zip', updater: true, os: 'windows', platform: 'windows', test: /\.nsis\.zip$/i, rank: 99, stableName: (arch) => `ubiqX-windows-${arch}-setup.nsis.zip` },
-  { kind: 'appimage_tar_gz', updater: true, os: 'linux', platform: 'linux', test: /\.AppImage\.tar\.gz$/i, rank: 99, stableName: (arch) => `ubiqX-linux-${arch}.AppImage.tar.gz` },
+  { kind: 'app_tar_gz', updater: true, os: 'macos', platform: 'darwin', test: /\.app\.tar\.gz$/i, rank: 99, stableName: (arch, prefix = UBIQX_PREFIX) => `${prefix}-macos-${arch}.app.tar.gz` },
+  { kind: 'nsis_zip', updater: true, os: 'windows', platform: 'windows', test: /\.nsis\.zip$/i, rank: 99, stableName: (arch, prefix = UBIQX_PREFIX) => `${prefix}-windows-${arch}-setup.nsis.zip` },
+  { kind: 'appimage_tar_gz', updater: true, os: 'linux', platform: 'linux', test: /\.AppImage\.tar\.gz$/i, rank: 99, stableName: (arch, prefix = UBIQX_PREFIX) => `${prefix}-linux-${arch}.AppImage.tar.gz` },
 ]);
 
-const STABLE_NAME = /^ubiqX-(macos|windows|linux)-(aarch64|x86_64)(?:-setup)?\.(?:app\.tar\.gz|AppImage\.tar\.gz|nsis\.zip|app\.zip|dmg|msi|exe|AppImage|deb)$/i;
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** `<prefix>-<os>-<arch>[-setup].<ext>`: the names this script publishes under, for one product. */
+const stableNamePattern = (prefix) =>
+  new RegExp(`^${escapeRegExp(prefix)}-(macos|windows|linux)-(aarch64|x86_64)(?:-setup)?\\.(?:app\\.tar\\.gz|AppImage\\.tar\\.gz|nsis\\.zip|app\\.zip|dmg|msi|exe|AppImage|deb)$`, 'i');
+const STABLE_NAME = Object.freeze(Object.fromEntries(Object.values(PRODUCTS).map((p) => [p.id, stableNamePattern(p.assetPrefix)])));
 const ARCH_TOKEN = /(?:^|[-_.])(aarch64|arm64|x86_64|x64|amd64)(?=[-_.]|$)/i;
 
 /**
  * What a file name says about an asset: kind (by extension), os/platform and arch. The arch comes from the
  * stable name (`ubiqX-<os>-<arch>…`), else from a token Tauri puts in its output names (`ubiqX_0.1.0_aarch64.dmg`,
  * `ubiqX_0.1.0_x64_en-US.msi`, `ubiqX_0.1.0_amd64.AppImage`), else from `fallbackArch`. Returns null for an
- * extension the feed does not know.
+ * extension the feed does not know. `product` (a row of `PRODUCTS`, ubiqX unless given) decides the name the
+ * file is published under; whether the file is that product's at all is [`productOf`]'s question.
  */
-export function inferAsset(filePath, fallbackArch) {
+export function inferAsset(filePath, fallbackArch, product = PRODUCTS[DEFAULT_PRODUCT]) {
   const base = path.basename(filePath);
   const rule = ASSET_KINDS.find((r) => r.test.test(base));
   if (!rule) return null;
-  const stable = base.match(STABLE_NAME);
+  const stable = base.match(STABLE_NAME[product.id]);
   let arch = null;
   if (stable) {
     if (stable[1].toLowerCase() !== rule.os) return null; // "ubiqX-linux-x86_64.msi" is a mistake, not an asset
@@ -292,7 +325,43 @@ export function inferAsset(filePath, fallbackArch) {
     arch = token ? normalizeArch(token[1].toLowerCase()) : normalizeArch(fallbackArch);
   }
   if (!arch) return null;
-  return { path: filePath, kind: rule.kind, os: rule.os, platformKey: `${rule.platform}-${arch}`, arch, name: rule.stableName(arch), rank: rule.rank, updater: rule.updater === true };
+  return { path: filePath, kind: rule.kind, os: rule.os, platformKey: `${rule.platform}-${arch}`, arch, name: rule.stableName(arch, product.assetPrefix), rank: rule.rank, updater: rule.updater === true };
+}
+
+/**
+ * The words a file name of each product starts with: its published prefix, and the `productName` and
+ * `mainBinaryName` of its tauri.conf.json, which is how Tauri names what it builds (`ubiqX_0.1.0_x64.dmg`,
+ * `<display name>.app.tar.gz`). Read from the checkout, so a renamed product is still recognised; a
+ * configuration that cannot be read leaves the published prefix alone.
+ */
+export function productStems(root) {
+  const stems = {};
+  for (const product of Object.values(PRODUCTS)) {
+    const words = [product.assetPrefix];
+    try {
+      const conf = JSON.parse(readFileSync(path.join(root, product.tauriConf), 'utf8'));
+      for (const word of [conf.productName, conf.mainBinaryName]) if (typeof word === 'string' && word.trim()) words.push(word.trim());
+    } catch { /* the published prefix is enough */ }
+    stems[product.id] = [...new Set(words.map((w) => w.toLowerCase()))];
+  }
+  return stems;
+}
+
+/**
+ * Which product a file name belongs to, or null when it names neither: the product with the longest stem
+ * the name starts with, the stem being followed by `-`, `_` or `.` (so `ubiqx-shield-linux-x86_64.deb` is
+ * the standalone app's although it also starts with `ubiqx-`). Letter case does not matter: Tauri lowers
+ * some of its output names.
+ */
+export function productOf(fileName, stems) {
+  const base = path.basename(fileName).toLowerCase();
+  let best = null;
+  for (const [id, words] of Object.entries(stems)) {
+    for (const word of words) {
+      if (base.startsWith(word) && '-_.'.includes(base.charAt(word.length)) && (!best || word.length > best.word.length)) best = { id, word };
+    }
+  }
+  return best?.id ?? null;
 }
 
 /** Feed `platforms` for a list of inferred assets (with `size`): one entry per platform key, sorted by key. */
@@ -322,7 +391,7 @@ export function buildPlatforms(assets, download) {
   return platforms;
 }
 
-export function makeFeed({ owner, repo, tag, version, build, assets, publishedAt, notes, product = DEFAULTS.product }) {
+export function makeFeed({ owner, repo, tag, version, build, assets, publishedAt, notes, product = PRODUCTS[DEFAULT_PRODUCT].feedProduct }) {
   const download = `https://github.com/${owner}/${repo}/releases/download/${tag}`;
   return {
     schema: DEFAULTS.feedSchema,
@@ -348,6 +417,16 @@ export function compareFeeds(existing, ours) {
   return theirs === ours.build.epoch ? 'same' : 'newer';
 }
 
+/**
+ * Whether a published latest.json is `product`'s. The same rule as `ubiqx_core::update::feed_matches_product`:
+ * the exact name, and a feed that names no product (written before the field existed) is ubiqX's.
+ */
+export function feedBelongsTo(feed, product) {
+  const named = typeof feed?.product === 'string' ? feed.product.trim() : '';
+  if (named === '') return product.id === PRODUCTS.ubiqx.id;
+  return named === product.feedProduct;
+}
+
 export function mergeFeeds(existing, ours) {
   const platforms = { ...(existing?.platforms ?? {}) };
   for (const [key, entry] of Object.entries(ours.platforms)) platforms[key] = entry;
@@ -356,8 +435,8 @@ export function mergeFeeds(existing, ours) {
   return { ...ours, platforms: sorted };
 }
 
-export const dmgAssetName = (arch) => `ubiqX-macos-${arch}.dmg`;
-export const appZipAssetName = (arch) => `ubiqX-macos-${arch}.app.zip`;
+export const dmgAssetName = (arch, product = PRODUCTS[DEFAULT_PRODUCT]) => `${product.assetPrefix}-macos-${arch}.dmg`;
+export const appZipAssetName = (arch, product = PRODUCTS[DEFAULT_PRODUCT]) => `${product.assetPrefix}-macos-${arch}.app.zip`;
 export const FEED_ASSET_NAME = 'latest.json';
 
 // ---------------------------------------------------------------------------------------------
@@ -365,7 +444,8 @@ export const FEED_ASSET_NAME = 'latest.json';
 //
 // The second feed published next to latest.json, in the shape tauri-plugin-updater expects
 // (https://v2.tauri.app/plugin/updater/#static-json-file). It is what `plugins.updater.endpoints` in
-// apps/desktop/src-tauri/tauri.conf.json points at, and it lists only the updater artifacts:
+// the product's tauri.conf.json points at, and it lists only the updater artifacts. The plugin's format has
+// no product field: what keeps the two products apart here is that each endpoint names its own tag.
 //
 //   { "version": "0.1.128", "notes": "…", "pub_date": "…Z",
 //     "platforms": { "darwin-aarch64": { "signature": "<minisign>", "url": "https://…app.tar.gz" }, … } }
@@ -498,6 +578,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
     return 0;
   }
 
+  const product = resolveProduct(opts.product);
   const token = env.GITHUB_TOKEN;
   if (!token) {
     const msg = 'Publicação pulada: GITHUB_TOKEN não definido. Sem o token o build continua válido, só não vira uma atualização para quem já usa o app.';
@@ -522,7 +603,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
   const arch = normalizeArch(opts.arch || env.UBIQX_BUILD_ARCH || process.arch);
   let assets;
   try {
-    assets = collectAssets(opts, root, arch);
+    assets = collectAssets(opts, root, arch, product);
   } catch (err) {
     error(err.message);
     return 1;
@@ -530,30 +611,35 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
 
   const build = buildInfo(env, root);
   const sha = fullSha(env, root, build.sha);
-  const version = productVersion(opts, root, env);
+  const version = productVersion(opts, root, env, product);
   const notes = commitNotes(root);
   const publishedAt = now().toISOString().replace(/\.\d{3}Z$/, 'Z');
   let feed;
   let updaterFeed;
   try {
-    feed = makeFeed({ owner, repo, tag: opts.tag, version, build, assets, publishedAt, notes });
+    feed = makeFeed({ owner, repo, tag: opts.tag, version, build, assets, publishedAt, notes, product: product.feedProduct });
     updaterFeed = makeUpdaterFeed({ owner, repo, tag: opts.tag, version, assets, publishedAt, notes });
   } catch (err) {
     error(err.message);
     return 1;
   }
 
-  log(`ubiqX ${version} build ${build.number} (${build.sha}${build.branch ? `, ${build.branch}` : ''}, epoch ${build.epoch}) -> ${owner}/${repo} tag "${opts.tag}"`);
+  log(`${product.label} ${version} build ${build.number} (${build.sha}${build.branch ? `, ${build.branch}` : ''}, epoch ${build.epoch}) -> ${owner}/${repo} tag "${opts.tag}"`);
   for (const a of assets) log(`  ${a.platformKey} ${a.kind}: ${path.relative(root, a.path) || a.path} -> ${a.name} (${a.size} bytes)`);
 
   const gh = createClient({ token, api: opts.api, uploads: opts.uploads, log, retryDelayMs: retryDelayMs ?? Number(env.UBIQX_PUBLISH_RETRY_MS ?? DEFAULTS.retryDelayMs) });
 
   let release = await gh.getReleaseByTag(owner, repo, opts.tag);
-  const releaseData = { name: DEFAULTS.releaseName, body: notes, target_commitish: sha };
+  const releaseData = { name: product.releaseName, body: notes, target_commitish: sha };
 
   if (release) {
     const existingFeed = release.assets?.find((a) => a.name === FEED_ASSET_NAME);
     const existing = existingFeed ? await readFeed(gh, owner, repo, existingFeed.id, log) : null;
+    if (existing && !feedBelongsTo(existing, product)) {
+      // Installed apps of the other product update themselves from this release. Nothing was written yet.
+      error(`A release "${opts.tag}" traz o latest.json de outro produto ("${String(existing.product ?? '').trim() || PRODUCTS.ubiqx.feedProduct}"), não o do ${product.label}. Nada foi alterado: confira --product e --tag.`);
+      return 1;
+    }
     const relation = compareFeeds(existing, feed);
     if (relation === 'older') {
       log(`Nada a fazer: a release "${opts.tag}" já traz um build mais novo (epoch ${existing.build.epoch} > ${build.epoch}). Este build fica só como artefato.`);
@@ -637,15 +723,21 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
 
 /**
  * The files to publish, inferred from --asset (repeatable), --dmg and --app-zip. Without any of them the
- * historical default (the newest DMG under target/release/bundle/dmg) applies. Throws when a file is
- * missing, has an unknown extension or two files map to the same stable name.
+ * historical default of ubiqX applies (its newest DMG under target/release/bundle/dmg; both products
+ * bundle into that directory, so the default names ubiqX's files); the standalone app has no such default.
+ * Throws when a file is missing, has an unknown extension, carries the other product's name, or two files
+ * map to the same stable name.
  */
-export function collectAssets(opts, root, arch) {
+export function collectAssets(opts, root, arch, product = PRODUCTS[DEFAULT_PRODUCT]) {
   const specs = [...opts.assets.map((p) => ({ pattern: p, what: 'asset' }))];
   if (opts.dmg) specs.push({ pattern: opts.dmg, what: 'dmg' });
   if (opts.appZip) specs.push({ pattern: opts.appZip, what: 'app.zip' });
-  if (specs.length === 0) specs.push({ pattern: DEFAULTS.dmg, what: 'dmg' });
+  if (specs.length === 0) {
+    if (!product.defaultDmg) throw new Error(`Nenhum instalador informado: --product ${product.id} precisa de --asset (ou --dmg)`);
+    specs.push({ pattern: product.defaultDmg, what: 'dmg' });
+  }
 
+  const stems = productStems(root);
   const assets = [];
   for (const { pattern, what } of specs) {
     const file = resolveGlob(pattern, root);
@@ -653,7 +745,10 @@ export function collectAssets(opts, root, arch) {
       const hint = what === 'dmg' ? ' (compile com "pnpm tauri build --bundles app,dmg" antes de publicar)' : '';
       throw new Error(`${what === 'dmg' ? 'DMG' : what === 'app.zip' ? 'Zip do app' : 'Asset'} não encontrado: ${pattern}${hint}`);
     }
-    const inferred = inferAsset(file, arch);
+    // A file of the other product would be renamed and offered to this product's users as their update.
+    const owner = productOf(file, stems);
+    if (owner && owner !== product.id) throw new Error(`${path.basename(file)} é do produto ${owner}, não do ${product.id}: publique-o com --product ${owner}`);
+    const inferred = inferAsset(file, arch, product);
     if (!inferred) throw new Error(`Não sei publicar ${path.basename(file)}: use .dmg, .app.zip, .msi, -setup.exe, .AppImage ou .deb`);
     if (what === 'dmg' && inferred.kind !== 'dmg') throw new Error(`--dmg espera um .dmg, recebeu ${path.basename(file)}`);
     if (what === 'app.zip' && inferred.kind !== 'app_zip') throw new Error(`--app-zip espera um .app.zip, recebeu ${path.basename(file)}`);

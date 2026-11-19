@@ -1,8 +1,9 @@
 // Tests for scripts/publish-release.mjs against an in-process mock of the GitHub API.
 // Run with: node --test scripts/publish-release.test.mjs
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -11,7 +12,9 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import {
   buildPlatforms,
   buildUpdaterPlatforms,
+  collectAssets,
   compareFeeds,
+  feedBelongsTo,
   inferAsset,
   main,
   makeFeed,
@@ -20,15 +23,21 @@ import {
   mergeUpdaterFeeds,
   parseArgs,
   parseRepo,
+  productOf,
+  productStems,
   productVersion,
   trimNotes,
   resolveGlob,
   UPDATER_ASSET_NAME,
 } from './publish-release.mjs';
-import { appVersion, baseVersion, buildNumber, main as appVersionMain, writeAppVersion } from './app-version.mjs';
+import { appVersion, baseVersion, buildNumber, main as appVersionMain, PRODUCTS, resolveProduct, writeAppVersion } from './app-version.mjs';
 
 const OWNER = 'andreyquadros';
 const REPO = 'ubiquitous-engine';
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const readRepoFile = (relative) => readFileSync(path.join(REPO_ROOT, relative), 'utf8');
+/** The standalone app's display name, as its shell is configured today (Tauri names its output after it). */
+const SHIELD_DISPLAY = JSON.parse(readRepoFile(PRODUCTS.shield.tauriConf)).productName;
 
 // ---------------------------------------------------------------------------------------------
 // Mock GitHub: the routes the script uses, with a request log to assert on.
@@ -156,15 +165,16 @@ function createMockGitHub() {
       state.log = [];
       state.failNext = [];
     },
-    seedRelease({ feedEpoch, assets = ['ubiqX-macos-aarch64.dmg', 'ubiqX-macos-aarch64.app.zip'], platforms = {} }) {
-      const r = { id: state.nextId++, tag_name: 'continuous', name: 'old', body: 'old notes', target_commitish: 'a'.repeat(40), assets: [] };
+    // `product: null` seeds a feed without the field, as feeds were written before it existed.
+    seedRelease({ feedEpoch, assets = ['ubiqX-macos-aarch64.dmg', 'ubiqX-macos-aarch64.app.zip'], platforms = {}, tag = 'continuous', product = 'ubiqX' }) {
+      const r = { id: state.nextId++, tag_name: tag, name: 'old', body: 'old notes', target_commitish: 'a'.repeat(40), assets: [] };
       for (const name of assets) r.assets.push({ id: state.nextId++, name, content: Buffer.from('old'), contentType: 'application/octet-stream' });
       if (feedEpoch !== undefined) {
-        const feed = { schema: 1, product: 'ubiqX', version: '0.1.0', build: { epoch: feedEpoch, number: 1, sha: 'aaaaaaa', branch: 'main' }, platforms };
+        const feed = { schema: 1, ...(product === null ? {} : { product }), version: '0.1.0', build: { epoch: feedEpoch, number: 1, sha: 'aaaaaaa', branch: 'main' }, platforms };
         r.assets.push({ id: state.nextId++, name: 'latest.json', content: Buffer.from(JSON.stringify(feed)), contentType: 'application/json' });
       }
       state.releases.push(r);
-      state.refs['refs/tags/continuous'] = r.target_commitish;
+      state.refs[`refs/tags/${tag}`] = r.target_commitish;
       return r;
     },
   };
@@ -575,6 +585,208 @@ describe('publish-release', () => {
     assert.equal(code, 0);
     assert.match(lines.join('\n'), /^Uso: node scripts\/publish-release\.mjs/);
   });
+
+  // -------------------------------------------------------------------------------------------
+  // The second product: the standalone app, published under its machine id to its own release.
+
+  /** The files a build of the standalone app leaves behind, named as Tauri names them, in their own folder. */
+  function shieldBuild() {
+    const dir = path.join(work, 'shield');
+    mkdirSync(dir, { recursive: true });
+    const files = {
+      dmg: [`${SHIELD_DISPLAY}_0.1.0_aarch64.dmg`, 2100],
+      appZip: ['ubiqx-shield-macos-aarch64.app.zip', 600],
+      macUpdater: [`${SHIELD_DISPLAY}.app.tar.gz`, 5300],
+      exe: [`${SHIELD_DISPLAY}_0.1.0_x64-setup.exe`, 3300],
+      msi: [`${SHIELD_DISPLAY}_0.1.0_x64_pt-BR.msi`, 3400],
+      appImage: [`${SHIELD_DISPLAY}_0.1.0_amd64.AppImage`, 4300],
+      deb: ['ubiqx-shield-linux-x86_64.deb', 4400],
+    };
+    const paths = {};
+    for (const [key, [name, size]] of Object.entries(files)) {
+      paths[key] = path.join(dir, name);
+      writeFileSync(paths[key], Buffer.alloc(size, 11));
+    }
+    writeFileSync(`${paths.macUpdater}.sig`, 'c2hpZWxkIG1hYw==\n');
+    return paths;
+  }
+  const shieldArgv = (files, ...extra) => ['--product', 'shield', ...Object.values(files).flatMap((f) => ['--asset', f]), '--out', path.join(work, 'out-shield'), '--arch', 'aarch64', '--api', api, '--uploads', `${api}/uploads`, ...extra];
+  /** Everything the mock holds about one release, to compare before and after. */
+  const snapshot = (tag) => {
+    const r = gh.state.releases.find((x) => x.tag_name === tag);
+    return JSON.stringify({ name: r.name, body: r.body, target: r.target_commitish, ref: gh.state.refs[`refs/tags/${tag}`], assets: r.assets.map((a) => [a.name, a.content.toString('base64')]) });
+  };
+
+  test('--product shield publishes the standalone app to its own release, under the machine id', async () => {
+    // ubiqX is already published: nothing of it may move.
+    assert.equal(await run(argv()), 0, lines.join('\n'));
+    const ubiqxBefore = snapshot('continuous');
+    gh.state.log = [];
+    lines = [];
+
+    const files = shieldBuild();
+    const code = await run(shieldArgv(files));
+    assert.equal(code, 0, lines.join('\n'));
+
+    assert.deepEqual(gh.state.releases.map((r) => r.tag_name), ['continuous', 'shield-continuous']);
+    const release = gh.state.releases[1];
+    assert.equal(release.name, 'ubiqx-shield (build contínuo)');
+    assert.equal(gh.state.refs['refs/tags/shield-continuous'], release.target_commitish);
+    assert.deepEqual(release.assets.map((a) => a.name), [
+      'ubiqx-shield-macos-aarch64.dmg',
+      'ubiqx-shield-macos-aarch64.app.zip',
+      'ubiqx-shield-macos-aarch64.app.tar.gz',
+      'ubiqx-shield-windows-x86_64-setup.exe',
+      'ubiqx-shield-windows-x86_64.msi',
+      'ubiqx-shield-linux-x86_64.AppImage',
+      'ubiqx-shield-linux-x86_64.deb',
+      'ubiqx-shield-macos-aarch64.app.tar.gz.sig',
+      'latest.json',
+      UPDATER_ASSET_NAME,
+    ]);
+    assert.equal(release.assets[0].content.length, 2100, 'the DMG Tauri named after the display name is the one uploaded');
+
+    const download = `https://github.com/${OWNER}/${REPO}/releases/download/shield-continuous`;
+    const feed = JSON.parse(readFileSync(path.join(work, 'out-shield', 'latest.json'), 'utf8'));
+    assert.equal(feed.schema, 1);
+    assert.equal(feed.product, 'ubiqx-shield', 'the name the standalone app accepts a feed under');
+    assert.equal(feed.version, '0.1.0');
+    assert.equal(feed.release_url, `https://github.com/${OWNER}/${REPO}/releases/tag/shield-continuous`);
+    assert.deepEqual(feed.platforms, {
+      'darwin-aarch64': { url: `${download}/ubiqx-shield-macos-aarch64.dmg`, kind: 'dmg', size: 2100, app_zip_url: `${download}/ubiqx-shield-macos-aarch64.app.zip` },
+      'linux-x86_64': {
+        url: `${download}/ubiqx-shield-linux-x86_64.AppImage`,
+        kind: 'appimage',
+        size: 4300,
+        app_zip_url: null,
+        alternates: [{ url: `${download}/ubiqx-shield-linux-x86_64.deb`, kind: 'deb', size: 4400 }],
+      },
+      'windows-x86_64': {
+        url: `${download}/ubiqx-shield-windows-x86_64-setup.exe`,
+        kind: 'exe',
+        size: 3300,
+        app_zip_url: null,
+        alternates: [{ url: `${download}/ubiqx-shield-windows-x86_64.msi`, kind: 'msi', size: 3400 }],
+      },
+    });
+    assert.deepEqual(JSON.parse(release.assets.find((a) => a.name === 'latest.json').content.toString()), feed);
+    const updater = JSON.parse(release.assets.find((a) => a.name === UPDATER_ASSET_NAME).content.toString());
+    assert.deepEqual(updater.platforms, { 'darwin-aarch64': { signature: 'c2hpZWxkIG1hYw==', url: `${download}/ubiqx-shield-macos-aarch64.app.tar.gz` } });
+
+    // Nothing published carries the display name, and no request went to ubiqX's release.
+    const { notes: _notes, ...structure } = feed;
+    const published = [...release.assets.map((a) => a.name), release.name, JSON.stringify(structure), JSON.stringify(updater.platforms)].join('\n');
+    assert.ok(!published.toLowerCase().includes(SHIELD_DISPLAY.toLowerCase()), `the display name leaked into what is published:\n${published}`);
+    assert.ok(!published.includes('ubiqX-'), 'no file of the standalone app is named like one of ubiqX');
+    assert.equal(snapshot('continuous'), ubiqxBefore, 'the ubiqX release is byte for byte what it was');
+    assert.ok(!gh.state.log.some((l) => l.includes('/tags/continuous')), `a request went to the ubiqX tag: ${gh.state.log.join(', ')}`);
+    assert.match(lines.join('\n'), /^ubiqx-shield 0\.1\.0 build 27 /m);
+  });
+
+  test('publishing ubiqX leaves the standalone app\'s release alone, and its own names are what they always were', async () => {
+    assert.equal(await run(shieldArgv(shieldBuild())), 0, lines.join('\n'));
+    const shieldBefore = snapshot('shield-continuous');
+    gh.state.log = [];
+    lines = [];
+
+    const code = await run(['--asset', dmg, '--asset', appZip, '--asset', macUpdater, '--asset', winExe, '--asset', winMsi, '--asset', linuxAppImage, '--asset', linuxDeb, '--out', out, '--arch', 'aarch64', '--api', api, '--uploads', `${api}/uploads`]);
+    assert.equal(code, 0, lines.join('\n'));
+    const release = gh.state.releases.find((r) => r.tag_name === 'continuous');
+    assert.equal(release.name, 'ubiqX (build contínuo)');
+    assert.deepEqual(release.assets.map((a) => a.name), [
+      'ubiqX-macos-aarch64.dmg',
+      'ubiqX-macos-aarch64.app.zip',
+      'ubiqX-macos-aarch64.app.tar.gz',
+      'ubiqX-windows-x86_64-setup.exe',
+      'ubiqX-windows-x86_64.msi',
+      'ubiqX-linux-x86_64.AppImage',
+      'ubiqX-linux-x86_64.deb',
+      'ubiqX-macos-aarch64.app.tar.gz.sig',
+      'latest.json',
+      UPDATER_ASSET_NAME,
+    ]);
+    const feed = JSON.parse(release.assets.find((a) => a.name === 'latest.json').content.toString());
+    assert.equal(feed.product, 'ubiqX');
+    assert.equal(feed.release_url, `https://github.com/${OWNER}/${REPO}/releases/tag/continuous`);
+    assert.equal(feed.platforms['darwin-aarch64'].url, `https://github.com/${OWNER}/${REPO}/releases/download/continuous/ubiqX-macos-aarch64.dmg`);
+    assert.equal(snapshot('shield-continuous'), shieldBefore);
+    assert.ok(!gh.state.log.some((l) => l.includes('shield')), `a request went to the standalone release: ${gh.state.log.join(', ')}`);
+    assert.match(lines.join('\n'), /^ubiqX 0\.1\.0 build 27 /m);
+  });
+
+  test('a file of the other product is refused before any request, in both directions', async () => {
+    const files = shieldBuild();
+    // The standalone app's installers handed to a ubiqX publish (the default product).
+    for (const stray of [files.dmg, files.deb, files.macUpdater]) {
+      lines = [];
+      const code = await run(['--asset', dmg, '--asset', stray, '--out', out, '--arch', 'aarch64', '--api', api, '--uploads', `${api}/uploads`]);
+      assert.equal(code, 1, lines.join('\n'));
+      assert.match(lines.join('\n'), /é do produto shield, não do ubiqx: publique-o com --product shield/);
+    }
+    // The historical shortcut, pointed at a folder where the standalone DMG is the newest file.
+    lines = [];
+    assert.equal(await run(['--dmg', path.join(path.dirname(files.dmg), '*.dmg'), '--out', out, '--arch', 'aarch64', '--api', api, '--uploads', `${api}/uploads`]), 1);
+    assert.match(lines.join('\n'), /é do produto shield/);
+    // ubiqX's installers handed to a publish of the standalone app, by Tauri's name and by the stable one.
+    for (const stray of [dmg, appZip, linuxDeb, macUpdater]) {
+      lines = [];
+      const code = await run(shieldArgv({ stray }));
+      assert.equal(code, 1, lines.join('\n'));
+      assert.match(lines.join('\n'), /é do produto ubiqx, não do shield: publique-o com --product ubiqx/);
+    }
+    assert.deepEqual(gh.state.log, [], 'nothing reached GitHub');
+  });
+
+  test('a release that carries the other product\'s feed is left alone', async () => {
+    // A tag that is nobody's default, so the refusal can only come from the feed that is published there.
+    const ubiqxRelease = gh.seedRelease({ feedEpoch: 1758000000, tag: 'nightly', product: 'ubiqX' });
+    let code = await run(shieldArgv(shieldBuild(), '--tag', 'nightly'));
+    assert.equal(code, 1, lines.join('\n'));
+    assert.match(lines.join('\n'), /traz o latest\.json de outro produto \("ubiqX"\)/);
+    assert.deepEqual(gh.state.log.filter((l) => !l.startsWith('GET ')), [], 'no write to a release of the other product');
+    assert.equal(ubiqxRelease.name, 'old');
+    assert.equal(ubiqxRelease.assets.find((a) => a.name === 'ubiqX-macos-aarch64.dmg').content.toString(), 'old');
+
+    // A feed from before the field existed is ubiqX's: the standalone app may not replace it, ubiqX may.
+    gh.reset();
+    lines = [];
+    gh.seedRelease({ feedEpoch: 1758000000, tag: 'nightly', product: null });
+    code = await run(shieldArgv(shieldBuild(), '--tag', 'nightly'));
+    assert.equal(code, 1, lines.join('\n'));
+    assert.deepEqual(gh.state.log.filter((l) => !l.startsWith('GET ')), []);
+    code = await run(argv('--tag', 'nightly'));
+    assert.equal(code, 0, lines.join('\n'));
+    assert.equal(gh.state.releases[0].name, 'ubiqX (build contínuo)');
+
+    // The other direction: ubiqX never writes into a release of the standalone app.
+    gh.reset();
+    lines = [];
+    const shieldRelease = gh.seedRelease({ feedEpoch: 1758000000, tag: 'nightly', product: 'ubiqx-shield', assets: ['ubiqx-shield-macos-aarch64.dmg'] });
+    code = await run(argv('--tag', 'nightly'));
+    assert.equal(code, 1, lines.join('\n'));
+    assert.match(lines.join('\n'), /de outro produto \("ubiqx-shield"\)/);
+    assert.deepEqual(gh.state.log.filter((l) => !l.startsWith('GET ')), []);
+    assert.equal(shieldRelease.name, 'old');
+  });
+
+  test('a product never publishes under the other product\'s tag, an unknown product is a usage error, and the standalone app has no default file', async () => {
+    let code = await run(shieldArgv(shieldBuild(), '--tag', 'continuous'));
+    assert.equal(code, 2, lines.join('\n'));
+    assert.match(lines.join('\n'), /A tag "continuous" é a release do produto ubiqx/);
+    lines = [];
+    code = await run(argv('--tag', 'shield-continuous'));
+    assert.equal(code, 2, lines.join('\n'));
+    assert.match(lines.join('\n'), /A tag "shield-continuous" é a release do produto shield/);
+    lines = [];
+    code = await run(argv('--product', 'escudo'));
+    assert.equal(code, 2, lines.join('\n'));
+    assert.match(lines.join('\n'), /Produto desconhecido: "escudo"/);
+    lines = [];
+    code = await run(['--product', 'shield', '--out', out, '--api', api, '--uploads', `${api}/uploads`]);
+    assert.equal(code, 1, lines.join('\n'));
+    assert.match(lines.join('\n'), /--product shield precisa de --asset/);
+    assert.deepEqual(gh.state.log, []);
+  });
 });
 
 describe('helpers', () => {
@@ -715,6 +927,158 @@ describe('helpers', () => {
     assert.equal(productVersion({ version: null }, '/nowhere', {}), '0.0.0');
   });
 
+  test('productVersion reads the configuration of the product being published', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'ubiqx-products-'));
+    try {
+      for (const [product, version] of [[PRODUCTS.ubiqx, '0.1.128'], [PRODUCTS.shield, '0.1.640']]) {
+        const conf = path.join(dir, product.tauriConf);
+        mkdirSync(path.dirname(conf), { recursive: true });
+        writeFileSync(conf, JSON.stringify({ version }));
+      }
+      assert.equal(productVersion({ version: null }, dir, {}), '0.1.128', 'ubiqX unless a product is given');
+      assert.equal(productVersion({ version: null }, dir, {}, PRODUCTS.ubiqx), '0.1.128');
+      assert.equal(productVersion({ version: null }, dir, {}, PRODUCTS.shield), '0.1.640');
+      assert.equal(productVersion({ version: '2.0.0' }, dir, {}, PRODUCTS.shield), '2.0.0');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('inferAsset names the standalone app\'s files after its machine id', () => {
+    const shield = PRODUCTS.shield;
+    const pick = ({ kind, platformKey, name, updater }) => ({ kind, platformKey, name, updater });
+    // Tauri's output names (after the display name) and the stable names CI renames them to.
+    assert.deepEqual(pick(inferAsset(`${SHIELD_DISPLAY}_0.1.0_aarch64.dmg`, 'x86_64', shield)), { kind: 'dmg', platformKey: 'darwin-aarch64', name: 'ubiqx-shield-macos-aarch64.dmg', updater: false });
+    assert.deepEqual(pick(inferAsset(`${SHIELD_DISPLAY}_0.1.0_x64-setup.exe`, 'aarch64', shield)), { kind: 'exe', platformKey: 'windows-x86_64', name: 'ubiqx-shield-windows-x86_64-setup.exe', updater: false });
+    assert.deepEqual(pick(inferAsset(`${SHIELD_DISPLAY}_0.1.0_amd64.AppImage.tar.gz`, 'aarch64', shield)), { kind: 'appimage_tar_gz', platformKey: 'linux-x86_64', name: 'ubiqx-shield-linux-x86_64.AppImage.tar.gz', updater: true });
+    for (const name of [
+      'ubiqx-shield-macos-aarch64.dmg',
+      'ubiqx-shield-macos-x86_64.app.zip',
+      'ubiqx-shield-macos-aarch64.app.tar.gz',
+      'ubiqx-shield-windows-x86_64-setup.exe',
+      'ubiqx-shield-windows-x86_64.msi',
+      'ubiqx-shield-windows-x86_64-setup.nsis.zip',
+      'ubiqx-shield-linux-x86_64.AppImage',
+      'ubiqx-shield-linux-aarch64.deb',
+      'ubiqx-shield-linux-x86_64.AppImage.tar.gz',
+    ]) {
+      // The arch in a stable name wins over --arch, so a published name is a fixed point.
+      const other = name.includes('aarch64') ? 'x86_64' : 'aarch64';
+      assert.equal(inferAsset(name, other, shield)?.name, name, `${name} must keep its name`);
+    }
+    assert.equal(inferAsset('ubiqx-shield-linux-x86_64.msi', 'x86_64', shield), null, 'os and extension must agree');
+    assert.equal(inferAsset('ubiqx-shield-linux-x86_64.txt', 'x86_64', shield), null);
+    // The glob that collects ubiqX's files in CI (`ubiqX-*`, case-sensitive) matches none of these names.
+    assert.ok(!/^ubiqX-/.test(inferAsset('x.dmg', 'aarch64', shield).name));
+  });
+
+  test('productOf tells whose file a name is, by the longest name it starts with', () => {
+    const stems = productStems(REPO_ROOT);
+    assert.ok(stems.shield.includes(SHIELD_DISPLAY.toLowerCase()), 'the display name is read from the shell\'s configuration');
+    const shieldNames = ['ubiqx-shield-macos-aarch64.dmg', 'UBIQX-SHIELD-linux-x86_64.deb', 'ubiqx-shield_0.1.0_amd64.deb', `${SHIELD_DISPLAY}_0.1.0_aarch64.dmg`, `${SHIELD_DISPLAY.toLowerCase()}_0.1.0_amd64.deb`, `/a/b/${SHIELD_DISPLAY}.app.tar.gz`];
+    for (const name of shieldNames) assert.equal(productOf(name, stems), 'shield', name);
+    const ubiqxNames = ['ubiqX-macos-aarch64.dmg', 'ubiqX_0.1.0_x64_en-US.msi', 'ubiqx_0.1.0_amd64.deb', 'bundle/macos/ubiqX.app.tar.gz', 'ubiqX.dmg'];
+    for (const name of ubiqxNames) assert.equal(productOf(name, stems), 'ubiqx', name);
+    // A name that starts with neither is nobody's, and is published as before.
+    for (const name of ['installer.dmg', 'ubiqXtra.dmg', `${SHIELD_DISPLAY}plus.dmg`, 'x-ubiqx-shield.deb']) assert.equal(productOf(name, stems), null, name);
+    // Without a readable checkout the published prefixes still tell the two apart.
+    const bare = productStems('/nowhere');
+    assert.deepEqual(bare, { ubiqx: ['ubiqx'], shield: ['ubiqx-shield'] });
+    assert.equal(productOf('ubiqx-shield-linux-x86_64.deb', bare), 'shield');
+    assert.equal(productOf('ubiqX-linux-x86_64.deb', bare), 'ubiqx');
+  });
+
+  test('collectAssets refuses the other product\'s file and gives the standalone app no default', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'ubiqx-collect-'));
+    try {
+      const mine = path.join(dir, 'ubiqX_0.1.0_aarch64.dmg');
+      const theirs = path.join(dir, 'ubiqx-shield-macos-aarch64.dmg');
+      writeFileSync(mine, 'x');
+      writeFileSync(theirs, 'yy');
+      const opts = (assets) => ({ assets, dmg: null, appZip: null });
+      assert.deepEqual(collectAssets(opts([mine]), REPO_ROOT, 'aarch64').map((a) => a.name), ['ubiqX-macos-aarch64.dmg']);
+      assert.deepEqual(collectAssets(opts([theirs]), REPO_ROOT, 'aarch64', PRODUCTS.shield).map((a) => [a.name, a.size]), [['ubiqx-shield-macos-aarch64.dmg', 2]]);
+      assert.throws(() => collectAssets(opts([theirs]), REPO_ROOT, 'aarch64'), /é do produto shield, não do ubiqx/);
+      assert.throws(() => collectAssets(opts([mine]), REPO_ROOT, 'aarch64', PRODUCTS.shield), /é do produto ubiqx, não do shield/);
+      assert.throws(() => collectAssets(opts([]), REPO_ROOT, 'aarch64', PRODUCTS.shield), /precisa de --asset/);
+      // ubiqX's bare call looks for its own DMG, not for whichever DMG is newest in the shared folder.
+      assert.throws(() => collectAssets(opts([]), dir, 'aarch64'), /DMG não encontrado: target\/release\/bundle\/dmg\/ubiqX\*\.dmg/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('feedBelongsTo follows the rule of the app: the exact name, and a feed without one is ubiqX\'s', () => {
+    const { ubiqx, shield } = PRODUCTS;
+    assert.equal(feedBelongsTo({ product: 'ubiqX' }, ubiqx), true);
+    assert.equal(feedBelongsTo({ product: 'ubiqX' }, shield), false);
+    assert.equal(feedBelongsTo({ product: 'ubiqx-shield' }, shield), true);
+    assert.equal(feedBelongsTo({ product: 'ubiqx-shield' }, ubiqx), false);
+    assert.equal(feedBelongsTo({ product: 'UBIQX' }, ubiqx), false, 'case matters, as in feed_matches_product');
+    for (const blank of [{}, { product: '' }, { product: '  ' }, { product: null }, { product: 7 }]) {
+      assert.equal(feedBelongsTo(blank, ubiqx), true, JSON.stringify(blank));
+      assert.equal(feedBelongsTo(blank, shield), false, JSON.stringify(blank));
+    }
+    assert.equal(makeFeed({ owner: 'o', repo: 'r', tag: 't', version: '1.0.0', build: { epoch: 1, number: 1, sha: 's', branch: 'b' }, assets: [], publishedAt: 'p', notes: 'n' }).product, 'ubiqX', 'the default is unchanged');
+  });
+
+  test('parseArgs gives each product its own tag and refuses the other one\'s', () => {
+    assert.equal(parseArgs([]).product, 'ubiqx');
+    assert.equal(parseArgs([]).tag, 'continuous');
+    assert.equal(parseArgs(['--product', 'shield']).tag, 'shield-continuous');
+    assert.equal(parseArgs(['--product=shield', '--tag', 'nightly']).tag, 'nightly');
+    assert.throws(() => parseArgs(['--product', 'shield', '--tag', 'continuous']), /é a release do produto ubiqx/);
+    assert.throws(() => parseArgs(['--tag=shield-continuous']), /é a release do produto shield/);
+    assert.throws(() => parseArgs(['--product', 'nofap']), /Produto desconhecido/);
+    assert.throws(() => parseArgs(['--product']), /Falta o valor/);
+  });
+
+  test('the product table agrees with the Rust identities and with both shells', () => {
+    assert.deepEqual(Object.keys(PRODUCTS), ['ubiqx', 'shield']);
+    assert.equal(resolveProduct(), PRODUCTS.ubiqx, 'ubiqX is the default');
+    assert.throws(() => resolveProduct('toString'), /Produto desconhecido/, 'only the two ids are products');
+
+    // crates/ubiqx-core/src/product.rs: the ids, the feed names the apps accept and the feed URLs they poll.
+    const rust = readRepoFile('crates/ubiqx-core/src/product.rs');
+    const feedUrl = {
+      ubiqx: readRepoFile('crates/ubiqx-core/src/update.rs').match(/pub const DEFAULT_FEED_URL: &str =\s*"([^"]+)"/)?.[1],
+      shield: rust.match(/pub const SHIELD_FEED_URL: &str =\s*"([^"]+)"/)?.[1],
+    };
+    for (const [id, constant] of [['ubiqx', 'UBIQX'], ['shield', 'SHIELD']]) {
+      const product = PRODUCTS[id];
+      assert.equal(product.id, id);
+      assert.ok(rust.includes(`=> "${id}"`), `ProductId::as_str has no "${id}"`);
+      const identity = rust.match(new RegExp(`pub static ${constant}: ProductIdentity = ProductIdentity \\{([\\s\\S]*?)\\n\\};`))?.[1];
+      assert.ok(identity, `static ${constant} not found in product.rs`);
+      assert.equal(identity.match(/feed_product: "([^"]+)"/)?.[1], product.feedProduct, `${id}: the feed name`);
+      assert.equal(feedUrl[id], `https://github.com/${OWNER}/${REPO}/releases/download/${product.tag}/latest.json`, `${id}: the app polls the release this script publishes`);
+
+      // The shell: its version file exists, and its updater endpoint (once it has one) is this tag's updater.json.
+      const conf = JSON.parse(readRepoFile(product.tauriConf));
+      assert.match(conf.version, /^\d+\.\d+\.\d+$/);
+      for (const endpoint of conf.plugins?.updater?.endpoints ?? []) {
+        assert.equal(endpoint, `https://github.com/${OWNER}/${REPO}/releases/download/${product.tag}/${UPDATER_ASSET_NAME}`, `${id}: updater endpoint`);
+      }
+    }
+    assert.equal(JSON.parse(readRepoFile(PRODUCTS.ubiqx.tauriConf)).plugins.updater.endpoints.length, 1, 'ubiqX has its updater endpoint');
+    assert.equal(JSON.parse(readRepoFile(PRODUCTS.ubiqx.tauriConf)).productName, PRODUCTS.ubiqx.assetPrefix);
+
+    // The standalone app is published under its machine id (design 0.1 and 8.6): the binary name of its shell,
+    // `SYSTEM_ID` in the core, and never the display name, which may still change.
+    const shield = PRODUCTS.shield;
+    const shieldConf = JSON.parse(readRepoFile(shield.tauriConf));
+    assert.equal(shield.assetPrefix, shieldConf.mainBinaryName);
+    assert.equal(shield.assetPrefix, readRepoFile('crates/ubiqx-core/src/nofap.rs').match(/pub const SYSTEM_ID: &str = "([^"]+)"/)?.[1]);
+    for (const field of ['label', 'assetPrefix', 'feedProduct', 'tag', 'releaseName']) {
+      assert.ok(!/nofap/i.test(shield[field]), `${field} carries the source name: ${shield[field]}`);
+      assert.ok(!shield[field].toLowerCase().includes(shieldConf.productName.toLowerCase()), `${field} carries the display name: ${shield[field]}`);
+    }
+    // The names of the two products never collide, whatever the letter case of the file system.
+    assert.notEqual(shield.tag, PRODUCTS.ubiqx.tag);
+    assert.notEqual(shield.feedProduct.toLowerCase(), PRODUCTS.ubiqx.feedProduct.toLowerCase());
+    assert.notEqual(inferAsset('a.dmg', 'aarch64', shield).name.toLowerCase(), inferAsset('a.dmg', 'aarch64').name.toLowerCase());
+  });
+
   test('resolveGlob picks a matching file and returns null when none matches', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'ubiqx-glob-'));
     try {
@@ -781,6 +1145,97 @@ describe('app-version', () => {
       // Idempotent: writing the same version again changes nothing.
       assert.equal(writeAppVersion(dir, '0.1.128'), false);
       assert.equal(readFileSync(conf, 'utf8'), after);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /** A scratch checkout with both shells' configuration files and the workspace version. */
+  function scratchRoot(prefix) {
+    const dir = mkdtempSync(path.join(tmpdir(), prefix));
+    writeFileSync(path.join(dir, 'Cargo.toml'), '[workspace.package]\nversion = "0.1.0"\n');
+    const confs = {};
+    for (const product of Object.values(PRODUCTS)) {
+      confs[product.id] = path.join(dir, product.tauriConf);
+      mkdirSync(path.dirname(confs[product.id]), { recursive: true });
+      copyFileSync(path.join(REAL_ROOT, product.tauriConf), confs[product.id]);
+    }
+    return { dir, confs };
+  }
+
+  test('--product shield writes the standalone app\'s configuration and nothing else', () => {
+    const { dir, confs } = scratchRoot('ubiqx-version-shield-');
+    try {
+      const before = { ubiqx: readFileSync(confs.ubiqx, 'utf8'), shield: readFileSync(confs.shield, 'utf8') };
+      const printed = [];
+      const io = { log: (l) => printed.push(String(l)), error: (l) => printed.push(String(l)) };
+
+      assert.equal(appVersionMain(['--write', '--product', 'shield', '--root', dir], { UBIQX_BUILD_NUMBER: '128' }, io), 0, printed.join('\n'));
+      assert.deepEqual(printed, ['0.1.128']);
+      const after = readFileSync(confs.shield, 'utf8');
+      assert.equal(after, before.shield.replace('"version": "0.1.0"', '"version": "0.1.128"'), 'no other byte of the file moves');
+      assert.equal(JSON.parse(after).mainBinaryName, 'ubiqx-shield');
+      assert.equal(readFileSync(confs.ubiqx, 'utf8'), before.ubiqx, 'ubiqX is not stamped by a call for the other product');
+
+      // The default product is ubiqX, with or without the option; both products get the same number.
+      assert.equal(appVersionMain(['--write', '--root', dir], { UBIQX_BUILD_NUMBER: '128' }, io), 0);
+      assert.equal(JSON.parse(readFileSync(confs.ubiqx, 'utf8')).version, '0.1.128');
+      assert.equal(readFileSync(confs.shield, 'utf8'), after);
+      assert.equal(appVersionMain(['--product=ubiqx', '--root', dir], { UBIQX_BUILD_NUMBER: '129' }, io), 0);
+      assert.equal(printed.at(-1), '0.1.129');
+      assert.equal(appVersion({ UBIQX_BUILD_NUMBER: '7' }, dir, 'shield'), appVersion({ UBIQX_BUILD_NUMBER: '7' }, dir, 'ubiqx'));
+      assert.equal(writeAppVersion(dir, '0.1.128', 'shield'), false, 'idempotent');
+
+      // An unknown product is a usage error and writes nothing.
+      const stamped = { ubiqx: readFileSync(confs.ubiqx, 'utf8'), shield: readFileSync(confs.shield, 'utf8') };
+      assert.equal(appVersionMain(['--write', '--product', 'escudo', '--root', dir], { UBIQX_BUILD_NUMBER: '500' }, io), 2);
+      assert.match(printed.join('\n'), /Produto desconhecido: "escudo"/);
+      assert.equal(appVersionMain(['--product'], {}, io), 2);
+      assert.match(printed.join('\n'), /Falta o valor de --product/);
+      assert.equal(readFileSync(confs.ubiqx, 'utf8'), stamped.ubiqx);
+      assert.equal(readFileSync(confs.shield, 'utf8'), stamped.shield);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The wrapper the CI jobs call. It is a bash script, so the test runs where bash is (every CI job that
+  // runs this file is on Linux).
+  test('ci-app-version.sh stamps the product it is asked for and exports UBIQX_VERSION', { skip: process.platform === 'win32' && 'bash script' }, () => {
+    const { dir, confs } = scratchRoot('ubiqx-ci-version-');
+    try {
+      mkdirSync(path.join(dir, 'scripts'));
+      for (const name of ['ci-app-version.sh', 'app-version.mjs']) copyFileSync(path.join(REAL_ROOT, 'scripts', name), path.join(dir, 'scripts', name));
+      const before = { ubiqx: readFileSync(confs.ubiqx, 'utf8'), shield: readFileSync(confs.shield, 'utf8') };
+      const githubEnv = path.join(dir, 'github-env');
+      const run = (...args) =>
+        spawnSync('bash', [path.join(dir, 'scripts', 'ci-app-version.sh'), ...args], {
+          encoding: 'utf8',
+          // The build number is given, so the script does not need scripts/build-info.sh or git.
+          env: { PATH: `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH}`, UBIQX_BUILD_NUMBER: '128', GITHUB_ENV: githubEnv },
+        });
+
+      let result = run('--product', 'shield');
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout, 'ubiqx-shield 0.1.128 (build 128)\n');
+      assert.equal(JSON.parse(readFileSync(confs.shield, 'utf8')).version, '0.1.128');
+      assert.equal(readFileSync(confs.ubiqx, 'utf8'), before.ubiqx);
+      assert.equal(readFileSync(githubEnv, 'utf8'), 'UBIQX_VERSION=0.1.128\n');
+
+      // Without an option it is the call the jobs have always made.
+      result = run();
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout, 'ubiqX 0.1.128 (build 128)\n');
+      assert.equal(JSON.parse(readFileSync(confs.ubiqx, 'utf8')).version, '0.1.128');
+      assert.equal(readFileSync(githubEnv, 'utf8'), 'UBIQX_VERSION=0.1.128\nUBIQX_VERSION=0.1.128\n', 'both calls export the same number');
+
+      for (const bad of [['--product', 'escudo'], ['--product'], ['--bogus']]) {
+        const stamped = readFileSync(confs.shield, 'utf8');
+        result = run(...bad);
+        assert.equal(result.status, 2, `${bad.join(' ')}: ${result.stdout}${result.stderr}`);
+        assert.equal(result.stdout, '');
+        assert.equal(readFileSync(confs.shield, 'utf8'), stamped);
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
