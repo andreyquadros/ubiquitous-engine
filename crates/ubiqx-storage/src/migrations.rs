@@ -231,9 +231,46 @@ CREATE INDEX idx_focus_sessions_started ON focus_sessions(started_at);
 CREATE INDEX idx_focus_sessions_active  ON focus_sessions(started_at) WHERE ended_at IS NULL;
 "##;
 
+/// Version 3: the `nofap` module. One configuration row, the user's and the learned sites,
+/// and hourly counters. There is no row per event, no exact time, no host of a learned site
+/// and no app: a learned site or a snooze is its salted hash only, which the first `CHECK`
+/// makes a property of the file, not only of the code that writes it. Both products apply
+/// this same list, each to its own database file.
+const V3: &str = r##"
+-- Configuration (a single row; never part of `settings`) ---------------------------------
+CREATE TABLE nofap_state (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    config     TEXT NOT NULL,                 -- NofapConfig as JSON
+    updated_at INTEGER NOT NULL               -- unix milliseconds
+);
+
+-- Sites (the user's lists, sites learned from a screen check, snoozes) --------------------
+CREATE TABLE nofap_sites (
+    id         TEXT PRIMARY KEY NOT NULL,
+    list       TEXT NOT NULL,                 -- block | allow
+    origin     TEXT NOT NULL,                 -- user | learned | snooze
+    host       TEXT,                          -- NULL unless origin = user
+    host_key   BLOB NOT NULL,                 -- 16 bytes, SHA-256(salt || 0x00 || host)[..16]
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER,                       -- snooze only
+    UNIQUE (list, host_key),
+    CHECK (origin = 'user' OR host IS NULL),
+    CHECK (length(host_key) = 16)
+);
+
+-- Counters per local day and hour ---------------------------------------------------------
+CREATE TABLE nofap_day (
+    day  TEXT NOT NULL,                       -- local YYYY-MM-DD
+    hour INTEGER NOT NULL,                    -- local hour 0..23
+    kind TEXT NOT NULL,                       -- ubiqx_core::nofap::DayKind, read leniently
+    n    INTEGER NOT NULL,
+    PRIMARY KEY (day, hour, kind)
+);
+"##;
+
 /// All migrations, oldest first.
 pub fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![M::up(V1), M::up(V2)])
+    Migrations::new(vec![M::up(V1), M::up(V2), M::up(V3)])
 }
 
 /// Brings `conn` to the latest schema version. Idempotent: reopening an up-to-date database
@@ -270,6 +307,103 @@ mod tests {
         let mut conn = Connection::open_in_memory().expect("memory db");
         apply(&mut conn).expect("first apply");
         apply(&mut conn).expect("second apply");
+        assert_eq!(current_version(&conn).expect("version"), 3);
+    }
+
+    fn table_names(conn: &Connection) -> Vec<String> {
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+            .expect("prepare");
+        let names = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("names");
+        names
+    }
+
+    #[test]
+    fn v3_adds_the_three_tables_to_a_v2_database_and_keeps_its_rows() {
+        let mut conn = Connection::open_in_memory().expect("memory db");
+        migrations().to_version(&mut conn, 2).expect("up to V2");
         assert_eq!(current_version(&conn).expect("version"), 2);
+        assert!(!table_names(&conn).iter().any(|t| t.starts_with("nofap_")));
+        conn.execute_batch(
+            "INSERT INTO kv (key, value, updated_at) VALUES ('k', 'v', 1);
+             INSERT INTO focus_targets (id, kind, name, key, created_at)
+                 VALUES ('t1', 'site', 'Exemplo', 'example.com', 1);
+             INSERT INTO ai_usage (at, kind, model) VALUES (1, 'classify', 'm');",
+        )
+        .expect("V2 rows");
+
+        apply(&mut conn).expect("V3");
+
+        assert_eq!(current_version(&conn).expect("version"), 3);
+        let tables = table_names(&conn);
+        for table in ["nofap_state", "nofap_sites", "nofap_day"] {
+            assert!(tables.iter().any(|t| t == table), "{table} missing");
+            let rows: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+                .expect("count");
+            assert_eq!(rows, 0, "{table} starts empty");
+        }
+        for table in ["kv", "focus_targets", "ai_usage"] {
+            let rows: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+                .expect("count");
+            assert_eq!(rows, 1, "{table} kept its row");
+        }
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r
+                .get::<_, i64>(0))
+                .expect("count"),
+            4,
+            "the seeded categories are not seeded twice"
+        );
+    }
+
+    #[test]
+    fn the_schema_refuses_a_name_for_a_learned_site_and_a_short_key() {
+        let mut conn = Connection::open_in_memory().expect("memory db");
+        apply(&mut conn).expect("apply");
+        let insert = "INSERT INTO nofap_sites (id, list, origin, host, host_key, created_at) \
+                      VALUES (?1, 'block', ?2, ?3, ?4, 1)";
+        let key = vec![7u8; 16];
+        conn.execute(insert, rusqlite::params!["a", "user", "example.com", key])
+            .expect("a user row carries its name");
+        conn.execute(
+            insert,
+            rusqlite::params!["b", "learned", None::<String>, vec![8u8; 16]],
+        )
+        .expect("a learned row without a name");
+        assert!(conn
+            .execute(
+                insert,
+                rusqlite::params!["c", "learned", "example.org", vec![9u8; 16]]
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                insert,
+                rusqlite::params!["d", "snooze", "example.org", vec![10u8; 16]]
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                insert,
+                rusqlite::params!["e", "user", "example.net", vec![11u8; 15]]
+            )
+            .is_err());
+        assert!(
+            conn.execute(insert, rusqlite::params!["f", "user", "other.example", key])
+                .is_err(),
+            "one row per (list, host_key)"
+        );
+        assert!(conn
+            .execute(
+                "INSERT INTO nofap_state (id, config, updated_at) VALUES (2, '{}', 1)",
+                []
+            )
+            .is_err());
     }
 }

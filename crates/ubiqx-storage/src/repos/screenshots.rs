@@ -45,6 +45,17 @@ const DELETE_BEFORE: &str = concat!(
     screenshot_cols!()
 );
 
+/// The screenshots attached to the block, and the one the block itself points at (which
+/// is one of them unless something linked it by hand).
+const DELETE_FOR_BLOCK: &str = concat!(
+    "DELETE FROM screenshots WHERE block_id = ?1 \
+     OR id = (SELECT screenshot_id FROM blocks WHERE id = ?1) RETURNING ",
+    screenshot_cols!()
+);
+
+/// The block must not keep pointing at a screenshot that is gone.
+const DETACH_FROM_BLOCK: &str = "UPDATE blocks SET screenshot_id = NULL WHERE id = ?1";
+
 fn row_to_screenshot(row: &Row<'_>) -> StorageResult<Screenshot> {
     Ok(Screenshot {
         id: row.get("id")?,
@@ -116,6 +127,18 @@ impl ScreenshotRepo for SqliteStore {
         self.with(|conn| {
             let deleted = query_list(conn, DELETE_BEFORE, params![ms(before)], row_to_screenshot)?;
             tracing::debug!(before = %before, deleted = deleted.len(), "purged old screenshots");
+            Ok(deleted)
+        })
+    }
+
+    /// Also clears the block's own `screenshot_id`, in the same transaction. A block
+    /// without screenshots, or one that does not exist, deletes nothing.
+    fn delete_for_block(&self, block_id: &str) -> CoreResult<Vec<Screenshot>> {
+        self.with(|conn| {
+            let tx = conn.transaction()?;
+            let deleted = query_list(&tx, DELETE_FOR_BLOCK, params![block_id], row_to_screenshot)?;
+            execute(&tx, DETACH_FROM_BLOCK, params![block_id])?;
+            tx.commit()?;
             Ok(deleted)
         })
     }

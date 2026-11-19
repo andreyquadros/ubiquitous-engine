@@ -231,7 +231,7 @@ fn migrations_are_idempotent_on_reopen() {
 
     {
         let db = Db::open(&path).expect("first open creates parent dirs");
-        assert_eq!(db.schema_version().expect("version"), 2);
+        assert_eq!(db.schema_version().expect("version"), 3);
         let s = SqliteStore::new(db);
         KvRepo::set(&s, "last_report_check", "2026-09-17").expect("set");
         // A user category must survive alongside the seed on reopen.
@@ -239,7 +239,7 @@ fn migrations_are_idempotent_on_reopen() {
     }
 
     let db = Db::open(&path).expect("second open");
-    assert_eq!(db.schema_version().expect("version"), 2);
+    assert_eq!(db.schema_version().expect("version"), 3);
     let mode: String = db
         .with(|c| Ok(c.query_row("PRAGMA journal_mode", [], |r| r.get(0))?))
         .expect("pragma");
@@ -1229,6 +1229,73 @@ fn screenshots_full_lifecycle() {
         .is_empty());
 }
 
+#[test]
+fn delete_for_block_removes_that_blocks_screenshots_and_its_pointer() {
+    let s = store();
+    insert_blocks(
+        &s,
+        &[
+            block("b1", at(9, 0), at(9, 30)),
+            block("b2", at(9, 30), at(10, 0)),
+            block("b3", at(10, 0), at(10, 30)),
+        ],
+    );
+    let shots: &dyn ScreenshotRepo = &s;
+    let blocks: &dyn BlockRepo = &s;
+    let s1 = screenshot("s1", at(9, 5), Some("b1"));
+    let s2 = screenshot("s2", at(9, 15), Some("b1"));
+    let s3 = screenshot("s3", at(9, 40), Some("b2"));
+    let loose = screenshot("s4", at(10, 5), None);
+    for shot in [&s1, &s2, &s3, &loose] {
+        shots.insert(shot).expect("insert");
+    }
+    blocks.set_screenshot("b1", "s2").expect("link");
+    blocks.set_screenshot("b2", "s3").expect("link");
+    // Linked from the block but never attached to it.
+    blocks.set_screenshot("b3", "s4").expect("link");
+
+    let mut deleted = shots.delete_for_block("b1").expect("delete");
+    deleted.sort_by(|a, b| a.id.cmp(&b.id));
+    assert_eq!(
+        deleted,
+        vec![s1.clone(), s2.clone()],
+        "the rows carry the paths so the files can be unlinked"
+    );
+    assert_eq!(shots.get("s1").expect("get"), None);
+    assert_eq!(shots.get("s2").expect("get"), None);
+    assert_eq!(shots.latest_for_block("b1").expect("latest"), None);
+    assert_eq!(
+        blocks.get("b1").expect("get").expect("b1").screenshot_id,
+        None,
+        "the block no longer points at a deleted screenshot"
+    );
+
+    // Another block is untouched.
+    assert_eq!(shots.get("s3").expect("get"), Some(s3));
+    assert_eq!(
+        blocks
+            .get("b2")
+            .expect("get")
+            .expect("b2")
+            .screenshot_id
+            .as_deref(),
+        Some("s3")
+    );
+
+    let deleted = shots.delete_for_block("b3").expect("delete");
+    assert_eq!(deleted, vec![loose], "the linked one goes too");
+    assert_eq!(
+        blocks.get("b3").expect("get").expect("b3").screenshot_id,
+        None
+    );
+
+    assert!(shots.delete_for_block("b1").expect("again").is_empty());
+    assert!(shots
+        .delete_for_block("no-such-block")
+        .expect("unknown block")
+        .is_empty());
+}
+
 // ---------------------------------------------------------------------------------------------
 // ReportRepo
 // ---------------------------------------------------------------------------------------------
@@ -1480,6 +1547,93 @@ fn usage_totals_sum_calls_tokens_and_cost_in_range() {
 
     let none = usage.totals(range(at(12, 0), at(13, 0))).expect("totals");
     assert_eq!(none, Default::default());
+}
+
+#[test]
+fn usage_totals_by_kind_split_the_range_and_agree_with_the_total() {
+    let s = store();
+    let usage: &dyn UsageRepo = &s;
+    assert!(usage
+        .totals_by_kind(range(at(0, 0), at(23, 0)))
+        .expect("empty ledger")
+        .is_empty());
+
+    let make = |when, kind, input: u32, output: u32, cost: f64| AiUsage {
+        at: when,
+        kind,
+        model: "claude-haiku-4-5".into(),
+        input_tokens: input,
+        output_tokens: output,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        cost_usd: cost,
+    };
+    for row in [
+        make(at(9, 0), AiUsageKind::NofapVision, 600, 15, 0.0007),
+        make(at(9, 0), AiUsageKind::Classify, 300, 40, 0.0005),
+        make(at(9, 0), AiUsageKind::NofapVision, 610, 16, 0.0007),
+        make(at(9, 30), AiUsageKind::Vision, 1100, 60, 0.0014),
+        make(at(10, 0), AiUsageKind::NofapVision, 620, 14, 0.0007),
+        make(at(10, 0), AiUsageKind::Report, 6000, 1500, 0.04),
+    ] {
+        usage.record(&row).expect("record");
+    }
+    // Written by a newer build: a kind this one does not know.
+    s.db()
+        .with(|c| {
+            c.execute(
+                "INSERT INTO ai_usage (at, kind, model, input_tokens, cost_usd) \
+                 VALUES (?1, 'from_the_future', 'm', 5, 1.0)",
+                [at(9, 10).timestamp_millis()],
+            )?;
+            Ok(())
+        })
+        .expect("raw insert");
+
+    let split = usage
+        .totals_by_kind(range(at(9, 0), at(10, 0)))
+        .expect("split");
+    let kinds: Vec<AiUsageKind> = split.iter().map(|(k, _)| *k).collect();
+    assert_eq!(
+        kinds,
+        [
+            AiUsageKind::Classify,
+            AiUsageKind::Vision,
+            AiUsageKind::NofapVision
+        ],
+        "in the order of AiUsageKind::ALL; kinds without a call and unknown kinds are absent"
+    );
+    let of = |kind: AiUsageKind| {
+        split
+            .iter()
+            .find(|(k, _)| *k == kind)
+            .map(|(_, t)| t.clone())
+            .expect("kind present")
+    };
+    let nofap = of(AiUsageKind::NofapVision);
+    assert_eq!(
+        (nofap.calls, nofap.input_tokens, nofap.output_tokens),
+        (2, 1210, 31),
+        "the half-open range leaves the 10:00 check out"
+    );
+    assert!((nofap.cost_usd - 0.0014).abs() < 1e-9);
+    let classify = of(AiUsageKind::Classify);
+    assert_eq!((classify.calls, classify.input_tokens), (1, 300));
+
+    // The known kinds add up to the plain total minus the row of the unknown kind.
+    let total = usage.totals(range(at(9, 0), at(10, 0))).expect("total");
+    let summed: u64 = split.iter().map(|(_, t)| t.calls).sum();
+    assert_eq!(summed + 1, total.calls);
+    let cost: f64 = split.iter().map(|(_, t)| t.cost_usd).sum();
+    assert!((cost + 1.0 - total.cost_usd).abs() < 1e-9);
+
+    let later = usage
+        .totals_by_kind(range(at(10, 0), at(11, 0)))
+        .expect("split");
+    assert_eq!(
+        later.iter().map(|(k, t)| (*k, t.calls)).collect::<Vec<_>>(),
+        [(AiUsageKind::Report, 1), (AiUsageKind::NofapVision, 1)]
+    );
 }
 
 // ---------------------------------------------------------------------------------------------

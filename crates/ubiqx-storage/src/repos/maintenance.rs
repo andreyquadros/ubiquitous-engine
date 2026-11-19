@@ -8,7 +8,11 @@ use crate::store::SqliteStore;
 /// Screenshots go first so their `block_id` reference never dangles mid-transaction.
 /// `blocks` is cleared without an `is_open` filter, which also removes any orphaned open row.
 /// Focus targets are configuration, not activity, and stay.
-const WIPE: [&str; 9] = [
+///
+/// Of the `nofap` module only the counters go. Its configuration (`nofap_state`) and its
+/// sites (`nofap_sites`) stay on purpose: wiping them would be a way to switch the
+/// protection off without the delay every other way has to wait.
+const WIPE: [&str; 10] = [
     "DELETE FROM screenshots",
     "DELETE FROM blocks",
     "DELETE FROM corrections",
@@ -18,6 +22,7 @@ const WIPE: [&str; 9] = [
     "DELETE FROM kv",
     "DELETE FROM interventions",
     "DELETE FROM focus_sessions",
+    "DELETE FROM nofap_day",
 ];
 
 const DELETE_LEARNED_RULES: &str = "DELETE FROM rules WHERE origin = ?1";

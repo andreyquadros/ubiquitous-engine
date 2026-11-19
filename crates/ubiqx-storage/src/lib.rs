@@ -7,7 +7,7 @@
 //!   and runs the embedded migrations.
 //! * [`SqliteStore`] — implements `BlockRepo`, `CategoryRepo`, `RuleRepo`, `CorrectionRepo`,
 //!   `ScreenshotRepo`, `ReportRepo`, `NudgeRepo`, `SettingsRepo`, `UsageRepo`, `KvRepo`,
-//!   `FocusRepo` and `MaintenanceRepo`.
+//!   `FocusRepo`, `MaintenanceRepo` and `ubiqx_core::nofap::NofapRepo`.
 //! * [`StorageError`] — the adapter's error type, convertible into [`ubiqx_core::CoreError`].
 //!
 //! ## Storage conventions
@@ -19,6 +19,8 @@
 //!   [`ubiqx_core::Settings`] struct) are JSON `TEXT` columns, so new fields with serde
 //!   defaults need no migration.
 //! * Booleans are `INTEGER` `0`/`1`.
+//! * The `nofap` module keeps counters per local day and hour (`nofap_day`), never a row per
+//!   event, and a site it learned is a salted hash, never a name (`nofap_sites`).
 //!
 //! ```no_run
 //! use std::path::Path;

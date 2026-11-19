@@ -7,6 +7,7 @@ mod corrections;
 mod focus;
 mod kv;
 mod maintenance;
+mod nofap;
 mod nudges;
 mod reports;
 mod rules;
