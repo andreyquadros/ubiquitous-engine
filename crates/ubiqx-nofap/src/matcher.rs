@@ -16,7 +16,9 @@
 //! 4. **No match:** the class from never-capture and mixed (the longer rule wins, so a
 //!    private web app can sit under a mixed platform); then an unexpired snooze; then an
 //!    adult TLD and the keyword rules ([`crate::heuristics`]); then popular. A host under
-//!    a never-capture or mixed rule is never blocked by a TLD or a keyword.
+//!    a never-capture or mixed rule is never blocked by a TLD or a keyword. A signal word
+//!    in the name of a popular host makes it `Plain { signal: true }`: popular sites are
+//!    looked at when a local signal fires, and that is one.
 //! 5. Learned sites and snoozes are matched by [`site_key`] for the host and each parent.
 //!
 //! Cost: a verdict hashes the host and each parent once per table that can hold it and
@@ -329,15 +331,14 @@ impl Matcher {
         if keys.iter().any(|key| self.snoozed.contains(key)) {
             return Verdict::Allowed(AllowSource::Snooze);
         }
-        let signal = match heuristics::host_rule(&host) {
-            HostRule::Block(source) => return Verdict::Blocked(source),
-            HostRule::Signal => true,
-            HostRule::None => false,
-        };
-        if self.popular.contains(&host) {
-            return Verdict::Unknown(HostClass::Popular);
+        match heuristics::host_rule(&host) {
+            HostRule::Block(source) => Verdict::Blocked(source),
+            // A signal word in the name is a local signal, and a popular site with a local
+            // signal is looked at like any other (design 4.2): the class says so.
+            HostRule::Signal => Verdict::Unknown(HostClass::Plain { signal: true }),
+            HostRule::None if self.popular.contains(&host) => Verdict::Unknown(HostClass::Popular),
+            HostRule::None => Verdict::Unknown(HostClass::Plain { signal: false }),
         }
-        Verdict::Unknown(HostClass::Plain { signal })
     }
 
     /// The verdict for a URL, and whether its path or query carries a block-grade word (a
@@ -509,4 +510,837 @@ pub fn site_key(salt: &[u8; 16], host: &str) -> [u8; 16] {
     let mut key = [0u8; 16];
     key.copy_from_slice(&digest[..16]);
     key
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{Duration, TimeZone};
+
+    use super::*;
+    use crate::list::{key_of, CORE_TAG, FORMAT, MAGIC, POPULAR_TAG};
+
+    const SALT: [u8; 16] = [7; 16];
+
+    fn now() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 9, 17, 15, 0, 0).unwrap()
+    }
+
+    /// A table in the build script's format holding `names`, leaked: the matcher takes
+    /// `'static` bytes, as the embedded tables are.
+    fn table(tag: &[u8], names: &[&str]) -> &'static [u8] {
+        let mut keys: Vec<u64> = names.iter().map(|name| key_of(tag, name)).collect();
+        keys.sort_unstable();
+        raw_table(&keys)
+    }
+
+    fn raw_table(keys: &[u64]) -> &'static [u8] {
+        let mut bytes = MAGIC.to_vec();
+        bytes.extend_from_slice(&FORMAT.to_be_bytes());
+        bytes.extend_from_slice(&0u16.to_be_bytes());
+        bytes.extend_from_slice(&(keys.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(&202611191200u64.to_be_bytes());
+        for key in keys {
+            bytes.extend_from_slice(&key.to_be_bytes());
+        }
+        Box::leak(bytes.into_boxed_slice())
+    }
+
+    /// A small world: a list, a popular table and the three rule files.
+    fn data() -> MatcherData {
+        MatcherData {
+            core: table(
+                CORE_TAG,
+                &[
+                    "pornhub.com",
+                    "xvideos.com",
+                    "listed.example",
+                    "adult.contents.fc2.com",
+                    "nsfw.reddit.com",
+                    "spam.agency.gov.br",
+                    "deep.one.two.listed-deep.example",
+                ],
+            ),
+            popular: table(
+                POPULAR_TAG,
+                &["wikipedia.org", "bing.com", "popular.example"],
+            ),
+            never_block: RuleSet::parse([
+                "gov",
+                "gov.*",
+                "ac.*",
+                "edu",
+                "apple.com",
+                "fc2.com",
+                "banco.bradesco",
+                "xxxlutz.de",
+            ]),
+            mixed: RuleSet::parse([
+                "reddit.com",
+                "snapchat.com",
+                "images.google.com",
+                "tumblr.com",
+            ]),
+            never_capture: RuleSet::parse([
+                "gov",
+                "bank.example",
+                "web.snapchat.com",
+                "mail.google.com",
+                "med.*",
+            ]),
+            hosts_tier: &[
+                "pornhub.com",
+                "www.pornhub.com",
+                "www.sub.tier.example",
+                "xvideos.com",
+            ],
+        }
+    }
+
+    fn site(list: SiteList, origin: SiteOrigin, host: &str) -> NofapSite {
+        NofapSite {
+            id: format!("site-{host}"),
+            list,
+            origin,
+            host: (origin == SiteOrigin::User).then(|| host.to_owned()),
+            host_key: site_key(&SALT, host),
+            created_at: now(),
+            expires_at: None,
+        }
+    }
+
+    fn snooze(host: &str, expires_at: DateTime<Utc>) -> NofapSite {
+        NofapSite {
+            expires_at: Some(expires_at),
+            ..site(SiteList::Allow, SiteOrigin::Snooze, host)
+        }
+    }
+
+    fn matcher(sites: &[NofapSite]) -> Matcher {
+        Matcher::new(data(), sites, &SALT, now()).unwrap()
+    }
+
+    const LIST: Verdict = Verdict::Blocked(BlockSource::List);
+    const PLAIN: Verdict = Verdict::Unknown(HostClass::Plain { signal: false });
+    const LOCAL: Verdict = Verdict::Unknown(HostClass::Local);
+
+    #[test]
+    fn listed_names_block_after_normalisation_and_through_the_parent_walk() {
+        let m = matcher(&[]);
+        for host in [
+            "pornhub.com",
+            "PT.PornHub.com.",
+            "www.xvideos.com:443",
+            "WWW.PORNHUB.COM",
+            "a.b.c.pornhub.com",
+            "user:secret@pornhub.com:8080",
+            "https://pt.pornhub.com/view?x=1#top",
+            "listed.example",
+            "deep.one.two.listed-deep.example",
+            "x.deep.one.two.listed-deep.example",
+        ] {
+            assert_eq!(m.verdict(host), LIST, "{host}");
+            assert!(m.verdict(host).is_blocked());
+        }
+        // A parent of a listed name is not listed, nor is a name that only looks alike.
+        for host in [
+            "one.two.listed-deep.example",
+            "listed-deep.example",
+            "notlisted.example",
+        ] {
+            assert_eq!(m.verdict(host), PLAIN, "{host}");
+        }
+    }
+
+    #[test]
+    fn an_entry_stays_at_its_listed_depth_under_a_never_block_name() {
+        let m = matcher(&[]);
+        assert_eq!(m.verdict("adult.contents.fc2.com"), LIST);
+        assert_eq!(m.verdict("x.adult.contents.fc2.com"), LIST);
+        for host in ["fc2.com", "blog.fc2.com", "contents.fc2.com", "www.fc2.com"] {
+            assert_eq!(
+                m.verdict(host),
+                Verdict::Allowed(AllowSource::BuiltIn),
+                "{host}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_entry_stays_at_its_listed_depth_under_a_mixed_name() {
+        let m = matcher(&[]);
+        assert_eq!(m.verdict("nsfw.reddit.com"), LIST);
+        assert_eq!(m.verdict("reddit.com"), Verdict::Unknown(HostClass::Mixed));
+        assert_eq!(
+            m.verdict("old.reddit.com"),
+            Verdict::Unknown(HostClass::Mixed)
+        );
+    }
+
+    #[test]
+    fn keyword_and_tld_rules_decide_what_no_list_decides() {
+        let m = matcher(&[]);
+        for host in [
+            "porno365.golf",
+            "missav123.com",
+            "xvv1deos.com",
+            "videosdeputaria.com.br",
+        ] {
+            assert_eq!(
+                m.verdict(host),
+                Verdict::Blocked(BlockSource::Keyword),
+                "{host}"
+            );
+        }
+        assert_eq!(
+            m.verdict("anything.xxx"),
+            Verdict::Blocked(BlockSource::Tld)
+        );
+        assert_eq!(
+            m.verdict("www.anything.sex"),
+            Verdict::Blocked(BlockSource::Tld)
+        );
+        // A signal-grade word is a class, not a block.
+        assert_eq!(
+            m.verdict("nude-art.example"),
+            Verdict::Unknown(HostClass::Plain { signal: true })
+        );
+        assert_eq!(
+            m.verdict("cabinporn.example"),
+            Verdict::Unknown(HostClass::Plain { signal: true })
+        );
+        assert_eq!(
+            m.verdict("example.cam"),
+            Verdict::Unknown(HostClass::Plain { signal: true })
+        );
+    }
+
+    #[test]
+    fn false_positive_traps_are_not_blocked() {
+        let m = matcher(&[]);
+        for host in [
+            "essex.gov.uk",
+            "sussex.ac.uk",
+            "sussexexpress.co.uk",
+            "planalto.gov.br",
+            "canaltech.com.br",
+            "motorola.com.br",
+            "drogariasaopaulo.com.br",
+            "peacocktv.com",
+            "emilfrey.de",
+            "milfordasset.com",
+            "lichngaytot.com",
+            "coroasparavelorio.com.br",
+            "nakedwines.com",
+            "skylinewebcams.com",
+            "iowasexoffender.gov",
+            "pussy888.com",
+            "cambridge.org",
+            "xxxlutz.de",
+            "scunthorpe.co.uk",
+            "penistone.co.uk",
+            "ninjavan.co",
+            "fapesp.br",
+        ] {
+            assert!(
+                !m.verdict(host).is_blocked(),
+                "{host}: {:?}",
+                m.verdict(host)
+            );
+        }
+        assert_eq!(
+            m.verdict("essex.gov.uk"),
+            Verdict::Allowed(AllowSource::BuiltIn)
+        );
+        assert_eq!(
+            m.verdict("sussex.ac.uk"),
+            Verdict::Allowed(AllowSource::BuiltIn)
+        );
+        assert_eq!(
+            m.verdict("iowasexoffender.gov"),
+            Verdict::Allowed(AllowSource::BuiltIn)
+        );
+        assert_eq!(
+            m.verdict("xxxlutz.de"),
+            Verdict::Allowed(AllowSource::BuiltIn)
+        );
+    }
+
+    #[test]
+    fn a_suffix_rule_of_never_block_protects_at_every_depth() {
+        let m = matcher(&[]);
+        // Listed below a `gov.*` rule: the rule decides, also against a keyword and a TLD.
+        assert_eq!(
+            m.verdict("spam.agency.gov.br"),
+            Verdict::Allowed(AllowSource::BuiltIn)
+        );
+        assert_eq!(
+            m.verdict("porn.agency.gov.br"),
+            Verdict::Allowed(AllowSource::BuiltIn)
+        );
+        assert_eq!(
+            m.verdict("xxx.university.edu"),
+            Verdict::Allowed(AllowSource::BuiltIn)
+        );
+        // The shape is exact: the label must be the one before the last, or the last.
+        assert_eq!(m.verdict("gov.example.com"), PLAIN);
+        assert_eq!(m.verdict("xgov.br"), PLAIN);
+        // A brand top-level domain is an ordinary name rule.
+        assert_eq!(
+            m.verdict("banco.bradesco"),
+            Verdict::Allowed(AllowSource::BuiltIn)
+        );
+        assert_eq!(
+            m.verdict("www.banco.bradesco"),
+            Verdict::Allowed(AllowSource::BuiltIn)
+        );
+        assert_eq!(m.verdict("outro.bradesco"), PLAIN);
+        // Only the user's own entries beat the rule.
+        let m = matcher(&[site(SiteList::Block, SiteOrigin::User, "agency.gov.br")]);
+        assert_eq!(
+            m.verdict("spam.agency.gov.br"),
+            Verdict::Blocked(BlockSource::User)
+        );
+        assert_eq!(
+            m.verdict("other.gov.br"),
+            Verdict::Allowed(AllowSource::BuiltIn)
+        );
+    }
+
+    #[test]
+    fn a_url_gives_the_verdict_and_the_path_signal() {
+        let m = matcher(&[]);
+        assert_eq!(
+            m.verdict_for_url("https://www.reddit.com/r/EarthPorn/"),
+            (Verdict::Unknown(HostClass::Mixed), true)
+        );
+        assert_eq!(
+            m.verdict_for_url("https://www.reddit.com/r/pics/"),
+            (Verdict::Unknown(HostClass::Mixed), false)
+        );
+        assert_eq!(
+            m.verdict_for_url("https://www.bing.com/images/search?q=hentai+wallpaper"),
+            (Verdict::Unknown(HostClass::Popular), true)
+        );
+        assert_eq!(
+            m.verdict_for_url("https://PT.PornHub.com./video"),
+            (LIST, false)
+        );
+        // As a browser shows it: no scheme, perhaps a port.
+        assert_eq!(m.verdict_for_url("www.xvideos.com:443/new"), (LIST, false));
+        assert_eq!(
+            m.verdict_for_url("reddit.com/r/EarthPorn"),
+            (Verdict::Unknown(HostClass::Mixed), true)
+        );
+        assert_eq!(m.verdict_for_url("http://[::1]:8080/admin"), (LOCAL, false));
+        assert_eq!(m.verdict_for_url("localhost:3000/porn"), (LOCAL, true));
+        assert_eq!(m.verdict_for_url("https://bücher.example/"), (PLAIN, false));
+        for not_a_site in [
+            "",
+            "   ",
+            "about:blank",
+            "file:///home/ana/notes.txt",
+            "chrome://newtab/",
+        ] {
+            assert_eq!(
+                m.verdict_for_url(not_a_site),
+                (LOCAL, false),
+                "{not_a_site:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn local_names_and_addresses_are_local() {
+        let m = matcher(&[site(SiteList::Block, SiteOrigin::User, "nas.local")]);
+        for host in [
+            "192.168.0.1",
+            "192.168.0.1:8080",
+            "10.1.2.3",
+            "172.16.5.4",
+            "169.254.10.10",
+            "100.64.0.7",
+            "127.0.0.1",
+            "0.0.0.0",
+            "[::1]",
+            "[::1]:3000",
+            "::1",
+            "[fe80::1]",
+            "[fd12:3456::1]",
+            "[::ffff:192.168.1.1]",
+            "localhost",
+            "LOCALHOST.",
+            "nas.local",
+            "printer.lan",
+            "app.localhost",
+            "git.internal",
+            "router.home.arpa",
+            "site.test",
+            "wiki.corp",
+            "intranet",
+            "",
+            "   ",
+            ".",
+            "exa mple.com",
+            "a..b.com",
+            "host:port",
+        ] {
+            assert_eq!(m.verdict(host), LOCAL, "{host:?}");
+        }
+        // The suffix must be a whole label.
+        assert_eq!(m.verdict("mylocal.example"), PLAIN);
+        assert_eq!(m.verdict("example.corporate"), PLAIN);
+    }
+
+    #[test]
+    fn a_public_address_is_an_unknown_site() {
+        let m = matcher(&[]);
+        for host in [
+            "93.184.216.34",
+            "93.184.216.34:443",
+            "[2606:2800:220:1::1]",
+            "172.32.0.1",
+        ] {
+            assert_eq!(m.verdict(host), PLAIN, "{host}");
+        }
+    }
+
+    #[test]
+    fn user_entries_follow_the_precedence() {
+        // Equal specificity: block beats allow.
+        let m = matcher(&[
+            site(SiteList::Allow, SiteOrigin::User, "example.com"),
+            site(SiteList::Block, SiteOrigin::User, "example.com"),
+        ]);
+        assert_eq!(
+            m.verdict("example.com"),
+            Verdict::Blocked(BlockSource::User)
+        );
+        assert_eq!(
+            m.verdict("www.example.com"),
+            Verdict::Blocked(BlockSource::User)
+        );
+        assert_eq!(
+            m.verdict("sub.example.com"),
+            Verdict::Blocked(BlockSource::User)
+        );
+
+        // The longer name wins, whichever way.
+        let m = matcher(&[
+            site(SiteList::Allow, SiteOrigin::User, "sub.listed.example"),
+            site(SiteList::Block, SiteOrigin::User, "strict.example"),
+            site(SiteList::Allow, SiteOrigin::User, "ok.strict.example"),
+            site(SiteList::Allow, SiteOrigin::User, "Pornhub.com"),
+            site(
+                SiteList::Block,
+                SiteOrigin::User,
+                "https://www.Apple.com/shop",
+            ),
+            site(SiteList::Block, SiteOrigin::User, "tumblr.com"),
+        ]);
+        assert_eq!(
+            m.verdict("sub.listed.example"),
+            Verdict::Allowed(AllowSource::User)
+        );
+        assert_eq!(
+            m.verdict("x.sub.listed.example"),
+            Verdict::Allowed(AllowSource::User)
+        );
+        assert_eq!(m.verdict("listed.example"), LIST);
+        assert_eq!(m.verdict("other.listed.example"), LIST);
+        assert_eq!(
+            m.verdict("strict.example"),
+            Verdict::Blocked(BlockSource::User)
+        );
+        assert_eq!(
+            m.verdict("ok.strict.example"),
+            Verdict::Allowed(AllowSource::User)
+        );
+        // A user allow beats the list at the same name, and a user block beats never-block.
+        assert_eq!(
+            m.verdict("pornhub.com"),
+            Verdict::Allowed(AllowSource::User)
+        );
+        assert_eq!(m.verdict("apple.com"), Verdict::Blocked(BlockSource::User));
+        // "Modo estrito": a mixed platform blocked whole.
+        assert_eq!(
+            m.verdict("blog.tumblr.com"),
+            Verdict::Blocked(BlockSource::User)
+        );
+        // A user allow also lifts the keyword rules for its name.
+        let m = matcher(&[site(SiteList::Allow, SiteOrigin::User, "porno365.golf")]);
+        assert_eq!(
+            m.verdict("porno365.golf"),
+            Verdict::Allowed(AllowSource::User)
+        );
+    }
+
+    #[test]
+    fn a_learned_site_blocks_by_its_key_only() {
+        let learned = site(SiteList::Block, SiteOrigin::Learned, "quiet-name.example");
+        assert_eq!(learned.host, None);
+        let m = matcher(std::slice::from_ref(&learned));
+        assert_eq!(
+            m.verdict("quiet-name.example"),
+            Verdict::Blocked(BlockSource::Learned)
+        );
+        assert_eq!(
+            m.verdict("www.quiet-name.example"),
+            Verdict::Blocked(BlockSource::Learned)
+        );
+        assert_eq!(
+            m.verdict("cdn.quiet-name.example"),
+            Verdict::Blocked(BlockSource::Learned)
+        );
+        assert_eq!(m.verdict("other-name.example"), PLAIN);
+        // The matcher holds the key, never the name.
+        assert!(!format!("{m:?}").contains("quiet-name"));
+        // Another salt gives another key: the same row decides nothing.
+        let other = Matcher::new(data(), &[learned], &[9; 16], now()).unwrap();
+        assert_eq!(other.verdict("quiet-name.example"), PLAIN);
+        // The built-in allowlist beats a learned key at the same name.
+        let m = matcher(&[site(SiteList::Block, SiteOrigin::Learned, "apple.com")]);
+        assert_eq!(
+            m.verdict("apple.com"),
+            Verdict::Allowed(AllowSource::BuiltIn)
+        );
+    }
+
+    #[test]
+    fn a_snooze_lifts_keyword_and_tld_rules_until_it_expires() {
+        let later = now() + Duration::hours(24);
+        let m = matcher(&[
+            snooze("porno365.golf", later),
+            snooze("anything.xxx", later),
+        ]);
+        assert_eq!(
+            m.verdict("porno365.golf"),
+            Verdict::Allowed(AllowSource::Snooze)
+        );
+        assert_eq!(
+            m.verdict("www.porno365.golf"),
+            Verdict::Allowed(AllowSource::Snooze)
+        );
+        assert_eq!(
+            m.verdict("anything.xxx"),
+            Verdict::Allowed(AllowSource::Snooze)
+        );
+        assert_eq!(m.verdict("other.xxx"), Verdict::Blocked(BlockSource::Tld));
+
+        // Expired, expiring this very second, or without an expiry: ignored.
+        for expired in [
+            snooze("porno365.golf", now() - Duration::seconds(1)),
+            snooze("porno365.golf", now()),
+            site(SiteList::Allow, SiteOrigin::Snooze, "porno365.golf"),
+        ] {
+            let m = matcher(&[expired]);
+            assert_eq!(
+                m.verdict("porno365.golf"),
+                Verdict::Blocked(BlockSource::Keyword)
+            );
+        }
+
+        // It lifts nothing else: the list, a learned key and a user block still decide.
+        let m = matcher(&[
+            snooze("pornhub.com", later),
+            snooze("learned.example", later),
+            site(SiteList::Block, SiteOrigin::Learned, "learned.example"),
+            snooze("mine.example", later),
+            site(SiteList::Block, SiteOrigin::User, "mine.example"),
+        ]);
+        assert_eq!(m.verdict("pornhub.com"), LIST);
+        assert_eq!(
+            m.verdict("learned.example"),
+            Verdict::Blocked(BlockSource::Learned)
+        );
+        assert_eq!(
+            m.verdict("mine.example"),
+            Verdict::Blocked(BlockSource::User)
+        );
+    }
+
+    #[test]
+    fn rows_the_app_never_writes_decide_nothing() {
+        let m = matcher(&[
+            site(SiteList::Allow, SiteOrigin::Learned, "pornhub.com"),
+            NofapSite {
+                expires_at: Some(now() + Duration::hours(1)),
+                ..site(SiteList::Block, SiteOrigin::Snooze, "example.com")
+            },
+            NofapSite {
+                host: None,
+                ..site(SiteList::Block, SiteOrigin::User, "nameless.example")
+            },
+            NofapSite {
+                host: Some("not a host".into()),
+                ..site(SiteList::Block, SiteOrigin::User, "broken.example")
+            },
+        ]);
+        assert_eq!(m.verdict("pornhub.com"), LIST);
+        assert_eq!(m.verdict("example.com"), PLAIN);
+        assert_eq!(m.verdict("nameless.example"), PLAIN);
+        assert_eq!(m.verdict("broken.example"), PLAIN);
+    }
+
+    #[test]
+    fn classes_of_undecided_hosts() {
+        let m = matcher(&[]);
+        assert_eq!(
+            m.verdict("bank.example"),
+            Verdict::Unknown(HostClass::NeverCapture)
+        );
+        assert_eq!(
+            m.verdict("login.bank.example"),
+            Verdict::Unknown(HostClass::NeverCapture)
+        );
+        assert_eq!(m.verdict("tumblr.com"), Verdict::Unknown(HostClass::Mixed));
+        assert_eq!(
+            m.verdict("wikipedia.org"),
+            Verdict::Unknown(HostClass::Popular)
+        );
+        assert_eq!(
+            m.verdict("www.wikipedia.org"),
+            Verdict::Unknown(HostClass::Popular)
+        );
+        // Popular is the exact host: a page on a popular platform is not known to be popular.
+        assert_eq!(m.verdict("someone.popular.example"), PLAIN);
+        assert_eq!(m.verdict("unknown.example"), PLAIN);
+        // A rule file protects from keyword and TLD rules.
+        assert_eq!(
+            m.verdict("pornhub-fans.tumblr.com"),
+            Verdict::Unknown(HostClass::Mixed)
+        );
+        assert_eq!(
+            m.verdict("xxx.bank.example"),
+            Verdict::Unknown(HostClass::NeverCapture)
+        );
+        // The longer rule wins between the two files; never-capture wins a tie.
+        assert_eq!(
+            m.verdict("snapchat.com"),
+            Verdict::Unknown(HostClass::Mixed)
+        );
+        assert_eq!(
+            m.verdict("story.snapchat.com"),
+            Verdict::Unknown(HostClass::Mixed)
+        );
+        assert_eq!(
+            m.verdict("web.snapchat.com"),
+            Verdict::Unknown(HostClass::NeverCapture)
+        );
+        assert_eq!(
+            m.verdict("mail.google.com"),
+            Verdict::Unknown(HostClass::NeverCapture)
+        );
+        assert_eq!(
+            m.verdict("images.google.com"),
+            Verdict::Unknown(HostClass::Mixed)
+        );
+        // A second-level rule of never-capture covers every depth below it.
+        assert_eq!(
+            m.verdict("clinic.med.br"),
+            Verdict::Unknown(HostClass::NeverCapture)
+        );
+        assert_eq!(
+            m.verdict("a.b.clinic.med.br"),
+            Verdict::Unknown(HostClass::NeverCapture)
+        );
+        // A signal word in the name of a popular host is a local signal: the class says it.
+        let mut with_popular = data();
+        with_popular.popular = table(POPULAR_TAG, &["nude-project.example", "calm.example"]);
+        let m = Matcher::new(with_popular, &[], &SALT, now()).unwrap();
+        assert_eq!(
+            m.verdict("nude-project.example"),
+            Verdict::Unknown(HostClass::Plain { signal: true })
+        );
+        assert_eq!(
+            m.verdict("calm.example"),
+            Verdict::Unknown(HostClass::Popular)
+        );
+    }
+
+    #[test]
+    fn malformed_tables_fail_the_matcher() {
+        assert!(Matcher::new(data(), &[], &SALT, now()).is_ok());
+        let good = table(CORE_TAG, &["a.example", "b.example", "c.example"]);
+        let mut bad_magic = good.to_vec();
+        bad_magic[3] = b'?';
+        let mut wrong_count = good.to_vec();
+        wrong_count[15] = 2;
+        let cases: [(&str, &'static [u8]); 6] = [
+            ("bad magic", Box::leak(bad_magic.into_boxed_slice())),
+            ("unsorted", raw_table(&[5, 4, 6])),
+            ("duplicate keys", raw_table(&[4, 4, 6])),
+            ("wrong count", Box::leak(wrong_count.into_boxed_slice())),
+            ("truncated", &good[..good.len() - 3]),
+            ("empty file", &[]),
+        ];
+        for (what, bytes) in cases {
+            let mut broken_core = data();
+            broken_core.core = bytes;
+            assert!(
+                Matcher::new(broken_core, &[], &SALT, now()).is_err(),
+                "core: {what}"
+            );
+            let mut broken_popular = data();
+            broken_popular.popular = bytes;
+            assert!(
+                Matcher::new(broken_popular, &[], &SALT, now()).is_err(),
+                "popular: {what}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_hosts_tier_is_found_through_parents_and_www() {
+        let m = matcher(&[]);
+        for host in [
+            "pornhub.com",
+            "www.pornhub.com",
+            "pt.pornhub.com",
+            "PORNHUB.COM.",
+            "xvideos.com:443",
+            "sub.tier.example",
+            "www.sub.tier.example",
+            "x.sub.tier.example",
+        ] {
+            assert!(m.in_hosts_tier(host), "{host}");
+        }
+        for host in [
+            "tier.example",
+            "example.com",
+            "",
+            "localhost",
+            "notpornhub.com",
+        ] {
+            assert!(!m.in_hosts_tier(host), "{host}");
+        }
+    }
+
+    #[test]
+    fn rule_sets_read_the_three_forms() {
+        let rules = RuleSet::parse([
+            "example.com",
+            "gov",
+            "gov.*",
+            " Mixed.Example. ",
+            "",
+            "ac.*",
+        ]);
+        assert_eq!(rules.len(), 5);
+        assert!(!rules.is_empty());
+        for host in [
+            "example.com",
+            "a.b.example.com",
+            "mixed.example",
+            "x.mixed.example",
+            "agency.gov",
+            "a.b.agency.gov",
+            "gov.br",
+            "planalto.gov.br",
+            "a.b.gov.uk",
+            "x.gov.wales",
+            "sussex.ac.uk",
+        ] {
+            assert!(rules.covers(host), "{host}");
+        }
+        for host in [
+            "example.org",
+            "notexample.com",
+            "com",
+            "xgov.br",
+            "gov.example.br",
+            "governo.br",
+            "ac.example.org",
+            "mixed",
+        ] {
+            assert!(!rules.covers(host), "{host}");
+        }
+        let empty = RuleSet::parse([]);
+        assert!(empty.is_empty());
+        assert_eq!(empty.len(), 0);
+        assert!(!empty.covers("example.com"));
+        // The embedded never-block list is parsed once and shared.
+        assert!(std::ptr::eq(never_block(), never_block()));
+        assert!(!never_block().is_empty());
+    }
+
+    #[test]
+    fn hosts_are_normalised() {
+        for (raw, expected) in [
+            ("Example.COM", "example.com"),
+            ("example.com.", "example.com"),
+            ("www.example.com", "example.com"),
+            ("WWW.Example.Com.:8443", "example.com"),
+            ("www.www.example.com", "www.example.com"),
+            ("www.com", "www.com"),
+            ("www", "www"),
+            ("ana:secret@example.com", "example.com"),
+            (
+                "https://ana@www.example.com:443/path?q=1#frag",
+                "example.com",
+            ),
+            ("  example.com  ", "example.com"),
+            ("bücher.example", "xn--bcher-kva.example"),
+            ("BÜCHER.example", "xn--bcher-kva.example"),
+            ("xn--bcher-kva.example", "xn--bcher-kva.example"),
+            ("192.168.0.1", "192.168.0.1"),
+            ("192.168.0.1:8080", "192.168.0.1"),
+            ("[::1]", "::1"),
+            ("[::1]:8080", "::1"),
+            ("::1", "::1"),
+            ("[2001:DB8::1]", "2001:db8::1"),
+            ("localhost", "localhost"),
+            ("a_b.example.com", "a_b.example.com"),
+        ] {
+            assert_eq!(normalize_host(raw).as_deref(), Some(expected), "{raw}");
+        }
+        for raw in [
+            "",
+            "   ",
+            ".",
+            "...",
+            ":80",
+            "exa mple.com",
+            "a..b",
+            "[::1",
+            "[nope]",
+            "a:b:c",
+            "x:port",
+        ] {
+            assert_eq!(normalize_host(raw), None, "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn parents_stop_at_two_labels() {
+        assert_eq!(
+            parents("a.b.example.com"),
+            ["a.b.example.com", "b.example.com", "example.com"]
+        );
+        assert_eq!(parents("example.com"), ["example.com"]);
+        assert_eq!(
+            parents("sub.example.co.uk"),
+            ["sub.example.co.uk", "example.co.uk", "co.uk"]
+        );
+        assert!(parents("localhost").is_empty());
+        assert!(parents("").is_empty());
+    }
+
+    #[test]
+    fn the_site_key_is_a_salted_hash() {
+        let salt: [u8; 16] = std::array::from_fn(|at| at as u8);
+        // SHA-256(00 01 .. 0f ‖ 00 ‖ "example.com"), first 16 bytes.
+        let expected = [
+            0xd5, 0x90, 0x71, 0x42, 0xcc, 0x28, 0x7c, 0xed, 0x18, 0x31, 0xaf, 0x0e, 0x3b, 0xd5,
+            0xf9, 0x70,
+        ];
+        assert_eq!(site_key(&salt, "example.com"), expected);
+        assert_ne!(
+            site_key(&salt, "example.com"),
+            site_key(&salt, "example.org")
+        );
+        assert_ne!(
+            site_key(&salt, "example.com"),
+            site_key(&SALT, "example.com")
+        );
+    }
 }
