@@ -90,8 +90,15 @@ bol.uol.com.br
 mail.terra.com.br
 
 # --- Private messages on the web -----------------------------------------------
+# One-to-one conversations show other people's messages: their web apps are never
+# pictured, also where the platform around them is on mixed.txt (the longer rule wins:
+# web.snapchat.com here, snapchat.com there).
 web.whatsapp.com
 messenger.com
+web.telegram.org
+discord.com
+discordapp.com
+web.snapchat.com
 messages.google.com
 teams.microsoft.com
 teams.live.com
@@ -135,13 +142,14 @@ enpass.io
 passwords.google.com
 
 # --- AI providers ----------------------------------------------------------------
+# grok.com is not here: it makes pictures on request, so the screen check may look at it
+# when a signal fires.
 anthropic.com
 claude.ai
 claude.com
 openai.com
 chatgpt.com
 x.ai
-grok.com
 gemini.google.com
 aistudio.google.com
 copilot.microsoft.com

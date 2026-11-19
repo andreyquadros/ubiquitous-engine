@@ -114,7 +114,9 @@ mzstatic.com
 aaplimg.com
 me.com
 mac.com
-# Microsoft (no Microsoft-owned name is ever written to a hosts file)
+# Microsoft: sign-in, update, store, mail and API hosts. bing.com is not here: like
+# google.com it is an ordinary search site, which the screen check may look at when a
+# signal fires and which the user may block.
 microsoft.com
 microsoftonline.com
 microsoft365.com
@@ -130,7 +132,6 @@ office365.com
 outlook.com
 hotmail.com
 msn.com
-bing.com
 azure.com
 msftconnecttest.com
 msftncsi.com
@@ -232,6 +233,7 @@ ntp.org
 ubiqx.ai
 
 # --- AI providers (the screen check itself goes to them) ---------------------
+# x.ai covers api.x.ai. grok.com is not here: it is an ordinary site, like a search engine.
 anthropic.com
 claude.ai
 claude.com
@@ -240,7 +242,6 @@ chatgpt.com
 oaistatic.com
 oaiusercontent.com
 x.ai
-grok.com
 gemini.google.com
 aistudio.google.com
 mistral.ai

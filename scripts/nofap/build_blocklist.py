@@ -265,8 +265,14 @@ UPSTREAM_MISTAKES: frozenset[str] = frozenset(
 
 # ---------------------------------------------------------------------------
 # Block-grade keywords (design 3.5). Used here only to filter 4skinSkywalker,
-# whose list also names ad trackers and mainstream sites. The run-time rules
-# live in `ubiqx_nofap::heuristics`; the two sets are kept equal by hand.
+# whose list also names ad trackers and mainstream sites. This is the plain
+# substring form of the design's table, on purpose: a name that an adult-site
+# list carries and that holds such a word needs no further proof. The run-time
+# rules in `ubiqx_nofap::heuristics` decide names seen in a browser, where the
+# same substrings are also ordinary words ("disputas", "Pornichet",
+# "odpornosc", "cabinporn"), so there every word carries the place where it
+# counts and some of these words are only a signal. The two are not kept
+# equal; a word added to the run-time rules does not have to be added here.
 # ---------------------------------------------------------------------------
 
 ADULT_TLDS = frozenset({"xxx", "porn", "sex", "sexy", "adult"})

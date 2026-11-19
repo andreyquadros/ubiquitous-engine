@@ -1,8 +1,10 @@
 # mixed.txt: general platforms that also carry adult material and cannot be
 # split by domain (docs/nofap/DESIGN.md 3.3).
 #
-# A host under a rule of this file is never blocked by the list or by a
-# keyword. While it is in front, the screen check runs at its "signal" cadence,
+# A host under a rule of this file is never blocked by a keyword, and by the
+# list only where the list names a more specific subdomain (the matcher's longest
+# match: adult.contents.fc2.com stays blocked under fc2.com). While it is in
+# front, the screen check runs at its "signal" cadence,
 # and a block-grade word in the path (reddit.com/r/...) counts as a signal. The
 # user can block any of them whole in "modo estrito"; that is a user block, so
 # nothing here is on never-block.txt.
@@ -48,14 +50,12 @@ eyny.com
 jkforum.net
 ekstrabladet.dk
 
-# --- Messaging on the web ---
+# --- Public channels and pages of messaging services ---
+# The conversations themselves (web.telegram.org, discord.com, web.snapchat.com) are on
+# never-capture.txt: other people's messages are never pictured.
 t.me
-telegram.org
 telegram.me
 telegra.ph
-discord.com
-discordapp.com
-discord.gg
 
 # --- Live streaming and video ---
 twitch.tv
