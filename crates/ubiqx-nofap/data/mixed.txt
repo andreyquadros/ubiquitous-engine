@@ -78,6 +78,7 @@ sys.4chan.org
 2chan.net
 reactor.cc
 joyreactor.cc
+joyreactor.com
 derpibooru.org
 imgur.com
 flickr.com

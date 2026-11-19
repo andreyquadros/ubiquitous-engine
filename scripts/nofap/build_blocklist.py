@@ -239,30 +239,28 @@ REVIEWED_TOP_1K: frozenset[str] = frozenset(
 # sites, so a person should confirm them before a release.
 UPSTREAM_MISTAKES: frozenset[str] = frozenset(
     """
-    yandex.by kinopoisk.ru mafab.hu startpagina.nl
-    hmv.co.jp tia.com.ec articulo.mercadolibre.com.co more.com freetour.com
-    reservestock.jp
-    marieclaire.it refinery29.com fark.com thechive.com crazydaysandnights.net
-    teenee.com knuddels.de grindr.com
-    my-cima.net igg-games.com steamunlocked.net
+    yandex.by startpagina.nl
+    kinopoisk.ru mafab.hu tvigle.ru podimo.com sportlemon.net
+    hmv.co.jp tia.com.ec articulo.mercadolibre.com.co cafepress.com yellowkorner.com
+    more.com freetour.com reservestock.jp
+    marieclaire.it refinery29.com fark.com teenee.com yorkbbs.ca
+    thechive.com ebaumsworld.com acidcow.com
+    perezhilton.com laineygossip.com heatworld.com crazydaysandnights.net
+    knuddels.de grindr.com policies.tinder.com
+    fairfaxcryobank.com
+    my-cima.net v5.my-cima.net v21.my-cima.net v23.my-cima.net w26.my-cima.net
+    igg-games.com steamunlocked.net
     b-cdn.net
     """.split()
 )
-#   yandex.by, startpagina.nl    search and start-page portals
-#   kinopoisk.ru, mafab.hu       film databases
-#   hmv.co.jp, tia.com.ec, articulo.mercadolibre.com.co, more.com,
-#   freetour.com, reservestock.jp
-#                                shops, a marketplace, ticket and booking sites
-#   marieclaire.it, refinery29.com, fark.com, thechive.com,
-#   crazydaysandnights.net, teenee.com
-#                                magazines, news and entertainment portals
-#   knuddels.de, grindr.com      chat and dating services with no adult catalogue
-#                                (the lists name no other mainstream dating app)
-#   my-cima.net, igg-games.com, steamunlocked.net
-#                                film streaming and game download sites
-#   b-cdn.net                    a content-delivery suffix shared by unrelated
-#                                sites (not on the Public Suffix List); listed
-#                                subdomains of it stay listed one by one
+# By line: search and start-page portals; film, video, podcast and sport
+# streaming services; shops and a marketplace; ticket and booking services;
+# magazines, news portals and community forums; humour sites; celebrity gossip;
+# chat and dating services without an adult catalogue (the lists name no other
+# mainstream dating app); a fertility clinic; a film streaming site with the
+# four mirror hosts a list names; game download sites; and b-cdn.net, a
+# content-delivery suffix shared by unrelated sites that is not on the Public
+# Suffix List (the subdomains a list names stay listed one by one).
 
 # ---------------------------------------------------------------------------
 # Block-grade keywords (design 3.5). Used here only to filter 4skinSkywalker,
