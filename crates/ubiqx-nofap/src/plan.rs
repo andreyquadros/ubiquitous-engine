@@ -1741,6 +1741,90 @@ mod tests {
         );
     }
 
+    /// The one place a test of this module reads the embedded data: the refusal list the
+    /// helper really ships with, and the names it really writes. (`tests/embedded.rs`
+    /// checks the data files themselves, with its own copy of the hostname rule.)
+    #[test]
+    fn the_embedded_never_block_rules_are_what_the_helper_refuses() {
+        let never_block = matcher::never_block();
+        let gate = open(Os::Windows);
+        let refused = |name: &str| {
+            let asked = SystemPlan {
+                extra: vec![name.to_owned()],
+                ..plan(&[])
+            };
+            let by_validate = validate(&asked, never_block, &gate);
+            // From a state file somebody edited: the name is dropped, not written.
+            let owners = BTreeMap::from([(ProductId::Shield, wants_of(&asked))]);
+            let written = hosts_names(&owners, &[], never_block, Os::Windows);
+            // From the user's list: the app does not even send it.
+            let built = build_plan(
+                &chosen(),
+                &[blocked(name, 1)],
+                ProductId::Ubiqx,
+                Os::Windows,
+            );
+            matches!(by_validate, Err(PlanError::NeverBlock { .. }))
+                && written == vec![hosts::CANARY_NAME.to_owned()]
+                && built.plan.extra.is_empty()
+                && built.extras_left_out == 1
+        };
+        let mut checked = 0;
+        for rule in crate::list::never_block_rules() {
+            let names: Vec<String> = match rule.strip_suffix(".*") {
+                // `gov.*`: the label right before the last one.
+                Some(label) => vec![format!("{label}.br"), format!("portal.{label}.uk")],
+                // `example.com`: the name, a subdomain, the twin the helper would add.
+                None if rule.contains('.') => {
+                    vec![
+                        (*rule).to_owned(),
+                        format!("login.{rule}"),
+                        format!("a.b.{rule}"),
+                    ]
+                }
+                // `gov`: the top-level domain.
+                None => vec![format!("portal.{rule}"), format!("a.b.{rule}")],
+            };
+            for name in names {
+                if !hosts::is_valid_hostname(&name) {
+                    continue;
+                }
+                assert!(refused(&name), "{name} (rule {rule}) is not refused");
+                checked += 1;
+            }
+            // A rule written with `www.` protects the bare name too: the helper writes
+            // the twin of every name it is given.
+            if let Some(bare) = rule.strip_prefix("www.") {
+                if hosts::is_valid_hostname(bare) && !never_block.covers(bare) {
+                    assert!(
+                        matches!(
+                            admissible(bare, never_block),
+                            Err(PlanError::NeverBlock { .. })
+                        ),
+                        "{bare}"
+                    );
+                }
+            }
+        }
+        assert!(checked >= 800, "only {checked} names were checked");
+
+        // The names the helper writes by itself: every one valid, none under a rule, and
+        // the block for them declares exactly as many names as were handed in.
+        let tier = crate::list::hosts_tier();
+        assert!(!tier.is_empty() && tier.len() <= hosts::CAP_UNIX);
+        for name in tier {
+            assert!(hosts::is_valid_hostname(name), "{name}");
+            assert!(!never_block.covers(name), "{name}");
+        }
+        for os in [Os::Windows, Os::Linux] {
+            let owners = BTreeMap::from([(ProductId::Ubiqx, wants_of(&plan(&["example.com"])))]);
+            let names = hosts_names(&owners, tier, never_block, os);
+            assert_eq!(names.len(), (tier.len() + 3).min(hosts::cap_for(os)));
+            let stamp = hosts::stamp_of(&names);
+            assert_eq!(usize::try_from(stamp.names).unwrap(), names.len());
+        }
+    }
+
     #[test]
     fn a_gated_tier_is_refused_with_its_own_exit_code() {
         let all = plan(&[]);

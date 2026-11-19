@@ -30,6 +30,9 @@
 //! convention makes the round trip exact: when the block is the last thing in a file that
 //! does not end with a line break, the line break in front of the block is the block's
 //! (it was added to append the block, and goes when the block goes).
+//! A block that is written always keeps the line break of its own last line when the
+//! block it replaces had one, also when a damaged second block closes the file without
+//! one, so that a write followed by a removal leaves what a removal alone leaves.
 
 use std::collections::HashSet;
 
@@ -540,7 +543,11 @@ pub fn splice(existing: &[u8], block: Option<&str>) -> Vec<u8> {
                 };
                 write_block(&mut out, new_lines, eol, ended);
                 written = true;
-                tail_eol = if ended { eol.len() } else { 0 };
+                // The line break that ends the block just written is the block's and
+                // stays, also when a damaged second block closes the file without one:
+                // otherwise a later removal would take the line break in front of this
+                // block instead, which is the user's.
+                tail_eol = 0;
             }
             _ => {
                 if !ended {
@@ -1254,14 +1261,14 @@ mod tests {
             splice(file.as_bytes(), None),
             b"# top\n# between\n# bottom\n"
         );
-        // The second block closes the file without a line break: it takes the line break
-        // in front of it along, here the one that ends the block written first.
+        // The second block closes the file without a line break. The block written in
+        // place of the first keeps its own line break, so that taking it out again gives
+        // what a removal gives now: the user's lines, byte for byte.
         let unended = format!("# top\n{block}{}", block.trim_end_matches('\n'));
-        assert_eq!(
-            splice(unended.as_bytes(), Some(&other)),
-            format!("# top\n{}", other.trim_end_matches('\n')).as_bytes()
-        );
+        let written = splice(unended.as_bytes(), Some(&other));
+        assert_eq!(written, format!("# top\n{other}").as_bytes());
         assert_eq!(splice(unended.as_bytes(), None), b"# top\n");
+        assert_eq!(splice(&written, None), b"# top\n");
     }
 
     #[test]
@@ -1643,6 +1650,111 @@ mod tests {
                 "seed {seed}: idempotent"
             );
             assert_eq!(splice(&spliced, None), removed, "seed {seed}: then removed");
+        }
+    }
+
+    #[test]
+    fn property_pieces_of_several_damaged_blocks_never_cost_a_user_line() {
+        // Files made of user lines and of pieces of our block in any order: whole, END
+        // deleted, BEGIN deleted, END cut short, BEGIN commented out, a lone BEGIN, a
+        // lone END, a BEGIN with only the hint. Whatever the mix:
+        // * a removal leaves no marker of ours, a write leaves exactly one intact block,
+        //   and writing again changes nothing;
+        // * every user line that does not stand between a BEGIN and its END is still
+        //   there afterwards, in order (between the two it goes, as the hint says);
+        // * a write followed by a removal leaves the same bytes as a removal alone.
+        fn owned(part: &[&str]) -> Vec<String> {
+            part.iter().map(|line| (*line).to_owned()).collect()
+        }
+        let block = sample_block();
+        let ours: Vec<&str> = block.lines().collect();
+        let (begin, hint, end) = (ours[0], ours[1], ours[ours.len() - 1]);
+        let cut_end = "# <<< ubiqx-shield EN";
+        let commented_begin = format!("#{begin}");
+        for seed in 1..=3_000u64 {
+            let mut rng = Rng(seed.wrapping_mul(0xD6E8_FEB8_6659_FD93) | 1);
+            let mut lines: Vec<String> = Vec::new();
+            let mut user = 0;
+            let mut user_lines = |lines: &mut Vec<String>, rng: &mut Rng| {
+                for _ in 0..rng.below(3) {
+                    lines.push(format!("10.9.8.7 keep{user}"));
+                    user += 1;
+                }
+            };
+            for _ in 0..=rng.below(4) {
+                user_lines(&mut lines, &mut rng);
+                match rng.below(8) {
+                    0 => lines.extend(owned(&ours[..ours.len() - 1])),
+                    1 => lines.extend(owned(&ours[1..])),
+                    2 => {
+                        lines.extend(owned(&ours[..ours.len() - 1]));
+                        lines.push(cut_end.to_owned());
+                    }
+                    3 => {
+                        lines.push(commented_begin.clone());
+                        lines.extend(owned(&ours[1..]));
+                    }
+                    4 => lines.push(begin.to_owned()),
+                    5 => lines.push(end.to_owned()),
+                    6 => lines.extend(owned(&ours)),
+                    _ => lines.extend(owned(&[begin, hint])),
+                }
+            }
+            user_lines(&mut lines, &mut rng);
+
+            // The user lines outside every BEGIN..END span, by the plain definition.
+            let mut expected: Vec<&str> = Vec::new();
+            let mut index = 0;
+            while index < lines.len() {
+                if lines[index] == begin {
+                    let span = lines[index + 1..]
+                        .iter()
+                        .position(|line| line == begin || line == end)
+                        .filter(|offset| lines[index + 1 + offset] == end);
+                    if let Some(offset) = span {
+                        index += offset + 2;
+                        continue;
+                    }
+                }
+                let line = lines[index].as_str();
+                if line.starts_with("10.9.8.7 ") || line == cut_end || line == commented_begin {
+                    expected.push(line);
+                }
+                index += 1;
+            }
+
+            let eol = if rng.chance(2) { "\n" } else { "\r\n" };
+            let mut file = lines.join(eol);
+            if rng.chance(2) {
+                file.push_str(eol);
+            }
+            for new in [None, Some(other_block())] {
+                let out = splice(file.as_bytes(), new.as_deref());
+                let text = String::from_utf8(out.clone()).unwrap();
+                let kept: Vec<&str> = text
+                    .lines()
+                    .filter(|line| {
+                        line.starts_with("10.9.8.7 ")
+                            || *line == cut_end
+                            || *line == commented_begin
+                    })
+                    .collect();
+                assert_eq!(kept, expected, "seed {seed}: {file:?} became {text:?}");
+                match &new {
+                    None => assert_eq!(inspect(&out), BlockInspection::Absent, "seed {seed}"),
+                    Some(new) => {
+                        assert_eq!(inspect(&out), inspect(new.as_bytes()), "seed {seed}");
+                        assert_eq!(splice(&out, Some(new)), out, "seed {seed}");
+                        // Taking the written block out again gives what a removal
+                        // gives now: writing costs the user no byte.
+                        assert_eq!(
+                            splice(&out, None),
+                            splice(file.as_bytes(), None),
+                            "seed {seed}: {file:?}"
+                        );
+                    }
+                }
+            }
         }
     }
 
