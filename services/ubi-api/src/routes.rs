@@ -6,7 +6,8 @@
 use std::sync::Arc;
 
 use axum::body::{Body, Bytes};
-use axum::extract::{Path, Query, State};
+use axum::extract::rejection::BytesRejection;
+use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
@@ -35,6 +36,11 @@ pub const HEADER_WEBHOOK_SIGNATURE: &str = "x-ubi-signature";
 /// Extra response headers on `/v1/messages`: the month's running total and the budget.
 pub const HEADER_UBIQX_SPENT_USD: &str = "x-ubiqx-spent-usd";
 pub const HEADER_UBIQX_BUDGET_USD: &str = "x-ubiqx-budget-usd";
+/// Largest body `POST /v1/messages` accepts. Stated, not inherited from the framework's
+/// default: a request may carry an image (a screenshot for classification, or the reduced
+/// frame of the app's screen check), and a larger body is refused with `413` before it is
+/// buffered whole. The body is forwarded to the vendor and is never stored or logged.
+pub const MESSAGES_BODY_LIMIT: usize = 4 * 1024 * 1024;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -65,7 +71,10 @@ pub fn router(state: AppState) -> Router {
         .route("/panel", get(panel))
         .route("/admin/models", get(admin_models))
         .route("/v1/license/status", get(license_status))
-        .route("/v1/messages", post(messages))
+        .route(
+            "/v1/messages",
+            post(messages).layer(DefaultBodyLimit::max(MESSAGES_BODY_LIMIT)),
+        )
         .route("/admin/licenses/revoke", post(admin_revoke))
         .route("/admin/licenses/unrevoke", post(admin_unrevoke))
         .route("/admin/licenses/issue", post(admin_issue))
@@ -320,11 +329,32 @@ async fn license_status(State(state): State<AppState>, headers: HeaderMap) -> Re
     .into_response()
 }
 
+/// A body that could not be read, as an Anthropic-shaped error: `413 request_too_large`
+/// above [`MESSAGES_BODY_LIMIT`], `400` for anything else.
+fn unreadable_body(rejection: &BytesRejection) -> ApiError {
+    if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        ApiError::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "request_too_large",
+            format!(
+                "request body exceeds the limit of {} MiB",
+                MESSAGES_BODY_LIMIT / (1024 * 1024)
+            ),
+        )
+    } else {
+        ApiError::bad_request("request body could not be read")
+    }
+}
+
 /// `POST /v1/messages`: Anthropic Messages API passthrough for `monthly_managed` licenses.
+///
+/// The request body is parsed only to map the model alias and is forwarded otherwise
+/// unchanged, image blocks included. Nothing of it is written to the ledger or to the log:
+/// the ledger records who, when, which model, how many tokens and the cost.
 async fn messages(
     State(state): State<AppState>,
     headers: HeaderMap,
-    body: Bytes,
+    body: Result<Bytes, BytesRejection>,
 ) -> Result<Response, ApiError> {
     let now = Utc::now();
     let claims = authorize_managed(&state, &headers, now)?;
@@ -335,6 +365,7 @@ async fn messages(
             )));
         }
     }
+    let body = body.map_err(|rejection| unreadable_body(&rejection))?;
 
     let mut request: Value = serde_json::from_slice(&body)
         .map_err(|e| ApiError::bad_request(format!("request body is not JSON: {e}")))?;

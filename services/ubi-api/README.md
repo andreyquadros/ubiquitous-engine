@@ -60,12 +60,18 @@ description (plans, enforcement, payment flow) is in `docs/LICENSING.md` (Portug
 
 1. `401 authentication_error` — no key; `401 license_invalid` — bad signature / malformed;
 2. `403 license_expired` / `403 license_revoked` / `403 plan_not_managed` (an annual key);
-3. `400 invalid_request_error` — body not a JSON object or `model` not `ubi-fast` / `ubi-smart`;
+3. `413 request_too_large` — a body above 4 MiB (the limit is explicit: requests may carry an
+   image); `400 invalid_request_error` — body not a JSON object or `model` not `ubi-fast` /
+   `ubi-smart`;
 4. `402 budget_exhausted` — the month's spend already reached the budget (the body also carries
    `month`, `spent_usd`, `budget_usd`);
 5. the request is forwarded with `x-api-key` = the vendor key, `anthropic-version` (the client's or
    `2023-06-01`) and `anthropic-beta` if the client sent one. Vendor errors are passed through
    with their status and body; `502 upstream_error` when the vendor is unreachable.
+
+The request body is forwarded as it came, image blocks included, with only the model alias
+replaced. It is never stored and never logged: the ledger keeps the subscriber, the time, the
+model, the token counts and the cost of each request, and nothing of its content.
 
 Successful responses carry `x-ubiqx-cost-usd` (this call), `x-ubiqx-spent-usd` (the month so
 far) and `x-ubiqx-budget-usd`. **Streaming** (`"stream": true`) is a byte-for-byte SSE

@@ -5,7 +5,7 @@
 use std::sync::{Arc, Mutex};
 
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
@@ -164,8 +164,12 @@ pub async fn spawn_vendor() -> (String, MockVendor) {
             cache_read: 0,
         })),
     };
+    // The vendor takes whatever the proxy lets through: the limit under test is the proxy's.
     let router = Router::new()
-        .route("/v1/messages", post(vendor_messages))
+        .route(
+            "/v1/messages",
+            post(vendor_messages).layer(DefaultBodyLimit::disable()),
+        )
         .with_state(vendor.clone());
     (spawn_router(router).await, vendor)
 }
