@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "generated_by": "scripts/nofap/build_blocklist.py",
-  "list_version": 202611192045,
+  "list_version": 202611192117,
   "format": {
     "magic_hex": "554258424c310000",
     "format": 1,
@@ -20,12 +20,12 @@
   "core": {
     "count": 239521,
     "bytes": 1916192,
-    "sha256": "abcaa22dd01b929a5a5482ddf76eb3e80d18090bbade8bdd82e4f2b06a1374bf"
+    "sha256": "2b6cb3a7007817872fc1546f03d6a732bb1fe0c12822d4e1a576ff5246e79a76"
   },
   "popular": {
-    "count": 94082,
-    "bytes": 752680,
-    "sha256": "7da8a8aa848d4abaf3803594c6e1a41ad821f9651f0286993199af43ac050da5"
+    "count": 94091,
+    "bytes": 752752,
+    "sha256": "4118581bd2fafad47027a761ebaeba01a95d30d889ae42c314ad781364d5a32a"
   },
   "hosts_tier": {
     "lines": 20000,
@@ -41,12 +41,12 @@
     }
   },
   "notice": {
-    "sha256": "913a31955763c4527efdf0939c69d92d9e233a8a46948fafbc56ed41c7ea68a8"
+    "sha256": "908ba3eb9135a5c58be461cd68bbaae2e0b0969d07264fd65dea1195f8fa6a55"
   },
   "rules": {
-    "never-block.txt": 387,
-    "mixed.txt": 106,
-    "never-capture.txt": 269
+    "never-block.txt": 385,
+    "mixed.txt": 102,
+    "never-capture.txt": 272
   },
   "canaries": {
     "block": 14,
@@ -102,13 +102,13 @@
     "br_entries": 692
   },
   "inputs": {
-    "never-block.txt": "f363ff91378c9c23d694cba2326800e639e1c9346fe109712d07880b363eb027",
-    "mixed.txt": "87c7636b9e51aaa292c9b35c9e5ea4b3bdbf5085e70758a3f9b8fa2fbe2602a9",
-    "never-capture.txt": "dc4d8983831233ad1c2403cda76ebc3fb41b8c1ad09c75589305b33a12fba69f",
+    "never-block.txt": "34dee45ce1caf6d1de28797808c11aaf8187d2d9d737322517b84721d4e87750",
+    "mixed.txt": "8cdd55a9d16c39220e3295d37504f4bae7f66794058f87424bf360e1017082ae",
+    "never-capture.txt": "89ea50d0b11b4f24305cb382243d3e7b42bd59659dc344eddc0f45d7ff7e463b",
     "extra-ptbr.txt": "cdbd8dec42268c53ab2a919e870545b98f66e88b2f33e6446ffef0c2170b782e",
     "canary-block.txt": "9919e56c95fb29bbad6c535014b46c2cc5913f231a4f187955371451a7fcc2f5",
     "canary-allow.txt": "4631555f4aa16dc934e9fba2ef7d8e2f9aaeb7e7575d546908fd034cc7b91e14",
-    "sources.lock.json": "63cfe00230c275a01bf4892499ee7079c3967fdab52d4a6cf5c1755b9a8fb72e"
+    "sources.lock.json": "70c575a7883baf602e75985dad4e8315bb935bbd4d136c25246796b87cca2dbb"
   },
   "vector": [
     {
