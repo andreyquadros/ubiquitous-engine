@@ -36,6 +36,36 @@ const MAX_PROFILE_CHARS: usize = 800;
 const MAX_TEMPLATE_CHARS: usize = 3000;
 
 // ---------------------------------------------------------------------------------------------
+// The `nofap` module's screen check
+// ---------------------------------------------------------------------------------------------
+
+/// System prompt of the screen check ([`crate::explicit`]), in English for every provider.
+/// Together with [`EXPLICIT_USER_TEXT`] it is all the text such a request carries: nothing
+/// about the person, the page, the app or the language is ever added, so both are
+/// constants, not builders.
+pub const EXPLICIT_SYSTEM_PROMPT: &str = "\
+You are a content classifier inside a self-control app that an adult installed on their own
+computer to stay away from pornography. You receive one downscaled screenshot of the window
+that person is looking at. Classify what is visible.
+
+explicit   - pornography: sexual acts, exposed genitals or anus, or nudity presented for
+             sexual arousal. Photographs, video frames, drawings, animation or generated
+             images all count. A page of thumbnails of such content counts.
+suggestive - sexualised but not explicit: erotic posing in lingerie or swimwear, partial
+             nudity, blurred or cropped previews, an adult site's landing or age-check page.
+none       - everything else, including medical or educational anatomy, breastfeeding,
+             classical art, sport, beach and family photographs, news, and pages that are
+             mostly text.
+unsure     - the image is too small, dark or ambiguous to tell.
+
+Give your confidence in the verdict as high, medium or low.
+Do not describe the image. Do not transcribe text. Do not identify anyone.
+Answer with the JSON object only.";
+
+/// The user turn of the screen check, after the image.
+pub const EXPLICIT_USER_TEXT: &str = "Classify this screenshot.";
+
+// ---------------------------------------------------------------------------------------------
 // Small helpers
 // ---------------------------------------------------------------------------------------------
 

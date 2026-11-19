@@ -12,6 +12,12 @@
 //! sends the license key as `x-api-key` plus the plan header, and the cost recorded per call
 //! comes from the proxy's `x-ubiqx-cost-usd` response header instead of the price table.
 //!
+//! One kind of call is treated apart: a screen check of the `nofap` module
+//! ([`AiUsageKind::NofapVision`]). A successful one writes no log line at any level and its
+//! usage is recorded at the start of its hour ([`logs_calls`], [`usage_time`]), so neither
+//! the log file nor the ledger becomes a per-check trail. The body of any request reaches
+//! the trace log only through [`redact_images`].
+//!
 //! The request/response types are private to this crate on purpose: `ubiqx-core` must not know
 //! how a vendor API looks.
 
@@ -20,7 +26,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::{debug, info, trace, warn};
@@ -325,6 +331,81 @@ pub fn thinking_disabled_for(model: &str) -> bool {
 /// minimum makes it a no-op for the prompts this crate sends.
 pub fn prompt_cache_for(model: &str) -> bool {
     !is_haiku(model)
+}
+
+// ---------------------------------------------------------------------------------------------
+// What a call may leave behind
+// ---------------------------------------------------------------------------------------------
+
+/// Whether a successful call of this kind may write log lines. A screen check of the
+/// `nofap` module may not, at any level: the desktop shell writes `info` and above to a
+/// file, which would then hold one timestamped line per check, with `stop_reason = refusal`
+/// marking the ones a model declined, and a trace log would hold the verdicts. Failure
+/// lines are written for every kind, and none of them names the kind.
+///
+/// This covers what this crate writes. The HTTP library underneath (`hyper_util`) names the
+/// address it connects to at `debug` and `trace` for every request of every kind; only the
+/// logger's configuration can silence that.
+pub fn logs_calls(kind: AiUsageKind) -> bool {
+    kind != AiUsageKind::NofapVision
+}
+
+/// The time recorded with the usage of a call made at `now`: `now` itself, except for a
+/// screen check of the `nofap` module, which is recorded at the start of its hour. The
+/// ledger feeds monthly totals, which do not change; an exact time per check would be the
+/// per-event trail the module promises not to keep.
+pub fn usage_time(kind: AiUsageKind, now: DateTime<Utc>) -> DateTime<Utc> {
+    if kind != AiUsageKind::NofapVision {
+        return now;
+    }
+    now - chrono::Duration::seconds(now.timestamp().rem_euclid(3600))
+        - chrono::Duration::nanoseconds(i64::from(now.timestamp_subsec_nanos()))
+}
+
+/// Decoded size of a base64 payload, from its length alone.
+fn base64_decoded_len(base64: &str) -> usize {
+    base64.trim_end_matches('=').len() * 3 / 4
+}
+
+fn image_marker(base64: &str) -> Value {
+    Value::String(format!("<image: {} bytes>", base64_decoded_len(base64)))
+}
+
+/// The base64 payload of a `data:` URL, when `text` is one.
+fn data_url_payload(text: &str) -> Option<&str> {
+    let (header, payload) = text.strip_prefix("data:")?.split_once(',')?;
+    header.ends_with(";base64").then_some(payload)
+}
+
+/// A copy of a request body that is safe to log: every image is replaced by
+/// `<image: N bytes>`, whichever vendor shape carries it (the Messages API's
+/// `{"type": "base64", "data": …}` source or a `data:` URL anywhere in the body). The trace
+/// line of every client prints the body through this, for every kind of call.
+pub fn redact_images(body: &Value) -> Value {
+    match body {
+        Value::Object(map) => {
+            let base64_source = map.get("type").and_then(Value::as_str) == Some("base64");
+            Value::Object(
+                map.iter()
+                    .map(|(key, value)| {
+                        let value = match value {
+                            Value::String(data) if base64_source && key == "data" => {
+                                image_marker(data)
+                            }
+                            other => redact_images(other),
+                        };
+                        (key.clone(), value)
+                    })
+                    .collect(),
+            )
+        }
+        Value::Array(items) => Value::Array(items.iter().map(redact_images).collect()),
+        Value::String(text) => match data_url_payload(text) {
+            Some(payload) => image_marker(payload),
+            None => body.clone(),
+        },
+        other => other.clone(),
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -732,17 +813,20 @@ impl AnthropicClient {
         let timeout = req.timeout.unwrap_or(self.config.timeout);
         let kind = req.usage_kind.as_str();
         let vendor = self.vendor();
+        let logged = logs_calls(req.usage_kind);
 
-        debug!(
-            vendor,
-            model = %req.model,
-            kind,
-            max_tokens = req.max_tokens,
-            messages = req.messages.len(),
-            structured = req.json_schema.is_some(),
-            "sending messages request"
-        );
-        trace!(vendor, body = %body, "request body");
+        if logged {
+            debug!(
+                vendor,
+                model = %req.model,
+                kind,
+                max_tokens = req.max_tokens,
+                messages = req.messages.len(),
+                structured = req.json_schema.is_some(),
+                "sending messages request"
+            );
+            trace!(vendor, body = %redact_images(&body), "request body");
+        }
 
         let started = Instant::now();
         let reply = self
@@ -782,7 +866,7 @@ impl AnthropicClient {
         });
 
         let usage = AiUsage {
-            at: Utc::now(),
+            at: usage_time(req.usage_kind, Utc::now()),
             kind: req.usage_kind,
             model: req.model.clone(),
             input_tokens: parsed.usage.input_tokens,
@@ -794,28 +878,30 @@ impl AnthropicClient {
         if let Err(e) = self.usage.record(&usage) {
             warn!(vendor, error = %e, "could not record usage");
         }
-        info!(
-            vendor,
-            model = %req.model,
-            kind,
-            input_tokens = usage.input_tokens,
-            output_tokens = usage.output_tokens,
-            cache_read_tokens = cache_read,
-            cache_write_tokens = cache_write,
-            cost_usd,
-            cost_reported = reported_cost.is_some(),
-            stop_reason = stop_reason.as_str(),
-            elapsed_ms = started.elapsed().as_millis() as u64,
-            "call completed"
-        );
-        trace!(vendor, answer = %answer, "response text");
+        if logged {
+            info!(
+                vendor,
+                model = %req.model,
+                kind,
+                input_tokens = usage.input_tokens,
+                output_tokens = usage.output_tokens,
+                cache_read_tokens = cache_read,
+                cache_write_tokens = cache_write,
+                cost_usd,
+                cost_reported = reported_cost.is_some(),
+                stop_reason = stop_reason.as_str(),
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "call completed"
+            );
+            trace!(vendor, answer = %answer, "response text");
+        }
 
         if stop_reason == StopReason::Refusal {
             // A per-content decision by the model, not an outage: the caller must not retry
             // the same payload.
             return Err(CoreError::AiRefused);
         }
-        if stop_reason == StopReason::MaxTokens {
+        if stop_reason == StopReason::MaxTokens && logged {
             warn!(vendor, model = %req.model, kind, max_tokens = req.max_tokens, "output truncated");
         }
 
@@ -1346,6 +1432,118 @@ mod tests {
             StopReason::parse(Some("tool_use")),
             StopReason::Other("tool_use".into())
         );
+    }
+
+    #[test]
+    fn images_are_redacted_in_both_vendor_shapes() {
+        let payload = "QUJDREVGR0g=";
+        let anthropic = request_body(&LlmRequest {
+            messages: vec![LlmMessage::user(vec![
+                LlmContent::Image {
+                    media_type: "image/jpeg".into(),
+                    base64: payload.into(),
+                },
+                LlmContent::Text("data: is not an image".into()),
+            ])],
+            ..request("claude-haiku-4-5")
+        });
+        let redacted = redact_images(&anthropic);
+        assert_eq!(
+            redacted["messages"][0]["content"][0]["source"],
+            json!({"type": "base64", "media_type": "image/jpeg", "data": "<image: 8 bytes>"})
+        );
+        // Everything that is not an image is untouched.
+        assert_eq!(
+            redacted["messages"][0]["content"][1]["text"],
+            "data: is not an image"
+        );
+        assert_eq!(redacted["model"], anthropic["model"]);
+        assert_eq!(redacted["system"], anthropic["system"]);
+        assert_eq!(redacted["output_config"], anthropic["output_config"]);
+        assert!(!redacted.to_string().contains(payload));
+
+        let openai = json!({
+            "model": "gpt-5-mini",
+            "messages": [{"role": "user", "content": [
+                {"type": "image_url",
+                 "image_url": {"url": format!("data:image/png;base64,{payload}")}},
+                {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+                {"type": "text", "text": "hello"}
+            ]}]
+        });
+        let redacted = redact_images(&openai);
+        let parts = &redacted["messages"][0]["content"];
+        assert_eq!(parts[0]["image_url"]["url"], "<image: 8 bytes>");
+        assert_eq!(parts[1]["image_url"]["url"], "https://example.com/a.png");
+        assert_eq!(parts[2]["text"], "hello");
+        assert!(!redacted.to_string().contains(payload));
+
+        // A body without an image is returned as it is.
+        let plain = json!({"model": "m", "max_tokens": 1, "n": [1, 2.5, null, true]});
+        assert_eq!(redact_images(&plain), plain);
+    }
+
+    #[test]
+    fn the_marker_states_the_decoded_size() {
+        use base64::Engine;
+        for len in [0usize, 1, 2, 3, 4, 5, 1000, 30_001] {
+            let encoded = base64::engine::general_purpose::STANDARD.encode(vec![7u8; len]);
+            assert_eq!(base64_decoded_len(&encoded), len, "{len} bytes");
+        }
+        assert_eq!(
+            image_marker("QUJD"),
+            Value::String("<image: 3 bytes>".into())
+        );
+        assert_eq!(
+            data_url_payload("data:image/jpeg;base64,QUJD"),
+            Some("QUJD")
+        );
+        assert_eq!(data_url_payload("data:text/plain,hello"), None);
+        assert_eq!(data_url_payload("https://example.com/x;base64,QUJD"), None);
+    }
+
+    #[test]
+    fn only_a_screen_check_is_quiet_and_recorded_on_the_hour() {
+        use chrono::{TimeZone, Timelike};
+        let now = Utc
+            .with_ymd_and_hms(2026, 9, 17, 15, 42, 37)
+            .single()
+            .unwrap()
+            + chrono::Duration::milliseconds(123);
+        for kind in AiUsageKind::ALL {
+            let quiet = kind == AiUsageKind::NofapVision;
+            assert_eq!(logs_calls(kind), !quiet, "{kind:?}");
+            let at = usage_time(kind, now);
+            if quiet {
+                assert_eq!(
+                    at,
+                    Utc.with_ymd_and_hms(2026, 9, 17, 15, 0, 0)
+                        .single()
+                        .unwrap()
+                );
+            } else {
+                assert_eq!(at, now, "{kind:?} keeps its exact time");
+            }
+        }
+        // Already on the hour, the last instant of an hour, and a time before 1970.
+        let on_the_hour = Utc
+            .with_ymd_and_hms(2026, 9, 17, 15, 0, 0)
+            .single()
+            .unwrap();
+        assert_eq!(
+            usage_time(AiUsageKind::NofapVision, on_the_hour),
+            on_the_hour
+        );
+        let last = on_the_hour + chrono::Duration::nanoseconds(3_599_999_999_999);
+        assert_eq!(usage_time(AiUsageKind::NofapVision, last), on_the_hour);
+        let old = Utc
+            .with_ymd_and_hms(1969, 12, 31, 23, 59, 59)
+            .single()
+            .unwrap();
+        let truncated = usage_time(AiUsageKind::NofapVision, old);
+        assert_eq!((truncated.minute(), truncated.second()), (0, 0));
+        assert_eq!(truncated.hour(), 23);
+        assert!(truncated <= old);
     }
 
     #[test]

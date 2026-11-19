@@ -20,17 +20,21 @@
 //!   ([`prompts::render_block_line`]).
 //! * [`classifier`] — [`classifier::LlmTextClassifier`] (`RemoteClassifier`, batched text).
 //! * [`vision`] — [`vision::LlmVisionClassifier`] (`VisionClassifier`, one screenshot).
+//! * [`explicit`] — [`explicit::LlmExplicitDetector`] (`ExplicitDetector`, the screen check of
+//!   the `nofap` module: one reduced image, two constant strings, a class for an answer).
 //! * [`report`] — [`report::LlmReportWriter`] (`ReportWriter`, daily institutional report).
 //! * [`advisor`] — [`advisor::LlmAdvisor`] (`Advisor`, weekly recommendations from numbers).
 //! * [`pricing`] — per-vendor price tables and the cost estimate recorded with every call.
 //! * [`fake`] — deterministic, network-free implementations for tests and the Linux CLI.
 //!
 //! Nothing in this crate reads a raw window title: every prompt goes through
-//! [`ubiqx_core::redact`], enforced by construction.
+//! [`ubiqx_core::redact`], enforced by construction. The screen check sends no text about
+//! the user at all, leaves no log line and is recorded in the usage ledger by the hour.
 
 pub mod advisor;
 pub mod classifier;
 pub mod client;
+pub mod explicit;
 pub mod fake;
 pub mod openai;
 pub mod pricing;
@@ -47,6 +51,7 @@ pub use client::{
     AnthropicClient, AnthropicConfig, ApiKeySource, LlmClient, LlmContent, LlmMessage, LlmRequest,
     LlmResponse, LlmRole, StaticApiKey, StopReason, SystemBlock, UBI_MODEL_ALIASES,
 };
+pub use explicit::LlmExplicitDetector;
 pub use openai::{OpenAiCompatClient, OpenAiCompatConfig};
 pub use report::LlmReportWriter;
 pub use router::{FixedProvider, ProviderSource, RoutingLlmClient};

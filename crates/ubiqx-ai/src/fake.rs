@@ -1,9 +1,9 @@
 //! Deterministic, network-free implementations of the AI ports and test doubles for the client.
 //!
 //! Used by the engine's tests and by the Linux CLI, where no key (and no macOS) is available:
-//! [`FakeClassifier`], [`FakeVisionClassifier`], [`FakeReportWriter`], [`FakeAdvisor`], plus
-//! [`MemoryUsageRepo`] (an in-memory `UsageRepo`) and [`ScriptedLlmClient`] (a scripted
-//! `LlmClient` that records the requests it receives).
+//! [`FakeClassifier`], [`FakeVisionClassifier`], [`FakeExplicitDetector`], [`FakeReportWriter`],
+//! [`FakeAdvisor`], plus [`MemoryUsageRepo`] (an in-memory `UsageRepo`) and
+//! [`ScriptedLlmClient`] (a scripted `LlmClient` that records the requests it receives).
 
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -11,9 +11,11 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use ubiqx_core::nofap::{Confidence, ExplicitCheck, ExplicitDetector, ExplicitVerdict};
 use ubiqx_core::ports::{
-    Advice, AdviceRequest, Advisor, AiUsage, AiUsageTotals, Classification, ClassificationContext,
-    EncodedImage, RemoteClassifier, ReportRequest, ReportWriter, UsageRepo, VisionClassifier,
+    Advice, AdviceRequest, Advisor, AiUsage, AiUsageKind, AiUsageTotals, Classification,
+    ClassificationContext, EncodedImage, RemoteClassifier, ReportRequest, ReportWriter, UsageRepo,
+    VisionClassifier,
 };
 use ubiqx_core::report::{format_minutes, no_activity_text};
 use ubiqx_core::{
@@ -49,6 +51,13 @@ impl MemoryUsageRepo {
     }
 }
 
+fn add_to(totals: &mut AiUsageTotals, usage: &AiUsage) {
+    totals.calls += 1;
+    totals.input_tokens += u64::from(usage.input_tokens);
+    totals.output_tokens += u64::from(usage.output_tokens);
+    totals.cost_usd += usage.cost_usd;
+}
+
 impl UsageRepo for MemoryUsageRepo {
     fn record(&self, usage: &AiUsage) -> CoreResult<()> {
         self.records
@@ -62,12 +71,28 @@ impl UsageRepo for MemoryUsageRepo {
         let records = self.records();
         let mut totals = AiUsageTotals::default();
         for u in records.iter().filter(|u| range.contains(u.at)) {
-            totals.calls += 1;
-            totals.input_tokens += u64::from(u.input_tokens);
-            totals.output_tokens += u64::from(u.output_tokens);
-            totals.cost_usd += u.cost_usd;
+            add_to(&mut totals, u);
         }
         Ok(totals)
+    }
+
+    /// In the order of [`AiUsageKind::ALL`]; a kind without a call in `range` is absent.
+    fn totals_by_kind(&self, range: TimeRange) -> CoreResult<Vec<(AiUsageKind, AiUsageTotals)>> {
+        let records = self.records();
+        let mut out = Vec::new();
+        for kind in AiUsageKind::ALL {
+            let mut totals = AiUsageTotals::default();
+            for u in records
+                .iter()
+                .filter(|u| u.kind == kind && range.contains(u.at))
+            {
+                add_to(&mut totals, u);
+            }
+            if totals.calls > 0 {
+                out.push((kind, totals));
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -75,11 +100,11 @@ impl UsageRepo for MemoryUsageRepo {
 // Scripted LLM client
 // ---------------------------------------------------------------------------------------------
 
-/// An [`LlmClient`] that answers with scripted texts (in order) and records every request.
-/// Once the script is exhausted it fails with `CoreError::Ai`.
+/// An [`LlmClient`] that answers with scripted texts and errors (in order) and records
+/// every request. Once the script is exhausted it fails with `CoreError::Ai`.
 #[derive(Debug, Default)]
 pub struct ScriptedLlmClient {
-    responses: Mutex<VecDeque<LlmResponse>>,
+    responses: Mutex<VecDeque<CoreResult<LlmResponse>>>,
     requests: Mutex<Vec<LlmRequest>>,
     truncated: Mutex<Vec<usize>>,
 }
@@ -89,14 +114,16 @@ impl ScriptedLlmClient {
     pub fn new(texts: Vec<String>) -> Self {
         let responses = texts
             .into_iter()
-            .map(|text| LlmResponse {
-                text,
-                model: FAKE_MODEL.into(),
-                input_tokens: 1000,
-                output_tokens: 100,
-                cache_read_tokens: 0,
-                cache_write_tokens: 0,
-                stop_reason: StopReason::EndTurn,
+            .map(|text| {
+                Ok(LlmResponse {
+                    text,
+                    model: FAKE_MODEL.into(),
+                    input_tokens: 1000,
+                    output_tokens: 100,
+                    cache_read_tokens: 0,
+                    cache_write_tokens: 0,
+                    stop_reason: StopReason::EndTurn,
+                })
             })
             .collect();
         Self {
@@ -109,7 +136,15 @@ impl ScriptedLlmClient {
     /// Appends a fully specified response.
     pub fn push_response(&self, response: LlmResponse) {
         if let Ok(mut r) = self.responses.lock() {
-            r.push_back(response);
+            r.push_back(Ok(response));
+        }
+    }
+
+    /// Appends a failure: the call that reaches it gets `error` (a refusal is
+    /// [`CoreError::AiRefused`], as the HTTP clients report one).
+    pub fn push_error(&self, error: CoreError) {
+        if let Ok(mut r) = self.responses.lock() {
+            r.push_back(Err(error));
         }
     }
 
@@ -142,7 +177,7 @@ impl LlmClient for ScriptedLlmClient {
             .lock()
             .map_err(|_| CoreError::Ai("scripted client poisoned".into()))?
             .pop_front()
-            .ok_or_else(|| CoreError::Ai("scripted client: no more responses".into()))?;
+            .ok_or_else(|| CoreError::Ai("scripted client: no more responses".into()))??;
         let truncated = self
             .truncated
             .lock()
@@ -273,6 +308,109 @@ impl VisionClassifier for FakeVisionClassifier {
             needs_vision: false,
             rule_id: None,
         })
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Explicit detector
+// ---------------------------------------------------------------------------------------------
+
+/// An [`ExplicitDetector`] that answers from a queue and records what it was shown.
+///
+/// Answers are consumed in order. When the queue is empty the detector repeats its
+/// fallback, if one was set ([`FakeExplicitDetector::always`],
+/// [`FakeExplicitDetector::set_fallback`]), and fails with `CoreError::Ai` otherwise, so a
+/// test that expects no further check notices one.
+#[derive(Debug, Default)]
+pub struct FakeExplicitDetector {
+    answers: Mutex<VecDeque<CoreResult<ExplicitCheck>>>,
+    fallback: Mutex<Option<ExplicitCheck>>,
+    seen: Mutex<Vec<(EncodedImage, String)>>,
+}
+
+impl FakeExplicitDetector {
+    /// An empty queue and no fallback.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Answers `check` to every call.
+    pub fn always(check: ExplicitCheck) -> Self {
+        let fake = Self::default();
+        fake.set_fallback(Some(check));
+        fake
+    }
+
+    /// The answer of a model that looked: `refused` is false.
+    pub fn verdict(verdict: ExplicitVerdict, confidence: Confidence) -> ExplicitCheck {
+        ExplicitCheck {
+            verdict,
+            confidence,
+            refused: false,
+        }
+    }
+
+    /// What [`crate::explicit::LlmExplicitDetector`] answers when the provider refuses.
+    pub fn refusal() -> ExplicitCheck {
+        crate::explicit::REFUSED
+    }
+
+    /// Appends one answer (or one failure) to the queue.
+    pub fn push(&self, answer: CoreResult<ExplicitCheck>) {
+        if let Ok(mut answers) = self.answers.lock() {
+            answers.push_back(answer);
+        }
+    }
+
+    /// What to answer once the queue is empty (`None`: fail).
+    pub fn set_fallback(&self, check: Option<ExplicitCheck>) {
+        if let Ok(mut fallback) = self.fallback.lock() {
+            *fallback = check;
+        }
+    }
+
+    /// How many checks were asked for.
+    pub fn calls(&self) -> usize {
+        self.seen.lock().map(|s| s.len()).unwrap_or(0)
+    }
+
+    /// Every image received so far, in order.
+    pub fn images(&self) -> Vec<EncodedImage> {
+        self.seen
+            .lock()
+            .map(|s| s.iter().map(|(image, _)| image.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    /// The model id of every call so far, in order.
+    pub fn models(&self) -> Vec<String> {
+        self.seen
+            .lock()
+            .map(|s| s.iter().map(|(_, model)| model.clone()).collect())
+            .unwrap_or_default()
+    }
+}
+
+#[async_trait]
+impl ExplicitDetector for FakeExplicitDetector {
+    async fn check(&self, image: &EncodedImage, model: &str) -> CoreResult<ExplicitCheck> {
+        self.seen
+            .lock()
+            .map_err(|_| CoreError::Ai("fake explicit detector poisoned".into()))?
+            .push((image.clone(), model.to_string()));
+        let queued = self
+            .answers
+            .lock()
+            .map_err(|_| CoreError::Ai("fake explicit detector poisoned".into()))?
+            .pop_front();
+        match queued {
+            Some(answer) => answer,
+            None => self
+                .fallback
+                .lock()
+                .map_err(|_| CoreError::Ai("fake explicit detector poisoned".into()))?
+                .ok_or_else(|| CoreError::Ai("fake explicit detector: no more answers".into())),
+        }
     }
 }
 
@@ -715,5 +853,143 @@ mod tests {
             ))
             .unwrap();
         assert_eq!(none.calls, 0);
+    }
+
+    #[test]
+    fn usage_repo_splits_the_totals_by_kind() {
+        let repo = MemoryUsageRepo::new();
+        let now = Utc::now();
+        let range = TimeRange::new(
+            now - chrono::Duration::hours(1),
+            now + chrono::Duration::hours(1),
+        );
+        assert!(repo.totals_by_kind(range).unwrap().is_empty());
+
+        let record = |kind, at, input: u32, cost: f64| {
+            repo.record(&AiUsage {
+                at,
+                kind,
+                model: "m".into(),
+                input_tokens: input,
+                output_tokens: 5,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                cost_usd: cost,
+            })
+            .unwrap();
+        };
+        record(AiUsageKind::NofapVision, now, 600, 0.25);
+        record(AiUsageKind::Classify, now, 10, 0.5);
+        record(AiUsageKind::NofapVision, now, 610, 0.25);
+        record(
+            AiUsageKind::NofapVision,
+            now + chrono::Duration::hours(3),
+            620,
+            0.25,
+        );
+
+        let split = repo.totals_by_kind(range).unwrap();
+        assert_eq!(
+            split
+                .iter()
+                .map(|(k, t)| (*k, t.calls, t.input_tokens, t.output_tokens))
+                .collect::<Vec<_>>(),
+            [
+                (AiUsageKind::Classify, 1, 10, 5),
+                (AiUsageKind::NofapVision, 2, 1210, 10)
+            ],
+            "ordered like AiUsageKind::ALL, the later call outside the range left out"
+        );
+        assert_eq!(split[1].1.cost_usd, 0.5);
+        // The split adds up to the plain total.
+        let total = repo.totals(range).unwrap();
+        assert_eq!(split.iter().map(|(_, t)| t.calls).sum::<u64>(), total.calls);
+        assert_eq!(
+            split.iter().map(|(_, t)| t.cost_usd).sum::<f64>(),
+            total.cost_usd
+        );
+    }
+
+    #[tokio::test]
+    async fn scripted_client_answers_errors_in_script_order() {
+        let client = ScriptedLlmClient::new(vec!["first".into()]);
+        client.push_error(CoreError::AiRefused);
+        client.push_response(LlmResponse {
+            text: "third".into(),
+            model: FAKE_MODEL.into(),
+            input_tokens: 1,
+            output_tokens: 1,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            stop_reason: StopReason::EndTurn,
+        });
+        let req = LlmRequest {
+            model: "m".into(),
+            system: vec![],
+            messages: vec![crate::client::LlmMessage::user_text("hi")],
+            max_tokens: 10,
+            json_schema: None,
+            disable_thinking: false,
+            usage_kind: AiUsageKind::Classify,
+            timeout: None,
+        };
+        assert_eq!(client.complete(&req).await.unwrap().text, "first");
+        assert!(matches!(
+            client.complete(&req).await,
+            Err(CoreError::AiRefused)
+        ));
+        assert_eq!(client.complete(&req).await.unwrap().text, "third");
+        assert!(matches!(client.complete(&req).await, Err(CoreError::Ai(_))));
+        assert_eq!(client.requests().len(), 4, "failed calls are recorded too");
+    }
+
+    #[tokio::test]
+    async fn fake_explicit_detector_answers_its_queue_then_its_fallback() {
+        let image = |n: u8| EncodedImage {
+            bytes: vec![n; 3],
+            mime: "image/jpeg".into(),
+            width: 640,
+            height: 400,
+        };
+        let high = FakeExplicitDetector::verdict(ExplicitVerdict::Explicit, Confidence::High);
+        let none = FakeExplicitDetector::verdict(ExplicitVerdict::None, Confidence::High);
+
+        let fake = FakeExplicitDetector::new();
+        fake.push(Ok(high));
+        fake.push(Err(CoreError::Ai("HTTP 503".into())));
+        fake.push(Ok(FakeExplicitDetector::refusal()));
+        assert_eq!(fake.check(&image(1), "model-a").await.unwrap(), high);
+        assert!(matches!(
+            fake.check(&image(2), "model-a").await,
+            Err(CoreError::Ai(_))
+        ));
+        let refused = fake.check(&image(3), "model-b").await.unwrap();
+        assert!(refused.refused);
+        assert_eq!(refused.verdict, ExplicitVerdict::Unsure);
+        // An empty queue without a fallback is a failure a test will notice.
+        assert!(matches!(
+            fake.check(&image(4), "model-b").await,
+            Err(CoreError::Ai(_))
+        ));
+        fake.set_fallback(Some(none));
+        assert_eq!(fake.check(&image(5), "model-b").await.unwrap(), none);
+        assert_eq!(fake.check(&image(6), "model-b").await.unwrap(), none);
+
+        assert_eq!(fake.calls(), 6);
+        assert_eq!(
+            fake.images(),
+            (1..=6).map(image).collect::<Vec<_>>(),
+            "every image it was shown, failed calls included"
+        );
+        assert_eq!(
+            fake.models(),
+            ["model-a", "model-a", "model-b", "model-b", "model-b", "model-b"]
+        );
+
+        // A queued answer comes before the fallback.
+        let constant = FakeExplicitDetector::always(none);
+        constant.push(Ok(high));
+        assert_eq!(constant.check(&image(7), "m").await.unwrap(), high);
+        assert_eq!(constant.check(&image(8), "m").await.unwrap(), none);
     }
 }

@@ -20,7 +20,8 @@
 //! | images                        | `image_url` with a `data:` URL           | same                             |
 //!
 //! `reasoning_effort` is only ever sent for the high-volume, latency-sensitive calls
-//! ([`AiUsageKind::Classify`] and [`AiUsageKind::Vision`]); reports and advice
+//! ([`AiUsageKind::Classify`], [`AiUsageKind::Vision`] and the `nofap` module's screen
+//! check, [`AiUsageKind::NofapVision`]); reports and advice
 //! ([`AiUsageKind::Report`], [`AiUsageKind::Advice`]) run at the model's default effort.
 //! [`crate::client::SystemBlock::cache`] and [`LlmRequest::disable_thinking`] are Anthropic-only and ignored
 //! here; system blocks are joined with blank lines into one `system` message.
@@ -32,6 +33,10 @@
 //! `cache_read_tokens` = `prompt_tokens_details.cached_tokens`, `cache_write_tokens` = 0), so
 //! the cost ledger prices cached tokens once, at 10 % of the input price.
 //! `output_tokens` is `usage.completion_tokens`, which includes reasoning tokens.
+//!
+//! A screen check ([`AiUsageKind::NofapVision`]) is recorded at the start of its hour and
+//! writes no log line when it succeeds, exactly as in [`crate::client`]; the request body
+//! reaches the trace log only through [`redact_images`].
 //!
 //! # Error mapping
 //!
@@ -60,9 +65,9 @@ use ubiqx_core::ports::{AiUsage, AiUsageKind, UsageRepo};
 use ubiqx_core::{AiProvider, CoreError, CoreResult, UiLanguage};
 
 use crate::client::{
-    validate_request, ApiKeySource, LanguageSource, LlmClient, LlmContent, LlmRequest, LlmResponse,
-    LlmRole, StopReason, DEFAULT_BACKOFF_BASE, DEFAULT_BACKOFF_CAP, DEFAULT_MAX_ATTEMPTS,
-    DEFAULT_TIMEOUT,
+    logs_calls, redact_images, usage_time, validate_request, ApiKeySource, LanguageSource,
+    LlmClient, LlmContent, LlmRequest, LlmResponse, LlmRole, StopReason, DEFAULT_BACKOFF_BASE,
+    DEFAULT_BACKOFF_CAP, DEFAULT_MAX_ATTEMPTS, DEFAULT_TIMEOUT,
 };
 use crate::pricing;
 use crate::retry::{self, Outcome, RetryPolicy, RetryableError};
@@ -171,14 +176,17 @@ fn is_o_series(model: &str) -> bool {
 }
 
 /// The `reasoning_effort` value to send for `model` on a call of kind `kind`, or `None` to
-/// omit the field. Only classification and vision calls get one (the cheapest setting the
-/// model accepts); other kinds and models that reject the field get nothing.
+/// omit the field. Only classification, vision and screen-check calls get one (the cheapest
+/// setting the model accepts); other kinds and models that reject the field get nothing.
 pub fn reasoning_effort_for(
     provider: AiProvider,
     model: &str,
     kind: AiUsageKind,
 ) -> Option<&'static str> {
-    if !matches!(kind, AiUsageKind::Classify | AiUsageKind::Vision) {
+    if !matches!(
+        kind,
+        AiUsageKind::Classify | AiUsageKind::Vision | AiUsageKind::NofapVision
+    ) {
         return None;
     }
     let m = model.trim().to_ascii_lowercase();
@@ -675,18 +683,21 @@ impl OpenAiCompatClient {
         let url = self.url("/chat/completions");
         let timeout = req.timeout.unwrap_or(self.config.timeout);
         let kind = req.usage_kind.as_str();
+        let logged = logs_calls(req.usage_kind);
 
-        debug!(
-            vendor,
-            model = %req.model,
-            kind,
-            max_tokens = req.max_tokens,
-            messages = req.messages.len(),
-            structured = req.json_schema.is_some(),
-            reasoning_effort = body.get("reasoning_effort").and_then(serde_json::Value::as_str),
-            "sending chat completion"
-        );
-        trace!(vendor, body = %body, "request body");
+        if logged {
+            debug!(
+                vendor,
+                model = %req.model,
+                kind,
+                max_tokens = req.max_tokens,
+                messages = req.messages.len(),
+                structured = req.json_schema.is_some(),
+                reasoning_effort = body.get("reasoning_effort").and_then(serde_json::Value::as_str),
+                "sending chat completion"
+            );
+            trace!(vendor, body = %redact_images(&body), "request body");
+        }
 
         let started = Instant::now();
         let text = self
@@ -730,7 +741,7 @@ impl OpenAiCompatClient {
         );
 
         let usage = AiUsage {
-            at: Utc::now(),
+            at: usage_time(req.usage_kind, Utc::now()),
             kind: req.usage_kind,
             model: req.model.clone(),
             input_tokens,
@@ -742,26 +753,28 @@ impl OpenAiCompatClient {
         if let Err(e) = self.usage.record(&usage) {
             warn!(vendor, error = %e, "could not record usage");
         }
-        info!(
-            vendor,
-            model = %req.model,
-            kind,
-            input_tokens,
-            output_tokens,
-            cache_read_tokens = cache_read,
-            cost_usd,
-            stop_reason = stop_reason.as_str(),
-            elapsed_ms = started.elapsed().as_millis() as u64,
-            "call completed"
-        );
-        trace!(vendor, answer = %answer, "response text");
+        if logged {
+            info!(
+                vendor,
+                model = %req.model,
+                kind,
+                input_tokens,
+                output_tokens,
+                cache_read_tokens = cache_read,
+                cost_usd,
+                stop_reason = stop_reason.as_str(),
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "call completed"
+            );
+            trace!(vendor, answer = %answer, "response text");
+        }
 
         if stop_reason == StopReason::Refusal {
             // A per-content decision by the model, not an outage: the caller must not retry
             // the same payload.
             return Err(CoreError::AiRefused);
         }
-        if stop_reason == StopReason::MaxTokens {
+        if stop_reason == StopReason::MaxTokens && logged {
             warn!(vendor, model = %req.model, kind, max_tokens = req.max_tokens, "output truncated");
         }
 
@@ -986,6 +999,33 @@ mod tests {
         assert_eq!(reasoning_effort_for(Xai, "grok-4", Classify), None);
         // xAI never sees OpenAI's policy even for an OpenAI-looking id.
         assert_eq!(reasoning_effort_for(Xai, "gpt-5", Classify), None);
+    }
+
+    #[test]
+    fn a_screen_check_runs_at_the_cheapest_effort() {
+        use AiProvider::{OpenAi, Xai};
+        use AiUsageKind::NofapVision;
+        assert_eq!(
+            reasoning_effort_for(OpenAi, "gpt-5-mini", NofapVision),
+            Some("minimal")
+        );
+        assert_eq!(
+            reasoning_effort_for(OpenAi, "GPT-5.4 ", NofapVision),
+            Some("minimal")
+        );
+        assert_eq!(
+            reasoning_effort_for(OpenAi, "o4-mini", NofapVision),
+            Some("low")
+        );
+        assert_eq!(reasoning_effort_for(OpenAi, "gpt-4o", NofapVision), None);
+        assert_eq!(
+            reasoning_effort_for(Xai, "grok-3-mini", NofapVision),
+            Some("low")
+        );
+        assert_eq!(reasoning_effort_for(Xai, "grok-4", NofapVision), None);
+
+        let body = request_body(OpenAi, &request("gpt-5-mini", NofapVision));
+        assert_eq!(body["reasoning_effort"], "minimal");
     }
 
     #[test]
