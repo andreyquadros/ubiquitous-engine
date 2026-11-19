@@ -2,7 +2,7 @@ import { Hourglass } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { useT } from '../../i18n';
-import { fmtClock, fmtDelay, pendingLabel } from '../labels';
+import { fmtClock, fmtDelay, pendingLabel, quoted } from '../labels';
 import type { Id, NofapView, PendingView, SitesView } from '../types';
 
 interface Props {
@@ -91,7 +91,7 @@ export function PendingBanner({ view, sites, onCancel, onConfirm, onSurf, onElap
           {t('nofap.btn.surf')}
         </Button>
       </div>
-      {view.config.values && <p className="panel-raised p-3 text-[13px] leading-5 text-ink-2">{t('nofap.panic.reason', { reason: view.config.values })}</p>}
+      {view.config.values && <p className="panel-raised p-3 text-[13px] leading-5 text-ink-2">{t('nofap.panic.reason', { reason: quoted(view.config.values) })}</p>}
       <ul className="flex flex-col divide-y divide-line">
         {pending.map((p) => (
           <PendingRow key={p.id} pending={p} view={view} sites={sites} onCancel={onCancel} onConfirm={onConfirm} onElapsed={onElapsed} />

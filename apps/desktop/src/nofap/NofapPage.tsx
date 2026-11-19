@@ -19,7 +19,7 @@ import { SystemPreview } from './components/SystemPreview';
 import { TierRow } from './components/TierRow';
 import { consentComplete, VisionConsent } from './components/VisionConsent';
 import { nofapIpc } from './ipc';
-import { fmtDelay, LAYERS, layersOn, providerName, reasonText } from './labels';
+import { fmtDelay, LAYERS, layersOn, providerName, quoted, reasonText } from './labels';
 import { NofapWizard, type NofapHost } from './NofapWizard';
 import { useNofapEvents, useNofapStore } from './store';
 import { HelpTab } from './tabs/HelpTab';
@@ -55,7 +55,7 @@ function StatusCard({ view, onIssue, onOpen }: { view: NofapView; onIssue: (acti
   return (
     <Card data-testid="nofap-status">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1 basis-72">
           <h2 className="display flex items-center gap-2.5 text-lg" data-testid="nofap-overall">
             <span className="size-2.5 shrink-0 rounded-full" style={{ background: OVERALL_COLOR[status.overall] }} aria-hidden />
             {t(`nofap.overall.${status.overall}`)}
@@ -378,7 +378,7 @@ export function NofapPage({ host }: { host?: NofapHost }) {
         }
       >
         <p className="text-sm leading-6 text-ink-2">{view.config.delay_secs > 0 ? t('nofap.off.dialog_body', { delay: fmtDelay(view.config.delay_secs, t) }) : t('nofap.off.dialog_body_now')}</p>
-        {view.config.values && <p className="panel-raised mt-3 p-3 text-[13px] leading-5 text-ink-2">{t('nofap.panic.reason', { reason: view.config.values })}</p>}
+        {view.config.values && <p className="panel-raised mt-3 p-3 text-[13px] leading-5 text-ink-2">{t('nofap.panic.reason', { reason: quoted(view.config.values) })}</p>}
       </Dialog>
       <Dialog
         open={dialog === 'consent'}

@@ -5,14 +5,15 @@ import { Card } from '../components/ui/Card';
 import { Field, Textarea } from '../components/ui/Field';
 import { Progress } from '../components/ui/misc';
 import { Toggle } from '../components/ui/Toggle';
-import { useT } from '../i18n';
+import { useLocale, useT } from '../i18n';
 import { ipcErrorMessage } from '../lib/ipc';
 import { DelayPicker } from './components/DelayPicker';
+import { ResolverChoice } from './components/ResolverChoice';
 import { SampleFrameView } from './components/SampleFrameView';
 import { consentComplete, VisionConsent } from './components/VisionConsent';
 import { VisionScope } from './components/VisionScope';
 import { nofapIpc } from './ipc';
-import { fmtDelay, reasonText, VALUES_MAX_CHARS, type Translate } from './labels';
+import { fmtDelay, fmtMoney, reasonText, VALUES_MAX_CHARS, type Translate } from './labels';
 import type { AiReadiness, EnableOptions, NofapView, Tier, TierCapability, VisionOff, VisionScope as Scope } from './types';
 
 /** What the host app lends the module: things that live outside it. */
@@ -50,6 +51,7 @@ interface Props {
  */
 export function NofapWizard({ view, host, onEnabled }: Props) {
   const t = useT();
+  const locale = useLocale();
   const name = view.display_name;
   const caps = view.capabilities;
   const aiReady = view.ai === 'ready';
@@ -142,12 +144,13 @@ export function NofapWizard({ view, host, onEnabled }: Props) {
                       </p>
                       <p className="mt-0.5 text-xs leading-5 text-ink-3">{note ?? t(`nofap.layer.${tier}.hint`)}</p>
                     </div>
-                    {capability.state === 'available' ? (
-                      <Toggle label={t(`nofap.layer.${tier}`)} checked={tiers[tier]} onChange={(on) => setTiers((v) => ({ ...v, [tier]: on }))} />
-                    ) : (
+                    {capability.state !== 'available' ? (
                       <Badge tone={capability.state === 'gated' ? 'violet' : 'neutral'}>{t(capability.state === 'gated' ? 'nofap.tier.gated' : 'nofap.tier.unsupported')}</Badge>
+                    ) : tier === 'resolver' ? null : (
+                      <Toggle label={t(`nofap.layer.${tier}`)} checked={tiers[tier]} onChange={(on) => setTiers((v) => ({ ...v, [tier]: on }))} />
                     )}
                   </div>
+                  {tier === 'resolver' && capability.state === 'available' && <ResolverChoice value={tiers.resolver ? 'cloudflare_family' : null} onChange={(resolver) => setTiers((v) => ({ ...v, resolver: resolver !== null }))} />}
                   {disclosure && capability.state === 'available' && tiers[tier] && <p className="panel-raised p-3 text-xs leading-5 text-ink-2">{t(disclosure)}</p>}
                 </li>
               );
@@ -194,7 +197,7 @@ export function NofapWizard({ view, host, onEnabled }: Props) {
                       {t('nofap.vision.need_tick')}
                     </p>
                   )}
-                  <p className="text-xs leading-5 text-ink-3">{t('nofap.vision.cost', { per_day: view.config.vision.max_per_day, cap: view.config.vision.monthly_cap_usd.toFixed(2) })}</p>
+                  <p className="text-xs leading-5 text-ink-3">{t('nofap.vision.cost', { per_day: view.config.vision.max_per_day, cap: fmtMoney(view.config.vision.monthly_cap_usd, locale) })}</p>
                   <div className="border-t border-line pt-4">
                     <h3 className="mb-3 text-[13px] font-medium text-ink">{t('nofap.vision.scope_title')}</h3>
                     <VisionScope scope={scope} onChange={setScope} />

@@ -44,6 +44,9 @@ export function fmtDelayShort(secs: number, t: Translate): string {
   return secs % 3600 === 0 ? `${secs / 3600} h` : `${Math.round(secs / 60)} min`;
 }
 
+/** A dollar amount in the language's own number format: "2,00", "2.00". */
+export const fmtMoney = (value: number, locale: Locale): string => value.toLocaleString(locale === 'en' ? 'en-US' : 'pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 /** A running clock: "7:59", "1:02:03". */
 export function fmtClock(secs: number): string {
   const s = Math.max(0, Math.round(secs));
@@ -96,6 +99,9 @@ export function pendingLabel(pending: PendingView, config: ConfigView, sites: Si
   }
   return t(`nofap.pending.kind.${pending.kind}`, { name });
 }
+
+/** The user's sentence as it goes inside the quotes of `panic.reason`: without its own closing full stop. */
+export const quoted = (values: string): string => values.trim().replace(/[.…\s]+$/u, '');
 
 const bare = (url: string | null | undefined): string => (url ?? '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 

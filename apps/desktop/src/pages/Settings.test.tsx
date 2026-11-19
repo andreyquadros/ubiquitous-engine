@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getLocale, setLocale } from '../i18n';
 import { __mock } from '../lib/mock';
+import { __nofapMock } from '../nofap/mock';
+import { useNofapStore } from '../nofap/store';
 import { providerPitch } from '../lib/providers';
 import { useAppStore } from '../lib/store';
 import { IDLE_INSTALL } from '../lib/updater';
@@ -378,5 +380,32 @@ describe('Settings · Licença section (mock backend)', () => {
     expect(screen.getByRole('button', { name: 'Subscribe' })).toBeInTheDocument();
     expect(screen.getByTestId('about-plan')).toHaveTextContent('ubiqX Yearly, with your AI');
     expect(within(screen.getByRole('radiogroup', { name: 'AI provider' })).getByRole('radio', { name: /Ubi AI/ })).toBeDisabled();
+  });
+});
+
+describe('Settings · Privacidade and the nofap module', () => {
+  beforeEach(async () => {
+    __mock.reset();
+    useAppStore.setState({ settingsView: null });
+    useNofapStore.setState({ view: null, error: null, sites: null, support: null });
+    await useAppStore.getState().loadSettings();
+  });
+  afterEach(() => __nofapMock.reset('off'));
+
+  it('says under the exclusion lists that the module honours a new exclusion only after its waiting time', async () => {
+    __nofapMock.reset('on');
+    renderPage();
+    const hint = await screen.findByTestId('nofap-exclusion-hint');
+    expect(hint).toHaveTextContent('O NoFap passa a respeitar esta exclusão em 10 minutos.');
+    // The wording rule: "bloqueados" stays the label of these lists; the module's own word is "barrados".
+    expect(screen.getByText('Domínios bloqueados')).toBeInTheDocument();
+  });
+
+  it('shows no such hint while the module is off', async () => {
+    __nofapMock.reset('off');
+    renderPage();
+    await screen.findByText('Domínios bloqueados');
+    await waitFor(() => expect(useNofapStore.getState().view).not.toBeNull());
+    expect(screen.queryByTestId('nofap-exclusion-hint')).toBeNull();
   });
 });

@@ -2,11 +2,12 @@ import { Button } from '../../components/ui/Button';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Field } from '../../components/ui/Field';
 import { Toggle } from '../../components/ui/Toggle';
-import { useT } from '../../i18n';
+import { useLocale, useT } from '../../i18n';
 import { DelayPicker } from '../components/DelayPicker';
+import { ResolverChoice } from '../components/ResolverChoice';
 import { SampleFrameView } from '../components/SampleFrameView';
 import { VisionScope } from '../components/VisionScope';
-import { fmtDelay, providerName } from '../labels';
+import { fmtDelay, fmtMoney, providerName } from '../labels';
 import type { NofapDialog } from '../NofapPage';
 import type { NofapHost } from '../NofapWizard';
 import type { NofapChange, NofapView, Tier } from '../types';
@@ -24,11 +25,12 @@ const DISCLOSURE: Partial<Record<Tier, string>> = { resolver: 'nofap.dns.disclos
 /** "Proteção": which layers are chosen, the AI check, and the agreement about turning things off. */
 export function ProtectionTab({ view, host, onRequest, onOpen }: Props) {
   const t = useT();
+  const locale = useLocale();
   const name = view.display_name;
   const { system, vision, ui } = view.config;
   const delay = fmtDelay(view.config.delay_secs, t);
   const chosen: Record<Tier, boolean> = { hosts: system.hosts, resolver: system.resolver !== null, policies: system.policies };
-  const change = (tier: Tier, on: boolean): NofapChange => (tier === 'resolver' ? { kind: 'set_resolver', resolver: on ? 'cloudflare_family' : null } : tier === 'hosts' ? { kind: 'set_hosts', on } : { kind: 'set_policies', on });
+  const change = (tier: 'hosts' | 'policies', on: boolean): NofapChange => (tier === 'hosts' ? { kind: 'set_hosts', on } : { kind: 'set_policies', on });
   const provider = providerName(view.provider, t);
   const consentCurrent = vision.consent?.provider === view.provider;
   const visionOn = view.status.vision.state !== 'off';
@@ -48,9 +50,19 @@ export function ProtectionTab({ view, host, onRequest, onOpen }: Props) {
             const disclosure = DISCLOSURE[tier];
             return (
               <li key={tier} className="flex flex-col gap-2 py-3 first:pt-0">
-                <Field label={t(`nofap.layer.${tier}`)} hint={t(`nofap.layer.${tier}.hint`)} inline>
-                  {(id) => <Toggle id={id} checked={chosen[tier]} disabled={view.capabilities[tier].state !== 'available'} onChange={(on) => onRequest(change(tier, on))} />}
-                </Field>
+                {tier === 'resolver' ? (
+                  <div className="flex flex-col gap-2">
+                    <div>
+                      <p className="text-[13px] font-medium text-ink">{t('nofap.layer.resolver')}</p>
+                      <p className="text-xs text-ink-3">{t('nofap.layer.resolver.hint')}</p>
+                    </div>
+                    <ResolverChoice value={system.resolver} disabled={view.capabilities.resolver.state !== 'available'} onChange={(resolver) => onRequest({ kind: 'set_resolver', resolver })} />
+                  </div>
+                ) : (
+                  <Field label={t(`nofap.layer.${tier}`)} hint={t(`nofap.layer.${tier}.hint`)} inline>
+                    {(id) => <Toggle id={id} checked={chosen[tier]} disabled={view.capabilities[tier].state !== 'available'} onChange={(on) => onRequest(change(tier, on))} />}
+                  </Field>
+                )}
                 {disclosure && chosen[tier] && <p className="panel-raised p-3 text-xs leading-5 text-ink-2">{t(disclosure)}</p>}
               </li>
             );
@@ -83,8 +95,8 @@ export function ProtectionTab({ view, host, onRequest, onOpen }: Props) {
               </div>
             )}
             <p className="num text-xs leading-5 text-ink-3">
-              {t('nofap.vision.cost', { per_day: vision.max_per_day, cap: vision.monthly_cap_usd.toFixed(2) })}{' '}
-              {t('nofap.vision.month', { checks: view.cost_line.month_checks, usd: view.cost_line.month_usd.toFixed(2), cap: view.cost_line.cap_usd.toFixed(2) })}
+              {t('nofap.vision.cost', { per_day: vision.max_per_day, cap: fmtMoney(vision.monthly_cap_usd, locale) })}{' '}
+              {t('nofap.vision.month', { checks: view.cost_line.month_checks, usd: fmtMoney(view.cost_line.month_usd, locale), cap: fmtMoney(view.cost_line.cap_usd, locale) })}
             </p>
             <div className="border-t border-line pt-4">
               <h3 className="mb-3 text-[13px] font-medium text-ink">{t('nofap.vision.scope_title')}</h3>

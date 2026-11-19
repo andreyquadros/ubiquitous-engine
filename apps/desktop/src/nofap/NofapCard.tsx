@@ -45,6 +45,9 @@ const neutral = (id: string): NofapCard => ({
   expires_at: new Date(Date.now() + 600_000).toISOString(),
 });
 
+/** The buttons that correct a verdict (design 5.4). */
+const isCorrection = (action: CardAction): boolean => action === 'not_it' || action === 'request_exception';
+
 function actionLabel(card: NofapCard, action: CardAction): string {
   if (action === 'surf' && card.kind === 'blocked_repeat') return 'nofap.btn.surf_wave';
   if (action === 'help' && card.kind === 'reminder') return 'nofap.btn.how_off';
@@ -242,10 +245,10 @@ export function NofapCardPage() {
       <section data-tauri-drag-region aria-label={t('nofap.card.window_label')} className="relative flex h-full w-full flex-col overflow-hidden rounded-[16px] border border-line-2 bg-panel shadow-float">
         <div className="pointer-events-none absolute inset-0" style={{ background: 'var(--hero-glow)' }} aria-hidden />
         {card && (
-          <div className="scroll-thin relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+          <div className="scroll-thin relative flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-3.5">
             <div className="flex items-start gap-3" data-tauri-drag-region>
-              <div className="shrink-0" aria-hidden>
-                <Ubi variant="flat" size={showsMessage && !expanded ? 56 : 44} mood="calm" />
+              <div className="flex shrink-0 items-center justify-center overflow-visible" style={{ width: 48, height: 48 }} aria-hidden>
+                <Ubi variant="flat" size={48} mood="calm" />
               </div>
               {showsMessage ? (
                 <div className="min-w-0 flex-1 self-center">
@@ -278,7 +281,8 @@ export function NofapCardPage() {
 
             {mode === 'card' && (
               <div className="mt-auto flex flex-wrap justify-end gap-2" data-testid="card-actions">
-                {card.actions.map((action) => (
+                {/* Quiet buttons first, the one that carries the weight last, on the right. */}
+                {[...card.actions.filter((a) => a !== PRIMARY[card.kind]), ...card.actions.filter((a) => a === PRIMARY[card.kind])].map((action) => (
                   <Button key={action} size="sm" variant={action === PRIMARY[card.kind] ? 'primary' : 'ghost'} disabled={busy} autoFocus={action === PRIMARY[card.kind]} onClick={() => void act(action)}>
                     {t(actionLabel(card, action))}
                   </Button>
@@ -300,6 +304,12 @@ export function NofapCardPage() {
                   {t('nofap.btn.step_away')}
                 </Button>
                 <Button onClick={() => setMode('talk')}>{t('nofap.btn.talk')}</Button>
+                {/* A correction the engine offers on this card stays reachable on its support view. */}
+                {card.actions.filter(isCorrection).map((action) => (
+                  <Button key={action} variant="ghost" disabled={busy} onClick={() => void act(action)}>
+                    {t(actionLabel(card, action))}
+                  </Button>
+                ))}
                 <Button variant="ghost" onClick={close}>
                   {t('nofap.btn.close')}
                 </Button>

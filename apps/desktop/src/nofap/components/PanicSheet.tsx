@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { useLocale, useT } from '../../i18n';
-import { crisisText, fmtClock } from '../labels';
+import { crisisText, fmtClock, quoted } from '../labels';
 import type { HelpResource, IfThenPlan, UserEvent } from '../types';
 import { ResourceList } from './ResourceList';
 import { SurfTimer } from './SurfTimer';
@@ -97,7 +97,7 @@ export function PanicSheet({ values, plans, resources, record, onClose, start = 
   return (
     <div className="flex flex-col gap-3" data-testid="panic-sheet">
       <p className="text-[15px] leading-6 text-ink">{t('nofap.panic.open')}</p>
-      {values && <p className="panel-raised p-3 text-[13px] leading-5 text-ink-2">{t('nofap.panic.reason', { reason: values })}</p>}
+      {values && <p className="panel-raised p-3 text-[13px] leading-5 text-ink-2">{t('nofap.panic.reason', { reason: quoted(values) })}</p>}
       {plan && <p className="text-[13px] leading-5 text-ink-2">{t('nofap.plans.item', { when: plan.when, then: plan.then })}</p>}
       <p className="text-[13px] leading-5 text-ink-2">{t('nofap.panic.options')}</p>
       <div className="flex flex-col gap-2">
