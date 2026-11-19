@@ -392,6 +392,30 @@ describe('support flows', () => {
     expect(screen.getByTestId('lapse-flow')).toHaveTextContent('O próximo passo é pequeno');
   });
 
+  it('lapse: one tap counts, once, even when the flow is closed before the question about triggers', async () => {
+    renderPage();
+    await openTab('Apoio');
+    fireEvent.click(await screen.findByTestId('nofap-lapse'));
+    await screen.findByTestId('lapse-flow');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(calls('record')).toEqual([{ cmd: 'record', args: { event: 'lapse', triggers: [] } }]));
+    // The sentence about the count follows from it.
+    await waitFor(() => expect(screen.getByTestId('progress-card')).toHaveTextContent('A contagem recomeça, a prática não.'));
+
+    // A second flow, walked to the end, counts once more and not twice.
+    fireEvent.click(screen.getByTestId('nofap-lapse'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continuar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tédio' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pular' }));
+    fireEvent.click(within(screen.getByTestId('lapse-flow')).getByRole('button', { name: 'Fechar' }));
+    await waitFor(() => expect(screen.queryByTestId('lapse-flow')).toBeNull());
+    expect(calls('record').map((c) => c.args)).toEqual([
+      { event: 'lapse', triggers: [] },
+      { event: 'lapse', triggers: ['bored'] },
+    ]);
+  });
+
   it('check-in: one tap; on a hard day the HALT chips; shown back afterwards', async () => {
     renderPage();
     await openTab('Apoio');

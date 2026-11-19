@@ -24,14 +24,17 @@ interface Props {
   countPanic?: boolean;
 }
 
-/** The crisis sentence with the numbers of the resources payload, and the list itself. One step from every screen. */
-export function CrisisCard({ resources }: { resources: HelpResource[] | null }) {
+/**
+ * The crisis sentence with the numbers of the resources payload, and the list itself. One step from every screen.
+ * `heading` is off where the surrounding dialog already carries the title.
+ */
+export function CrisisCard({ resources, heading = true }: { resources: HelpResource[] | null; heading?: boolean }) {
   const t = useT();
   const locale = useLocale();
   const text = resources ? crisisText(locale, resources) : null;
   return (
     <div className="flex flex-col gap-3" data-testid="crisis-card">
-      <h3 className="text-sm font-semibold text-ink">{t('nofap.crisis.title')}</h3>
+      {heading && <h3 className="text-sm font-semibold text-ink">{t('nofap.crisis.title')}</h3>}
       {text && <p className="text-[13px] leading-5 text-ink">{text}</p>}
       {resources ? <ResourceList resources={resources} /> : <Skeleton className="h-24" />}
     </div>

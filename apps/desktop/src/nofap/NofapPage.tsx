@@ -1,5 +1,5 @@
 import { LifeBuoy, Wind } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -25,7 +25,7 @@ import { useNofapEvents, useNofapStore } from './store';
 import { HelpTab } from './tabs/HelpTab';
 import { ProtectionTab } from './tabs/ProtectionTab';
 import { SupportTab } from './tabs/SupportTab';
-import type { ApplyOutcome, NofapChange, NofapView, Overall, PlannedChange, TierState, UserEvent } from './types';
+import type { ApplyOutcome, NofapChange, NofapView, Overall, PlannedChange, TierState, Trigger, UserEvent } from './types';
 
 export type NofapTab = 'protection' | 'support' | 'lists' | 'help';
 const TABS: NofapTab[] = ['protection', 'support', 'lists', 'help'];
@@ -154,8 +154,12 @@ export function NofapPage({ host }: { host?: NofapHost }) {
   const fail = useCallback((e: unknown) => toast.error(t('nofap.error.title'), ipcErrorMessage(e)), [toast, t]);
   const record = useCallback((event: UserEvent) => void nofapIpc.record(event).then(() => loadSupport()).catch(() => undefined), [loadSupport]);
 
+  /** Whether the lapse flow that is open has been counted. */
+  const lapseCounted = useRef(false);
+
   const open = (next: NofapDialog) => {
     setDialog(next);
+    if (next === 'lapse') lapseCounted.current = false;
     if (next === 'apply' || next === 'remove') {
       setPreview(null);
       void nofapIpc.systemPreview().then(setPreview).catch(() => setPreview([]));
@@ -166,6 +170,20 @@ export function NofapPage({ host }: { host?: NofapHost }) {
     }
   };
   const closeDialog = () => setDialog(null);
+
+  /**
+   * "Aconteceu um deslize" is one tap: the lapse counts once per flow, with the triggers when the user picked
+   * some, and without them when the flow is closed before that question.
+   */
+  const countLapse = (triggers: Trigger[]) => {
+    if (lapseCounted.current) return;
+    lapseCounted.current = true;
+    record({ event: 'lapse', triggers });
+  };
+  const closeLapse = () => {
+    countLapse([]);
+    closeDialog();
+  };
 
   /** Sends a change and says what became of it: applied now, or noted and waiting. */
   const send = useCallback(
@@ -303,20 +321,20 @@ export function NofapPage({ host }: { host?: NofapHost }) {
         {dialog === 'panic' && <PanicSheet values={view.config.values} plans={view.config.plans} resources={resources} record={record} onClose={closeDialog} />}
       </Dialog>
       <Dialog open={dialog === 'talk'} onClose={closeDialog} title={t('nofap.btn.talk')} width="sm">
-        {dialog === 'talk' && <CrisisCard resources={resources} />}
+        {dialog === 'talk' && <CrisisCard resources={resources} heading={false} />}
       </Dialog>
       <Dialog open={dialog === 'surf'} onClose={closeDialog} title={t('nofap.surf.title')} width="sm">
         {dialog === 'surf' && <SurfTimer record={record} onDone={closeDialog} />}
       </Dialog>
-      <Dialog open={dialog === 'lapse'} onClose={closeDialog} title={t('nofap.lapse.button')} width="sm">
+      <Dialog open={dialog === 'lapse'} onClose={closeLapse} title={t('nofap.lapse.button')} width="sm">
         {dialog === 'lapse' && (
           <LapseFlow
-            onRecord={(triggers) => record({ event: 'lapse', triggers })}
+            onRecord={countLapse}
             onAdjustPlan={() => {
-              closeDialog();
+              closeLapse();
               setTab('support');
             }}
-            onClose={closeDialog}
+            onClose={closeLapse}
           />
         )}
       </Dialog>
