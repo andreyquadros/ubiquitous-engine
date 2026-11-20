@@ -248,6 +248,8 @@ impl NofapService {
         // Nothing is stopping sites in the window in front.
         let nothing_left =
             !matches!(guard, GuardState::On) && vision != VisionState::On && !any_tier;
+        // The user's own lists could not be read: a site they blocked may be missing.
+        let lists_short = rt.sites_error;
         let overall = if secondary {
             Overall::Secondary
         } else if rt
@@ -257,7 +259,7 @@ impl NofapService {
             .any(|waiting| waiting.change.kind() == ChangeKind::Disable)
         {
             Overall::PendingOff
-        } else if tier_short || issue_short || vision_short || nothing_left {
+        } else if tier_short || issue_short || vision_short || nothing_left || lists_short {
             Overall::Reduced
         } else {
             Overall::Protected
@@ -314,15 +316,24 @@ impl NofapService {
             status: true,
             ..Outbox::default()
         };
-        self.tick_waits(&env, elapsed_secs, primary, now, &mut outbox)?;
+        // A step that fails (a write that is refused, a system that cannot be read) does
+        // not take the other steps with it, and what was queued is sent either way: a
+        // card that was kept but never shown would hold back the next one for nothing.
+        let mut failed: Option<CoreError> = None;
+        let mut step = |result: CoreResult<()>| {
+            if let Err(error) = result {
+                failed.get_or_insert(error);
+            }
+        };
+        step(self.tick_waits(&env, elapsed_secs, primary, now, &mut outbox));
         self.housekeeping(now);
         if primary {
-            self.read_system(false, false)?;
-            self.drift_and_outage(now, &mut outbox)?;
-            self.reminders(now, &mut outbox)?;
+            step(self.read_system(false, false));
+            step(self.drift_and_outage(now, &mut outbox));
+            step(self.reminders(now, &mut outbox));
         }
         self.flush(outbox);
-        Ok(())
+        failed.map_or(Ok(()), Err)
     }
 
     /// Credits running time to the waiting requests and to new exclusions, drops requests
@@ -336,24 +347,25 @@ impl NofapService {
         outbox: &mut Outbox,
     ) -> CoreResult<()> {
         let mut rt = self.rt.lock();
-        let before = rt.config.clone();
-        let expired = commitment::expire(&mut rt.config, now);
-        let ready = commitment::tick(&mut rt.config, elapsed_secs, now);
         let lists = ExclusionLists {
             apps: env.excluded_apps.clone(),
             domains: env.excluded_domains.clone(),
         };
-        let seen = exclusions::reconcile_since(
-            &lists,
-            &rt.config.internal.exclusions_seen,
-            rt.config.enabled_at,
-            now,
-        );
-        rt.config.internal.exclusions_seen = seen;
-        exclusions::observe(&mut rt.config.internal.exclusions_seen, elapsed_secs);
-        if rt.config != before {
-            self.save_config(&mut rt)?;
-        }
+        // Running time that could not be stored is not credited: a wait never ends in
+        // memory only.
+        let (expired, ready) = self.update_config(&mut rt, |config| {
+            let expired = commitment::expire(config, now);
+            let ready = commitment::tick(config, elapsed_secs, now);
+            let seen = exclusions::reconcile_since(
+                &lists,
+                &config.internal.exclusions_seen,
+                config.enabled_at,
+                now,
+            );
+            config.internal.exclusions_seen = seen;
+            exclusions::observe(&mut config.internal.exclusions_seen, elapsed_secs);
+            Ok((expired, ready))
+        })?;
         if !expired.is_empty() || !ready.is_empty() {
             outbox.events.push(NofapEvent::PendingChanged);
         }
@@ -389,7 +401,8 @@ impl NofapService {
         let (today, _) = self.day_hour(now);
         let mut rt = self.rt.lock();
         let purged = self.deps.repo.purge_expired_sites(now).unwrap_or(0);
-        if purged > 0 || rt.snooze_ends.is_some_and(|ends| ends <= now) {
+        // Lists that could not be read are read again until it works.
+        if purged > 0 || rt.sites_error || rt.snooze_ends.is_some_and(|ends| ends <= now) {
             self.reload_sites(&mut rt);
         }
         if rt.pruned_on.as_deref() != Some(today.as_str()) {
@@ -576,8 +589,18 @@ impl NofapService {
                     );
                     rt.cards.keep(card.clone(), CardContext::default(), now);
                     outbox.cards.push((card, Some(Notice::Drift)));
-                    rt.config.internal.last_drift_card_at = Some(now);
-                    self.save_config(&mut rt)?;
+                    // The card is shown whether or not its time can be stored: this run
+                    // remembers it was shown, and the six quiet hours are a courtesy.
+                    let stored = self.update_config(&mut rt, |config| {
+                        config.internal.last_drift_card_at = Some(now);
+                        Ok(())
+                    });
+                    if let Err(error) = stored {
+                        tracing::debug!(
+                            class = error_class(&error),
+                            "nofap: the time of a card was not stored"
+                        );
+                    }
                 }
             }
         }
@@ -621,6 +644,12 @@ impl NofapService {
         let since = rt.config.internal.last_reminder_at.or(rt.config.enabled_at);
         let remind = since.is_some_and(|since| (now - since).num_days() >= REMINDER_EVERY_DAYS);
         if remind && rt.cards.may_show(now) {
+            // Stored first: a reminder whose time cannot be kept would come back with
+            // every pass.
+            self.update_config(&mut rt, |config| {
+                config.internal.last_reminder_at = Some(now);
+                Ok(())
+            })?;
             let card = cards::card(
                 CardKind::Reminder,
                 "reminder.on",
@@ -631,11 +660,13 @@ impl NofapService {
             );
             rt.cards.keep(card.clone(), CardContext::default(), now);
             outbox.cards.push((card, Some(Notice::Drift)));
-            rt.config.internal.last_reminder_at = Some(now);
-            self.save_config(&mut rt)?;
         }
         let help_due = help::help_due(&counts, rt.config.internal.last_help_at, today_date);
         if help_due && rt.cards.may_show(now) {
+            self.update_config(&mut rt, |config| {
+                config.internal.last_help_at = Some(now);
+                Ok(())
+            })?;
             let card = cards::card(
                 CardKind::Help,
                 "help.pattern",
@@ -646,8 +677,6 @@ impl NofapService {
             );
             rt.cards.keep(card.clone(), CardContext::default(), now);
             outbox.cards.push((card, Some(Notice::Drift)));
-            rt.config.internal.last_help_at = Some(now);
-            self.save_config(&mut rt)?;
             drop(rt);
             self.bump(DayKind::HelpShown);
         }
@@ -774,9 +803,17 @@ impl NofapService {
         if matches!(outcome, ApplyOutcome::Applied | ApplyOutcome::Partial(_)) {
             tracing::info!("nofap: the system tiers were applied");
             let mut rt = self.rt.lock();
-            if rt.config.system.network_restored {
-                rt.config.system.network_restored = false;
-                self.save_config(&mut rt)?;
+            // The tiers are on the machine either way: a note that cannot be stored must
+            // not keep the outcome and the fresh read from the page.
+            let stored = self.update_config(&mut rt, |config| {
+                config.system.network_restored = false;
+                Ok(())
+            });
+            if let Err(error) = stored {
+                tracing::debug!(
+                    class = error_class(&error),
+                    "nofap: the configuration was not stored"
+                );
             }
         }
         self.read_system(true, true)?;
@@ -799,8 +836,7 @@ impl NofapService {
     /// ones on automatic DNS. For display, and so that an interface that appears later is
     /// known to be new; nothing recorded here is ever written back to the system.
     fn remember_dns(&self, observed: &SystemObservation) -> CoreResult<()> {
-        let mut rt = self.rt.lock();
-        rt.config.internal.previous_dns = observed
+        let previous: Vec<PreviousDns> = observed
             .resolver
             .interfaces
             .iter()
@@ -809,7 +845,11 @@ impl NofapService {
                 servers: interface.servers.clone(),
             })
             .collect();
-        self.save_config(&mut rt)
+        let mut rt = self.rt.lock();
+        self.update_config(&mut rt, |config| {
+            config.internal.previous_dns = previous;
+            Ok(())
+        })
     }
 
     /// "Remover do sistema": takes this product's tiers off the machine. Only while the
@@ -849,9 +889,19 @@ impl NofapService {
             tracing::info!("nofap: the network was restored");
             {
                 let mut rt = self.rt.lock();
-                rt.config.system.network_restored = true;
                 rt.system.probe_fail_streak = 0;
-                self.save_config(&mut rt)?;
+                // DNS is back to automatic either way; when that cannot be stored the
+                // next look reports the resolver as missing, which is the truth.
+                let stored = self.update_config(&mut rt, |config| {
+                    config.system.network_restored = true;
+                    Ok(())
+                });
+                if let Err(error) = stored {
+                    tracing::debug!(
+                        class = error_class(&error),
+                        "nofap: the configuration was not stored"
+                    );
+                }
             }
             self.bump(DayKind::NetworkRestore);
         }
@@ -894,6 +944,12 @@ impl NofapService {
         let _deciding = self.role_lock.lock();
         let holding = {
             let rt = self.rt.lock();
+            if !rt.config.enabled || rt.config_error {
+                // Switched off since this pass began (the lock was given up under
+                // `role_lock`): a module that is off writes no heartbeat, or the other
+                // product would stand back for one nobody runs. The pass does nothing.
+                return Role::Secondary;
+            }
             if !due(rt.heartbeat_at, HEARTBEAT_EVERY_SECS, now) {
                 return rt.role;
             }

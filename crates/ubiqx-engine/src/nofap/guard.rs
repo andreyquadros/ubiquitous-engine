@@ -23,7 +23,7 @@ use ubiqx_nofap::sampling::{
 
 use super::cards::{self, CardContext, Outbox};
 use super::vision::{VisionJob, NOT_READY_FOR_SECS};
-use super::{context_key, forget_old, DisplaySession, InFlight, NofapService};
+use super::{context_key, forget_old, mark_hit, DisplaySession, InFlight, NofapService};
 
 /// What one pass did.
 #[derive(Default)]
@@ -252,6 +252,11 @@ impl NofapService {
             self.rt.lock().confirmer.clear();
             return Ok(GuardOutcome::default());
         }
+        // The module may have been switched off while this pass was reading the window:
+        // a module that is off closes nothing, counts nothing and shows nothing.
+        if !self.rt.lock().config.enabled {
+            return Ok(GuardOutcome::default());
+        }
 
         let enforcer = &self.deps.enforcer;
         if !enforcer.close_active_tab(&window.app_id).unwrap_or(false) {
@@ -268,6 +273,7 @@ impl NofapService {
             sampling::record(&mut rt.sampler, key, SampleEvent::Heightened, &day, now);
             rt.hits.insert(key, now);
             forget_old(&mut rt.hits, now);
+            mark_hit(&mut rt, &window.app_id, host, now);
             // A name of the hosts block that still loads means DNS is being bypassed.
             let hosts = rt.system.assessment.as_ref().map(|found| &found.hosts);
             let bypass = hosts.is_some_and(|hosts| bypass_suspected(in_hosts_block, hosts));

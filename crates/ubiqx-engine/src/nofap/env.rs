@@ -44,18 +44,19 @@ impl EngineEnv {
 
     fn has_key(&self, state: &EngineState, provider: AiProvider) -> bool {
         let now = state.now();
-        let mut cached = self.key.lock();
-        if let Some((of, present, at)) = *cached {
+        if let Some((of, present, at)) = *self.key.lock() {
             // An answer from the future (the clock was set back) is asked for again.
             if of == provider && (0..KEY_ANSWER_FOR_SECS).contains(&(now - at).num_seconds()) {
                 return present;
             }
         }
+        // The store is the operating system's keychain, which can take its time (or ask
+        // the user): the answer is fetched without holding the lock.
         let present = matches!(
             state.deps.platform.secrets.get(provider.secret_key()),
             Ok(Some(key)) if !key.trim().is_empty()
         );
-        *cached = Some((provider, present, now));
+        *self.key.lock() = Some((provider, present, now));
         present
     }
 

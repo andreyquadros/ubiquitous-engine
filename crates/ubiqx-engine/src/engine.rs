@@ -118,8 +118,12 @@ impl Engine {
         let scrub = {
             let state = state.clone();
             Arc::new(move || {
-                if let Err(e) = tracker::scrub_open_block(&state) {
-                    tracing::debug!(error = %e, "could not scrub the open block");
+                if let Err(error) = tracker::scrub_open_block(&state) {
+                    // The kind only: the text of an error may quote what it was about.
+                    tracing::debug!(
+                        class = crate::nofap::error_class(&error),
+                        "nofap: the open block was not scrubbed"
+                    );
                 }
             })
         };

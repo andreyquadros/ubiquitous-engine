@@ -180,9 +180,7 @@ impl NofapService {
             };
             config.internal.exclusions_seen = exclusions::reconcile(&lists, &[], now);
             config.internal.last_reminder_at = None;
-            rt.config = config;
-            rt.config_error = false;
-            self.save_config(&mut rt)?;
+            self.replace_config(&mut rt, config)?;
             self.reload_sites(&mut rt);
             rt.system.view_read_at = None;
         }
@@ -211,12 +209,14 @@ impl NofapService {
         let now = self.now();
         {
             let mut rt = self.rt.lock();
-            rt.config.vision.consent = Some(VisionConsent {
-                provider: args.provider,
-                managed: args.managed,
-                at: now,
-            });
-            self.save_config(&mut rt)?;
+            self.update_config(&mut rt, |config| {
+                config.vision.consent = Some(VisionConsent {
+                    provider: args.provider,
+                    managed: args.managed,
+                    at: now,
+                });
+                Ok(())
+            })?;
         }
         self.view_now()
     }
@@ -243,12 +243,11 @@ impl NofapService {
             }
             self.known_site(&rt, &change)?;
             let id = ubiqx_core::new_id();
-            let requested = commitment::request(&mut rt.config, change, id.clone(), now)?;
+            let requested = self.update_config(&mut rt, |config| {
+                commitment::request(config, change, id.clone(), now)
+            })?;
             // A change that already waits comes back with the id it has had all along.
             let new = matches!(&requested, Requested::Pending(waiting) if waiting.id == id);
-            if new {
-                self.save_config(&mut rt)?;
-            }
             (requested, new)
         };
         match requested {
@@ -291,9 +290,26 @@ impl NofapService {
         }
     }
 
-    /// Makes a change take effect: the configuration part, the list part, and for
-    /// "turn it off" the end of the passes and the removal of the system tiers.
+    /// Makes a change take effect: the configuration part first (stored before it counts,
+    /// see [`NofapService::update_config`]), then everything else.
     fn apply_change(&self, change: &NofapChange) -> CoreResult<()> {
+        let now = self.now();
+        let was_on = {
+            let mut rt = self.rt.lock();
+            let was_on = rt.config.enabled;
+            self.update_config(&mut rt, |config| {
+                commitment::apply_to_config(config, change, now);
+                Ok(())
+            })?;
+            was_on
+        };
+        self.carry_out(change, was_on)
+    }
+
+    /// What a change does besides the configuration, which is already stored: the list
+    /// part, a fresh look at the machine, and for "turn it off" the end of the passes and
+    /// the removal of the system tiers. `was_on`: the module was on before the change.
+    fn carry_out(&self, change: &NofapChange, was_on: bool) -> CoreResult<()> {
         let now = self.now();
         let mut outbox = Outbox {
             status: true,
@@ -301,10 +317,6 @@ impl NofapService {
         };
         {
             let mut rt = self.rt.lock();
-            let was_on = rt.config.enabled;
-            if commitment::apply_to_config(&mut rt.config, change, now) {
-                self.save_config(&mut rt)?;
-            }
             let sites_changed = match change {
                 NofapChange::AddBlock { host } => {
                     self.add_site(&mut rt, SiteList::Block, host, now)?
@@ -376,7 +388,14 @@ impl NofapService {
             let listed =
                 state.is_some_and(|state| state.owners.contains_key(&self.deps.identity.id));
             if listed {
-                self.remove_all()?;
+                // The module is off whatever the removal does: a prompt that fails leaves
+                // the tiers on the machine, the page says so and offers to remove them.
+                if let Err(error) = self.remove_all() {
+                    tracing::debug!(
+                        class = error_class(&error),
+                        "nofap: the tiers were not removed"
+                    );
+                }
             }
         }
         self.flush(outbox);
@@ -392,9 +411,10 @@ impl NofapService {
         host: &str,
         now: DateTime<Utc>,
     ) -> CoreResult<bool> {
-        if ensure_salt(&mut rt.config) {
-            self.save_config(rt)?;
-        }
+        self.update_config(rt, |config| {
+            ensure_salt(config);
+            Ok(())
+        })?;
         let host_key = site_key(&salt_of(&rt.config), host);
         let known = rt.sites.iter().any(|site| {
             site.list == list && site.origin == SiteOrigin::User && site.host_key == host_key
@@ -417,16 +437,20 @@ impl NofapService {
     /// The fresh confirmation of a request that waited its delay.
     pub fn confirm_pending(&self, id: &str) -> CoreResult<NofapView> {
         let now = self.now();
-        let change = {
+        let (change, was_on) = {
             let mut rt = self.rt.lock();
-            if rt.config_error {
-                return Err(unreadable_config());
-            }
-            let change = commitment::confirm(&mut rt.config, id, now)?;
-            self.save_config(&mut rt)?;
-            change
+            let was_on = rt.config.enabled;
+            // One write: the request leaves the queue and its change enters the
+            // configuration together, or neither does. A request that was taken out but
+            // not applied (or applied in memory only) would be worse than an error.
+            let change = self.update_config(&mut rt, |config| {
+                let change = commitment::confirm(config, id, now)?;
+                commitment::apply_to_config(config, &change, now);
+                Ok(change)
+            })?;
+            (change, was_on)
         };
-        self.apply_change(&change)?;
+        self.carry_out(&change, was_on)?;
         self.flush(Outbox {
             events: vec![NofapEvent::PendingChanged],
             ..Outbox::default()
@@ -438,13 +462,13 @@ impl NofapService {
     pub fn cancel_pending(&self, id: &str) -> CoreResult<NofapView> {
         {
             let mut rt = self.rt.lock();
-            if rt.config_error {
-                return Err(unreadable_config());
-            }
-            if !commitment::cancel(&mut rt.config, id) {
-                return Err(CoreError::NotFound("no such waiting request".into()));
-            }
-            self.save_config(&mut rt)?;
+            self.update_config(&mut rt, |config| {
+                if commitment::cancel(config, id) {
+                    Ok(())
+                } else {
+                    Err(CoreError::NotFound("no such waiting request".into()))
+                }
+            })?;
         }
         self.bump(DayKind::OverrideCancel);
         self.flush(Outbox {
@@ -573,6 +597,15 @@ impl NofapService {
             return Ok(());
         };
         let vision_card = matches!(kind, CardKind::VisionClosed | CardKind::VisionAsk);
+        // The window stays open for what it shows next after a correction or an addition;
+        // every other button ends the card.
+        let stays = matches!(
+            action,
+            CardAction::NotIt | CardAction::RequestException | CardAction::AddToList
+        );
+        if stays && self.rt.lock().cards.was_used(id, action) {
+            return Ok(());
+        }
         match action {
             CardAction::Support | CardAction::Surf => {
                 // The window records the flow itself; here it only counts as busy.
@@ -607,13 +640,9 @@ impl NofapService {
                 }
             }
         }
-        // The window stays open for what it shows next after a correction or an addition;
-        // every other button ends the card.
-        let stays = matches!(
-            action,
-            CardAction::NotIt | CardAction::RequestException | CardAction::AddToList
-        );
-        if !stays {
+        if stays {
+            self.rt.lock().cards.mark_used(id, action);
+        } else {
             self.rt.lock().cards.forget(id);
             self.deps.presenter.dismiss(id);
             self.deps
@@ -764,12 +793,14 @@ impl NofapService {
         {
             let mut rt = self.rt.lock();
             if !rt.config_error {
-                rt.config.values.clear();
-                rt.config.plans.clear();
-                rt.config.internal.last_help_at = None;
                 // The cleared document goes in first, so the repository's erase also
                 // takes the old one out of the database's log.
-                self.save_config(&mut rt)?;
+                self.update_config(&mut rt, |config| {
+                    config.values.clear();
+                    config.plans.clear();
+                    config.internal.last_help_at = None;
+                    Ok(())
+                })?;
             }
             self.deps.repo.erase_history()?;
             self.reload_sites(&mut rt);
@@ -789,11 +820,9 @@ impl NofapService {
             if rt.config.enabled && !rt.config_error {
                 return Err(CoreError::Invalid("only while the module is off".into()));
             }
-            rt.config = NofapConfig::default();
-            rt.config_error = false;
+            self.replace_config(&mut rt, NofapConfig::default())?;
             // What was known about the machine was judged against the old choices.
             rt.system = SystemMemory::default();
-            self.save_config(&mut rt)?;
             for origin in SiteOrigin::ALL {
                 self.deps.repo.delete_sites_by_origin(origin)?;
             }
@@ -814,6 +843,10 @@ impl NofapService {
     /// the machine id. No learned name, no salt, no visited site.
     pub fn export(&self) -> CoreResult<ExportResult> {
         let now = self.now();
+        if self.rt.lock().config_error {
+            // The defaults in memory are not the user's configuration: no file says so.
+            return Err(unreadable_config());
+        }
         let counts = self.deps.repo.days_between(FIRST_DAY, LAST_DAY)?;
         let sites = self.sites();
         let config = ConfigView::from(&self.rt.lock().config);
@@ -873,6 +906,36 @@ impl NofapService {
         let key = context_key(page, &sample.app_id, &sample.window_title);
         let window_key = context_key(None, &sample.app_id, &sample.window_title);
         blocked || recent(rt.hits.get(&key), now) || recent(rt.hits.get(&window_key), now)
+    }
+
+    /// Whether the block the tracker has open is the one a hit was just about: the same
+    /// application and, when both the hit and the block name a host, the same host (or a
+    /// blocked one). The tracker scrubs its open block after a hit only when this says
+    /// so: the guard acts within seconds of a page coming to the front, often before the
+    /// tracker has sampled it, and the block still open then is the work the user did
+    /// before, which must not be turned into a private block.
+    pub fn covers_open_block(&self, app_id: &str, url: Option<&str>) -> bool {
+        let now = self.now();
+        let rt = self.rt.lock();
+        if !rt.config.enabled {
+            return false;
+        }
+        let blocked = match (&rt.matcher, url) {
+            (Some(matcher), Some(url)) => matcher.verdict_for_url(url).0.is_blocked(),
+            _ => false,
+        };
+        let host = url.and_then(normalize_host);
+        blocked
+            || rt.hit_marks.iter().any(|mark| {
+                recent(Some(&mark.at), now)
+                    && mark.app_id.eq_ignore_ascii_case(app_id)
+                    // Without a host on either side, the application is all there is to
+                    // go by, and the block goes.
+                    && match (&mark.host, &host) {
+                        (Some(hit), Some(open)) => hit == open,
+                        _ => true,
+                    }
+            })
     }
 
     /// Whether the tracker must not take a productivity screenshot of this window: its

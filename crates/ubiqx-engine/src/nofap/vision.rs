@@ -11,7 +11,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use ubiqx_core::nofap::{
     AiReadiness, CardAction, CardKind, DayKind, Frame, NofapEnvSnapshot, NofapEvent, NofapSite,
-    SiteList, SiteOrigin, VisionOff, VisionState,
+    SiteList, SiteOrigin, VisionOff, VisionPrefs, VisionState,
 };
 use ubiqx_core::ports::{AiUsageKind, PermissionState};
 use ubiqx_core::scheduler::month_range;
@@ -22,7 +22,7 @@ use ubiqx_nofap::messages::Notice;
 use ubiqx_nofap::sampling::{self, CheckError, Outcome, SampleEvent, Stage, WindowKind};
 
 use super::cards::{self, CardContext, Outbox, ASK_CLOSE_SECS};
-use super::{error_class, forget_old, salt_of, DisplaySession, InFlight, NofapService};
+use super::{error_class, forget_old, mark_hit, salt_of, DisplaySession, InFlight, NofapService};
 
 /// A key the provider rejected three times switches the check off; it is tried again
 /// after this long.
@@ -69,8 +69,32 @@ impl NofapService {
 
     pub(crate) fn vision_ready_in(&self, env: &NofapEnvSnapshot) -> Result<(), VisionOff> {
         let now = self.now();
+        let prefs = self.vision_allowed_in(env)?;
+        if self.month_spend(now).0 >= prefs.monthly_cap_usd {
+            return Err(VisionOff::BudgetSpent);
+        }
+        let (day, _) = self.day_hour(now);
+        if self.rt.lock().sampler.cap_reached(&prefs, &day, now) {
+            return Err(VisionOff::CapReached);
+        }
+        Ok(())
+    }
+
+    /// The part of readiness the user can withdraw at any moment: the module and the
+    /// check switched on, the consent for the provider now selected, a usable key, not
+    /// "local only", the permission. Asked again right before every frame, so that
+    /// nothing is captured or sent after one of them went (a check waits up to four
+    /// seconds for its second frame). The budget and the caps are not part of it: they
+    /// are the guard's question, and the second frame of a check belongs to the first.
+    pub(crate) fn vision_allowed_in(
+        &self,
+        env: &NofapEnvSnapshot,
+    ) -> Result<VisionPrefs, VisionOff> {
         let (prefs, key_rejected) = {
             let rt = self.rt.lock();
+            if !rt.config.enabled || rt.config_error {
+                return Err(VisionOff::Disabled);
+            }
             (rt.config.vision.clone(), rt.sampler.key_rejected())
         };
         if !prefs.enabled {
@@ -103,14 +127,7 @@ impl NofapService {
         if self.deps.permissions.status().screen_recording == PermissionState::Denied {
             return Err(VisionOff::ScreenRecording);
         }
-        if self.month_spend(now).0 >= prefs.monthly_cap_usd {
-            return Err(VisionOff::BudgetSpent);
-        }
-        let (day, _) = self.day_hour(now);
-        if self.rt.lock().sampler.cap_reached(&prefs, &day, now) {
-            return Err(VisionOff::CapReached);
-        }
-        Ok(())
+        Ok(prefs)
     }
 
     /// The state of the layer for the status: off with its reason, in backoff, or on.
@@ -242,7 +259,17 @@ impl NofapService {
         let detector = self.deps.detector.clone()?;
         let (window_id, opts) = (job.window_id, sampling::frame_opts(job.kind));
         let frames = self.deps.frames.clone();
-        let frame = tokio::task::spawn_blocking(move || frames.frame(window_id, opts)).await;
+        let me = self.clone();
+        let frame = tokio::task::spawn_blocking(move || {
+            // Asked again here, off the async threads (it reads the host's settings and
+            // the permission): what was withdrawn since the guard asked for this check,
+            // or since its first frame, stops it before anything is captured.
+            if me.vision_allowed_in(&me.deps.env.snapshot()).is_err() {
+                return Ok(None);
+            }
+            frames.frame(window_id, opts)
+        })
+        .await;
         let now = self.now();
         let (day, _) = self.day_hour(now);
         let frame: Frame = match frame {
@@ -403,6 +430,7 @@ impl NofapService {
             rt.hits.insert(job.key, now);
             rt.hits.insert(job.window_key, now);
             forget_old(&mut rt.hits, now);
+            mark_hit(&mut rt, &job.app_id, tab_host, now);
             rt.sampler.exception_only(job.key, &day)
         };
         let correction = match (exception_only, job.host.is_some()) {

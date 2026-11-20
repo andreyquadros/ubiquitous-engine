@@ -225,6 +225,18 @@ pub(crate) struct SystemMemory {
     pub view_read_at: Option<DateTime<Utc>>,
 }
 
+/// Where a hit was: the application and, for a browser tab whose address is an ordinary
+/// one, the host. Never serialised, never logged.
+#[derive(Debug, Clone)]
+pub(crate) struct HitMark {
+    pub app_id: String,
+    pub host: Option<String>,
+    pub at: DateTime<Utc>,
+}
+
+/// Hit marks kept at most (a mark is only needed for the moments after its hit).
+const HIT_MARKS_KEPT: usize = 16;
+
 /// The whole in-memory state of the service, behind one mutex. Gone at exit.
 pub(crate) struct Runtime {
     pub config: NofapConfig,
@@ -232,6 +244,10 @@ pub(crate) struct Runtime {
     /// nothing overwrites it except the wizard and "Apagar tudo".
     pub config_error: bool,
     pub sites: Vec<NofapSite>,
+    /// The site lists could not be read (at the start, or after a change): what is in
+    /// memory may miss a site the user blocked. Said in the status and read again by the
+    /// verify pass until it works.
+    pub sites_error: bool,
     /// `None` only while the embedded tables do not parse (a broken build).
     pub matcher: Option<Arc<Matcher>>,
     /// The earliest moment a snooze ends, when the matcher has to be rebuilt.
@@ -248,6 +264,9 @@ pub(crate) struct Runtime {
     pub repeat_owed: bool,
     /// Context keys that had a hit, and when (the tracker forgets those windows).
     pub hits: HashMap<u64, DateTime<Utc>>,
+    /// The windows of the latest hits, for the tracker's question "is the block I have
+    /// open the one that hit was about?". In memory only, like a card's context.
+    pub hit_marks: Vec<HitMark>,
     /// Context keys that carried a local signal, and when.
     pub signals: HashMap<u64, DateTime<Utc>>,
     /// The last window that was a candidate for the AI check: its id and kind.
@@ -308,7 +327,16 @@ impl NofapService {
             }
         };
         config.sanitize();
-        let sites = deps.repo.list_sites().unwrap_or_default();
+        let (sites, sites_error) = match deps.repo.list_sites() {
+            Ok(sites) => (sites, false),
+            Err(error) => {
+                tracing::warn!(
+                    class = error_class(&error),
+                    "nofap: the site lists were not read"
+                );
+                (Vec::new(), true)
+            }
+        };
         let matcher_data = MatcherData::embedded();
         let salt = salt_of(&config);
         let matcher = Matcher::new(matcher_data.clone(), &sites, &salt, now)
@@ -325,6 +353,7 @@ impl NofapService {
             config,
             config_error,
             sites,
+            sites_error,
             matcher,
             confirmer: PassConfirmer::default(),
             episodes: EpisodeTracker::default(),
@@ -334,6 +363,7 @@ impl NofapService {
             rotation: 0,
             repeat_owed: false,
             hits: HashMap::new(),
+            hit_marks: Vec::new(),
             signals: HashMap::new(),
             last_candidate: None,
             guard_limit: None,
@@ -398,14 +428,43 @@ impl NofapService {
         }
     }
 
-    /// Stores the configuration held in memory. Refused while the stored one could not be
+    /// Changes the configuration: `change` works on a copy, the copy is stored, and only
+    /// then does it become the configuration in memory. A write that fails (or a change
+    /// that is refused) therefore leaves memory and disk saying the same thing: a module
+    /// that could not be stored as "off" keeps running, and one that could not be stored
+    /// as "on" does not pretend to be. Refused while the stored configuration could not be
     /// read, so an unreadable row is never replaced by defaults behind the user's back.
-    pub(crate) fn save_config(&self, rt: &mut Runtime) -> CoreResult<()> {
+    pub(crate) fn update_config<T>(
+        &self,
+        rt: &mut Runtime,
+        change: impl FnOnce(&mut NofapConfig) -> CoreResult<T>,
+    ) -> CoreResult<T> {
         if rt.config_error {
             return Err(unreadable_config());
         }
-        rt.config.sanitize();
-        self.deps.repo.save_config(&rt.config)
+        let mut next = rt.config.clone();
+        let value = change(&mut next)?;
+        next.sanitize();
+        if next != rt.config {
+            self.deps.repo.save_config(&next)?;
+            rt.config = next;
+        }
+        Ok(value)
+    }
+
+    /// Replaces the whole configuration (the wizard, "Apagar tudo"): stored first, then
+    /// taken into memory. These two are also the way out of a stored configuration that
+    /// cannot be read.
+    pub(crate) fn replace_config(
+        &self,
+        rt: &mut Runtime,
+        mut config: NofapConfig,
+    ) -> CoreResult<()> {
+        config.sanitize();
+        self.deps.repo.save_config(&config)?;
+        rt.config = config;
+        rt.config_error = false;
+        Ok(())
     }
 
     /// Reads the sites again and rebuilds the matcher (after any change to `nofap_sites`
@@ -413,8 +472,12 @@ impl NofapService {
     pub(crate) fn reload_sites(&self, rt: &mut Runtime) {
         let now = self.now();
         match self.deps.repo.list_sites() {
-            Ok(sites) => rt.sites = sites,
+            Ok(sites) => {
+                rt.sites = sites;
+                rt.sites_error = false;
+            }
             Err(error) => {
+                rt.sites_error = true;
                 tracing::warn!(
                     class = error_class(&error),
                     "nofap: the site lists were not read"
@@ -455,6 +518,7 @@ impl NofapService {
             rt.sampler.clear();
             rt.recheck.clear();
             rt.hits.clear();
+            rt.hit_marks.clear();
             rt.signals.clear();
             rt.cards = CardStore::default();
             rt.episodes = EpisodeTracker::default();
@@ -545,6 +609,19 @@ fn next_snooze_end(sites: &[NofapSite], now: DateTime<Utc>) -> Option<DateTime<U
 /// Whether `at` lies in the last [`HIT_MEMORY_SECS`] before `now`.
 pub(crate) fn recent(at: Option<&DateTime<Utc>>, now: DateTime<Utc>) -> bool {
     at.is_some_and(|at| (0..HIT_MEMORY_SECS).contains(&(now - *at).num_seconds()))
+}
+
+/// Remembers where a hit was, for [`NofapService::covers_open_block`].
+pub(crate) fn mark_hit(rt: &mut Runtime, app_id: &str, host: Option<&str>, now: DateTime<Utc>) {
+    rt.hit_marks.retain(|mark| recent(Some(&mark.at), now));
+    if rt.hit_marks.len() >= HIT_MARKS_KEPT {
+        rt.hit_marks.remove(0);
+    }
+    rt.hit_marks.push(HitMark {
+        app_id: app_id.to_owned(),
+        host: host.map(str::to_owned),
+        at: now,
+    });
 }
 
 /// Drops remembered keys that are older than the tracker needs them.

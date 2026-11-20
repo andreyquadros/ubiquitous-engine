@@ -60,6 +60,8 @@ pub(crate) struct CardContext {
 struct Kept {
     card: NofapCard,
     context: CardContext,
+    /// Buttons that leave the card on screen and were pressed already.
+    used: Vec<CardAction>,
 }
 
 /// The cards in memory and the rule of when the next one may be shown.
@@ -88,7 +90,11 @@ impl CardStore {
     /// Remembers a card that is about to be shown.
     pub fn keep(&mut self, card: NofapCard, context: CardContext, now: DateTime<Utc>) {
         self.shown_at = Some(now);
-        self.kept.push_back(Kept { card, context });
+        self.kept.push_back(Kept {
+            card,
+            context,
+            used: Vec::new(),
+        });
         while self.kept.len() > CARDS_KEPT {
             self.kept.pop_front();
         }
@@ -107,6 +113,21 @@ impl CardStore {
             .iter()
             .find(|kept| kept.card.id == id && now < kept.card.expires_at)
             .map(|kept| (kept.card.kind, kept.context.clone()))
+    }
+
+    /// Whether a button that leaves the card on screen was pressed before. A correction
+    /// counts once: a second press (a double click, a window that shows the button
+    /// still) must not use up another of the day's corrections.
+    pub fn was_used(&self, id: &str, action: CardAction) -> bool {
+        self.kept
+            .iter()
+            .any(|kept| kept.card.id == id && kept.used.contains(&action))
+    }
+
+    pub fn mark_used(&mut self, id: &str, action: CardAction) {
+        if let Some(kept) = self.kept.iter_mut().find(|kept| kept.card.id == id) {
+            kept.used.push(action);
+        }
     }
 
     pub fn forget(&mut self, id: &str) {

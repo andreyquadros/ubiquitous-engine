@@ -157,10 +157,23 @@ pub fn handle_sample(state: &Arc<EngineState>, sample: ActivitySample) -> CoreRe
 /// [`PRIVATE_TITLE`], its address, description and the text sent to the AI go, its
 /// category becomes the private one, and its screenshots are deleted, rows and files.
 /// A block too short to be kept is dropped altogether. Runs on a blocking thread.
+///
+/// Only the block of the window the hit was about is touched. The guard acts within
+/// seconds of a page coming to the front, often before the tracker has sampled it: the
+/// block still open then is what the user did before (an hour in an editor, another
+/// site), and it stays as it is. The page itself never gets a block of its own, because
+/// its samples are recorded as private from the first one.
 pub fn scrub_open_block(state: &Arc<EngineState>) -> CoreResult<()> {
     let now = state.now();
     let (closed, significant) = {
         let mut segmenter = state.segmenter.lock();
+        let about_the_hit = segmenter.open_block().is_some_and(|open| {
+            let address = open.url.as_deref().or(open.domain.as_deref());
+            state.nofap.covers_open_block(&open.app_id, address)
+        });
+        if !about_the_hit {
+            return Ok(());
+        }
         let Some(closed) = segmenter.close(now) else {
             return Ok(());
         };
