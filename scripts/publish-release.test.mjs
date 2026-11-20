@@ -15,6 +15,7 @@ import {
   collectAssets,
   compareFeeds,
   feedBelongsTo,
+  foreignAssets,
   inferAsset,
   main,
   makeFeed,
@@ -769,6 +770,49 @@ describe('publish-release', () => {
     assert.equal(shieldRelease.name, 'old');
   });
 
+  test('a release that holds the other product\'s files is left alone, with no feed or with one that cannot be read', async () => {
+    // No latest.json at all: only the files say whose release this is. updater.json has no product field,
+    // and it is what ubiqX's installed apps would take a replaced file from.
+    const ubiqxRelease = gh.seedRelease({ tag: 'nightly', assets: ['ubiqX-macos-aarch64.dmg', 'ubiqX-macos-aarch64.app.tar.gz', UPDATER_ASSET_NAME] });
+    let code = await run(shieldArgv(shieldBuild(), '--tag', 'nightly'));
+    assert.equal(code, 1, lines.join('\n'));
+    assert.match(lines.join('\n'), /A release "nightly" traz arquivos de outro produto \(ubiqX-macos-aarch64\.dmg, ubiqX-macos-aarch64\.app\.tar\.gz\), não do ubiqx-shield/);
+    assert.deepEqual(gh.state.log.filter((l) => !l.startsWith('GET ')), [], 'no write to a release of the other product');
+    assert.deepEqual(ubiqxRelease.assets.map((a) => [a.name, a.content.toString()]), [['ubiqX-macos-aarch64.dmg', 'old'], ['ubiqX-macos-aarch64.app.tar.gz', 'old'], [UPDATER_ASSET_NAME, 'old']]);
+    assert.equal(gh.state.refs['refs/tags/nightly'], 'a'.repeat(40), 'the tag did not move');
+
+    // A latest.json that is there and cannot be read counts as no feed; the files still decide.
+    gh.reset();
+    lines = [];
+    const damaged = gh.seedRelease({ tag: 'nightly', assets: ['ubiqX-linux-x86_64.deb', 'latest.json'] });
+    code = await run(shieldArgv(shieldBuild(), '--tag', 'nightly'));
+    assert.equal(code, 1, lines.join('\n'));
+    assert.match(lines.join('\n'), /latest\.json atual ilegível/);
+    assert.match(lines.join('\n'), /traz arquivos de outro produto \(ubiqX-linux-x86_64\.deb\)/);
+    assert.deepEqual(gh.state.log.filter((l) => !l.startsWith('GET ')), []);
+    assert.equal(damaged.name, 'old');
+
+    // The other direction, by the name Tauri gives the standalone app's files as well as the published one.
+    for (const name of ['ubiqx-shield-windows-x86_64-setup.exe', `${SHIELD_DISPLAY}_0.1.0_amd64.deb`]) {
+      gh.reset();
+      lines = [];
+      const shieldRelease = gh.seedRelease({ tag: 'nightly', assets: [name] });
+      code = await run(argv('--tag', 'nightly'));
+      assert.equal(code, 1, lines.join('\n'));
+      assert.match(lines.join('\n'), /traz arquivos de outro produto \(.+\), não do ubiqX\./);
+      assert.deepEqual(gh.state.log.filter((l) => !l.startsWith('GET ')), []);
+      assert.equal(shieldRelease.assets[0].content.toString(), 'old');
+    }
+
+    // A release without a feed that holds this product's own files, or files that are nobody's, is published to.
+    gh.reset();
+    lines = [];
+    gh.seedRelease({ tag: 'nightly', assets: ['ubiqX-macos-aarch64.dmg', 'notes.txt'] });
+    code = await run(argv('--tag', 'nightly'));
+    assert.equal(code, 0, lines.join('\n'));
+    assert.deepEqual(gh.state.releases[0].assets.map((a) => a.name).sort(), ['latest.json', 'notes.txt', 'ubiqX-macos-aarch64.app.zip', 'ubiqX-macos-aarch64.dmg']);
+  });
+
   test('a product never publishes under the other product\'s tag, an unknown product is a usage error, and the standalone app has no default file', async () => {
     let code = await run(shieldArgv(shieldBuild(), '--tag', 'continuous'));
     assert.equal(code, 2, lines.join('\n'));
@@ -1006,6 +1050,15 @@ describe('helpers', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test('foreignAssets names the files of a release that are the other product\'s', () => {
+    const stems = productStems(REPO_ROOT);
+    const assets = ['ubiqX-macos-aarch64.dmg', 'ubiqX-macos-aarch64.app.tar.gz.sig', 'ubiqx-shield-linux-x86_64.deb', `${SHIELD_DISPLAY}.app.tar.gz`, 'latest.json', UPDATER_ASSET_NAME, 'notes.txt'].map((name) => ({ name }));
+    assert.deepEqual(foreignAssets(assets, PRODUCTS.shield, stems), ['ubiqX-macos-aarch64.dmg', 'ubiqX-macos-aarch64.app.tar.gz.sig']);
+    assert.deepEqual(foreignAssets(assets, PRODUCTS.ubiqx, stems), ['ubiqx-shield-linux-x86_64.deb', `${SHIELD_DISPLAY}.app.tar.gz`]);
+    assert.deepEqual(foreignAssets(undefined, PRODUCTS.ubiqx, stems), []);
+    assert.deepEqual(foreignAssets([{}, { name: null }], PRODUCTS.shield, stems), []);
   });
 
   test('feedBelongsTo follows the rule of the app: the exact name, and a feed without one is ubiqX\'s', () => {

@@ -9,7 +9,8 @@
 //
 // The standalone app is published under its machine id, never under its display name. The two never
 // mix: a file that carries the other product's name is refused, a release whose latest.json names the
-// other product is left alone, and the app itself ignores a feed that names another product
+// other product or that holds the other product's files is left alone, and the app itself ignores a
+// feed that names another product
 // (`ubiqx_core::update::feed_matches_product`). The rows of the two products are `PRODUCTS` in
 // scripts/app-version.mjs. Everything below describes ubiqX; the standalone app is the same with its
 // own prefix and tag.
@@ -84,7 +85,7 @@ Opções:
                         arquivos ${PRODUCTS.ubiqx.assetPrefix}-<os>-<arch>.<ext>. shield (o app separado): tag
                         "${PRODUCTS.shield.tag}", arquivos ${PRODUCTS.shield.assetPrefix}-<os>-<arch>.<ext>. Um arquivo
                         com o nome do outro produto é recusado, e uma release cujo latest.json é do outro
-                        produto não é tocada
+                        produto, ou que guarda arquivos dele, não é tocada
   --repo <owner/repo>   repositório (padrão: GITHUB_REPOSITORY, CM_REPO_SLUG ou o remote origin)
   --tag <tag>           tag da release rolante (padrão: a do produto)
   --asset <caminho|glob>
@@ -364,6 +365,19 @@ export function productOf(fileName, stems) {
   return best?.id ?? null;
 }
 
+/**
+ * The names among a release's assets that are the other product's ([`productOf`]). A product writes into
+ * a release only when this is empty: its feeds would otherwise replace the ones those files belong to.
+ */
+export function foreignAssets(assets, product, stems) {
+  return (assets ?? [])
+    .map((asset) => String(asset?.name ?? ''))
+    .filter((name) => {
+      const owner = productOf(name, stems);
+      return owner !== null && owner !== product.id;
+    });
+}
+
 /** Feed `platforms` for a list of inferred assets (with `size`): one entry per platform key, sorted by key. */
 export function buildPlatforms(assets, download) {
   const byKey = new Map();
@@ -638,6 +652,14 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
     if (existing && !feedBelongsTo(existing, product)) {
       // Installed apps of the other product update themselves from this release. Nothing was written yet.
       error(`A release "${opts.tag}" traz o latest.json de outro produto ("${String(existing.product ?? '').trim() || PRODUCTS.ubiqx.feedProduct}"), não o do ${product.label}. Nada foi alterado: confira --product e --tag.`);
+      return 1;
+    }
+    // The feed is not the only sign of whose release this is: it may be missing or unreadable (a
+    // download that failed counts as "no feed" below). The files do not lie, so a release that holds
+    // the other product's installers is left alone as well, before updater.json could be replaced.
+    const foreign = foreignAssets(release.assets, product, productStems(root));
+    if (foreign.length) {
+      error(`A release "${opts.tag}" traz arquivos de outro produto (${foreign.slice(0, 3).join(', ')}${foreign.length > 3 ? ', …' : ''}), não do ${product.label}. Nada foi alterado: confira --product e --tag.`);
       return 1;
     }
     const relation = compareFeeds(existing, feed);
