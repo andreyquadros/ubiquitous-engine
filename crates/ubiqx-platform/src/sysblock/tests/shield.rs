@@ -223,9 +223,11 @@ fn the_exit_of_the_elevated_run_becomes_the_outcome() {
 #[test]
 fn the_native_shield_of_this_machine_ships_with_every_tier_gated() {
     // Reads the gate and the executable path only; nothing on the system is touched.
-    let shield = NativeSystemShield::native(ProductId::Ubiqx).expect("Linux has a back-end");
+    // The test runs on the three systems in CI: each of them has a back-end.
+    let shield = NativeSystemShield::native(ProductId::Ubiqx).expect("this system has a back-end");
     let capabilities = shield.capabilities();
-    assert_eq!(capabilities.os, Some(Os::Linux));
+    assert!(capabilities.os.is_some());
+    assert_eq!(capabilities.os, Os::current());
     for tier in Tier::ALL {
         if !capabilities.unverified.contains(&tier) {
             assert_eq!(*capabilities.of(tier), TierCapability::Gated, "{tier:?}");
