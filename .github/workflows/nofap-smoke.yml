@@ -1,0 +1,140 @@
+name: nofap system smoke
+
+# The real helper of the system layer, run as administrator on a real machine of each system
+# (docs/nofap/DESIGN.md 9.3): apply the hosts block and the family resolver, check that both
+# hold, remove them, check that the machine is byte for byte what it was. A green job is the
+# evidence that opens the `hosts` and `resolver` entries of that system in
+# `crates/ubiqx-nofap/src/gate.rs`; the runs are logged in docs/nofap/REAL-MACHINE-CHECKLIST.md.
+#
+# It builds nothing that is published, uploads nothing and reads no secret. The machine it
+# changes is the runner, which is thrown away after the job.
+
+on:
+  push:
+    branches:
+      - claude/sharp-bardeen-sk27ae
+    paths:
+      - "crates/ubiqx-platform/**"
+      - "crates/ubiqx-nofap/**"
+      - "scripts/nofap/**"
+      - ".github/workflows/nofap-smoke.yml"
+
+# Its own group: a push that cancels the main CI run does not touch a smoke run. A run that
+# has started always finishes (its result is evidence for one commit); of the runs waiting
+# behind it, the newest is kept.
+concurrency:
+  group: nofap-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  nofap-system-smoke:
+    name: System smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      # One system's result says nothing about another's: every system runs to its end.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: System libraries (libdbus for the Linux keyring backend)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libdbus-1-dev pkg-config
+      - name: Build the helper
+        run: cargo build -p ubiqx-platform --bin ubiqx-shield-helper
+
+      - name: The machine before the run (Linux, macOS)
+        if: runner.os != 'Windows'
+        run: |
+          uname -a
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            sw_vers
+            networksetup -listallnetworkservices
+            scutil --dns | sed -n '1,25p'
+          else
+            sed -n '1,4p' /etc/os-release
+            ls -l /etc/resolv.conf
+            systemctl is-active systemd-resolved || true
+            resolvectl dns || true
+            grep '^hosts:' /etc/nsswitch.conf
+          fi
+          ls -l /etc/hosts
+          python3 --version
+          mkdir -p "$RUNNER_TEMP/nofap-smoke"
+          sudo cat /etc/hosts > "$RUNNER_TEMP/nofap-smoke/hosts.before"
+          shasum -a 256 "$RUNNER_TEMP/nofap-smoke/hosts.before"
+      - name: Smoke run as root (Linux, macOS)
+        if: runner.os != 'Windows'
+        # `sudo` drops the environment: the script needs `CI=true` to start and python3 on PATH.
+        run: sudo env "PATH=$PATH" CI=true scripts/nofap/system-smoke.sh --tiers hosts,resolver
+      - name: What a red run saved and saw (Linux, macOS)
+        if: failure() && runner.os != 'Windows'
+        run: |
+          for dir in /tmp/ubiqx-shield-smoke.* /private/tmp/ubiqx-shield-smoke.*; do
+            sudo test -d "$dir" || continue
+            for file in dns.before.json baseline.json facts.json status.before.json status.applied.json status.removed.json; do
+              echo "::group::$dir/$file"
+              sudo cat "$dir/$file" 2> /dev/null || echo "(not written)"
+              echo
+              echo "::endgroup::"
+            done
+          done
+      - name: The hosts file after the run is the one before it (Linux, macOS)
+        if: always() && runner.os != 'Windows'
+        # Independent of the script: compared by this job, whatever the script reported.
+        run: |
+          test -f "$RUNNER_TEMP/nofap-smoke/hosts.before"
+          sudo cmp /etc/hosts "$RUNNER_TEMP/nofap-smoke/hosts.before"
+          for path in /var/lib/ubiqx-shield "/Library/Application Support/ubiqx-shield" /etc/systemd/resolved.conf.d/90-ubiqx-shield.conf; do
+            if sudo test -e "$path"; then
+              echo "left behind: $path"
+              exit 1
+            fi
+          done
+          echo "the hosts file is byte for byte the saved one; no state directory, no drop-in"
+
+      - name: The machine before the run (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          (Get-CimInstance Win32_OperatingSystem).Caption
+          Get-ExecutionPolicy -List | Format-Table -AutoSize
+          Get-NetAdapter | Format-Table -AutoSize Name, ifIndex, Status, InterfaceDescription
+          Get-DnsClientServerAddress | Format-Table -AutoSize InterfaceAlias, InterfaceIndex, AddressFamily, ServerAddresses
+          $hosts = Join-Path ([Environment]::SystemDirectory) 'drivers\etc\hosts'
+          (Get-Acl -LiteralPath $hosts).Sddl
+          $saved = Join-Path $env:RUNNER_TEMP 'nofap-smoke-hosts.before'
+          [System.IO.File]::WriteAllBytes($saved, [System.IO.File]::ReadAllBytes($hosts))
+          (Get-FileHash -LiteralPath $saved -Algorithm SHA256).Hash
+      - name: Smoke run in the runner's elevated shell (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/nofap/system-smoke.ps1 -Tiers hosts,resolver
+      - name: The hosts file after the run is the one before it (Windows)
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        # Independent of the script: compared by this job, whatever the script reported.
+        run: |
+          $hosts = Join-Path ([Environment]::SystemDirectory) 'drivers\etc\hosts'
+          $saved = Join-Path $env:RUNNER_TEMP 'nofap-smoke-hosts.before'
+          $before = (Get-FileHash -LiteralPath $saved -Algorithm SHA256).Hash
+          $after = (Get-FileHash -LiteralPath $hosts -Algorithm SHA256).Hash
+          if ($before -ne $after) { throw "the hosts file changed: $before before, $after after" }
+          $state = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'ubiqx-shield'
+          if (Test-Path -LiteralPath $state) { throw "left behind: $state" }
+          (Get-Acl -LiteralPath $hosts).Sddl
+          Get-DnsClientServerAddress | Format-Table -AutoSize InterfaceAlias, InterfaceIndex, AddressFamily, ServerAddresses
+          'the hosts file is byte for byte the saved one; no state directory'

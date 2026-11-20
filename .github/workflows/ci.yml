@@ -52,6 +52,11 @@ jobs:
         run: cargo clippy --workspace --exclude ubiqx-desktop --exclude ubiqx-nofap-desktop --all-targets -- -D warnings
       - name: Tests
         run: cargo test --workspace --exclude ubiqx-desktop --exclude ubiqx-nofap-desktop
+      - name: nofap blocklist data is what the pinned sources build (offline)
+        # Rebuilds the embedded data from the committed, pinned sources and compares: no network.
+        run: python3 scripts/nofap/build_blocklist.py --check
+      - name: nofap naming rule (machine names carry the neutral ring, never the source name)
+        run: cargo test -p ubiqx-nofap --test naming
       - name: Type-check macOS platform code
         run: cargo check -p ubiqx-platform --target aarch64-apple-darwin
       - name: Type-check Windows platform code
