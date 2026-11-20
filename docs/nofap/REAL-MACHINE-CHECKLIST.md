@@ -137,9 +137,13 @@ evidence about the helper: it is logged below as red, fixed, and run again.
 
 | Runner | Tiers | Result | Run, job | Commit | `GREEN` line of the log |
 |---|---|---|---|---|---|
-| `ubuntu-latest` (Ubuntu 26.04.1, systemd-resolved active, `/etc/resolv.conf` the stub) | hosts, resolver | **green** | run 7: `44664769823`, job `136051267207` | `38b7d01` | `system-smoke: GREEN os=linux tiers=hosts,resolver commit=38b7d01 helper_sha256=4cf7a3870822f43bb637f7feff2328a2efb2bd43d67be285a2d99a42855e6c04` |
-| `macos-latest` (macOS 26.7.2, arm64, one network service, "Ethernet") | hosts, resolver | **green** | run 7: `44664769823`, job `136051266946` | `38b7d01` | `system-smoke: GREEN os=macos tiers=hosts,resolver commit=38b7d01 helper_sha256=284f42fbecdbc2e55210093ac8b0930f69f491f048b476e07172779411c603b2` |
-| `windows-latest` (Windows Server 2025 Datacenter, PowerShell 7.6.10, execution policy `RemoteSigned` for the machine, `EnableLUA` 1, the shell already elevated) | hosts, resolver | **green** | run 7: `44664769823`, job `136051267246` | `38b7d01` | `system-smoke: GREEN os=windows tiers=hosts,resolver commit=38b7d01 helper_sha256=e74cca92713d646b6baedc70735ebfe4c7ca8f859f590b9ce9fe74a945634e68 names=8000 block_sha256=6ebc3afbd82d9548e808039c95a59a50dd0f7e5630846257f9397b793bd05354 first_lookup_s=0.1 longest_plan=24000` |
+| `ubuntu-latest` (Ubuntu 26.04.1, systemd-resolved active, `/etc/resolv.conf` the stub) | hosts, resolver | **green** | run 9: `44665723586`, job `136055224331` | `6a80312` | `system-smoke: GREEN os=linux tiers=hosts,resolver commit=6a80312 helper_sha256=d126eec8acd3e72b86e6a1dfd41c1902a81d8f2e15efa1a2d098f2690cb5c563` |
+| `macos-latest` (macOS 26.7.2, arm64, one network service, "Ethernet") | hosts, resolver | **green** | run 9: `44665723586`, job `136055224489` | `6a80312` | `system-smoke: GREEN os=macos tiers=hosts,resolver commit=6a80312 helper_sha256=f3dbd41d472b0fee9c81ff5c031f8d21f101a3b1e005559fb851a9e7da4f7c38` |
+| `windows-latest` (Windows Server 2025 Datacenter, PowerShell 7.6.10, execution policy `RemoteSigned` for the machine; UAC: `EnableLUA=1 ConsentPromptBehaviorAdmin=0`, the shell at high integrity) | hosts, resolver | **green** | run 9: `44665723586`, job `136055224452` | `6a80312` | `system-smoke: GREEN os=windows tiers=hosts,resolver commit=6a80312 helper_sha256=160b3c8693eac31eba8eecea82858e4d5703144c4d41d583f5df012b86c93d53 names=8000 block_sha256=6ebc3afbd82d9548e808039c95a59a50dd0f7e5630846257f9397b793bd05354 first_lookup_s=0.1 longest_plan=24000` |
+
+Run 9 is on the last commit that changes anything the workflow watches (`6a80312`, a
+snapshot commit that carries this unit's last changes to the workflow and to the comment of
+the budget); the commits after it change documents and other units' files.
 
 ### Log of every run
 
@@ -168,17 +172,20 @@ One row per run and system, oldest first. "Changed afterwards" is what the resul
 | 7, `44664769823` | `38b7d01` | `ubuntu-latest` | green | The first run of the build with all six entries open and the Windows budget at 24,000. As run 4; 103 tests passed. | nothing |
 | 7, `44664769823` | `38b7d01` | `macos-latest` | green | As run 4; 103 tests passed. | nothing |
 | 7, `44664769823` | `38b7d01` | `windows-latest` | **green**: 321 checks `ok`, none failed | As run 6, on the build with the gate open; "a plan of the budget the app uses today (24000 characters) reaches the helper" is `ok`. The job printed `EnableLUA: 1`: **UAC is on on the runner**, and its shell is already elevated, so the elevation command started without a consent prompt. Again no adapter with a borrowed index (item 29). 103 tests passed. | The checklist and the comment of `ARG_BUDGET_WINDOWS` say what the runner is; the job prints the other UAC settings and the integrity level of its shell; the script also asks `ping.exe` for `localhost` in the hostile environment. |
+| 8, `44665208311` | `0d61acf` | all three | green (Windows: 321 checks) | As run 7. New in the Windows log: under the hostile variables `ping.exe` cannot find `localhost` either ("Ping request could not find host localhost"), so the name the system layer's test looks up after pinning the environment is one that does fail without it. 103 tests passed on each system. | nothing |
+| 9, `44665723586` | `6a80312` | all three | green (Windows: 321 checks) | As run 8. The job printed `UAC: EnableLUA=1 ConsentPromptBehaviorAdmin=0 PromptOnSecureDesktop=1` and `Mandatory Label\High Mandatory Level` for its shell: UAC is on, set to elevate administrators without asking, and the shell is already elevated. "Ethernet 4" had an index of its own again (item 29 still open). 103 tests passed on each system. | nothing |
 
 Numbers the Windows run reports, and the constants they decide (design 2.1, 2.2):
 
-| Measurement | Value from the run (run 6, and the same in run 5) | Constant | Value in the code before | Changed to |
+| Measurement | Value from the run (runs 5 to 9, the same each time) | Constant | Value in the code before | Changed to |
 |---|---|---|---|---|
 | Names in the block | 8,000 | `hosts::CAP_WINDOWS` | 8,000 | unchanged |
 | Seconds from the helper returning to the first lookup of the canary that showed it blocked | 0.1 s (0.7 to 1.4 s after the hosts file was written), in each of the seven cycles | (limit: 10 s) | | the limit holds with a wide margin; whether more than 8,000 names would also do was not measured |
 | Longest `--plan-b64` value that reached the helper through the elevation command | 24,000 characters (373 extra names, all of them in the block); 1,800, 4,000 and 12,000 arrived too | `plan::ARG_BUDGET_WINDOWS` | 1,800 | 24,000, which is also the longest value the helper accepts (`HELPER_ARG_MAX`) |
 
 What the measurement of the argument does **not** cover: the runner's shell is already
-elevated. `EnableLUA` is 1 there (UAC is on, the job prints it since run 7), but
+elevated (high integrity) and its UAC is set to elevate administrators without asking
+(`EnableLUA=1 ConsentPromptBehaviorAdmin=0`, printed by the job in run 9), so
 `Start-Process -Verb RunAs` started the helper without a consent prompt. The limit of about
 2,048 characters that the design feared is one of `ShellExecuteEx` itself, and it did not
 show; what a consent prompt adds on the way was not part of the run. Item 18 keeps a line
@@ -233,7 +240,7 @@ Person, on Windows 11 with Defender on and the hosts tier applied:
    appear for the hosts file.
 
 - Evidence (time): 0.1 s from the helper returning to the first lookup that showed the canary
-  blocked, 0.7 to 1.4 s after the write, in each of the seven cycles of run 6 (`44663846392`) and of run 5
+  blocked, 0.7 to 1.4 s after the write, in each of the seven cycles of runs 5 to 9
   (measurements table of section 3). 2026-11-20, Windows Server 2025 Datacenter.
 - Evidence (CPU, Defender):
   - Date, Windows version and language:
@@ -555,8 +562,9 @@ its checks differ from the first cycle, record which.
   3, 5 and 6). A program started with a false `SystemRoot` resolves no name. The helper now
   sets `SystemRoot` and `windir` of its own process from what Windows reports before it does
   anything else; the test `the_helper_resolves_names_when_started_with_a_false_system_root`
-  starts a lookup that way and passes on the Windows runner (the system layer's tests of
-  runs 3 to 6).
+  starts a lookup of `localhost` that way and passes on the Windows runner (the system
+  layer's tests of runs 3 to 9); runs 8 and 9 show that `localhost` is a name `ping.exe`
+  cannot find under those variables, so the test would not pass without the pinning.
 
 ### [ ] 22. An adapter without IPv6 (hand-off U2)
 

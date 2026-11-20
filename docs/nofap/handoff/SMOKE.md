@@ -37,6 +37,13 @@ Workflow `.github/workflows/nofap-smoke.yml`, job `nofap-system-smoke` on `ubunt
 | 5, `44662940118` | `4a12960` | green | green | red, 8 checks: one adapter with the interface index of another |
 | 6, `44663846392` | `06cbc59` | green | green | **green**, 321 checks |
 | 7, `44664769823` | `38b7d01` | green | green | **green**, 321 checks (the build with the six entries open and the new budget) |
+| 8, `44665208311` | `0d61acf` | green | green | **green**, 321 checks |
+| 9, `44665723586` | `6a80312` | green | green | **green**, 321 checks |
+
+Run 9 is the latest run of each system, on the last commit that changes anything the
+workflow watches (`6a80312` is a snapshot commit of the hook; it carries this unit's last
+changes to the workflow and to the comment of the budget). Jobs: Ubuntu `136055224331`,
+macOS `136055224489`, Windows `136055224452`.
 
 The sandbox run (hosts tier only, the one real-system run allowed here): green on `af28c33`,
 `/etc/hosts` byte for byte what it was (same SHA-256 before and after, `cmp` with a saved
@@ -83,7 +90,9 @@ Windows, in the order the runs showed it:
    `SystemRoot` and `windir` of the helper's own process from `GetSystemDirectoryW`;
    `helper::run` calls it first. Test:
    `the_helper_resolves_names_when_started_with_a_false_system_root` (a child process with
-   the false variables; passes on the Windows runner).
+   the false variables looks `localhost` up after the pinning; passes on the Windows
+   runner, where runs 8 and 9 show that `ping.exe` cannot find `localhost` under those
+   variables).
 4. **Windows does not hand the null address to a program** (runs 2 and 3). For a name whose
    only answer is the null address, from the hosts file or from the family resolver,
    `getaddrinfo` fails with `WSANO_DATA` (11004) within a millisecond, while the DNS client
@@ -175,7 +184,8 @@ The scripts:
 ## Open points
 
 - **The consent prompt's path of a long plan is unmeasured.** The runner's shell is already
-  elevated (`EnableLUA` is 1, no prompt was shown). The 2,048-character limit of
+  elevated and its UAC elevates administrators without asking (`EnableLUA=1
+  ConsentPromptBehaviorAdmin=0`), so no prompt was shown. The 2,048-character limit of
   `ShellExecuteEx` did not show up to 24,000; what the prompt adds is unknown. If a machine
   that prompts fails with a long plan, the app says "failed" for a user with hundreds of
   own sites; lowering `ARG_BUDGET_WINDOWS` is the fix (checklist item 18, person).
@@ -194,14 +204,35 @@ The scripts:
 - **A canary answered "no data" by a resolver** would read as honoured on Windows even if
   the hosts file were not: `.invalid` is reserved and resolvers answer it "no such name",
   so this needs a broken resolver and a hosts file that is ignored at the same time.
-- **Whether `localhost` is a name that fails under a false `SystemRoot`** (the test of fix 3
-  looks it up): the script asks `ping.exe` for it since the last push; see the latest run in
-  the checklist. `example.com` does fail.
 - The main CI's macOS and Windows jobs are cancelled by most pushes; the smoke workflow
   runs `cargo test -p ubiqx-platform sysblock` on each system instead, and that is the only
   place I read those tests' results (103 passed on each, run 7).
 
 ## Commands run on the final state
 
-See the report of the unit; the list is repeated in the last commit's message when it
-changes.
+In the sandbox, on `6a80312` plus documents (the tree as pushed):
+
+| Command | Result |
+|---|---|
+| `cargo test -p ubiqx-nofap -p ubiqx-platform` | 301 + 22 + 12 passed (`ubiqx-nofap`), 175 passed and 2 ignored (`ubiqx-platform`; the two ignored tests are the inner halves of two tests that run them in a child process) |
+| `cargo clippy -p ubiqx-nofap -p ubiqx-platform --all-targets -- -D warnings` | clean |
+| `cargo clippy -p ubiqx-platform --all-targets --target x86_64-pc-windows-msvc -- -D warnings` | clean |
+| `cargo clippy -p ubiqx-platform --all-targets --target aarch64-apple-darwin -- -D warnings` | clean |
+| `cargo check --workspace --all-targets` | passes |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --workspace --exclude ubiqx-desktop --exclude ubiqx-nofap-desktop --all-targets -- -D warnings` | clean |
+| `cargo test --workspace --exclude ubiqx-desktop --exclude ubiqx-nofap-desktop` | every test binary passes (no failure) with the six entries open |
+| `python3 scripts/nofap/build_blocklist.py --check`, `cargo test -p ubiqx-nofap --test naming` | pass (also in the Linux job of the main CI) |
+| `bash -n scripts/nofap/system-smoke.sh` | passes |
+| `system-smoke.ps1` through the `tree-sitter-powershell` grammar (scratch virtualenv) | no error node; its real test is the Windows job |
+| `UBIQX_SHIELD_SMOKE=1 scripts/nofap/system-smoke.sh --tiers hosts`, once, as root in the sandbox | green; `/etc/hosts` identical afterwards |
+
+How the new tests were checked: the gate's tests against two mutations in a scratch copy
+(`Gate::new` keeping a tier the table opens; a table entry opened without the list), the
+hosts write test against two (the rename kept on Windows; the restore not in place): each
+fails a test. The plan and platform tests were run in a scratch copy with the table closed,
+with one entry open and with six open. The Windows-only behaviour (the PowerShell text, the
+environment pinning, "no data") cannot be mutated here; the Windows job is what shows it.
+
+**Not run:** the frontend's tests (nothing of it was touched); anything on a Windows or
+macOS machine other than the CI runners; the smoke script in the sandbox a second time.
