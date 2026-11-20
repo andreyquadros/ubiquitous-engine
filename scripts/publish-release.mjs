@@ -9,8 +9,8 @@
 //
 // The standalone app is published under its machine id, never under its display name. The two never
 // mix: a file that carries the other product's name is refused, a release whose latest.json names the
-// other product or that holds the other product's files is left alone, and the app itself ignores a
-// feed that names another product
+// other product or that holds the other product's files is left alone, the standalone app's release is
+// never the repository's "Latest" one, and the app itself ignores a feed that names another product
 // (`ubiqx_core::update::feed_matches_product`). The rows of the two products are `PRODUCTS` in
 // scripts/app-version.mjs. Everything below describes ubiqX; the standalone app is the same with its
 // own prefix and tag.
@@ -644,7 +644,9 @@ export async function main(argv = process.argv.slice(2), env = process.env, { lo
   const gh = createClient({ token, api: opts.api, uploads: opts.uploads, log, retryDelayMs: retryDelayMs ?? Number(env.UBIQX_PUBLISH_RETRY_MS ?? DEFAULTS.retryDelayMs) });
 
   let release = await gh.getReleaseByTag(owner, repo, opts.tag);
-  const releaseData = { name: product.releaseName, body: notes, target_commitish: sha };
+  // ubiqX's request is what it always was. The standalone app's adds one member, so that its release
+  // never takes the "Latest" mark and the /releases/latest address away from ubiqX's.
+  const releaseData = { name: product.releaseName, body: notes, target_commitish: sha, ...(product.latest ? {} : { make_latest: 'false' }) };
 
   if (release) {
     const existingFeed = release.assets?.find((a) => a.name === FEED_ASSET_NAME);

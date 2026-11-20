@@ -53,6 +53,9 @@ export const REPO_ROOT = path.resolve(SCRIPT_DIR, '..');
  *   product (`ubiqx_core::update::feed_matches_product`), so this is `ProductIdentity::feed_product`.
  * - `tag`: its rolling release. The updater endpoint and the default feed URL of each shell point there.
  * - `releaseName`: the title of that release on GitHub.
+ * - `latest`: whether its release may be the one GitHub marks "Latest" and serves at `/releases/latest`.
+ *   A repository has one such release, and it is ubiqX's: `false` makes the publisher say so in every
+ *   request that creates or updates the release (`make_latest: "false"`).
  * - `defaultDmg`: what a call without --asset and --dmg publishes (the historical macOS-only call of
  *   ubiqX); `null` where there is no such call.
  */
@@ -65,6 +68,7 @@ export const PRODUCTS = Object.freeze({
     feedProduct: 'ubiqX',
     tag: 'continuous',
     releaseName: 'ubiqX (build contínuo)',
+    latest: true,
     defaultDmg: 'target/release/bundle/dmg/ubiqX*.dmg',
   }),
   shield: Object.freeze({
@@ -75,6 +79,7 @@ export const PRODUCTS = Object.freeze({
     feedProduct: 'ubiqx-shield',
     tag: 'shield-continuous',
     releaseName: 'ubiqx-shield (build contínuo)',
+    latest: false,
     defaultDmg: null,
   }),
 });

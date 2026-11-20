@@ -94,6 +94,8 @@ function createMockGitHub() {
       if (req.method === 'POST' && p === `${base}/releases`) {
         const data = JSON.parse(body.toString());
         const r = { id: state.nextId++, tag_name: data.tag_name, name: data.name, body: data.body, target_commitish: data.target_commitish, assets: [] };
+        // Kept only when the request carried it, so a test can tell "not sent" from "sent".
+        if ('make_latest' in data) r.make_latest = data.make_latest;
         state.releases.push(r);
         if (!state.refs[`refs/tags/${data.tag_name}`]) state.refs[`refs/tags/${data.tag_name}`] = data.target_commitish;
         return json(201, releaseJson(r));
@@ -682,6 +684,25 @@ describe('publish-release', () => {
     assert.equal(snapshot('continuous'), ubiqxBefore, 'the ubiqX release is byte for byte what it was');
     assert.ok(!gh.state.log.some((l) => l.includes('/tags/continuous')), `a request went to the ubiqX tag: ${gh.state.log.join(', ')}`);
     assert.match(lines.join('\n'), /^ubiqx-shield 0\.1\.0 build 27 /m);
+  });
+
+  test('the standalone app\'s release never becomes the repository\'s "Latest" one; ubiqX\'s requests carry no such member', async () => {
+    // GitHub serves one release at /releases/latest. Created: the request says "not this one".
+    assert.equal(await run(shieldArgv(shieldBuild())), 0, lines.join('\n'));
+    const shield = gh.state.releases.find((r) => r.tag_name === 'shield-continuous');
+    assert.equal(shield.make_latest, 'false', 'the string GitHub expects, not a boolean');
+    // Updated: said again, because an update without the member may hand the mark back.
+    delete shield.make_latest;
+    assert.equal(await run(shieldArgv(shieldBuild())), 0, lines.join('\n'));
+    assert.equal(shield.make_latest, 'false');
+
+    // ubiqX, created and then updated: the body of its requests is what it was before there were two products.
+    assert.equal(await run(argv()), 0, lines.join('\n'));
+    const ubiqx = gh.state.releases.find((r) => r.tag_name === 'continuous');
+    assert.ok(!('make_latest' in ubiqx), 'creating the ubiqX release sends no make_latest');
+    assert.equal(await run(argv()), 0, lines.join('\n'));
+    assert.ok(!('make_latest' in ubiqx), 'updating the ubiqX release sends no make_latest');
+    assert.deepEqual(Object.keys(ubiqx).sort(), ['assets', 'body', 'id', 'name', 'tag_name', 'target_commitish']);
   });
 
   test('publishing ubiqX leaves the standalone app\'s release alone, and its own names are what they always were', async () => {
