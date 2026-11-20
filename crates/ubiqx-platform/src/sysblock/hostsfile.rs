@@ -2,10 +2,13 @@
 //!
 //! The write is a splice (`ubiqx_nofap::hosts::splice`), never a rewrite, of the file the
 //! hosts path resolves to, and only when that file and its directory belong to root and
-//! nobody else can write to the directory. It goes through a temporary file and a rename;
-//! where the file is a mount point and cannot be renamed over, it is written in place.
-//! After every write the file is read back, and on a mismatch the bytes read at the start
-//! are put back.
+//! nobody else can write to the directory. On Unix it goes through a temporary file and a
+//! rename (the new file is given the owner and mode of the old one); where the file is a
+//! mount point and cannot be renamed over, it is written in place. On Windows it is always
+//! written in place: a file renamed over the hosts file is a new file, with the owner of
+//! whoever created it instead of the one the hosts file had, and the removal would hand
+//! the user back a hosts file that is not the one they had. After every write the file is
+//! read back, and on a mismatch the bytes read at the start are put back.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -70,6 +73,26 @@ fn target(backend: &dyn OsBackend, fs: &dyn Fs) -> Result<Option<PathBuf>, &'sta
     }
 }
 
+/// Replaces the bytes of the existing hosts file `file` (see the module documentation
+/// for why Windows differs).
+fn replace(os: Os, fs: &dyn Fs, file: &Path, bytes: &[u8]) -> io::Result<()> {
+    if os == Os::Windows {
+        return fs.write_in_place(file, bytes);
+    }
+    match fs.write_atomic(file, bytes, None) {
+        // A mount point cannot be renamed over (containers, some immutable systems).
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::ResourceBusy | io::ErrorKind::CrossesDevices
+            ) =>
+        {
+            fs.write_in_place(file, bytes)
+        }
+        other => other,
+    }
+}
+
 /// The unprivileged look: the text of the file, and why the tier cannot work here when
 /// that can be seen without writing (`unreadable`, `write_refused`).
 pub(crate) fn observe(backend: &dyn OsBackend, fs: &dyn Fs) -> HostsObservation {
@@ -115,19 +138,8 @@ pub(crate) fn write(
             .map(|()| true)
             .map_err(|_| reason::WRITE_REFUSED);
     };
-    let written = match fs.write_atomic(&file, &spliced, None) {
-        // A mount point cannot be renamed over (containers, some immutable systems).
-        Err(error)
-            if matches!(
-                error.kind(),
-                io::ErrorKind::ResourceBusy | io::ErrorKind::CrossesDevices
-            ) =>
-        {
-            fs.write_in_place(&file, &spliced)
-        }
-        other => other,
-    };
-    if written.is_err() {
+    let os = backend.os();
+    if replace(os, fs, &file, &spliced).is_err() {
         return Err(reason::WRITE_REFUSED);
     }
     if fs.read(&file).is_ok_and(|now| now == spliced) {
@@ -135,7 +147,7 @@ pub(crate) fn write(
     }
     // Something rewrote or reverted the file under us (security software): put back what
     // was there and say so.
-    if fs.write_atomic(&file, &original, None).is_err() {
+    if os == Os::Windows || fs.write_atomic(&file, &original, None).is_err() {
         let _ = fs.write_in_place(&file, &original);
     }
     Err(reason::WRITE_REFUSED)

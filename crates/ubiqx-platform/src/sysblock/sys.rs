@@ -106,11 +106,13 @@ impl Fs for SystemFs {
     }
 
     fn write_in_place(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open(path)?;
+        // Written over from the start and cut to length afterwards, never emptied first: a
+        // write that stops half-way then leaves the old tail behind the new head (for the
+        // hosts splice both share everything in front of the block) instead of an empty
+        // or cut-off file.
+        let mut file = fs::OpenOptions::new().write(true).open(path)?;
         file.write_all(bytes)?;
+        file.set_len(bytes.len() as u64)?;
         file.sync_all()
     }
 
@@ -217,6 +219,24 @@ pub fn windows_dirs() -> Option<(String, String)> {
         text.ok()?
     };
     Some((system32, program_files))
+}
+
+/// Makes `SystemRoot` and `windir` of this process the directory Windows itself reports.
+///
+/// The helper is started through UAC with the variables of the user's session, and
+/// Winsock finds its providers through `%SystemRoot%`: in a process started with a false
+/// value no name resolves at all (the smoke run on a real Windows machine showed it), so
+/// the lookup that guards a DNS change would see "no names before, no names after" and
+/// keep a resolver that broke the network. Called before the first lookup. Nothing is
+/// read from these variables anywhere in the module. Does nothing on another system.
+pub fn pin_system_environment() {
+    #[cfg(windows)]
+    if let Some((system32, _)) = windows_dirs() {
+        if let Some((windows_dir, _)) = system32.trim_end_matches('\\').rsplit_once('\\') {
+            std::env::set_var("SystemRoot", windows_dir);
+            std::env::set_var("windir", windows_dir);
+        }
+    }
 }
 
 /// There are no Windows directories on another system.

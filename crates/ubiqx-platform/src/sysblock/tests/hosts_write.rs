@@ -41,6 +41,45 @@ fn a_hosts_file_that_is_a_mount_point_is_written_in_place_with_the_same_bytes() 
     }
 }
 
+/// What the smoke run on a real Windows machine showed: a hosts file replaced through a
+/// rename is a new file, owned by whoever created it, so after the removal the bytes were
+/// the user's and the owner was not. On Windows the file is therefore written in place,
+/// by apply, by remove and by the restore after a write that did not read back; on Unix
+/// the rename stays (the port gives the new file the old owner and mode).
+#[test]
+fn windows_writes_the_hosts_file_in_place_and_unix_renames_over_it() {
+    for os in Os::ALL {
+        let rig = Rig::new(os);
+        let path = rig.hosts_path();
+        let (renamed, in_place) = (format!("write {path}"), format!("write-in-place {path}"));
+        let hosts_writes = |rig: &Rig| -> Vec<String> {
+            let log = rig.fs.mutations();
+            log.into_iter()
+                .filter(|line| *line == renamed || *line == in_place)
+                .collect()
+        };
+        let expected = if os == Os::Windows {
+            in_place.as_str()
+        } else {
+            renamed.as_str()
+        };
+        let plan = hosts_only(ProductId::Ubiqx);
+        assert_eq!(rig.apply(&plan), EXIT_APPLIED, "{os:?}");
+        assert_eq!(hosts_writes(&rig), [expected], "{os:?}");
+        rig.fs.clear_log();
+        assert_eq!(rig.remove("ubiqx", "all"), EXIT_APPLIED, "{os:?}");
+        assert_eq!(hosts_writes(&rig), [expected], "{os:?}");
+        assert_eq!(rig.hosts_text(), Rig::new(os).hosts_text(), "{os:?}");
+
+        // A write that does not read back: the bytes are put back the same way.
+        rig.fs.clear_log();
+        rig.fs.tamper_next_write(&path);
+        assert_eq!(rig.apply(&plan), EXIT_PARTIAL, "{os:?}");
+        assert_eq!(hosts_writes(&rig), [expected, expected], "{os:?}");
+        assert_eq!(rig.hosts_text(), Rig::new(os).hosts_text(), "{os:?}");
+    }
+}
+
 #[test]
 fn a_write_that_does_not_read_back_is_undone_and_reported() {
     for os in Os::ALL {

@@ -5,7 +5,7 @@
 use std::io::ErrorKind;
 use std::path::Path;
 
-use crate::sysblock::sys::{SystemFs, SystemLookup, SystemRunner};
+use crate::sysblock::sys::{self, SystemFs, SystemLookup, SystemRunner};
 use crate::sysblock::{Fs, NameLookup, Runner};
 
 fn names(dir: &Path) -> Vec<String> {
@@ -54,6 +54,8 @@ fn real_fs_keeps_the_owner_and_mode_of_a_file_it_replaces() {
     // In place: the same file, new bytes, nothing left of longer old content.
     SystemFs.write_in_place(&file, b"x").unwrap();
     assert_eq!(SystemFs.read(&file).unwrap(), b"x");
+    SystemFs.write_in_place(&file, b"longer again\n").unwrap();
+    assert_eq!(SystemFs.read(&file).unwrap(), b"longer again\n");
     assert_eq!(SystemFs.dir_meta(&file).unwrap().mode, before.mode);
     let missing = dir.path().join("missing");
     assert_eq!(
@@ -163,4 +165,66 @@ fn real_lookup_answers_addresses_as_text() {
     // What a blocked name resolves to, as the canary check reads it.
     assert_eq!(SystemLookup.lookup("0.0.0.0"), ["0.0.0.0"]);
     assert_eq!(SystemLookup.lookup(""), Vec::<String>::new());
+}
+
+const INNER_LOOKUP_TEST: &str =
+    "sysblock::tests::sys_ports::a_name_resolves_after_the_environment_is_pinned";
+const FALSE_ROOT_MARK: &str = "UBIQX_SHIELD_TEST_FALSE_ROOT";
+
+/// What the smoke run on a real Windows machine showed: a program started with `SystemRoot`
+/// and `windir` pointing somewhere else resolves no name (Winsock finds its providers
+/// through `%SystemRoot%`), and the helper is started through UAC with the variables of the
+/// user's session. The variables are set for a child process only (this test binary,
+/// running the one test below), so no other test ever sees them.
+#[test]
+fn the_helper_resolves_names_when_started_with_a_false_system_root() {
+    let elsewhere = tempfile::tempdir().unwrap();
+    let this_binary = std::env::current_exe().expect("the test binary");
+    let mut child = std::process::Command::new(this_binary);
+    child.args(["--exact", INNER_LOOKUP_TEST, "--ignored"]);
+    for name in ["SystemRoot", "windir", FALSE_ROOT_MARK] {
+        child.env(name, elsewhere.path());
+    }
+    let output = child.output().expect("the child test run");
+    let printed = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "{printed}");
+    assert!(
+        printed.contains("1 passed"),
+        "the inner test did not run: {printed}"
+    );
+}
+
+#[test]
+#[ignore = "run by the_helper_resolves_names_when_started_with_a_false_system_root, in a child process"]
+fn a_name_resolves_after_the_environment_is_pinned() {
+    let elsewhere = std::env::var(FALSE_ROOT_MARK).expect("started by the outer test");
+    assert_eq!(
+        std::env::var("SystemRoot").as_deref(),
+        Ok(elsewhere.as_str())
+    );
+    // What `helper::run` does first.
+    sys::pin_system_environment();
+    match sys::windows_dirs() {
+        // Windows: both variables now name the directory above `<System32>`.
+        Some((system32, _)) => {
+            for name in ["SystemRoot", "windir"] {
+                let value = std::env::var(name).expect("set");
+                assert_ne!(value, elsewhere, "{name}");
+                assert!(
+                    system32.to_lowercase().starts_with(&value.to_lowercase()),
+                    "{name}={value}, <System32>={system32}"
+                );
+            }
+        }
+        // Elsewhere the variables mean nothing and are left alone.
+        None => assert_eq!(
+            std::env::var("SystemRoot").as_deref(),
+            Ok(elsewhere.as_str())
+        ),
+    }
+    // The machine's own name for itself needs no network: every system answers it.
+    assert!(
+        !SystemLookup.lookup("localhost").is_empty(),
+        "no name resolves in this process"
+    );
 }

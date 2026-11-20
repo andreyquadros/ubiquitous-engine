@@ -74,6 +74,8 @@ pub fn after_flag(args: &[String]) -> &[String] {
 /// Runs one verb with the real system ports. `args` starts at the verb. Returns the exit
 /// code.
 pub fn run(args: &[String]) -> i32 {
+    // Before anything looks a name up: see `sys::pin_system_environment`.
+    sys::pin_system_environment();
     let (Some(backend), Ok(exe)) = (native_backend(), std::env::current_exe()) else {
         eprintln!("ubiqx-shield: this system has no system layer");
         return EXIT_FAILED;
