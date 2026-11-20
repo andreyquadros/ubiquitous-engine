@@ -86,3 +86,41 @@ own `docs/nofap/handoff/<unit>.md` when it finishes (deviations, contract notes,
     name lookup answered the machine's own addresses for an empty name on Windows (`ce86d96`).
     Tests of the platform crate run on the macOS and Windows runners too: nothing in them may
     assume Linux (paths, `/bin/sh`, the current OS) without a `cfg` or a check of `Os::current()`.
+
+## After wave B (matcher, decision logic, platform, frontend, storage and AI, scripts)
+
+17. **"Apagar meu histórico" also clears what the person wrote** (design 7.4 wins over the port's
+    comment): the counters, the snoozes, and the values sentence and the plans in the
+    configuration. Protection settings stay. U5 does the clearing in the service; the dialog text
+    `data.erase_body` says so in both languages (follow-up unit FU).
+18. **Checks on a standing signal are spread over the hour.** With a 45 s cadence and six checks
+    per key per hour, a host with a standing signal was checked six times in four minutes and then
+    not for 56. Same cap, spaced: after a check on a key, the next one on that key waits twice as
+    long as the previous gap (45 s, 90 s, 3 min, 6 min, 12 min, 24 min), and the gap resets when
+    the hour's window rolls. Cost per hour is unchanged (FU, in `sampling.rs`; the signature of
+    `decide` stays).
+19. **The delay of a new privacy-list entry counts observed running time**, like the commitment
+    delay, so a clock set forward does not make it effective at once. FU adds the field to
+    `ExclusionSeen` in `ubiqx-core` (serde default, fixtures blessed) and the rule to
+    `exclusions.rs`; U5 feeds it from the same tick that feeds the commitment delay.
+20. **Deleted rows are overwritten in the database file**: `PRAGMA secure_delete = ON` for every
+    connection (FU, `crates/ubiqx-storage/src/db.rs`), so a scrubbed block, an erased history and
+    "Apagar todos os dados" leave no readable text in freed pages. It applies to both products.
+21. **`view` is cheap.** The frontend calls it often. The service answers from memory; the full
+    system read behind decision 14 runs at most once every 60 s, and never blocks the answer
+    (the view carries the last observation and a fresh one arrives as an event).
+22. **An identical pending request is not created twice.** The service returns the existing
+    pending change when the same change is requested again (U5); the page disables a switch whose
+    change is waiting (FU).
+23. **A snoozed host is sampled at signal cadence** (`Allowed(AllowSource::Snooze)`; hand-off U1b),
+    by U5.
+24. **Copy with the managed provider.** The consent sentence must read correctly when the provider
+    is "IA do Ubi" (no "as regras dele" pointing at nothing): FU adjusts the sentence or adds the
+    variant, in both languages, and keeps the forbidden-word and parity tests green.
+25. **The standalone app passes its own data directory to `PlatformServices::native_for`** (U8), or
+    its secrets file would fall into ubiqX's directory. Both shells hold `hyper_util` and `reqwest`
+    at `warn` in the logger (U7, U8).
+26. **Shell scripts stay LF** (`.gitattributes`, done by the integrator).
+27. **Not decided here, for the owner:** the help resources are unverified (the release-mode test
+    fails until a person fills `verified_on` and `verified_by`); nobody has read the top-10k review
+    list or `extra-ptbr.txt`; providers' and Cloudflare's terms are unread.
