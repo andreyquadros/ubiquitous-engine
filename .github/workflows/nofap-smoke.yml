@@ -13,9 +13,14 @@ on:
   push:
     branches:
       - claude/sharp-bardeen-sk27ae
+    # Everything the helper binary is built from, and what runs it: a green run is evidence
+    # for the code it ran, so a change to any of it starts a new one.
     paths:
       - "crates/ubiqx-platform/**"
       - "crates/ubiqx-nofap/**"
+      - "crates/ubiqx-core/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "scripts/nofap/**"
       - ".github/workflows/nofap-smoke.yml"
 
@@ -45,6 +50,10 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The job runs the repository's scripts as administrator: the checkout keeps no
+          # token behind for them to find.
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
