@@ -211,11 +211,14 @@ What the scripts check, so that a green run can be read against the items below:
 
 ## 4. The items of design 11.4
 
-### [ ] 1. Hosts block applies, is honoured, and is removed byte-exactly on Windows, macOS, Ubuntu
+### [x] 1. Hosts block applies, is honoured, and is removed byte-exactly on Windows, macOS, Ubuntu
 
 **CI.** Sections 2 and 3.
 
-- Evidence: the three run URLs of section 3 (and the sandbox output of section 2 for Linux).
+- Evidence: run 6 (`44663846392`), green on the three systems (jobs `136048260668` Ubuntu, `136048260654`
+  macOS, `136048260438` Windows), and the sandbox output of section 2 for Linux. On Windows
+  "honoured" has the shape described under the measurements of section 3: the listed names
+  have "no data" for a program that asks the operating system.
 
 ### [ ] 2. Windows DNS Client with 8,000 names at six per line: time to first lookup, CPU
 
@@ -230,17 +233,23 @@ Person, on Windows 11 with Defender on and the hosts tier applied:
 3. Open Windows Security, Protection history: no `HostsFileHijack` or similar entry may
    appear for the hosts file.
 
-- Evidence (time): the Windows row of the measurements table in section 3.
+- Evidence (time): 0.1 s from the helper returning to the first lookup that showed the canary
+  blocked, 0.7 to 1.4 s after the write, in each of the seven cycles of run 6 (`44663846392`) and of run 5
+  (measurements table of section 3). 2026-11-20, Windows Server 2025 Datacenter.
 - Evidence (CPU, Defender):
   - Date, Windows version and language:
   - CPU at rest / while browsing:
   - Protection history (paste or screenshot name):
 
-### [ ] 3. `networksetup`, `Set-DnsClientServerAddress` / `-ResetServerAddresses`, resolved drop-in set and reset
+### [x] 3. `networksetup`, `Set-DnsClientServerAddress` / `-ResetServerAddresses`, resolved drop-in set and reset
 
 **CI.** Section 3.
 
-- Evidence: the three run URLs of section 3.
+- Evidence: run 6 (`44663846392`), the three jobs. Linux: the drop-in with its four lines, the global servers
+  of systemd-resolved, and after the removal the configuration as before (the directory
+  `/etc/systemd/resolved.conf.d`, created by the helper, stays behind empty). macOS: the one
+  enabled network service set to the four addresses and back to automatic. Windows: two
+  adapters set and reset, read through the cmdlets, the registry and the helper.
 
 ### [ ] 4. Cloudflare for Families addresses answer and refuse a listed name; terms and attribution re-read
 
@@ -252,7 +261,10 @@ what attribution it asks for (the app credits "DNS filtrado por Cloudflare for F
 next to the toggle and in About), and what the service says it logs (PRIVACY.md says "ela
 trata esses dados pelos termos dela").
 
-- Evidence (answers): section 3.
+- Evidence (answers): in every green run on the three systems `1.1.1.3` and `1.0.0.3` answered
+  for `example.com` and answered `xhamster.com` with the null address; the operator's test
+  name `nudity.testcategory.com` exists and is refused by the family resolver, and with the
+  tier applied the operating system refused it too (run 6 (`44663846392`)).
 - Evidence (terms):
   - Date read, and the documents read (title and date of each):
   - Anything the app or PRIVACY.md has to change:
@@ -296,7 +308,13 @@ Person, on Windows 11 Home with nothing changed (`Get-ExecutionPolicy -List` sho
    until the back-end sets DNS with `netsh.exe` (design 2.5); `-ExecutionPolicy Bypass` is not
    an option.
 
-- Evidence (registry, state directory): section 3, Windows.
+- Evidence (registry, state directory): run 6 (`44663846392`), job `136048260438`: `NameServer` under
+  `Tcpip\Parameters\Interfaces\{GUID}` and `Tcpip6\…` holds the pairs (Windows pads the
+  value with NUL characters after the text; `reg.exe` prints the text), read both directly
+  and the way the app reads it; `C:\Program Files\ubiqx-shield` and `state.json` can be
+  read and cannot be written by a standard user. The runner's execution policy:
+  `RemoteSigned` for the machine, `Undefined` elsewhere; under it Windows PowerShell,
+  started by the helper with four variables, loads `DnsClient` and `NetAdapter`.
 - Evidence (execution policy):
   - Date, Windows edition and version:
   - Output of `Get-ExecutionPolicy -List`:
@@ -479,8 +497,16 @@ published** (`NOFAP_PUBLISH` is not `true`) until this is done.
 helper's `elevate-argv` verb, is run with plans of about 1,800, 4,000, 12,000 and 24,000
 characters.
 
-- Evidence: the `ARG_BUDGET evidence` line of the Windows run, copied into the measurements
-  table of section 3.
+- Evidence (CI): `system-smoke: ARG_BUDGET evidence: the longest --plan-b64 value that reached
+  the helper intact has 24000 characters` in run 5 (`44662940118`) and run 6 (`44663846392`); each of the
+  four lengths arrived with all its names in the block. `ARG_BUDGET_WINDOWS` is 24,000 since
+  the commit "feat(nofap): Windows: the argument budget is what the smoke run measured".
+- Still for a **person**: the same on a machine where the elevation shows the consent prompt
+  (the runner needs none). Add a few hundred sites of your own (a plan carries up to 400),
+  switch the system list on, and check that the prompt appears and the tier reads "ativa";
+  if it fails, record the exit code and lower `ARG_BUDGET_WINDOWS`.
+  - Date, Windows version, result:
+- The measurements are in the table of section 3.
 
 ### [ ] 19. The log file of each shell after a day of use
 
@@ -504,7 +530,7 @@ characters.
 
 Not in design 11.4. Each names the hand-off it comes from.
 
-### [ ] 20. The helper binary and the elevation command (this unit, U9a)
+### [x] 20. The helper binary and the elevation command (this unit, U9a)
 
 The elevation command always re-runs the executable as `<exe> --shield-helper <verb> …`. The
 small binary `ubiqx-shield-helper`, as first written, took the verb directly and refused
@@ -513,16 +539,25 @@ sandbox with `status` and `elevate-argv`, which change nothing). What is left is
 Windows. **CI:** the line `the elevation command works at all with the shortest plan` of the
 Windows run.
 
-- Evidence: the Windows run of section 3.
+- Evidence: run 6 (`44663846392`), job `136048260438`: the command printed by `elevate-argv` for the small
+  binary was run with five plans; each time the helper it started exited 0 and the block was
+  written.
 
-### [ ] 21. A hostile environment and name lookups inside the helper (this unit, U9a)
+### [x] 21. A hostile environment and name lookups inside the helper (this unit, U9a)
 
 Step 6 of the Windows script starts the helper with `SystemRoot` and `windir` pointing at an
 empty directory. Whether Winsock initialises in that process, and so whether the helper's
 own probe lookups work there, is not known. **CI:** the second cycle of the Windows run; if
 its checks differ from the first cycle, record which.
 
-- Evidence: the Windows run of section 3.
+- Evidence: the second cycle of the Windows run gave the same checks as the first (run 6 (`44663846392`)).
+  The script cannot see the helper's own lookups, so it asked the question with `ping.exe`
+  started with the same variables: "Ping request could not find host example.com" (runs 2,
+  3, 5 and 6). A program started with a false `SystemRoot` resolves no name. The helper now
+  sets `SystemRoot` and `windir` of its own process from what Windows reports before it does
+  anything else; the test `the_helper_resolves_names_when_started_with_a_false_system_root`
+  starts a lookup that way and passes on the Windows runner (the system layer's tests of
+  runs 3 to 6).
 
 ### [ ] 22. An adapter without IPv6 (hand-off U2)
 
@@ -530,7 +565,8 @@ its checks differ from the first cycle, record which.
 unbound with only the two IPv4 servers, the resolver tier reads "changed" there. **CI** on
 the runner's adapters; **person** on a machine with IPv6 switched off on the active adapter.
 
-- Evidence:
+- Evidence: not exercised. Both adapters of every Windows runner so far had IPv6 bound and
+  took the four addresses; the person's half is open.
 
 ### [ ] 23. The scrubbed block in ubiqX's database file (hand-off U3)
 
@@ -570,7 +606,7 @@ Change `REMOVAL.md` to what is found.
 
 - Evidence (date, OS versions, installer file names, the listings):
 
-### [ ] 26. Windows: owner and access list of the hosts file after a write (review of U9a)
+### [x] 26. Windows: owner and access list of the hosts file after a write (review of U9a)
 
 The helper writes the hosts file through a temporary file and a rename. On Windows the new
 file takes the access list its directory hands down and the account that created it as
@@ -579,7 +615,11 @@ descriptor before the run and after the removal. **CI:** the line `hosts: owner 
 list are what they were`. If it fails, the helper has to write in place on Windows or copy
 the descriptor; the hosts tier of Windows stays closed until then.
 
-- Evidence: the Windows run of section 3.
+- Evidence: run 2 (`44658216620`) showed the change: `O:BAG:S-1-5-21-…-513` after the helper's
+  write, where the file had `O:SYG:SY`, with the same access list, and it stayed so after the
+  removal. Since the helper writes the Windows hosts file in place (commit "fix(nofap):
+  Windows: the hosts file is written in place; …"), both lines are `ok` in every cycle of
+  runs 3, 5 and 6.
 
 ### [ ] 27. The elevation command in the environment the app gives it (hand-off U4)
 
@@ -589,7 +629,43 @@ starts and `Start-Process -Verb RunAs` works with only those four is not known. 
 the Windows script runs the command in exactly that environment. **CI** for Windows;
 **person** for macOS and Linux (item 5 covers the prompts themselves).
 
-- Evidence: the Windows run of section 3; item 5 for the other two.
+- Evidence (Windows, CI): run 6 (`44663846392`): `powershell.exe` started with only `SystemRoot`, `windir`,
+  `PATH` and `PSModulePath` ran `Start-Process -Verb RunAs`, waited and passed on the
+  helper's exit code 0, five times. The helper's own tools (`powershell.exe` with the
+  `DnsClient` and `NetAdapter` modules, `reg.exe`, `ipconfig.exe`) work in the same
+  environment: the `status` printed before each run lists the adapters.
+- Evidence (macOS, Linux): item 5, person.
+
+### [ ] 28. Windows 10 and 11: how a blocked name looks to a program (smoke unit)
+
+The runner is Windows Server 2025. There a name whose only answer is the null address has
+"no data" (Winsock 11004) for a program, and the helper and the app read that as "blocked"
+for the canary. An older or a client Windows may hand out `0.0.0.0` instead, which reads as
+blocked too. **Person**, on Windows 10 and on Windows 11 with the hosts tier applied: run
+`<app executable> --shield-helper status` and look at `"canary"`; the page must show no
+"the hosts file is not honoured" issue, and `ping <a listed site>` must not reach it.
+
+- Evidence (date, Windows version, the `canary` member, what `ping` said):
+
+### [ ] 29. Windows: an adapter that carries the interface index of another (smoke unit)
+
+Run 5 (`44662940118`) landed on a runner whose accelerated-networking adapter reported the
+index of "vEthernet (nat)". The helper's full read now counts the DNS client's answer for
+an adapter only under the adapter's own name. No green run has landed on such a machine
+since, so the fix is covered by its tests and by the script text the hardening test pins.
+**CI**, by chance: a later Windows run whose first lines list two adapters with the same
+`ifIndex` and which is green.
+
+- Evidence (run, job):
+
+### [ ] 30. REMOVAL.md: the Windows DNS command on an adapter the DNS client does not know (smoke unit)
+
+The command of `REMOVAL.md` asks `Get-DnsClientServerAddress -InterfaceIndex` for every
+adapter. On a machine like the runner of run 1 that prints an error for the adapter without
+a DNS configuration and goes on. **Person**: run it as written on such a machine, or add
+`-ErrorAction SilentlyContinue` to it (the document belongs to the documents unit).
+
+- Evidence:
 
 ## 6. Still open, and who decides
 

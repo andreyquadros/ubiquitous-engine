@@ -1157,10 +1157,13 @@ try {
         # Not a check, a fact for the record: whether a program that is started with these
         # variables can still resolve a name (the helper looks one up before and after it
         # changes DNS). `ping.exe` asks the operating system the same way the helper does.
-        if ($script:BaselineResolves) {
-            $ping = Start-Tool -FilePath (Join-Path $System32 'ping.exe') -Arguments @('-n', '1', '-w', '1000', $Reachable) -Environment $hostile
+        # `localhost` too: it is the name the system layer's own test of this looks up.
+        $asked = @('localhost')
+        if ($script:BaselineResolves) { $asked += $Reachable }
+        foreach ($name in $asked) {
+            $ping = Start-Tool -FilePath (Join-Path $System32 'ping.exe') -Arguments @('-n', '1', '-w', '1000', $name) -Environment $hostile
             $said = @($ping.StdOut -split "`r?`n" | Where-Object { $_.Trim() -ne '' } | Select-Object -First 1)
-            Write-Note "name lookups in a program started with these variables: ping.exe exited $($ping.ExitCode) and said: $($said -join '')"
+            Write-Note "name lookups in a program started with these variables: ping.exe $name exited $($ping.ExitCode) and said: $($said -join '')"
         }
         Invoke-Cycle -Label 'windir, SystemRoot, ProgramData and PSModulePath pointing at a scratch directory' -Environment $hostile
         $left = @(Get-ChildItem -LiteralPath $scratch -Force -Recurse)
