@@ -41,7 +41,8 @@ What a run does:
      which only prints) is run for real, in the four-variable environment the app gives it,
      with plans of 1,800, 4,000, 12,000 and 24,000 characters, and the longest that reaches
      the helper intact is reported. This is the measurement behind the argument budget on
-     Windows.
+     Windows. Before that, the same command with a plan argument the helper refuses must
+     end with the helper's exit code: it is the only thing the app reads of the run.
   6. Steps 2 to 4 again with `windir`, `SystemRoot`, `ProgramData` and `PSModulePath`
      pointing at an empty scratch directory in the helper's environment: the result must be
      the same and nothing may appear in that directory.
@@ -113,6 +114,9 @@ $ElevationLengths = @(1800, 4000, 12000, 24000)
 $ArgumentBudget = 24000
 $ExitInvalidPlan = 2
 $ExitGated = 5
+# A `--plan-b64` value the helper refuses before it touches anything (exit $ExitInvalidPlan). Its
+# characters are of the alphabet the elevation command accepts.
+$RefusedPlan = 'not-a-plan'
 $PaddingSuffix = '.smoke.ubiqx-shield.invalid'
 $MaxExtraNames = 400
 
@@ -1008,6 +1012,22 @@ function Invoke-ElevationMeasurement {
         }
         $tool = [string]$argv[0]
         Assert-That ($tool.StartsWith($System32, [System.StringComparison]::OrdinalIgnoreCase)) 'the elevation tool is a program of the system directory' $tool
+
+        if ($target -eq 0) {
+            # What the app reads is the exit code of this command, so the helper's own has to
+            # come back through `Start-Process -Wait -PassThru`: an exit code that got lost
+            # would read as "applied". Asked with the same command and a plan argument the
+            # helper refuses before it touches anything.
+            $refusedArguments = @($argv | Select-Object -Skip 1 | ForEach-Object { ([string]$_).Replace($plan.Argument, $RefusedPlan) })
+            $swapped = @($refusedArguments | Where-Object { $_.Contains($RefusedPlan) }).Count -eq 1 -and @($refusedArguments | Where-Object { $_.Contains($plan.Argument) }).Count -eq 0
+            Assert-That $swapped 'the printed elevation command carries the plan argument in one place'
+            if ($swapped) {
+                $refused = Start-Tool -FilePath $tool -Arguments $refusedArguments -Environment $AppChildEnvironment -OnlyEnvironment
+                Assert-That ($refused.ExitCode -eq $ExitInvalidPlan) "the elevation command passes the helper's exit code on (a plan the helper refuses: exit $ExitInvalidPlan)" $refused.ExitCode
+                $untouched = (Test-SameBytes -Left ([System.IO.File]::ReadAllBytes($HostsPath)) -Right $SavedHosts) -and -not (Test-Path -LiteralPath $StateDir)
+                Assert-That $untouched 'a refused plan changes nothing: the hosts file is the saved one and there is no state directory'
+            }
+        }
 
         $script:Restored = $false
         $script:Changed = $true
