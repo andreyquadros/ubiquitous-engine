@@ -196,12 +196,13 @@ clearing is U5's, in the service.
 - What is not: the waiting time (`set_delay`), the limits (`set_caps`) and the site lists. They
   are not switches and a second request there carries other values, so it is another request.
 - The line under a disabled switch (`components/WaitingNote.tsx`), new interface strings:
-  - `pending.switch_waiting`: "Pedido em espera: isto continua ligado até você confirmar ou
-    cancelar o pedido." / "Request waiting: this stays on until you confirm or cancel the
-    request."
+  - `pending.switch_waiting`: "Pedido em espera: isto continua ligado até você confirmar o
+    pedido. Se você cancelar, fica como está." / "Request waiting: this stays on until you
+    confirm the request. If you cancel it, this stays as it is."
   - `pending.scope_waiting`: "Pedido em espera: o que está ligado aqui continua assim até você
-    confirmar ou cancelar o pedido." / "Request waiting: what is on here stays on until you
-    confirm or cancel the request."
+    confirmar o pedido. Se você cancelar, fica como está." / "Request waiting: what is on here
+    stays on until you confirm the request. If you cancel it, this stays as it is."
+    (Both reworded in the review, section 8.)
   - next to the disabled "Desligar" button: the existing `overall.pending_hint`.
 - The mock returns the waiting request when the same change is asked for again (fields in any
   order), as decision 22 asks of the service.
@@ -251,7 +252,7 @@ updated.
 | `cargo test -p ubiqx-storage` | 14 + 23 + 29 + 1 passed |
 | `cargo test -p ubiqx-platform` (because of `reset_targets`) | 169 passed, 1 ignored |
 | `cargo clippy -p ubiqx-core -p ubiqx-nofap -p ubiqx-storage --all-targets -- -D warnings` | clean |
-| `cargo fmt --all -- --check` | the only difference is in `crates/ubiqx-engine/tests/zz_probe.rs`, an untracked throwaway file of the engine unit; `rustfmt --check` on this unit's six Rust files is clean |
+| `cargo fmt --all -- --check` | the only difference was in `crates/ubiqx-engine/tests/zz_probe.rs`, an untracked throwaway file of the engine unit (gone since; see section 8); `rustfmt --check` on this unit's six Rust files is clean |
 | `cargo check --workspace --all-targets` | passes, with the engine unit's work in the tree |
 | `pnpm typecheck` (apps/desktop) | clean |
 | `pnpm test -- --run` (apps/desktop), twice | 33 files, 435 tests passed, both times |
@@ -278,3 +279,116 @@ CI run was read.
   "every 45 s" for a signal, and its 7.4 is now what the code and the dialog say.
 - **Hand-off U2**, contract note "`plan::reset_targets` returns every interface that is exactly
   ours, active or not", is out of date (section 3).
+
+## 8. Review
+
+An independent review of the five changes, on 2026-11-20. One thing was changed (the wording of
+the line under a waiting switch), tests were added, and the open points below are for the
+integrator. Nothing else in the unit's code was changed.
+
+### What was run, and the result
+
+| Command | Result |
+|---|---|
+| `cargo test -p ubiqx-core nofap` | 33 passed |
+| `UBIQX_BLESS=1 cargo test -p ubiqx-core nofap_ipc_golden` | passed; the SHA-256 of the three fixture files is the same before and after, and no commit of the unit touches them: regenerated, not edited by hand |
+| `cargo test -p ubiqx-nofap` | 295 + 22 + 12 as handed over; 298 + 22 + 12 with the review's tests |
+| `cargo test -p ubiqx-storage` | 14 + 23 + 29 + 1 as handed over; 15 + 23 + 29 + 1 with the review's test |
+| `cargo test -p ubiqx-platform` | 169 passed, 1 ignored |
+| `cargo clippy -p ubiqx-core -p ubiqx-nofap -p ubiqx-storage --all-targets -- -D warnings` | clean, before and after the review's commit |
+| `cargo clippy --workspace --all-targets -- -D warnings` | clean (with the engine unit's uncommitted work in the tree) |
+| `cargo fmt --all -- --check` | first run: differences only in `crates/ubiqx-engine/tests/nofap.rs`, the engine unit's file, untracked at that moment; clean when the review's commit was pushed |
+| `cargo check --workspace --all-targets` | passes: no signature another crate uses changed |
+| `cargo check -p ubiqx-platform --target aarch64-apple-darwin` and `--target x86_64-pc-windows-msvc` | both pass |
+| `cargo test --workspace --exclude ubiqx-desktop --exclude ubiqx-nofap-desktop` | passes, the engine unit's 45 tests of the module included (`crates/ubiqx-engine/tests/nofap.rs`, untracked at that moment; the service they drive calls `observe`, `reconcile_since` and the sampler) |
+| `pnpm typecheck`, `pnpm test -- --run`, `pnpm build` (apps/desktop) | clean; 33 files, 435 tests, before and after the rewording; built |
+
+Not run: the two Tauri shells' own tests, and no CI run was read.
+
+### Checked with the review's own probes (throwaway tests, deleted)
+
+- **Decision 18.** A standing signal for two hours with a pass every second sends at 5, 50, 140,
+  320, 680, 1400, 3605, 3650, 3740, 3920, 4280 and 5000 s, with `none` answers and with
+  `suggestive` ones. With a pass every 2, 3, 5, 7, 11, 13, 30, 45 or 60 s over six hours: six per
+  hour, each at most one pass late, never two closer than 45 s, never more than six in any hour.
+  After the sixth the answer is `NotDue` until 2840, `KeyCap` until 3605, then `Capture`.
+- **Decision 19.** A configuration written without `observed_secs` reads (zero), the entry of
+  the enabling instant stays effective at once, a later one waits `min(delay, 900)` s of running
+  time. A clock set a week ahead, with the app closed and opened between passes (the list written
+  and read back each time), buys one step of 150 s per pass and no more. A clock set back before
+  the first sighting, or before the enabling instant, makes nothing effective; plain `reconcile`
+  with a clock before the enabling instant does (that is why the engine calls
+  `reconcile_since`, and it does: `engine/src/nofap/system.rs`).
+- **`reset_targets`.** An enabled service with the provider's four addresses is returned; a
+  switched-off one with the same four, an enabled one with three of the four, with the four plus
+  one, with somebody else's servers, with the same operator's other filter, and an automatic one
+  are not. The macOS back-end applies the tier to enabled services only, and the Windows back-end
+  lists only adapters that are up, as section 3 says.
+- **Decision 20.** After a delete with no checkpoint the main file has no copy of the text; the
+  write-ahead log has (two copies of a short row in the probe, the whole chain of a 20 kB
+  value). A passive checkpoint and a later write leave the log as it is; `wal_checkpoint(TRUNCATE)`
+  empties it. So section 4's limit is exact: only the two erase paths that run the checkpoint
+  leave nothing at once.
+- **The strings.** `data.erase_body` and `vision.consent_ubi` read correctly in both languages
+  and say what the service does (`erase_history` clears the sentence and the plans; design 4.4
+  and `vision.managed` send the managed route to Anthropic). The waiting line did not: see below.
+
+### What the review changed (commit `5b4296a`)
+
+- **The line under a waiting switch said something that is not so.** "Isto continua ligado até
+  você confirmar ou cancelar o pedido": cancelled, the thing stays on. `pending.switch_waiting`
+  and `pending.scope_waiting` now read "… até você confirmar o pedido. Se você cancelar, fica
+  como está." / "… until you confirm the request. If you cancel it, this stays as it is." The
+  page test now also checks that the switch is still on after "Manter proteção".
+- **Tests added**, each of which fails without the behaviour it names:
+  - `exclusions`: `the_running_time_survives_a_restart_and_a_restart_adds_none` and
+    `entries_stored_by_a_build_without_the_running_time_wait_it_out` (the verify pass in the
+    engine's order, the list written and read back between passes).
+  - `sampling`: `the_spread_does_not_depend_on_the_length_of_a_guard_pass` (the existing tests
+    step one second at a time; the guard does not).
+  - `plan`: four more rows in `reset_targets_leave_an_interface_the_user_changed` (three of the
+    four addresses, somebody else's servers on a service that is on and on one that is off, the
+    operator's other filter).
+  - `storage`: `freed_pages_do_not_keep_their_text` (a value that spans several pages, and a
+    table emptied and dropped, with the control on a connection without the pragma). The
+    existing tests covered a cell inside a page that stays; decision 20 speaks of freed pages.
+
+### Still open after the review (for the integrator)
+
+1. **Decision 18: a signal that appears on a key already checked is looked at late.** Measured:
+   a plain site checked at 15, 105, 705, 1305 and 1905 s, then a word in the title at 2001 s.
+   The next look comes at 2625 s (12 minutes after the last one). Without the signal it would
+   have come at 2505 s, and before this change it came at once. With one earlier check the wait
+   is 45 s, with two 90 s, with three 3 minutes, with four 6 minutes. A host with a standing
+   signal from its first second (the mixed platforms, a name with a signal word, a snoozed host)
+   is not affected. The fix needs the engine: `SampleEvent::Checked` gets a `signal: bool` (the
+   `signal` of `Decision::Capture`, which `guard.rs` drops today) and only checks made on a
+   signal are counted in the key's hour. The reviewer found no rule inside `sampling.rs` that
+   tells the two kinds of check apart without it.
+2. **Decision 18: a window that comes back late in its hour.** The hour of a key begins with
+   its first frame. Measured with a standing signal: frames at 5 and 50, the window away until
+   2995, then frames at 3000, 3180 and 3540; the hour that began at 5 is over, the gap is 45 s
+   again, and frames follow at 3605, 3650 and 3740; the cap then holds until 6600. Six frames in
+   twelve minutes and none for 48, the pattern the decision wanted gone, in this one sequence. The cap bounds it; a count over the sliding hour instead of the key's own
+   hour would spread it, but would also make the steady state one check about every ten minutes
+   instead of the decision's schedule. Left as the decision words it.
+3. **Decision 20 and the log.** A single deleted row (a scrubbed block, a removed site) stays
+   readable in the `-wal` file until the log is emptied: at a `wal_checkpoint(TRUNCATE)`, or when
+   the last connection closes. A tray app can run for days. If that matters, one line more in
+   `PRAGMAS` bounds it: `PRAGMA journal_size_limit = 0` cut the log at the first write after a
+   complete checkpoint in the probe. Not added: the decision names one pragma, and the automatic
+   checkpoint comes only after about 1,000 pages.
+4. **Decision 19, small things.** (a) `observe` credits a brand-new entry with the pass in which
+   it was first seen (up to 150 s it did not wait); telling them apart needs `now` in `observe`.
+   (b) An entry first seen while the clock was ahead waits until the clock catches up with that
+   time, and a module enabled while the clock was ahead remembers no new entry until then. Both
+   are the stricter side and end by themselves. (c) A clock set back to a time after the enabling
+   instant, an entry added, the clock put right: the wait is the 15 minutes of running time, as
+   for a waiting request with the clock set forward.
+5. **Decision 22 covers switches only.** The "remove" button of a site whose removal is waiting,
+   and "Esquecer sites aprendidos", can be pressed again; the service answers with the request
+   that is already waiting, and the page says "Pedido anotado" again.
+6. **`reset_targets`**: section 3's leftover (a service switched off after the tier was set
+   keeps the provider's servers, and `assess` does not count it either) stands.
+7. The open points of section 7 that concern other units' files (`DESIGN.md` 4.3, hand-off U2's
+   sentence about `reset_targets`, `repos/nofap.rs::overwriting`) stand.
