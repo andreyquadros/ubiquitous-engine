@@ -1038,13 +1038,12 @@ pub fn preview_with(
 }
 
 /// Interfaces (by id) the helper may reset to automatic when it undoes the resolver tier:
-/// only those whose servers are still exactly the provider's set. An interface the user
-/// changed since is left alone.
+/// only those that are enabled (macOS) or up (Windows) and whose servers are still exactly
+/// the provider's set. An interface the user changed since is left alone, and so is one
+/// that is switched off: the tier is only ever applied to active interfaces, and nothing
+/// is changed on a network service or adapter the user has turned off.
 pub fn reset_targets(observation: &SystemObservation, resolver: ResolverId) -> Vec<String> {
-    observation
-        .resolver
-        .interfaces
-        .iter()
+    active(&observation.resolver.interfaces)
         .filter(|interface| resolvers::is_exactly(resolver, &interface.servers))
         .map(|interface| interface.id.clone())
         .collect()
@@ -3051,22 +3050,20 @@ mod tests {
 
     #[test]
     fn reset_targets_leave_an_interface_the_user_changed() {
+        let reordered = [
+            "1.0.0.3",
+            "1.1.1.3",
+            "2606:4700:4700::1003",
+            "2606:4700:4700::1113",
+        ];
         let observation = dns_observation(
             vec![
                 interface("5", true, &CF_SERVERS),
                 interface("7", true, &["192.168.0.2"]),
                 interface("9", true, &[]),
-                // Still ours although it is down: it is reset too.
-                interface(
-                    "11",
-                    false,
-                    &[
-                        "1.0.0.3",
-                        "1.1.1.3",
-                        "2606:4700:4700::1003",
-                        "2606:4700:4700::1113",
-                    ],
-                ),
+                // The provider's set, but the service is switched off: left alone.
+                interface("11", false, &reordered),
+                interface("12", false, &CF_SERVERS),
                 // Ours plus one more server: the user changed it.
                 interface(
                     "13",
@@ -3079,11 +3076,53 @@ mod tests {
                         "8.8.8.8",
                     ],
                 ),
+                // Still ours, in another order, and up.
+                interface("15", true, &reordered),
             ],
             &[],
         );
-        assert_eq!(reset_targets(&observation, CF), vec!["5", "11"]);
+        assert_eq!(reset_targets(&observation, CF), vec!["5", "15"]);
         assert!(reset_targets(&SystemObservation::default(), CF).is_empty());
+    }
+
+    #[test]
+    fn a_switched_off_interface_is_neither_reset_nor_promised_a_reset() {
+        let owners = [(ProductId::Ubiqx, wants(false, Some(CF), false, &[]))];
+        let off = SystemPlan {
+            hosts: false,
+            resolver: None,
+            policies: false,
+            ..plan(&[])
+        };
+        for os in [Os::Macos, Os::Windows] {
+            // The only interface with the provider's servers is switched off.
+            let mut observation = dns_observation(
+                vec![
+                    interface("Ethernet", false, &CF_SERVERS),
+                    interface("Wi-Fi", true, &["192.168.0.2"]),
+                ],
+                &owners,
+            );
+            for row in RESOLVERS {
+                assert!(
+                    reset_targets(&observation, row.id).is_empty(),
+                    "{os:?} {:?}",
+                    row.id
+                );
+            }
+            assert!(
+                !keys(&previewed(&off, &observation, os)).contains(&line::RESOLVER_RESET),
+                "{os:?}: nothing to reset, so no line says so"
+            );
+            // Switched on again it is ours to undo.
+            observation.resolver.interfaces[0].active = true;
+            assert_eq!(reset_targets(&observation, CF), vec!["Ethernet"]);
+            assert_eq!(
+                keys(&previewed(&off, &observation, os)),
+                vec![line::RESOLVER_RESET],
+                "{os:?}"
+            );
+        }
     }
 
     #[test]

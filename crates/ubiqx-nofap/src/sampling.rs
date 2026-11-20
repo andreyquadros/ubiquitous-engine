@@ -98,6 +98,9 @@ pub struct Cadence {
     pub relaxed_every_secs: i64,
     /// How long the relaxed interval lasts (`None`: until a signal).
     pub relax_for_secs: Option<i64>,
+    /// Whether the interval doubles with every check of the key in the hour: `every_secs`
+    /// after the first, twice that after the second, and so on ([`spread_gap`]).
+    pub doubles: bool,
 }
 
 pub const CADENCE_NO_SIGNAL: Cadence = Cadence {
@@ -107,8 +110,13 @@ pub const CADENCE_NO_SIGNAL: Cadence = Cadence {
     relax_after_clean: Some(2),
     relaxed_every_secs: 600,
     relax_for_secs: Some(3_600),
+    doubles: false,
 };
 
+/// With a standing signal the six checks a key gets in an hour are spread over it: 5 s in
+/// front, then 45 s, 90 s, 3 min, 6 min and 12 min apart (the next would be 24 min later,
+/// and the cap of [`PER_KEY_PER_HOUR`] comes first). The gaps start again at 45 s when the
+/// key's hour is over.
 pub const CADENCE_SIGNAL: Cadence = Cadence {
     first_after_secs: 5,
     second_after_secs: None,
@@ -116,6 +124,7 @@ pub const CADENCE_SIGNAL: Cadence = Cadence {
     relax_after_clean: None,
     relaxed_every_secs: 45,
     relax_for_secs: None,
+    doubles: true,
 };
 
 pub const CADENCE_MEDIA: Cadence = Cadence {
@@ -125,6 +134,7 @@ pub const CADENCE_MEDIA: Cadence = Cadence {
     relax_after_clean: Some(3),
     relaxed_every_secs: 600,
     relax_for_secs: None,
+    doubles: false,
 };
 
 pub const CADENCE_MESSAGING: Cadence = Cadence {
@@ -134,6 +144,7 @@ pub const CADENCE_MESSAGING: Cadence = Cadence {
     relax_after_clean: None,
     relaxed_every_secs: 300,
     relax_for_secs: None,
+    doubles: false,
 };
 
 /// Media players and image viewers, by bundle id (macOS) and executable stem (Windows,
@@ -470,6 +481,19 @@ fn still(until: Option<DateTime<Utc>>, now: DateTime<Utc>, max_secs: i64) -> boo
     until.is_some_and(|until| until > now && (until - now).num_seconds() <= max_secs)
 }
 
+/// The wait after the `checks`-th check of a key in its hour, at a cadence that doubles:
+/// `every_secs` after the first, twice the previous wait after each later one, and never
+/// more than the hour itself. Before the first check of the hour it is `every_secs`.
+pub fn spread_gap(every_secs: i64, checks: u32) -> i64 {
+    let doublings = checks.saturating_sub(1);
+    // A shift into or past the sign bit is "more than any hour".
+    let factor = 1_i64
+        .checked_shl(doublings)
+        .filter(|factor| *factor > 0)
+        .unwrap_or(i64::MAX);
+    every_secs.saturating_mul(factor).clamp(0, HOUR_SECS)
+}
+
 /// How many of `times` lie in the hour that ends at `now`.
 fn in_last_hour(times: &[DateTime<Utc>], now: DateTime<Utc>) -> u32 {
     let count = times
@@ -501,6 +525,10 @@ pub struct SamplerMemory {
 struct KeyMemory {
     /// Frames sent for this key in the last hour.
     checks: Vec<DateTime<Utc>>,
+    /// The hour this key's checks are spread over: when the first frame of it was sent,
+    /// and how many were sent in it so far. It is over an hour after it began, and the
+    /// next frame sent begins a new one.
+    spread: Option<(DateTime<Utc>, u32)>,
     /// Looks at this key in all, sent or found unchanged (the second look has its own
     /// interval).
     looks: u32,
@@ -544,6 +572,17 @@ impl KeyMemory {
             (None, _) => true,
             (Some(limit), Some(since)) => (0..limit).contains(&(now - *since).num_seconds()),
             (Some(_), None) => false,
+        }
+    }
+
+    /// Frames sent for this key in its present hour ([`KeyMemory::spread`]) at `now`; 0
+    /// when that hour is over or seems to begin in the future (the clock was set back).
+    fn spread_checks(&self, now: DateTime<Utc>) -> u32 {
+        match self.spread {
+            Some((since, checks)) if (0..HOUR_SECS).contains(&(now - since).num_seconds()) => {
+                checks
+            }
+            _ => 0,
         }
     }
 
@@ -667,6 +706,8 @@ pub fn decide(ctx: &SampleCtx, memory: &SamplerMemory, day: &str, now: DateTime<
     if let Some(key) = key {
         let interval = if key.relaxed(cadence, now) {
             cadence.relaxed_every_secs
+        } else if cadence.doubles {
+            spread_gap(cadence.every_secs, key.spread_checks(now))
         } else if key.looks == 1 {
             cadence.second_after_secs.unwrap_or(cadence.every_secs)
         } else {
@@ -851,6 +892,10 @@ pub fn record(
                 .checks
                 .retain(|time| (0..HOUR_SECS).contains(&(now - *time).num_seconds()));
             entry.checks.push(now);
+            entry.spread = Some(match (entry.spread, entry.spread_checks(now)) {
+                (Some((since, _)), checks @ 1..) => (since, checks.saturating_add(1)),
+                (_, _) => (now, 1),
+            });
             entry.looks = entry.looks.saturating_add(1);
             entry.last_look_at = Some(now);
             let was_recheck = entry.recheck_at.take().is_some();
@@ -1508,17 +1553,18 @@ mod tests {
                 Decision::Skip(Skip::NotDue)
             );
         };
-        // A local signal: the signal cadence applies at once.
+        // A local signal: the signal cadence applies at once, with the wait two checks in
+        // the key's hour give (90 s after the last look, not 600).
         let mut memory = in_front(&plain());
         relaxed(&mut memory);
         let mut titled = plain();
         titled.title_signal = true;
         assert_eq!(
-            decide(&titled, &memory, DAY, at(149)),
+            decide(&titled, &memory, DAY, at(194)),
             Decision::Skip(Skip::NotDue)
         );
         assert_eq!(
-            decide(&titled, &memory, DAY, at(150)),
+            decide(&titled, &memory, DAY, at(195)),
             Decision::Capture { signal: true }
         );
 
@@ -1527,8 +1573,13 @@ mod tests {
         let mut memory = in_front(&plain());
         relaxed(&mut memory);
         record(&mut memory, KEY, answered(Outcome::Watch), DAY, at(705));
+        // It was the key's third check of the hour: the next look is three minutes later.
         assert_eq!(
-            decide(&plain(), &memory, DAY, at(750)),
+            decide(&plain(), &memory, DAY, at(884)),
+            Decision::Skip(Skip::NotDue)
+        );
+        assert_eq!(
+            decide(&plain(), &memory, DAY, at(885)),
             Decision::Capture { signal: true }
         );
         assert_eq!(
@@ -1550,7 +1601,11 @@ mod tests {
         relaxed(&mut memory);
         record(&mut memory, 42, SampleEvent::Heightened, DAY, at(110));
         assert_eq!(
-            decide(&plain(), &memory, DAY, at(150)),
+            decide(&plain(), &memory, DAY, at(194)),
+            Decision::Skip(Skip::NotDue)
+        );
+        assert_eq!(
+            decide(&plain(), &memory, DAY, at(195)),
             Decision::Capture { signal: true }
         );
         // 15 minutes later it is over, and the key is not relaxed any more.
@@ -1566,11 +1621,236 @@ mod tests {
     }
 
     #[test]
-    fn cadence_with_a_signal_does_not_relax() {
+    fn spread_gap_doubles_from_the_second_check_and_stays_within_the_hour() {
+        let gaps: Vec<i64> = (0..=9).map(|checks| spread_gap(45, checks)).collect();
+        // 45 s, 90 s, 3 min, 6 min, 12 min, 24 min, 48 min, then the hour.
+        assert_eq!(
+            gaps,
+            vec![45, 45, 90, 180, 360, 720, 1_440, 2_880, 3_600, 3_600]
+        );
+        assert_eq!(spread_gap(45, 64), 3_600);
+        assert_eq!(spread_gap(45, 65), 3_600);
+        assert_eq!(spread_gap(45, u32::MAX), 3_600);
+        assert_eq!(spread_gap(i64::MAX, 3), 3_600);
+        assert_eq!(spread_gap(300, 2), 600);
+        assert_eq!(spread_gap(0, 5), 0);
+    }
+
+    #[test]
+    fn cadence_with_a_signal_spreads_six_checks_over_the_hour_and_does_not_relax() {
+        // 5 s in front, then 45 s, 90 s, 3 min, 6 min and 12 min apart, whatever the
+        // answers are: `none` every time relaxes nothing.
+        for answer in [Outcome::Clean, Outcome::Watch] {
+            let ctx = browser(Verdict::Unknown(HostClass::Mixed));
+            let mut memory = SamplerMemory::default();
+            let sent = simulate(&mut memory, &ctx, 0, 3_600, answer);
+            assert_eq!(sent, vec![5, 50, 140, 320, 680, 1_400], "{answer:?}");
+        }
+        // Only the signal cadence doubles.
+        let doubling: Vec<bool> = [
+            CADENCE_NO_SIGNAL,
+            CADENCE_SIGNAL,
+            CADENCE_MEDIA,
+            CADENCE_MESSAGING,
+        ]
+        .iter()
+        .map(|cadence| cadence.doubles)
+        .collect();
+        assert_eq!(doubling, vec![false, true, false, false]);
+    }
+
+    #[test]
+    fn the_spread_starts_again_when_the_hour_of_the_key_rolls() {
+        // A standing signal for three hours: the same six checks in each, an hour apart,
+        // counted from the first check of the hour.
         let ctx = browser(Verdict::Unknown(HostClass::Mixed));
         let mut memory = SamplerMemory::default();
-        let sent = simulate(&mut memory, &ctx, 0, 240, Outcome::Clean);
-        assert_eq!(sent, vec![5, 50, 95, 140, 185, 230]);
+        let sent = simulate(&mut memory, &ctx, 0, 10_800, Outcome::Clean);
+        let hour = [5, 50, 140, 320, 680, 1_400];
+        let expected: Vec<i64> = (0..3)
+            .flat_map(|n| hour.iter().map(move |second| second + n * 3_600))
+            .collect();
+        assert_eq!(sent, expected);
+        // The cost is the cap's: never more than six of them in any hour.
+        for (n, first) in sent.iter().enumerate() {
+            let within = sent[n..]
+                .iter()
+                .filter(|second| *second - first < 3_600)
+                .count();
+            assert!(within <= 6, "{within} checks in the hour from {first}");
+        }
+    }
+
+    #[test]
+    fn a_new_hour_of_the_key_resets_the_gap_but_not_the_cap() {
+        let ctx = browser(Verdict::Unknown(HostClass::Mixed));
+        let mut memory = in_front(&ctx);
+        let mut picture = 0u64;
+        let mut check = |memory: &mut SamplerMemory, second: i64| {
+            picture += 0x0101_0101_0101_0101;
+            record(memory, KEY, clean(picture), DAY, at(second));
+        };
+        // The key's hour begins with its first check, at 5.
+        for second in [5, 50, 140] {
+            check(&mut memory, second);
+        }
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(319)),
+            Decision::Skip(Skip::NotDue)
+        );
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(320)),
+            Decision::Capture { signal: true }
+        );
+        // The window was elsewhere for most of the hour. Its fourth and fifth checks come
+        // late, and the wait after the fifth is 12 minutes …
+        check(&mut memory, 3_000);
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(3_359)),
+            Decision::Skip(Skip::NotDue)
+        );
+        check(&mut memory, 3_590);
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(3_604)),
+            Decision::Skip(Skip::NotDue)
+        );
+        // … until the hour that began at 5 is over: the wait is 45 s again, counted from
+        // the last look.
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(3_634)),
+            Decision::Skip(Skip::NotDue)
+        );
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(3_635)),
+            Decision::Capture { signal: true }
+        );
+        // The check at 3635 begins the next hour of the key: 45 s, then 90 s.
+        check(&mut memory, 3_635);
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(3_679)),
+            Decision::Skip(Skip::NotDue)
+        );
+        check(&mut memory, 3_680);
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(3_769)),
+            Decision::Skip(Skip::NotDue)
+        );
+        check(&mut memory, 3_770);
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(3_949)),
+            Decision::Skip(Skip::NotDue)
+        );
+        // The check at 3950 is the sixth since 3000 (3000, 3590, 3635, 3680, 3770 and this
+        // one). When its 6 minutes are over, the cap of six in any hour holds, new hour of
+        // the key or not, until the check at 3000 is an hour old.
+        check(&mut memory, 3_950);
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(4_309)),
+            Decision::Skip(Skip::NotDue)
+        );
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(4_310)),
+            Decision::Skip(Skip::KeyCap)
+        );
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(6_599)),
+            Decision::Skip(Skip::KeyCap)
+        );
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(6_600)),
+            Decision::Capture { signal: true }
+        );
+    }
+
+    #[test]
+    fn a_frame_that_was_not_sent_does_not_lengthen_the_gap() {
+        let ctx = browser(Verdict::Unknown(HostClass::Mixed));
+        let mut memory = in_front(&ctx);
+        record(&mut memory, KEY, clean(1), DAY, at(5));
+        record(&mut memory, KEY, clean(2), DAY, at(50));
+        // Two checks: the wait is 90 s. Looks that found the same picture, and a call
+        // that failed, start that wait again and leave it at 90 s.
+        record(&mut memory, KEY, SampleEvent::Unchanged, DAY, at(140));
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(229)),
+            Decision::Skip(Skip::NotDue)
+        );
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(230)),
+            Decision::Capture { signal: true }
+        );
+        record(&mut memory, KEY, SampleEvent::Unchanged, DAY, at(230));
+        record(
+            &mut memory,
+            KEY,
+            SampleEvent::Failed(CheckError::Transient),
+            DAY,
+            at(320),
+        );
+        // The failed call waits its own 300 s, which is longer than the 90.
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(619)),
+            Decision::Skip(Skip::KeyBackoff)
+        );
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(620)),
+            Decision::Capture { signal: true }
+        );
+        // The third check is what makes it 3 minutes.
+        record(&mut memory, KEY, clean(3), DAY, at(620));
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(799)),
+            Decision::Skip(Skip::NotDue)
+        );
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(800)),
+            Decision::Capture { signal: true }
+        );
+    }
+
+    #[test]
+    fn a_clock_set_back_starts_the_spread_again() {
+        let ctx = browser(Verdict::Unknown(HostClass::Mixed));
+        let mut memory = in_front(&ctx);
+        for (n, second) in [10_000, 10_045, 10_135, 10_315].into_iter().enumerate() {
+            record(&mut memory, KEY, clean(n as u64 + 1), DAY, at(second));
+        }
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(10_674)),
+            Decision::Skip(Skip::NotDue),
+            "four checks: 6 minutes"
+        );
+        // The clock goes back by hours. The looks seem to lie in the future and do not
+        // delay, and the hour they were counted in is not the present one.
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(100)),
+            Decision::Capture { signal: true }
+        );
+        record(&mut memory, KEY, clean(9), DAY, at(100));
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(144)),
+            Decision::Skip(Skip::NotDue)
+        );
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(145)),
+            Decision::Capture { signal: true }
+        );
+        // Set forward by a day: the hour of the key is long over.
+        record(&mut memory, KEY, clean(10), DAY, at(145));
+        record(&mut memory, KEY, SampleEvent::Front, DAY, at(90_000));
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(90_000)),
+            Decision::Capture { signal: true }
+        );
+        record(&mut memory, KEY, clean(11), DAY, at(90_000));
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(90_044)),
+            Decision::Skip(Skip::NotDue)
+        );
+        assert_eq!(
+            decide(&ctx, &memory, DAY, at(90_045)),
+            Decision::Capture { signal: true }
+        );
     }
 
     #[test]
@@ -1602,8 +1882,8 @@ mod tests {
         titled.title_signal = true;
         let mut memory = SamplerMemory::default();
         assert_eq!(
-            simulate(&mut memory, &titled, 0, 100, Outcome::Clean),
-            vec![5, 50, 95]
+            simulate(&mut memory, &titled, 0, 150, Outcome::Clean),
+            vec![5, 50, 140]
         );
     }
 
@@ -1631,13 +1911,27 @@ mod tests {
         let ctx = browser(Verdict::Unknown(HostClass::Mixed));
         let mut memory = SamplerMemory::default();
         let sent = simulate(&mut memory, &ctx, 0, 3_700, Outcome::Clean);
-        // Six in the first minutes, then nothing until the first one is an hour old.
-        assert_eq!(sent, vec![5, 50, 95, 140, 185, 230, 3_605, 3_650, 3_695]);
+        // Six, further and further apart, then nothing until the first one is an hour old.
+        assert_eq!(sent, vec![5, 50, 140, 320, 680, 1_400, 3_605, 3_650]);
         let mut capped = SamplerMemory::default();
-        simulate(&mut capped, &ctx, 0, 300, Outcome::Clean);
+        simulate(&mut capped, &ctx, 0, 1_500, Outcome::Clean);
+        // A seventh would wait 24 minutes after the sixth; when that is over it is the
+        // cap that holds it.
         assert_eq!(
-            decide(&ctx, &capped, DAY, at(300)),
+            decide(&ctx, &capped, DAY, at(2_839)),
+            Decision::Skip(Skip::NotDue)
+        );
+        assert_eq!(
+            decide(&ctx, &capped, DAY, at(2_840)),
             Decision::Skip(Skip::KeyCap)
+        );
+        assert_eq!(
+            decide(&ctx, &capped, DAY, at(3_604)),
+            Decision::Skip(Skip::KeyCap)
+        );
+        assert_eq!(
+            decide(&ctx, &capped, DAY, at(3_605)),
+            Decision::Capture { signal: true }
         );
         // Another key is not held back by this one.
         let other = SampleCtx {
