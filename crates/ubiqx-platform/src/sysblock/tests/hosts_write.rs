@@ -80,6 +80,62 @@ fn windows_writes_the_hosts_file_in_place_and_unix_renames_over_it() {
     }
 }
 
+/// An in-place write is not atomic, and on Windows it is the only write there is (the
+/// smoke run showed that a rename changes the owner of the hosts file). One that stops
+/// half-way leaves the start of a block behind the user's lines: the bytes read at the
+/// start are put back, and the tier is reported as refused.
+#[test]
+fn an_in_place_write_that_stops_half_way_is_undone_and_reported() {
+    for os in Os::ALL {
+        let rig = Rig::new(os);
+        let path = rig.hosts_path();
+        let before = rig.hosts_text();
+        if os != Os::Windows {
+            // Unix writes in place only where the file cannot be renamed over.
+            rig.fs.fail_rename(&path, ErrorKind::ResourceBusy);
+        }
+        let plan = hosts_only(ProductId::Ubiqx);
+
+        rig.fs.stall_next_in_place(&path);
+        assert_eq!(rig.apply(&plan), EXIT_PARTIAL, "{os:?}");
+        assert!(
+            rig.hosts_text() == before,
+            "{os:?}: the original bytes are back"
+        );
+        let state = rig
+            .observe()
+            .state
+            .expect("the report is in the state file");
+        assert_eq!(state.report.len(), 1, "{os:?}");
+        assert_eq!(
+            (state.report[0].tier, state.report[0].ok),
+            (Tier::Hosts, false),
+            "{os:?}"
+        );
+        assert_eq!(state.report[0].reason.as_deref(), Some("write_refused"));
+        assert!(
+            state.owners.is_empty(),
+            "a first try that failed is not recorded"
+        );
+
+        // The next try, with nothing in its way, goes through.
+        assert_eq!(rig.apply(&plan), EXIT_APPLIED, "{os:?}");
+        let applied = rig.hosts_text();
+        assert!(matches!(
+            hosts::inspect(applied.as_bytes()),
+            BlockInspection::Intact { .. }
+        ));
+
+        // A removal that stops half-way has cut nothing off yet: the block is whole, the
+        // removal is reported as failed, and the next one takes the block out.
+        rig.fs.stall_next_in_place(&path);
+        assert_eq!(rig.remove("ubiqx", "all"), EXIT_PARTIAL, "{os:?}");
+        assert!(rig.hosts_text() == applied, "{os:?}: the block is whole");
+        assert_eq!(rig.remove("ubiqx", "all"), EXIT_APPLIED, "{os:?}");
+        assert!(rig.hosts_text() == before, "{os:?}: the block is gone");
+    }
+}
+
 #[test]
 fn a_write_that_does_not_read_back_is_undone_and_reported() {
     for os in Os::ALL {

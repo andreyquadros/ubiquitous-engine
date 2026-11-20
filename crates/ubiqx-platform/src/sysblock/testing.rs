@@ -54,6 +54,7 @@ pub(crate) struct MemFs {
     log: Mutex<Vec<String>>,
     rename_fails: Mutex<HashMap<String, ErrorKind>>,
     tamper: Mutex<HashSet<String>>,
+    stall: Mutex<HashSet<String>>,
     /// The user new files and directories belong to (0: the helper runs as root).
     euid: Mutex<u32>,
 }
@@ -74,6 +75,7 @@ impl MemFs {
             log: Mutex::new(Vec::new()),
             rename_fails: Mutex::new(HashMap::new()),
             tamper: Mutex::new(HashSet::new()),
+            stall: Mutex::new(HashSet::new()),
             euid: Mutex::new(0),
         };
         if os != Os::Windows {
@@ -166,6 +168,13 @@ impl MemFs {
         self.tamper.lock().insert(path.into());
     }
 
+    /// Makes the next in-place write to `path` stop half-way and fail: the first half of
+    /// the new bytes lands over the start of the file and the rest of the file stays, as
+    /// with the real port, which writes over the file and cuts it to length at the end.
+    pub(crate) fn stall_next_in_place(&self, path: &str) {
+        self.stall.lock().insert(path.into());
+    }
+
     pub(crate) fn set_euid(&self, uid: u32) {
         *self.euid.lock() = uid;
     }
@@ -225,6 +234,14 @@ impl Fs for MemFs {
     fn write_in_place(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
         let at = self.follow(path)?;
         self.log.lock().push(format!("write-in-place {at}"));
+        if self.stall.lock().remove(&at) {
+            let old = self.read(Path::new(&at)).unwrap_or_default();
+            let half = bytes.len() / 2;
+            let mut landed = bytes[..half].to_vec();
+            landed.extend_from_slice(old.get(half..).unwrap_or_default());
+            self.store(at, &landed, None);
+            return Err(io::Error::other("the write stopped half-way"));
+        }
         self.store(at, bytes, None);
         Ok(())
     }

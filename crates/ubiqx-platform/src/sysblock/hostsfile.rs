@@ -8,7 +8,9 @@
 //! written in place: a file renamed over the hosts file is a new file, with the owner of
 //! whoever created it instead of the one the hosts file had, and the removal would hand
 //! the user back a hosts file that is not the one they had. After every write the file is
-//! read back, and on a mismatch the bytes read at the start are put back.
+//! read back, and on a mismatch the bytes read at the start are put back; so they are
+//! after a write that failed and left the file changed, which an in-place write that
+//! stops half-way does.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -139,15 +141,15 @@ pub(crate) fn write(
             .map_err(|_| reason::WRITE_REFUSED);
     };
     let os = backend.os();
-    if replace(os, fs, &file, &spliced).is_err() {
-        return Err(reason::WRITE_REFUSED);
-    }
-    if fs.read(&file).is_ok_and(|now| now == spliced) {
+    let holds = |bytes: &[u8]| fs.read(&file).is_ok_and(|now| now == bytes);
+    if replace(os, fs, &file, &spliced).is_ok() && holds(&spliced) {
         return Ok(true);
     }
-    // Something rewrote or reverted the file under us (security software): put back what
-    // was there and say so.
-    if os == Os::Windows || fs.write_atomic(&file, &original, None).is_err() {
+    // The write was refused or stopped half-way (in place it is not atomic), or something
+    // rewrote or reverted the file under us (security software): put back what was there,
+    // unless it still is, and say so.
+    if !holds(&original) && (os == Os::Windows || fs.write_atomic(&file, &original, None).is_err())
+    {
         let _ = fs.write_in_place(&file, &original);
     }
     Err(reason::WRITE_REFUSED)
