@@ -363,8 +363,15 @@ function applyChange(change: NofapChange): void {
   }
 }
 
+/** A change as text that does not depend on the order its fields were written in. */
+const canonical = (change: NofapChange): string =>
+  JSON.stringify(change, (_, value: unknown) => (value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))) : value));
+
 function request(change: NofapChange): ChangeOutcome {
   if (loosens(S.config, change)) {
+    // The same change asked for again is the request that is already waiting, with its clock as it stands.
+    const waiting = S.config.pending.find((p) => canonical(p.change) === canonical(change));
+    if (waiting) return { pending: pendingView(waiting) };
     if (S.config.pending.length >= 20) throw new Error('invalid: too many pending requests');
     const requested_at = nowIso();
     const pending: PendingChange = { id: nextId('pending'), change: clone(change), requested_at, ready_at: plus(requested_at, S.config.delay_secs), observed_secs: 0, ready_since: null };
@@ -602,8 +609,11 @@ function sampleFrame(): SampleFrame | null {
   return { mime: 'image/svg+xml', base64: toBase64(svg), width: 640, height: 400 };
 }
 
+/** "Apagar meu histórico": the counts, and what the person wrote (the sentence and the plans). Protection stays. */
 function eraseHistory(): null {
   S.today = { blocks: 0, checks: 0 };
+  S.config.values = '';
+  S.config.plans = [];
   S.support.progress = { window_days: 30, days: 0, streak: S.config.ui.show_streak ? 0 : null, after_reset: false };
   S.support.checkin_today = null;
   S.support.help_due = false;

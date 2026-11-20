@@ -1,7 +1,9 @@
 # FU: integrator follow-ups
 
-Status: **in progress**. Section 1 (decision 19) is done and pushed; the other sections are
-filled in as each change lands.
+Status: **done**. Five changes, each with its tests: decision 19 (section 1), decision 18
+(section 2), `plan::reset_targets` (section 3), decision 20 (section 4), and the page and its text
+for decisions 17, 22 and 24 (section 5). Commands and their results are in section 6, open points
+in section 7.
 
 ## 1. Decision 19: the delay of a new privacy-list entry counts observed running time
 
@@ -165,3 +167,99 @@ and no TypeScript type carries it.
   `wipe_user_data` run a `wal_checkpoint(TRUNCATE)` themselves, so they leave nothing; a single
   deleted row (a scrubbed block) is out of the main file after the next checkpoint, not at once.
   It also says nothing about copies the file system or a backup may keep.
+
+## 5. The page and its text: decisions 17, 22 and 24
+
+### Decision 17: "Apagar meu histórico" says what it erases
+
+`data.erase_body` (interface text, not a string of design 5.6):
+
+| | Old | New |
+|---|---|---|
+| PT-BR | Apaga as contagens e as pausas de regra. Suas listas, sua frase e a proteção ficam como estão. Não tem espera. | Apaga as contagens, as pausas de regra, a sua frase e os seus planos. Suas listas e a proteção ficam como estão. Não tem espera. |
+| EN | Erases the counts and the rule snoozes. Your lists, your sentence and the protection stay as they are. There is no wait. | Erases the counts, the rule snoozes, your sentence and your plans. Your lists and the protection stay as they are. There is no wait. |
+
+The mock (`apps/desktop/src/nofap/mock.ts`) follows: its `erase_history` now clears the sentence
+and the plans, so the page in `vite dev` and in the tests does what the dialog says. The real
+clearing is U5's, in the service.
+
+### Decision 22: a switch whose change is waiting is disabled and says so
+
+- `labels.ts`: `waitingSwitches(config) -> WaitingSwitches`. A switch is waiting when the thing is
+  **on** and a request that turns it **off** is in `config.pending` (the page reads the payloads
+  there; the status carries kinds only). A switch that is off is never waiting.
+- What is covered: "Lista do sistema" (`set_hosts`), "Regras dos navegadores" (`set_policies`),
+  the DNS choice (`set_resolver` to none: both options disabled), the switch of the AI check
+  (`set_vision`), each scope switch that a waiting `set_vision_scope` turns off (the others stay
+  usable), "Incluir meus sites na lista do sistema" on the lists tab (`set_hosts_user_sites`), and
+  the button "Desligar o {name}" (`disable`).
+- What is not: the waiting time (`set_delay`), the limits (`set_caps`) and the site lists. They
+  are not switches and a second request there carries other values, so it is another request.
+- The line under a disabled switch (`components/WaitingNote.tsx`), new interface strings:
+  - `pending.switch_waiting`: "Pedido em espera: isto continua ligado até você confirmar ou
+    cancelar o pedido." / "Request waiting: this stays on until you confirm or cancel the
+    request."
+  - `pending.scope_waiting`: "Pedido em espera: o que está ligado aqui continua assim até você
+    confirmar ou cancelar o pedido." / "Request waiting: what is on here stays on until you
+    confirm or cancel the request."
+  - next to the disabled "Desligar" button: the existing `overall.pending_hint`.
+- The mock returns the waiting request when the same change is asked for again (fields in any
+  order), as decision 22 asks of the service.
+- **For U5:** the page relies on `view.config.pending[].change` being the change as requested.
+  For `set_vision_scope` it compares each flag of the waiting change with the flag in force.
+
+### Decision 24: the consent sentence with the managed provider
+
+`vision.consent` (design 5.6) is **unchanged**, character for character, so the design and the
+copy-bank test stand as they are. A variant was added for the managed provider, as an interface
+string: `vision.consent_ubi`, chosen by `labels.ts::consentKey(provider)` and used by
+`components/VisionConsent.tsx` (the wizard and the consent dialog of the page).
+
+What was wrong with the name "IA do Ubi" in the 5.6 sentence: "pergunta a IA do Ubi" (no
+article), "IA do Ubi recebe a imagem, aplica as regras dele … os termos dele" (wrong gender, and
+the rules and terms that apply are not the managed route's own).
+
+| | `vision.consent` (5.6, unchanged), the two sentences that name the provider | `vision.consent_ubi` (new), the same two sentences |
+|---|---|---|
+| PT-BR | … o {name} tira uma foto reduzida só dessa janela e pergunta a {provider} se há pornografia nela. … {provider} recebe a imagem, aplica as regras dele ao que recebe e guarda pelo prazo que os termos dele definem. | … o {name} tira uma foto reduzida só dessa janela e pergunta à {provider} se há pornografia nela. … A {provider} envia a imagem à Anthropic, que aplica as próprias regras ao que recebe e guarda pelo prazo que os termos dela definem. |
+| EN | … asks {provider} whether it shows pornography. … {provider} receives the image, applies its own rules to what it receives and keeps it for the period its terms state. | … asks {provider} whether it shows pornography. … {provider} sends the image on to Anthropic, which applies its own rules to what it receives and keeps it for the period its terms state. |
+
+Every other sentence of the variant is the 5.6 text (a test compares them sentence by sentence).
+The variant names Anthropic because `vision.managed` (5.6), shown right under it, already says the
+managed route goes there. If the managed route ever uses another vendor, both strings change.
+
+The assertion of `NofapWizard.test.tsx` that held the old wording ("pergunta a IA do Ubi") was
+updated.
+
+### Tests added or changed in the frontend
+
+- `copy.test.ts`: four tests of the consent sentence (which key per provider, the Portuguese and
+  the English reading with the names filled in, sentence-by-sentence comparison with 5.6).
+- `NofapPage.test.tsx`: the erase dialog text in both languages and what the mock clears; six
+  tests of the waiting switches (the page, every switch, the lists tab, English, the pure
+  function, the mock's identical request). A mutation of `waitingSwitches` made three of them
+  fail, then it was restored.
+- The copy-bank, parity, forbidden-word and naming tests pass unchanged.
+
+## 6. Commands run on the final state
+
+See the report of this unit; the table there lists each command with its result.
+
+## 7. Open points
+
+- **Decision 18, a new signal on a key that was already checked** (section 2): the first look on
+  the new signal waits the gap the key's count gives, up to 12 minutes. Counting only checks made
+  on a signal needs a flag on `SampleEvent::Checked`.
+- **Decision 19, the clock set back before the enabling instant** (section 1): closed by
+  `reconcile_since`, which the engine's verify pass now calls. `service.rs` calls plain
+  `reconcile(&lists, &[], now)` at enable, which is the documented use.
+- **Decision 20 and the write-ahead log** (section 4): a single deleted row leaves the main file
+  at the next checkpoint, not at once.
+- **`reset_targets` and a service switched off after we set it** (section 3): it keeps the
+  provider's servers until a "remove" runs while it is enabled.
+- **The Portuguese of `vision.consent` with a vendor name** ("pergunta a Anthropic", "as regras
+  dele") was left as the design has it; decision 24 is about the managed provider only.
+- **`docs/nofap/DESIGN.md` was not edited** (not this unit's file). Its section 4.3 still says
+  "every 45 s" for a signal, and its 7.4 is now what the code and the dialog say.
+- **Hand-off U2**, contract note "`plan::reset_targets` returns every interface that is exactly
+  ours, active or not", is out of date (section 3).

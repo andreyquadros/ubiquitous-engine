@@ -110,7 +110,10 @@ describe('the consent wizard', () => {
     next();
     next();
     const step = await screen.findByTestId('wizard-step-3');
-    expect(step).toHaveTextContent('pergunta a IA do Ubi se há pornografia nela');
+    // The managed provider's name takes its article, and the rules and terms named are the vendor's.
+    expect(step).toHaveTextContent('pergunta à IA do Ubi se há pornografia nela');
+    expect(step).toHaveTextContent('A IA do Ubi envia a imagem à Anthropic, que aplica as próprias regras ao que recebe e guarda pelo prazo que os termos dela definem.');
+    expect(step).not.toHaveTextContent('as regras dele');
     expect(step).toHaveTextContent('As imagens da verificação passam pelo servidor do ubiqX a caminho da Anthropic.');
     fireEvent.click(within(step).getByRole('checkbox', { name: 'Entendi o que é enviado' }));
     expect(screen.getByRole('button', { name: 'Continuar' })).toBeDisabled();

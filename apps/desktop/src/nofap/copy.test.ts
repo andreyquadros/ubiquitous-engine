@@ -4,9 +4,10 @@ import { describe, expect, it } from 'vitest';
 // The word list the Rust tests read, as it is in the repository.
 import forbidden from '../../../../crates/ubiqx-nofap/data/forbidden-words.json';
 import tauriConf from '../../src-tauri/tauri.conf.json?raw';
-import { NAMESPACES } from '../i18n';
+import { hasKey, NAMESPACES, translate } from '../i18n';
 import { PANIC_CRISIS } from '../i18n/messages/nofap';
 import type { Locale } from '../i18n/types';
+import { consentKey, providerName } from './labels';
 
 // The design document itself. Vite refuses `?raw` for a file outside the app, so the test reads it from disk.
 const here = (import.meta as unknown as { dirname: string }).dirname;
@@ -53,6 +54,48 @@ describe('the copy bank (design 5.6)', () => {
   it('names the product only through the {name} placeholder', () => {
     const withName = rows.filter(([, pt]) => pt.includes('{name}')).map((r) => r[0]);
     expect(withName).toEqual(expect.arrayContaining(['wizard.what', 'vision.consent', 'exclusion.delay', 'drift.notice', 'reminder.on', 'privacy.at_rest']));
+  });
+});
+
+describe('the consent sentence with the managed provider (integrator decision 24)', () => {
+  /** The sentences of a text, each without its closing full stop. */
+  const sentences = (text: string): string[] => text.split(/\. (?=[A-ZÀ-Ý{])/u);
+  const filled = (locale: Locale, provider: 'anthropic' | 'ubi'): string => translate(locale, consentKey(provider), { name: 'NoFap', provider: providerName(provider, (key, vars) => translate(locale, key, vars)) });
+
+  it('uses the copy-bank sentence for a vendor and its own for "IA do Ubi"', () => {
+    expect(consentKey('anthropic')).toBe('nofap.vision.consent');
+    expect(consentKey('openai')).toBe('nofap.vision.consent');
+    expect(consentKey('xai')).toBe('nofap.vision.consent');
+    expect(consentKey('ubi')).toBe('nofap.vision.consent_ubi');
+    for (const locale of LOCALES) expect(hasKey('nofap.vision.consent_ubi', locale), locale).toBe(true);
+  });
+
+  it('reads correctly in Portuguese: the article, the gender, and whose rules apply', () => {
+    const text = filled('pt-BR', 'ubi');
+    expect(text).toContain('o NoFap tira uma foto reduzida só dessa janela e pergunta à IA do Ubi se há pornografia nela.');
+    expect(text).toContain('A IA do Ubi envia a imagem à Anthropic, que aplica as próprias regras ao que recebe e guarda pelo prazo que os termos dela definem.');
+    expect(text).not.toMatch(/\bdele\b/);
+    expect(text).not.toContain('pergunta a IA');
+    expect(text).not.toMatch(/[{}]/);
+  });
+
+  it('reads correctly in English', () => {
+    const text = filled('en', 'ubi');
+    expect(text).toContain('NoFap takes a reduced picture of that window only and asks Ubi AI whether it shows pornography.');
+    expect(text).toContain('Ubi AI sends the image on to Anthropic, which applies its own rules to what it receives and keeps it for the period its terms state.');
+    expect(text).not.toMatch(/[{}]/);
+  });
+
+  it('differs from the copy-bank sentence only where the provider is named', () => {
+    for (const locale of LOCALES) {
+      const bank = sentences(nofap[locale]['vision.consent']!);
+      const managed = sentences(nofap[locale]['vision.consent_ubi']!);
+      expect(managed, locale).toHaveLength(bank.length);
+      const differing = bank.map((sentence, i) => (sentence === managed[i] ? null : i)).filter((i) => i !== null);
+      // The first sentence (who is asked) and the fourth (who receives the image).
+      expect(differing, locale).toEqual(locale === 'pt-BR' ? [0, 3] : [3]);
+      for (const i of differing) expect(bank[i], `${locale} sentence ${i}`).toContain('{provider}');
+    }
   });
 });
 

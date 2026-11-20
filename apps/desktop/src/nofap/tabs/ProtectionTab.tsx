@@ -9,7 +9,8 @@ import { ResolverChoice } from '../components/ResolverChoice';
 import { SampleFrameView } from '../components/SampleFrameView';
 import { VisionCaps } from '../components/VisionCaps';
 import { VisionScope } from '../components/VisionScope';
-import { delayVariant, fmtDelay, fmtMoney, providerName, reasonText } from '../labels';
+import { WaitingNote } from '../components/WaitingNote';
+import { delayVariant, fmtDelay, fmtMoney, providerName, reasonText, waitingSwitches } from '../labels';
 import type { NofapDialog } from '../NofapPage';
 import type { NofapHost } from '../NofapWizard';
 import type { NofapChange, NofapView, Tier } from '../types';
@@ -36,6 +37,9 @@ export function ProtectionTab({ view, host, onRequest, onOpen }: Props) {
   const provider = providerName(view.provider, t);
   const consentCurrent = vision.consent?.provider === view.provider;
   const visionOn = view.status.vision.state !== 'off';
+  // A switch whose turning off is waiting out the delay is disabled and says so (the banner is where it is
+  // cancelled or confirmed).
+  const waiting = waitingSwitches(view.config);
 
   const toggleVision = (on: boolean) => {
     // Switching on needs a consent that names the provider now selected.
@@ -72,13 +76,14 @@ export function ProtectionTab({ view, host, onRequest, onOpen }: Props) {
                       <p className="text-[13px] font-medium text-ink">{t('nofap.layer.resolver')}</p>
                       <p className="text-xs text-ink-3">{t('nofap.layer.resolver.hint')}</p>
                     </div>
-                    <ResolverChoice value={system.resolver} onChange={(resolver) => onRequest({ kind: 'set_resolver', resolver })} />
+                    <ResolverChoice value={system.resolver} disabled={waiting.resolver} onChange={(resolver) => onRequest({ kind: 'set_resolver', resolver })} />
                   </div>
                 ) : (
                   <Field label={t(`nofap.layer.${tier}`)} hint={t(`nofap.layer.${tier}.hint`)} inline>
-                    {(id) => <Toggle id={id} checked={chosen[tier]} onChange={(on) => onRequest(change(tier, on))} />}
+                    {(id) => <Toggle id={id} checked={chosen[tier]} disabled={waiting[tier]} onChange={(on) => onRequest(change(tier, on))} />}
                   </Field>
                 )}
+                {waiting[tier] && <WaitingNote testId={`waiting-set_${tier}`} />}
                 {disclosure && chosen[tier] && <p className="panel-raised p-3 text-xs leading-5 text-ink-2">{t(disclosure)}</p>}
               </li>
             );
@@ -95,9 +100,10 @@ export function ProtectionTab({ view, host, onRequest, onOpen }: Props) {
       </Card>
 
       <Card data-testid="vision-card">
-        <CardHeader title={t('nofap.vision.title')} subtitle={t('nofap.layer.vision.hint')} action={<Toggle label={t('nofap.vision.title')} checked={vision.enabled} onChange={toggleVision} />} />
+        <CardHeader title={t('nofap.vision.title')} subtitle={t('nofap.layer.vision.hint')} action={<Toggle label={t('nofap.vision.title')} checked={vision.enabled} disabled={waiting.vision} onChange={toggleVision} />} />
         {vision.enabled ? (
           <div className="flex flex-col gap-4">
+            {waiting.vision && <WaitingNote testId="waiting-set_vision" />}
             {visionOn ? (
               <p className="text-[13px] leading-5 text-ink-2">{t('nofap.vision.today', { n: view.today.checks, provider })}</p>
             ) : (
@@ -116,7 +122,7 @@ export function ProtectionTab({ view, host, onRequest, onOpen }: Props) {
             </p>
             <div className="border-t border-line pt-4">
               <h3 className="mb-3 text-[13px] font-medium text-ink">{t('nofap.vision.scope_title')}</h3>
-              <VisionScope scope={vision} onChange={(scope) => onRequest({ kind: 'set_vision_scope', unknown_sites: scope.unknown_sites, media_apps: scope.media_apps, messaging_apps: scope.messaging_apps, private_windows: scope.private_windows })} />
+              <VisionScope scope={vision} waiting={waiting.scope} onChange={(scope) => onRequest({ kind: 'set_vision_scope', unknown_sites: scope.unknown_sites, media_apps: scope.media_apps, messaging_apps: scope.messaging_apps, private_windows: scope.private_windows })} />
             </div>
             <SampleFrameView />
             <div className="border-t border-line pt-4">
@@ -140,8 +146,9 @@ export function ProtectionTab({ view, host, onRequest, onOpen }: Props) {
             {(id) => <Toggle id={id} checked={!ui.discreet} onChange={(detailed) => onRequest({ kind: 'set_prefs', prefs: { ...ui, discreet: !detailed } })} />}
           </Field>
         </div>
-        <div className="mt-4 flex justify-end border-t border-line pt-4">
-          <Button variant="ghost" size="sm" onClick={() => onOpen('off')} data-testid="nofap-off-button">
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-line pt-4">
+          {waiting.disable && <WaitingNote text="nofap.overall.pending_hint" testId="waiting-disable" />}
+          <Button variant="ghost" size="sm" disabled={waiting.disable} onClick={() => onOpen('off')} data-testid="nofap-off-button">
             {t('nofap.off.button', { name })}
           </Button>
         </div>

@@ -1,6 +1,6 @@
 import { useId } from 'react';
 import { useT } from '../../i18n';
-import { providerName } from '../labels';
+import { consentKey, providerName } from '../labels';
 import type { AiProvider } from '../types';
 
 interface Props {
@@ -28,7 +28,7 @@ export function VisionConsent({ provider, name, consent, onConsent, managed, onM
   const t = useT();
   return (
     <div className="flex flex-col gap-3" data-testid="vision-consent">
-      <p className="panel-raised p-3 text-[13px] leading-5 text-ink-2">{t('nofap.vision.consent', { name, provider: providerName(provider, t) })}</p>
+      <p className="panel-raised p-3 text-[13px] leading-5 text-ink-2">{t(consentKey(provider), { name, provider: providerName(provider, t) })}</p>
       <Tick checked={consent} onChange={onConsent} label={t('nofap.vision.consent_tick')} />
       {provider === 'ubi' && (
         <>

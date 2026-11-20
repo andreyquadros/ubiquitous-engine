@@ -31,6 +31,12 @@ export function providerName(provider: AiProvider, t: Translate): string {
   }
 }
 
+/**
+ * The consent sentence for a provider. The managed one has its own: its name takes an article, and the rules and
+ * terms that apply to the image are those of the vendor it sends the image on to.
+ */
+export const consentKey = (provider: AiProvider): string => (provider === 'ubi' ? 'nofap.vision.consent_ubi' : 'nofap.vision.consent');
+
 /** A waiting time in words: "10 minutos", "4 horas". Zero reads "sem espera", which fits a label and no sentence (`delayVariant`). */
 export function fmtDelay(secs: number, t: Translate): string {
   if (secs <= 0) return t('nofap.delay.none').toLowerCase();
@@ -104,6 +110,40 @@ export function pendingLabel(pending: PendingView, config: ConfigView, sites: Si
     if (host) return t('nofap.pending.remove_host', { host });
   }
   return t(`nofap.pending.kind.${pending.kind}`, { name });
+}
+
+export const SCOPE_FLAGS = ['unknown_sites', 'media_apps', 'messaging_apps', 'private_windows'] as const;
+export type ScopeFlag = (typeof SCOPE_FLAGS)[number];
+
+/** The switches of the page whose change is waiting out the delay. */
+export interface WaitingSwitches {
+  disable: boolean;
+  hosts: boolean;
+  resolver: boolean;
+  policies: boolean;
+  hostsUserSites: boolean;
+  vision: boolean;
+  scope: Record<ScopeFlag, boolean>;
+}
+
+/**
+ * Which switches have their change waiting: the thing is on, and a request to turn it off is among the waiting
+ * ones. Such a switch is shown disabled: the same request again would change nothing. A switch that is off is
+ * never waiting (turning something on applies at once).
+ */
+export function waitingSwitches(config: ConfigView): WaitingSwitches {
+  const changes = config.pending.map((p) => p.change);
+  const off = (kind: 'set_hosts' | 'set_policies' | 'set_hosts_user_sites' | 'set_vision'): boolean => changes.some((c) => c.kind === kind && !c.on);
+  const narrowed = (flag: ScopeFlag): boolean => config.vision[flag] && changes.some((c) => c.kind === 'set_vision_scope' && !c[flag]);
+  return {
+    disable: config.enabled && changes.some((c) => c.kind === 'disable'),
+    hosts: config.system.hosts && off('set_hosts'),
+    resolver: config.system.resolver !== null && changes.some((c) => c.kind === 'set_resolver' && c.resolver === null),
+    policies: config.system.policies && off('set_policies'),
+    hostsUserSites: config.system.hosts_user_sites && off('set_hosts_user_sites'),
+    vision: config.vision.enabled && off('set_vision'),
+    scope: { unknown_sites: narrowed('unknown_sites'), media_apps: narrowed('media_apps'), messaging_apps: narrowed('messaging_apps'), private_windows: narrowed('private_windows') },
+  };
 }
 
 /** The user's sentence as it goes inside the quotes of `panic.reason`: without its own closing full stop. */

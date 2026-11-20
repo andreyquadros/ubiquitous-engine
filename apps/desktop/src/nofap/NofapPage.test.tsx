@@ -6,9 +6,11 @@ import { VisionCaps } from './components/VisionCaps';
 import { nofapIpc } from './ipc';
 import { ProgressCard } from './components/ProgressCard';
 import { __nofapMock } from './mock';
+import { translate } from '../i18n';
+import { waitingSwitches } from './labels';
 import { useNofapStore } from './store';
 import { calls, READS, renderPage, resetNofap } from './testing';
-import type { NofapView } from './types';
+import type { NofapChange, NofapView } from './types';
 
 const writes = () => calls().filter((c) => !READS.includes(c.cmd));
 const openTab = async (name: string) => fireEvent.click(await screen.findByRole('tab', { name }));
@@ -191,6 +193,117 @@ describe('turning protection off', () => {
   });
 });
 
+describe('a switch whose change is waiting (integrator decision 22)', () => {
+  beforeEach(() => resetNofap('on'));
+
+  const NOTE = 'Pedido em espera: isto continua ligado até você confirmar ou cancelar o pedido.';
+  /** Puts requests into the waiting list the way the engine would, each with the full delay ahead of it. */
+  const wait = (...changes: NofapChange[]) => {
+    const requested_at = new Date().toISOString();
+    const ready_at = new Date(Date.now() + 600_000).toISOString();
+    __nofapMock.state().config.pending = changes.map((change, n) => ({ id: `waiting-${n}`, change, requested_at, ready_at, observed_secs: 0, ready_since: null }));
+  };
+
+  it('is disabled and says so until the request is cancelled, and cannot be asked for twice', async () => {
+    renderPage();
+    const tab = await screen.findByTestId('tab-protection');
+    const hosts = () => within(tab).getByRole('switch', { name: 'Lista do sistema' });
+    expect(hosts()).toBeEnabled();
+    expect(within(tab).queryByTestId('waiting-set_hosts')).toBeNull();
+
+    fireEvent.click(hosts());
+    const banner = await screen.findByTestId('pending-banner');
+    await waitFor(() => expect(hosts()).toBeDisabled());
+    // Still on: nothing changed yet, and the line under it says why it cannot be touched.
+    expect(hosts()).toHaveAttribute('aria-checked', 'true');
+    expect(within(tab).getByTestId('waiting-set_hosts')).toHaveTextContent(NOTE);
+    // A click on it sends nothing.
+    fireEvent.click(hosts());
+    expect(writes()).toEqual([{ cmd: 'request', args: { kind: 'set_hosts', on: false } }]);
+    // The switches that have nothing waiting are as they were.
+    expect(within(tab).getByRole('switch', { name: 'Regras dos navegadores' })).toBeEnabled();
+    expect(within(tab).getByRole('switch', { name: 'Verificação por IA' })).toBeEnabled();
+    expect(screen.getByTestId('nofap-off-button')).toBeEnabled();
+
+    fireEvent.click(within(banner).getByRole('button', { name: 'Manter proteção' }));
+    await waitFor(() => expect(hosts()).toBeEnabled());
+    expect(within(tab).queryByTestId('waiting-set_hosts')).toBeNull();
+  });
+
+  it('covers every switch of the protection tab, and only the scope switch that is being turned off', async () => {
+    const scope = { unknown_sites: true, media_apps: false, messaging_apps: false, private_windows: true };
+    wait({ kind: 'set_policies', on: false }, { kind: 'set_resolver', resolver: null }, { kind: 'set_vision', on: false }, { kind: 'set_vision_scope', ...scope }, { kind: 'disable' });
+    renderPage();
+    const tab = await screen.findByTestId('tab-protection');
+
+    expect(within(tab).getByRole('switch', { name: 'Regras dos navegadores' })).toBeDisabled();
+    expect(within(tab).getByTestId('waiting-set_policies')).toHaveTextContent(NOTE);
+    for (const radio of within(within(tab).getByTestId('protection-tier-resolver')).getAllByRole('radio')) expect(radio).toBeDisabled();
+    expect(within(tab).getByTestId('waiting-set_resolver')).toHaveTextContent(NOTE);
+    expect(within(tab).getByRole('switch', { name: 'Verificação por IA' })).toBeDisabled();
+    expect(within(tab).getByTestId('waiting-set_vision')).toHaveTextContent(NOTE);
+    // Nothing waits for the system list.
+    expect(within(tab).getByRole('switch', { name: 'Lista do sistema' })).toBeEnabled();
+    expect(within(tab).queryByTestId('waiting-set_hosts')).toBeNull();
+
+    // The request narrows media apps (on now, off in the request). Messaging apps are off already, and the two
+    // that stay on in the request can still be turned off.
+    expect(__nofapMock.state().config.vision).toMatchObject({ unknown_sites: true, media_apps: true, messaging_apps: false, private_windows: true });
+    expect(within(tab).getByRole('switch', { name: 'Apps de mídia' })).toBeDisabled();
+    expect(within(tab).getByRole('switch', { name: 'Sites desconhecidos' })).toBeEnabled();
+    expect(within(tab).getByRole('switch', { name: 'Apps de mensagens' })).toBeEnabled();
+    expect(within(tab).getByRole('switch', { name: 'Janelas anônimas' })).toBeEnabled();
+    expect(within(tab).getByTestId('waiting-set_vision_scope')).toHaveTextContent('Pedido em espera: o que está ligado aqui continua assim até você confirmar ou cancelar o pedido.');
+
+    // Turning everything off is waiting too: the button is disabled, next to the sentence the status uses.
+    expect(screen.getByTestId('nofap-off-button')).toBeDisabled();
+    expect(within(tab).getByTestId('waiting-disable')).toHaveTextContent('Tudo continua ligado até você confirmar.');
+    // Nothing was sent by looking.
+    expect(writes()).toEqual([]);
+  });
+
+  it('covers the switch of the typed sites on the lists tab', async () => {
+    wait({ kind: 'set_hosts_user_sites', on: false });
+    renderPage(undefined, '/nofap?tab=lists');
+    const list = await screen.findByTestId('sites-blocked');
+    expect(within(list).getByRole('switch', { name: 'Incluir meus sites na lista do sistema' })).toBeDisabled();
+    expect(within(list).getByTestId('waiting-set_hosts_user_sites')).toHaveTextContent(NOTE);
+  });
+
+  it('says so in English too', () => {
+    expect(translate('en', 'nofap.pending.switch_waiting')).toBe('Request waiting: this stays on until you confirm or cancel the request.');
+    expect(translate('en', 'nofap.pending.scope_waiting')).toBe('Request waiting: what is on here stays on until you confirm or cancel the request.');
+  });
+
+  it('never calls a switch that is off waiting, nor one whose waiting request turns something on', () => {
+    const config = __nofapMock.state().config;
+    const nothing = { disable: false, hosts: false, resolver: false, policies: false, hostsUserSites: false, vision: false, scope: { unknown_sites: false, media_apps: false, messaging_apps: false, private_windows: false } };
+    expect(waitingSwitches(config)).toEqual(nothing);
+
+    wait({ kind: 'set_hosts', on: false }, { kind: 'set_policies', on: true }, { kind: 'set_delay', secs: 0 }, { kind: 'add_allow', host: 'example.com' });
+    expect(waitingSwitches(__nofapMock.state().config)).toEqual({ ...nothing, hosts: true });
+
+    // The same requests on a configuration where those things are off already: nothing is waiting to go off.
+    const off = structuredClone(__nofapMock.state().config);
+    off.system.hosts = false;
+    off.system.resolver = null;
+    off.vision.enabled = false;
+    off.pending.push({ ...off.pending[0]!, id: 'waiting-r', change: { kind: 'set_resolver', resolver: null } }, { ...off.pending[0]!, id: 'waiting-v', change: { kind: 'set_vision', on: false } });
+    expect(waitingSwitches(off)).toEqual(nothing);
+  });
+
+  it('the same change asked for again is the request that is already waiting', async () => {
+    const first = await nofapIpc.request({ kind: 'set_vision_scope', unknown_sites: false, media_apps: true, messaging_apps: false, private_windows: true });
+    // The same change with its fields in another order.
+    const again = await nofapIpc.request({ kind: 'set_vision_scope', private_windows: true, messaging_apps: false, media_apps: true, unknown_sites: false });
+    expect('pending' in first && 'pending' in again && again.pending.id === first.pending.id).toBe(true);
+    expect(__nofapMock.state().config.pending).toHaveLength(1);
+    // A different change is a request of its own.
+    await nofapIpc.request({ kind: 'set_vision_scope', unknown_sites: true, media_apps: false, messaging_apps: false, private_windows: true });
+    expect(__nofapMock.state().config.pending).toHaveLength(2);
+  });
+});
+
 describe('with no waiting time', () => {
   beforeEach(() => {
     resetNofap('on');
@@ -338,10 +451,26 @@ describe('exits that never wait (design 6.3): at most two clicks from the main p
     renderPage();
     fireEvent.click(await screen.findByTestId('exit-erase')); // 1
     const dialog = await screen.findByRole('dialog', { name: 'Apagar meu histórico do NoFap' });
+    // The dialog says everything that goes: what the person wrote is erased too.
+    expect(dialog).toHaveTextContent('Apaga as contagens, as pausas de regra, a sua frase e os seus planos. Suas listas e a proteção ficam como estão. Não tem espera.');
+    expect(__nofapMock.state().config.values).not.toBe('');
     fireEvent.click(within(dialog).getByTestId('nofap-erase-confirm')); // 2
     await waitFor(() => expect(writes()).toEqual([{ cmd: 'erase_history' }]));
     await waitFor(() => expect(screen.getByTestId('nofap-status')).toHaveTextContent('Hoje, 0 páginas barradas.'));
     expect(screen.getByTestId('nofap-overall')).toHaveTextContent('Proteção ativa');
+    expect(__nofapMock.state().config.values).toBe('');
+    expect(__nofapMock.state().config.plans).toEqual([]);
+    expect(__nofapMock.state().config.system.hosts).toBe(true);
+  });
+
+  it('"Apagar meu histórico" names the sentence and the plans in both languages, and no longer says they stay', () => {
+    const pt = translate('pt-BR', 'nofap.data.erase_body');
+    const en = translate('en', 'nofap.data.erase_body');
+    expect(pt).toBe('Apaga as contagens, as pausas de regra, a sua frase e os seus planos. Suas listas e a proteção ficam como estão. Não tem espera.');
+    expect(en).toBe('Erases the counts, the rule snoozes, your sentence and your plans. Your lists and the protection stay as they are. There is no wait.');
+    // The sentence that says what stays names neither.
+    expect(pt.split('. ')[1]).not.toMatch(/frase|plano/);
+    expect(en.split('. ')[1]).not.toMatch(/sentence|plan/);
   });
 
   it('removal without the app and quitting are explained one click away', async () => {

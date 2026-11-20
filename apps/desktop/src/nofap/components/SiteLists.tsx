@@ -5,7 +5,8 @@ import { Card, CardHeader } from '../../components/ui/Card';
 import { Field, Input } from '../../components/ui/Field';
 import { Toggle } from '../../components/ui/Toggle';
 import { useT } from '../../i18n';
-import { delayVariant, fmtDelay } from '../labels';
+import { delayVariant, fmtDelay, waitingSwitches } from '../labels';
+import { WaitingNote } from './WaitingNote';
 import type { NofapChange, NofapView, SiteEntry, SitesView } from '../types';
 
 const looksLikeHost = (text: string): boolean => /^[^\s/]+\.[^\s/.]{2,}$/.test(text.trim().replace(/^[a-z]+:\/\//i, '').replace(/[/?#].*$/, ''));
@@ -109,6 +110,8 @@ export function SiteLists({ view, sites, onRequest }: Props) {
   const name = view.display_name;
   const delaySecs = view.config.delay_secs;
   const delay = fmtDelay(delaySecs, t);
+  // Taking the typed sites out of the system list waits like any loosening; while it does, the switch is disabled.
+  const userSitesWaiting = waitingSwitches(view.config).hostsUserSites;
   return (
     <div className="flex flex-col gap-5">
       <SiteList
@@ -123,9 +126,12 @@ export function SiteLists({ view, sites, onRequest }: Props) {
         onRemove={(entry) => void onRequest({ kind: 'remove_block', id: entry.id })}
         // Where the sites the user types go: into the system list too, which other accounts can read, or only into this app.
         footer={
-          <Field label={t('nofap.lists.system_sites')} hint={t('nofap.hosts.readable')} inline>
-            {(id) => <Toggle id={id} size="sm" checked={view.config.system.hosts_user_sites} onChange={(on) => void onRequest({ kind: 'set_hosts_user_sites', on })} />}
-          </Field>
+          <div className="flex flex-col gap-2">
+            <Field label={t('nofap.lists.system_sites')} hint={t('nofap.hosts.readable')} inline>
+              {(id) => <Toggle id={id} size="sm" checked={view.config.system.hosts_user_sites} disabled={userSitesWaiting} onChange={(on) => void onRequest({ kind: 'set_hosts_user_sites', on })} />}
+            </Field>
+            {userSitesWaiting && <WaitingNote testId="waiting-set_hosts_user_sites" />}
+          </div>
         }
       />
       <SiteList
