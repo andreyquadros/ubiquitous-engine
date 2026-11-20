@@ -73,6 +73,11 @@ One run per operating system of the job `nofap-system-smoke`, on a commit of thi
 The job is `continue-on-error` until its first green run, so a red run does not fail the
 workflow: read the job's own result, not the workflow's.
 
+Neither script had run against a real helper when it was written, and the Windows one had
+never been parsed by PowerShell (only by a grammar outside PowerShell). A first run that
+stops with a PowerShell or Python error naming a line of the script is a defect of the
+script, not evidence about the helper: fix the script and run again before filling the table.
+
 | Runner | Tiers | Result | Run URL | Commit | `GREEN` line of the log |
 |---|---|---|---|---|---|
 | `ubuntu-latest` | hosts, resolver | | | | |
@@ -100,6 +105,8 @@ What the scripts check, so that a green run can be read against the items below:
 | `registry: Tcpip NameServer of … holds the IPv4 pair`, `registry: Tcpip6 NameServer of … holds the IPv6 pair`, `… cannot be written by a standard user`, `… can be read by a standard user` (Windows) | 6 |
 | `ARG_BUDGET evidence: the longest --plan-b64 value that reached the helper intact has … characters` (Windows) | 18 |
 | `nothing was created in the scratch directory the variables pointed at` (Windows, hostile environment) | design 2.5, 9.3 step 6 |
+| `the elevation command works at all with the shortest plan` (Windows; the command runs in the app's four-variable environment) | 20, 27 |
+| `hosts: owner and access list are what they were` (Windows) | 26 |
 
 ## 4. The items of design 11.4
 
@@ -399,9 +406,10 @@ Not in design 11.4. Each names the hand-off it comes from.
 ### [ ] 20. The helper binary and the elevation command (this unit, U9a)
 
 The elevation command always re-runs the executable as `<exe> --shield-helper <verb> …`. The
-small binary `ubiqx-shield-helper`, as first written, takes the verb directly and refuses
-that form, so step 5 of the Windows smoke run cannot work with it until it accepts the flag
-in front. **CI:** the line `the elevation command works at all with the shortest plan` of the
+small binary `ubiqx-shield-helper`, as first written, took the verb directly and refused
+that form. It accepts a leading `--shield-helper` since commit `412e146` (checked in the
+sandbox with `status` and `elevate-argv`, which change nothing). What is left is the proof on
+Windows. **CI:** the line `the elevation command works at all with the shortest plan` of the
 Windows run.
 
 - Evidence: the Windows run of section 3.
@@ -439,6 +447,48 @@ process holds the database. **Person:** run the erase with `ubiqx` (the CLI) ope
 both, and search the files for a snooze or a counter that was erased.
 
 - Evidence (date, result of the search):
+
+### [ ] 25. Installed paths and package names of both products (review of U9a)
+
+`REMOVAL.md` part 2 names the installed executable of each product and part 4 names the
+autostart entries. None of these names was read from an installed build: ubiqX's follow
+`docs/WINDOWS-LINUX.md` and `docs/MACOS-TESTING.md`, the standalone app's follow its
+`tauri.conf.json`. ubiqX's shell has no `mainBinaryName`, and its Cargo package is
+`ubiqx-desktop`, so the executable may carry that name instead. **Person, each OS and each
+installer format**, with both products installed:
+
+| What | Expected by `REMOVAL.md` | Found |
+|---|---|---|
+| macOS executable | `/Applications/ubiqX.app/Contents/MacOS/ubiqX`, `/Applications/NoFap.app/Contents/MacOS/ubiqx-shield` | |
+| Linux `.deb` executable and package name (`dpkg -S`) | `/usr/bin/ubiqx`, `/usr/bin/ubiqx-shield` | |
+| Windows `-setup.exe` and `.msi` executable | `%LocalAppData%\ubiqX\ubiqX.exe`, `%ProgramFiles%\ubiqX\ubiqX.exe`, `%LocalAppData%\NoFap\ubiqx-shield.exe` | |
+| Autostart entry | `ubiqX.plist` / `NoFap.plist`, `ubiqX.desktop` / `NoFap.desktop`, the `Run` values `ubiqX` / `NoFap` | |
+| The command of part 2 run as written | exits 0 and removes the tiers | |
+
+Change `REMOVAL.md` to what is found.
+
+- Evidence (date, OS versions, installer file names, the listings):
+
+### [ ] 26. Windows: owner and access list of the hosts file after a write (review of U9a)
+
+The helper writes the hosts file through a temporary file and a rename. On Windows the new
+file takes the access list its directory hands down and the account that created it as
+owner, which need not be what the file had. The Windows script compares the security
+descriptor before the run and after the removal. **CI:** the line `hosts: owner and access
+list are what they were`. If it fails, the helper has to write in place on Windows or copy
+the descriptor; the hosts tier of Windows stays closed until then.
+
+- Evidence: the Windows run of section 3.
+
+### [ ] 27. The elevation command in the environment the app gives it (hand-off U4)
+
+The app starts `powershell.exe`, `osascript` and `pkexec` with a cleared environment (on
+Windows only `SystemRoot`, `windir`, `PATH` and `PSModulePath`). Whether Windows PowerShell
+starts and `Start-Process -Verb RunAs` works with only those four is not known. Step 5 of
+the Windows script runs the command in exactly that environment. **CI** for Windows;
+**person** for macOS and Linux (item 5 covers the prompts themselves).
+
+- Evidence: the Windows run of section 3; item 5 for the other two.
 
 ## 6. Still open, and who decides
 

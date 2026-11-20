@@ -17,7 +17,7 @@ divergirem, vale o código, e o texto está errado.
 | Lista no sistema | nada | nada | uma lista de sites adultos conhecidos no arquivo `hosts`, mais os sites que você digitou |
 | DNS filtrado (opcional) | nada | todos os nomes de sites que o computador consulta vão para a Cloudflare, no lugar do seu provedor | a configuração de DNS do sistema; o seu DNS anterior, para mostrar a você |
 | Políticas dos navegadores (opcional) | nada | nada | quatro ou cinco ajustes nos navegadores |
-| Verificação por IA (opcional) | uma foto reduzida da janela que está na frente, quando o site ou o app é desconhecido | essa foto, para o provedor de IA que você escolheu | contagens por dia e hora, o custo por hora, e o site aprendido como um código embaralhado |
+| Verificação por IA (opcional) | uma foto reduzida da janela que está na frente, quando o site ou o app é desconhecido | essa foto e um texto fixo que diz para que ela serve, para o provedor de IA que você escolheu | contagens por dia e hora, o custo por hora, e o site aprendido como um código embaralhado |
 | Apoio (cartões, respiração, deslize, check-in) | o que você toca | nada | contagens por dia e hora; a sua frase e os seus planos, se você escrever |
 
 O que não existe, em nenhuma camada:
@@ -96,6 +96,12 @@ qualquer programa, passam pela Cloudflare. É a Cloudflare que decide o que barr
 adultos e sites que ela considera perigosos. Ela trata esses dados pelos termos dela. O ubiqX
 e o NoFap não recebem nada disso: não existe servidor nosso nesse caminho.
 
+**Uma consulta do próprio app.** Ao aplicar esta camada, e de tempos em tempos enquanto ela
+está ligada, o app consulta o nome `one.one.one.one` (um nome público da Cloudflare) para
+saber se a rede em que você está alcança o DNS filtrado. É uma consulta de DNS como
+qualquer outra, sem identificador seu; é ela que permite avisar "esta rede não alcança o DNS
+filtrado" em vez de deixar você sem internet.
+
 **O que não muda.** As consultas continuam sem criptografia, como é o padrão do sistema: a
 rede em que você está continua vendo os nomes consultados, como já via.
 
@@ -160,10 +166,16 @@ faixa de cima (abas, barra de endereço, favoritos) é cortada, para não levar 
 outras abas. A imagem é reduzida para no máximo 640 pixels de lado e comprimida. Uma tela
 quase igual à última que deu "nada" não é enviada de novo.
 
-**O que é enviado.** Essa imagem e duas frases fixas em inglês que pedem a classificação.
-Não vai o endereço, o título, o nome do app, o seu idioma, o seu perfil nem um identificador
-seu. A resposta é uma palavra (explícito, sugestivo, nada, não sei) e um grau de certeza; o
-modelo é impedido de devolver uma descrição.
+**O que é enviado.** Essa imagem e dois textos fixos em inglês, iguais para todo mundo: a
+instrução de classificação e o pedido "Classify this screenshot.". A instrução diz ao
+provedor de onde o pedido vem: de um app de autocontrole que uma pessoa adulta instalou no
+próprio computador para ficar longe de pornografia. Ou seja, o provedor fica sabendo que a
+chave ou a conta usada pertence a alguém que usa uma ferramenta assim. Não vai o endereço, o
+título, o nome do app que estava na frente, o seu idioma, o seu perfil nem um identificador
+seu. A resposta é uma palavra (explícito, sugestivo, nada, não sei) e um grau de certeza
+(alto, médio ou baixo). A resposta tem um formato fechado, sem campo de texto livre, e a
+instrução manda o modelo não descrever a imagem, não transcrever texto e não identificar
+ninguém.
 
 **Para quem.** Para o provedor de IA que está nas suas configurações:
 
@@ -291,7 +303,7 @@ dele e ficam vazias.
 | Um administrador do computador | tudo acima, e consegue remover a proteção |
 | A rede e o provedor de internet | os nomes de sites consultados, como antes. Com o DNS filtrado, as consultas vão para a Cloudflare |
 | A Cloudflare (só com o DNS filtrado) | os nomes de sites que este computador consulta e o endereço de onde vêm |
-| O provedor de IA (só com a verificação por IA) | as imagens enviadas, pela chave ou conta usada |
+| O provedor de IA (só com a verificação por IA) | as imagens enviadas, pela chave ou conta usada, e que elas vêm de um app de autocontrole contra pornografia (o texto do pedido diz isso) |
 | O servidor do ubiqX (só com a "IA do Ubi") | que uma verificação foi feita: hora, modelo, tokens e custo. Nunca a imagem |
 | Qualquer outra pessoa | nada. O NoFap não envia nada a ninguém |
 

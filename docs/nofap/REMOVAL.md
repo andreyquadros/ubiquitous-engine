@@ -41,13 +41,16 @@ largam o aviso "Gerenciado pela sua organização" e os endereços que tinham em
 |---|---|
 | Windows, instalador `-setup.exe` | o desinstalador pede a permissão de administrador uma vez e remove as camadas do sistema. Se você recusar, a desinstalação termina e sobra o que está na parte 2. Uma atualização do app não remove nada |
 | Windows, `.msi` | não remove as camadas do sistema: use a parte 2 antes de desinstalar, ou a parte 3 depois |
-| Linux, `.deb` | `sudo apt remove <pacote>` remove as camadas do sistema antes de tirar os arquivos (o pacote do ubiqX se chama `ubiqx`; `dpkg -S /usr/bin/ubiqx-shield` diz o nome do pacote do app separado). Uma atualização do pacote não remove nada |
+| Linux, `.deb` | `sudo apt remove <pacote>` remove as camadas do sistema antes de tirar os arquivos (`dpkg -l \| grep -i -e ubiq -e nofap` mostra o nome do pacote instalado). Uma atualização do pacote não remove nada |
 | Linux, AppImage | o AppImage não consegue aplicar as camadas do sistema, então não há o que remover delas; apague o arquivo e veja a parte 4 |
 | macOS, `.app` (arrastado do `.dmg`) | arrastar para o Lixo não remove nada do sistema: use a parte 2 antes de apagar o app, ou a parte 3 depois |
 
-O comportamento dos desinstaladores ainda precisa ser conferido em máquina real (item 15 de
-[REAL-MACHINE-CHECKLIST.md](REAL-MACHINE-CHECKLIST.md)). Depois de desinstalar, vale passar
-pela parte 5 e conferir.
+**Não conte com o desinstalador ainda.** A tabela diz o que cada formato foi projetado para
+fazer. Quando este texto foi escrito, os passos de desinstalação do `-setup.exe` e do `.deb`
+ainda não estavam nos instaladores, e nenhum foi conferido em máquina real (item 15 de
+[REAL-MACHINE-CHECKLIST.md](REAL-MACHINE-CHECKLIST.md)). O caminho seguro, em qualquer
+formato: remova pelo app ou pela parte 2 **antes** de desinstalar e, depois de desinstalar,
+confira com a parte 5.
 
 ## 2. Com um comando
 
@@ -69,8 +72,9 @@ sudo "/Applications/ubiqX.app/Contents/MacOS/ubiqX" --shield-helper remove --own
 sudo "/Applications/NoFap.app/Contents/MacOS/ubiqx-shield" --shield-helper remove --owner all --scope all
 ```
 
-Se o app está em outro lugar, o executável é o único arquivo dentro de
-`<app>.app/Contents/MacOS/`.
+Se o comando responder "command not found", o executável tem outro nome ou o app está em
+outro lugar: ele é o único arquivo dentro de `<app>.app/Contents/MacOS/`
+(`ls /Applications/ubiqX.app/Contents/MacOS/` mostra o nome).
 
 ### Linux (`.deb`)
 
@@ -81,6 +85,9 @@ sudo /usr/bin/ubiqx --shield-helper remove --owner all --scope all
 # app separado
 sudo /usr/bin/ubiqx-shield --shield-helper remove --owner all --scope all
 ```
+
+Se o arquivo não existir com esse nome, `ls /usr/bin | grep -i ubiqx` mostra o executável
+instalado.
 
 ### Windows
 
@@ -102,7 +109,7 @@ do arquivo".
 ### Sem o app instalado: o auxiliar compilado do código
 
 Quem tem o código-fonte pode compilar o auxiliar sozinho, sem interface gráfica. Ele recebe a
-ação direto, sem `--shield-helper`:
+ação direto (com `--shield-helper` na frente também funciona):
 
 ```sh
 cargo build --release -p ubiqx-platform --bin ubiqx-shield-helper
@@ -200,7 +207,7 @@ for Families; um DNS que você configurou depois não é tocado.
 ```sh
 networksetup -listallnetworkservices | tail -n +2 | grep -v '^\*' | while IFS= read -r servico; do
   if networksetup -getdnsservers "$servico" | grep -qx '1.1.1.3'; then
-    sudo networksetup -setdnsservers "$servico" empty
+    sudo networksetup -setdnsservers "$servico" empty < /dev/null
     echo "DNS automático de novo: $servico"
   fi
 done
@@ -240,9 +247,11 @@ faltar uma das marcas. (Outro caminho: abrir o Bloco de Notas como administrador
 ```powershell
 $arquivo = "$env:SystemRoot\System32\drivers\etc\hosts"
 Copy-Item $arquivo "$arquivo.antes-de-remover"
-$texto = [System.IO.File]::ReadAllText($arquivo)
+# Latin-1 lê e grava cada byte como está: o resto do arquivo não muda, com acento ou sem.
+$latin1 = [System.Text.Encoding]::GetEncoding(28591)
+$texto = [System.IO.File]::ReadAllText($arquivo, $latin1)
 $limpo = [regex]::Replace($texto, '(?ms)^# >>> ubiqx-shield .*?^# <<< ubiqx-shield END[^\n]*\n?', '')
-[System.IO.File]::WriteAllText($arquivo, $limpo)
+[System.IO.File]::WriteAllText($arquivo, $limpo, $latin1)
 ipconfig /flushdns
 ```
 
@@ -398,14 +407,17 @@ Nos navegadores, depois de reabrir: `chrome://policy`, `edge://policy`, `brave:/
 ## Notas
 
 - Os comandos da parte 3 foram escritos a partir dos valores que o código do `ubiqx-shield`
-  grava (marcas do bloco, caminhos, nomes das políticas). O comando do arquivo `hosts` foi
-  testado em cópias de arquivos gerados pelo próprio código; os demais ainda não foram
-  executados em máquina real (itens 1, 3, 9 e 15 da lista de verificação).
+  grava (marcas do bloco, caminhos, nomes das políticas). O comando do arquivo `hosts` do
+  Linux e do macOS foi testado em cópias de arquivos gerados pelo próprio código; o do
+  Windows foi conferido só por simulação da mesma expressão, sem PowerShell. Os demais ainda
+  não foram executados em máquina real (itens 1, 3, 9 e 15 da lista de verificação).
 - O comando do arquivo `hosts` pode deixar uma quebra de linha a mais no fim do arquivo,
   quando o arquivo original não terminava com uma. Não tem efeito nenhum.
 - Os caminhos de instalação da parte 2 e os nomes do início automático da parte 4 seguem o
-  nome de exibição de cada produto. Os do ubiqX são os que os instaladores publicados usam
-  hoje; os do app separado ainda não foram conferidos num instalador de verdade, e mudam se o
-  nome de exibição dele mudar (`NoFap.app`, `%LocalAppData%\NoFap`, `NoFap.plist`). O nome do
-  executável do app separado (`ubiqx-shield`) e tudo o que fica no sistema (parte 3) não
-  mudam.
+  nome de exibição de cada produto. Os do ubiqX são os que `docs/WINDOWS-LINUX.md` e
+  `docs/MACOS-TESTING.md` descrevem; nem eles nem os do app separado foram conferidos num
+  instalador de verdade para este texto (item 25 da lista de verificação), e os do app
+  separado mudam se o nome de exibição dele mudar (`NoFap.app`, `%LocalAppData%\NoFap`,
+  `NoFap.plist`). Por isso cada bloco da parte 2 diz como achar o executável quando o nome
+  for outro. O nome do executável do app separado (`ubiqx-shield`) e tudo o que fica no
+  sistema (parte 3) não mudam.

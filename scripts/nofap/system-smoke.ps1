@@ -197,6 +197,9 @@ function Start-Tool {
     $info.UseShellExecute = $false
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
+    # The helper prints UTF-8 (the hosts text and adapter names inside its JSON).
+    $info.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $info.StandardErrorEncoding = [System.Text.Encoding]::UTF8
     $info.CreateNoWindow = $true
     if ($OnlyEnvironment) {
         $info.Environment.Clear()
