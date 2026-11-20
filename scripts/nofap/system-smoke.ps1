@@ -35,17 +35,19 @@ What a run does:
      byte the saved one with the same access list, DNS is what it was, the state directory
      is gone.
   5. The elevation command the app would run (printed by the helper's `elevate-argv` verb,
-     which only prints) is run for real with plans of 1,800, 4,000, 12,000 and 24,000
-     characters, and the longest that reaches the helper intact is reported. This is the
-     measurement behind the argument budget on Windows.
+     which only prints) is run for real, in the four-variable environment the app gives it,
+     with plans of 1,800, 4,000, 12,000 and 24,000 characters, and the longest that reaches
+     the helper intact is reported. This is the measurement behind the argument budget on
+     Windows.
   6. Steps 2 to 4 again with `windir`, `SystemRoot`, `ProgramData` and `PSModulePath`
      pointing at an empty scratch directory in the helper's environment: the result must be
      the same and nothing may appear in that directory.
 
-If anything fails after step 1, the script puts the saved state back itself (hosts bytes,
-DNS, state directory) and says so. It exits 0 only when every check passed and the helper's
-own removal restored the machine; 1 on any mismatch, also when the fallback restore worked;
-2 when it refused to run.
+If anything fails after step 1, or the run is interrupted, the script puts the saved state
+back itself (hosts bytes, DNS, state directory) and says so; it reports, and does not
+change, an owner or access list of the hosts file that differs. It exits 0 only when every
+check passed and the helper's own removal restored the machine; 1 on any mismatch, also when
+the fallback restore worked; 2 when it refused to run.
 
 The expectations below (marker lines, hash rule, paths, the resolver's addresses, the plan's
 shape) are written out again here on purpose and not read from the helper: the script
@@ -150,8 +152,18 @@ $Helper = (Resolve-Path -LiteralPath $Helper).Path
 # The system directories as Windows itself reports them, never from an environment variable.
 $System32 = [Environment]::SystemDirectory
 $HostsPath = Join-Path $System32 'drivers\etc\hosts'
-$StateDir = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)) 'ubiqx-shield'
+$StateDir = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'ubiqx-shield'
 $StateFile = Join-Path $StateDir 'state.json'
+# The whole environment the app gives the elevation command and every system tool it starts
+# (design 2.5): four variables, each a path Windows itself reported. Step 5 runs the command
+# with exactly these, so that what is measured is what the app does.
+$WindowsDir = Split-Path -Parent $System32
+$AppChildEnvironment = @{
+    SystemRoot   = $WindowsDir
+    windir       = $WindowsDir
+    PATH         = $System32
+    PSModulePath = (Join-Path $System32 'WindowsPowerShell\v1.0\Modules')
+}
 
 if (-not (Test-Path -LiteralPath $HostsPath -PathType Leaf)) {
     Stop-Refused "$HostsPath is not a file"
@@ -174,7 +186,9 @@ function Start-Tool {
     param(
         [Parameter(Mandatory)][string]$FilePath,
         [string[]]$Arguments = @(),
-        [hashtable]$Environment = @{}
+        [hashtable]$Environment = @{},
+        # The child gets $Environment and nothing else, as `Command::env_clear` does in the app.
+        [switch]$OnlyEnvironment
     )
     $info = [System.Diagnostics.ProcessStartInfo]::new($FilePath)
     foreach ($argument in $Arguments) {
@@ -184,6 +198,9 @@ function Start-Tool {
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
     $info.CreateNoWindow = $true
+    if ($OnlyEnvironment) {
+        $info.Environment.Clear()
+    }
     foreach ($name in $Environment.Keys) {
         $info.Environment[[string]$name] = [string]$Environment[$name]
     }
@@ -412,6 +429,7 @@ function Test-Reachable {
 
 function Wait-Lookup {
     # Looks a name up until $Wanted says the answer will do or $Seconds passed; the last answer.
+    # Call it as @(Wait-Lookup ...): no address at all comes back as nothing.
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][scriptblock]$Wanted,
@@ -421,7 +439,10 @@ function Wait-Lookup {
     while ($true) {
         $found = @(Resolve-Through -Name $Name)
         if ((& $Wanted $found) -or $clock.Elapsed.TotalSeconds -ge $Seconds) {
-            return , $found
+            # One address per pipeline object: every caller collects them with @(...). A unary
+            # comma here would hand such a caller an array inside an array, which reads as
+            # one address that is never the null address and never "no answer".
+            return $found
         }
         Start-Sleep -Milliseconds 250
     }
@@ -454,7 +475,7 @@ function Get-StaticServers {
 }
 
 function Get-DnsSnapshot {
-    $rows = foreach ($adapter in @(Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Sort-Object -Property ifIndex)) {
+    $rows = @(foreach ($adapter in @(Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Sort-Object -Property ifIndex)) {
         $index = [int]$adapter.ifIndex
         $guid = [string]$adapter.InterfaceGuid
         [pscustomobject]@{
@@ -466,8 +487,10 @@ function Get-DnsSnapshot {
             StaticV4 = Get-StaticServers -Stack 'Tcpip' -Guid $guid
             StaticV6 = Get-StaticServers -Stack 'Tcpip6' -Guid $guid
         }
-    }
-    return , @($rows)
+    })
+    # The comma keeps the list whole for `$x = Get-DnsSnapshot` and `(Get-DnsSnapshot)`, also
+    # when it holds one adapter or none. Never wrap a call in @(...): that would nest it.
+    return , $rows
 }
 
 function ConvertTo-DnsText {
@@ -490,9 +513,10 @@ function Test-SameAddresses {
 }
 
 function Split-Servers {
-    # A `NameServer` registry value: addresses separated by commas or blanks.
+    # A `NameServer` registry value: addresses separated by commas or blanks. One address
+    # per pipeline object; call it as @(Split-Servers ...).
     param([string]$Value)
-    return , @($Value -split '[,\s]+' | Where-Object { $_ -ne '' })
+    return @($Value -split '[,\s]+' | Where-Object { $_ -ne '' })
 }
 
 # ----------------------------------------------------------------------------------------------
@@ -653,8 +677,8 @@ function Test-Applied {
         foreach ($row in @($now)) {
             Assert-That (Test-SameAddresses -Servers $row.V4 -Wanted $ResolverV4) "DNS: adapter $($row.Index) ($($row.Name)) uses the resolver's two IPv4 addresses" $row.V4
             Assert-That (Test-SameAddresses -Servers $row.V6 -Wanted $ResolverV6) "DNS: adapter $($row.Index) ($($row.Name)) uses the resolver's two IPv6 addresses" $row.V6
-            Assert-That (Test-SameAddresses -Servers (Split-Servers $row.StaticV4) -Wanted $ResolverV4) "registry: Tcpip NameServer of $($row.Guid) holds the IPv4 pair" $row.StaticV4
-            Assert-That (Test-SameAddresses -Servers (Split-Servers $row.StaticV6) -Wanted $ResolverV6) "registry: Tcpip6 NameServer of $($row.Guid) holds the IPv6 pair" $row.StaticV6
+            Assert-That (Test-SameAddresses -Servers @(Split-Servers $row.StaticV4) -Wanted $ResolverV4) "registry: Tcpip NameServer of $($row.Guid) holds the IPv4 pair" $row.StaticV4
+            Assert-That (Test-SameAddresses -Servers @(Split-Servers $row.StaticV6) -Wanted $ResolverV6) "registry: Tcpip6 NameServer of $($row.Guid) holds the IPv6 pair" $row.StaticV6
         }
         $active = @(@(Get-Field $status @('resolver', 'interfaces')) | Where-Object { $null -ne $_ -and (Get-Field $_ @('active')) })
         $wrong = @($active | Where-Object { -not (Test-SameAddresses -Servers @(Get-Field $_ @('servers')) -Wanted ($ResolverV4 + $ResolverV6)) } | ForEach-Object { "$(Get-Field $_ @('name')): $(@(Get-Field $_ @('servers')) -join ' ')" })
@@ -755,7 +779,9 @@ function Invoke-Cycle {
 
 function Invoke-ElevationMeasurement {
     # Step 5. The runner is an administrator with UAC off, so `Start-Process -Verb RunAs`
-    # starts without a prompt, but the argument still goes through ShellExecuteEx.
+    # starts without a prompt, but the argument still goes through ShellExecuteEx. The command
+    # runs in the four-variable environment the app builds for it, not in this shell's: this
+    # shell's PSModulePath names PowerShell 7's modules, which Windows PowerShell cannot load.
     $longest = 0
     $control = $null
     foreach ($target in @(0) + $ElevationLengths) {
@@ -784,7 +810,7 @@ function Invoke-ElevationMeasurement {
 
         $script:Restored = $false
         $script:Changed = $true
-        $run = Start-Tool -FilePath $tool -Arguments @($argv | Select-Object -Skip 1 | ForEach-Object { [string]$_ })
+        $run = Start-Tool -FilePath $tool -Arguments @($argv | Select-Object -Skip 1 | ForEach-Object { [string]$_ }) -Environment $AppChildEnvironment -OnlyEnvironment
         $afterApply = [System.Diagnostics.Stopwatch]::StartNew()
         $intact = $false
         $facts = $null
@@ -836,19 +862,40 @@ function Restore-Saved {
     catch {
         [Console]::Error.WriteLine("system-smoke: COULD NOT RESTORE $HostsPath`: $($_.Exception.Message)")
     }
+    try {
+        if ((Get-Acl -LiteralPath $HostsPath).Sddl -ne $script:SavedHostsSddl) {
+            # Not put back from here: setting an owner needs rights this script does not take.
+            [Console]::Error.WriteLine("system-smoke: the owner or the access list of $HostsPath is not what it was. It was: $($script:SavedHostsSddl)")
+        }
+    }
+    catch {
+        [Console]::Error.WriteLine("system-smoke: the access list of $HostsPath could not be read: $($_.Exception.Message)")
+    }
     foreach ($row in @($script:SavedDns)) {
         try {
+            # Automatic first, for both address families: setting the saved IPv4 servers alone
+            # would leave the resolver's IPv6 pair on the adapter. Then what the adapter had.
+            Set-DnsClientServerAddress -InterfaceIndex $row.Index -ResetServerAddresses
             $static = @(Split-Servers $row.StaticV4) + @(Split-Servers $row.StaticV6)
-            if ($static.Count -eq 0) {
-                Set-DnsClientServerAddress -InterfaceIndex $row.Index -ResetServerAddresses
-            }
-            else {
+            if ($static.Count -gt 0) {
                 Set-DnsClientServerAddress -InterfaceIndex $row.Index -ServerAddresses $static
             }
         }
         catch {
             [Console]::Error.WriteLine("system-smoke: COULD NOT RESTORE the DNS of adapter $($row.Index): $($_.Exception.Message)")
         }
+    }
+    try {
+        $now = ConvertTo-DnsText (Get-DnsSnapshot)
+        if ($now -ceq $script:SavedDnsText) {
+            Write-Step '  DNS: every adapter has the servers it had before the run'
+        }
+        else {
+            [Console]::Error.WriteLine("system-smoke: COULD NOT RESTORE DNS. It was: $($script:SavedDnsText). It is: $now")
+        }
+    }
+    catch {
+        [Console]::Error.WriteLine("system-smoke: the DNS configuration could not be read back: $($_.Exception.Message)")
     }
     try {
         # The state directory did not exist before the run (checked above).

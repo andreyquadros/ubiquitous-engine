@@ -7,4 +7,3 @@ crates/ubiqx-nofap/data/*.bin binary
 THIRD-PARTY-NOTICES text eol=lf
 docs/nofap/research/blocklist-top10k-review.txt text eol=lf
 scripts/**/*.sh text eol=lf
-scripts/**/*.ps1 text eol=crlf
