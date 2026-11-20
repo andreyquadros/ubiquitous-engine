@@ -189,6 +189,15 @@ impl SystemShield for NativeSystemShield {
             }
             Err(refused) => return Err(CoreError::Invalid(refused.to_string())),
         }
+        if !plan.hosts && plan.resolver.is_none() && !plan.policies {
+            // Nothing to apply, so nobody is asked for a password: either the gate left
+            // nothing of the plan, or the caller means `remove`.
+            return if Tier::ALL.iter().all(|tier| self.gate.open(*tier)) {
+                Err(CoreError::Invalid("the plan asks for no tier".into()))
+            } else {
+                Ok(ApplyOutcome::Unavailable(reason::GATED.to_owned()))
+            };
+        }
         let encoded = plan::encode_plan(plan);
         if encoded.len() > plan::arg_budget(self.os.os()) {
             return Err(CoreError::Invalid(

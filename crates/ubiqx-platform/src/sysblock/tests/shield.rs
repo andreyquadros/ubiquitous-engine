@@ -159,6 +159,18 @@ fn a_plan_the_helper_would_refuse_never_reaches_the_prompt() {
         closed.apply(&plan).unwrap(),
         ApplyOutcome::Unavailable("gated".into())
     );
+    // What is left of a plan once the closed tiers are taken out asks for nothing: it
+    // is not sent either.
+    let nothing_left = plan::without_gated(&plan, &Gate::new(Os::Linux, Vec::new()));
+    assert_eq!(
+        closed.apply(&nothing_left).unwrap(),
+        ApplyOutcome::Unavailable("gated".into())
+    );
+    assert!(matches!(
+        rig.shield(ProductId::Ubiqx, all_open(Os::Linux))
+            .apply(&nothing_left),
+        Err(CoreError::Invalid(_))
+    ));
     // A preview of a gated plan shows no change at all.
     assert_eq!(closed.preview(&plan).unwrap(), Vec::new());
     // A plan with a name that cannot be blocked is an error, not a prompt.

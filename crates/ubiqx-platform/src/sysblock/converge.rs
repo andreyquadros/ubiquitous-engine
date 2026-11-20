@@ -42,6 +42,12 @@ fn report(tier: Tier, outcome: Result<(), String>) -> TierReport {
     }
 }
 
+/// Whether an owner still asks for anything. One that does not is not an owner: the state
+/// file lists only products that want a tier.
+fn wants_something(wants: &OwnerWants) -> bool {
+    wants.hosts || wants.resolver.is_some() || wants.policies
+}
+
 /// Whether DNS already is the resolver `id` everywhere it can be.
 fn resolver_in_place(observed: &ResolverObservation, id: ResolverId, os: Os) -> bool {
     if os == Os::Linux {
@@ -103,6 +109,7 @@ pub(crate) fn converge(
 ) -> i32 {
     let (backend, runner, fs) = (ports.backend, ports.runner, ports.fs);
     let os = backend.os();
+    owners.retain(|_, wants| wants_something(wants));
     let before = previous.cloned().unwrap_or_default();
     let mut state = SystemState {
         v: CONFIG_VERSION,
@@ -222,6 +229,7 @@ pub(crate) fn converge(
     }
 
     let all_ok = reports.iter().all(|report| report.ok);
+    owners.retain(|_, wants| wants_something(wants));
     state.owners = owners;
     state.applied_at = ports.now_ms;
     state.report = reports;

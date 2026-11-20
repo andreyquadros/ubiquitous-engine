@@ -351,3 +351,20 @@ fn a_run_writes_only_the_tiers_its_own_gate_opens() {
         assert!(!rig.hosts_text().contains(hosts::BEGIN_PREFIX), "{os:?}");
     }
 }
+
+#[test]
+fn an_owner_that_asks_for_nothing_is_not_kept_in_the_state() {
+    for os in Os::ALL {
+        let rig = Rig::new(os);
+        let files_before = rig.fs.files();
+        rig.apply(&plan_of(ProductId::Ubiqx, &[]));
+        // The same owner applies a plan without any tier: that is a removal.
+        let mut nothing = plan_of(ProductId::Ubiqx, &[]);
+        nothing.hosts = false;
+        nothing.resolver = None;
+        nothing.policies = false;
+        assert_eq!(rig.apply(&nothing), EXIT_APPLIED, "{os:?}");
+        assert_eq!(rig.fs.files(), files_before, "{os:?}");
+        assert!(rig.observe().state.is_none(), "{os:?}");
+    }
+}
