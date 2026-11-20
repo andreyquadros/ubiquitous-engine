@@ -6,7 +6,7 @@ use ubiqx_core::nofap::{
     NofapConfig, NofapSite, Os, RemoveScope, SiteList, SiteOrigin, SystemObservation, Tier,
 };
 use ubiqx_core::ProductId;
-use ubiqx_nofap::plan::{self, ARG_BUDGET_WINDOWS, EXIT_APPLIED, EXIT_GATED, EXIT_INVALID_PLAN};
+use ubiqx_nofap::plan::{self, EXIT_APPLIED, EXIT_GATED, EXIT_INVALID_PLAN};
 use ubiqx_nofap::{hosts, matcher};
 
 use crate::sysblock::elevate;
@@ -323,7 +323,11 @@ fn user_site(n: usize) -> NofapSite {
         id: format!("site-{n}"),
         list: SiteList::Block,
         origin: SiteOrigin::User,
-        host: Some(format!("a-long-site-name-number-{n:04}.example")),
+        // Long enough for 300 of them to pass the argument budget of every system.
+        host: Some(format!(
+            "{label}.{label}.a-long-site-name-number-{n:04}.example",
+            label = "a".repeat(60)
+        )),
         host_key: [0; 16],
         created_at: Utc.timestamp_opt(1_790_000_000 + n as i64, 0).unwrap(),
         expires_at: None,
@@ -338,11 +342,19 @@ fn a_plan_longer_than_the_argument_budget_is_never_sent() {
     let sites: Vec<NofapSite> = (0..300).map(user_site).collect();
     let built = plan::build_plan(&config, &sites, ProductId::Ubiqx, Os::Windows);
     let encoded = plan::encode_plan(&built.plan);
-    assert!(encoded.len() <= ARG_BUDGET_WINDOWS, "{}", encoded.len());
+    assert!(
+        encoded.len() <= plan::arg_budget(Os::Windows),
+        "{}",
+        encoded.len()
+    );
     assert!(built.extras_left_out > 0);
     assert_eq!(built.plan.extra.len() + built.extras_left_out as usize, 300);
     // The most recently added names are the ones kept.
-    assert_eq!(built.plan.extra[0], "a-long-site-name-number-0299.example");
+    assert!(
+        built.plan.extra[0].ends_with(".a-long-site-name-number-0299.example"),
+        "{}",
+        built.plan.extra[0]
+    );
 
     // The plan that fits goes through, and the helper writes each name's `www.` twin.
     let rig = Rig::new(Os::Windows);
@@ -361,20 +373,18 @@ fn a_plan_longer_than_the_argument_budget_is_never_sent() {
     }
     assert!(!built.plan.extra.iter().any(|name| name.starts_with("www.")));
 
-    // The same sites in one plan built by hand are over the budget: nothing is sent.
+    // The same sites in one plan built by hand are over the budget, which the smoke run
+    // on Windows measured to be the same on every system: nothing is sent anywhere.
     let mut too_long = built.plan.clone();
     too_long.extra = sites.iter().filter_map(|site| site.host.clone()).collect();
-    assert!(plan::encode_plan(&too_long).len() > ARG_BUDGET_WINDOWS);
-    rig.elevated.lock().clear();
-    assert!(shield.apply(&too_long).is_err());
-    assert!(
-        rig.elevated.lock().is_empty(),
-        "no prompt for a plan that cannot travel"
-    );
-    // On Linux and macOS the same plan fits.
-    let unix = Rig::new(Os::Linux);
-    let outcome = unix
-        .shield(ProductId::Ubiqx, all_open(Os::Linux))
-        .apply(&too_long);
-    assert_eq!(outcome.unwrap(), ubiqx_core::nofap::ApplyOutcome::Applied);
+    for os in Os::ALL {
+        assert!(plan::encode_plan(&too_long).len() > plan::arg_budget(os));
+        let rig = Rig::new(os);
+        let shield = rig.shield(ProductId::Ubiqx, all_open(os));
+        assert!(shield.apply(&too_long).is_err(), "{os:?}");
+        assert!(
+            rig.elevated.lock().is_empty(),
+            "{os:?}: no prompt for a plan that cannot travel"
+        );
+    }
 }

@@ -28,10 +28,15 @@ use crate::policies;
 use crate::resolvers::{self, RESOLVERS, UNREACHABLE_AFTER_FAILS};
 
 /// Longest `--plan-b64` value the app sends, per system. Windows elevation goes through
-/// `ShellExecuteEx`, whose parameter string is reported to fail somewhere above 2,048
-/// characters; the budget is raised to what the Windows smoke job measures.
+/// `ShellExecuteEx`, whose parameter string was reported to fail somewhere above 2,048
+/// characters, so the Windows budget started at 1,800. The smoke job then ran the app's
+/// own elevation command on a Windows runner with plans of 1,800, 4,000, 12,000 and
+/// 24,000 characters: each reached the helper intact, with every name in the block
+/// (`docs/nofap/REAL-MACHINE-CHECKLIST.md`, section 3 and item 18). The longest that was
+/// measured is also the longest the helper accepts, so that is the budget. The runner has
+/// UAC switched off: the consent prompt's own path is not part of that measurement.
 pub const ARG_BUDGET_UNIX: usize = 24_000;
-pub const ARG_BUDGET_WINDOWS: usize = 1_800;
+pub const ARG_BUDGET_WINDOWS: usize = 24_000;
 /// Longest `--plan-b64` value the helper accepts, on every system.
 pub const HELPER_ARG_MAX: usize = 24_000;
 
@@ -1245,10 +1250,14 @@ mod tests {
 
     #[test]
     fn argument_budget_per_os() {
-        assert_eq!(arg_budget(Os::Windows), 1_800);
+        // Windows: the longest plan the smoke job measured through the elevation command.
+        assert_eq!(arg_budget(Os::Windows), 24_000);
         assert_eq!(arg_budget(Os::Macos), 24_000);
         assert_eq!(arg_budget(Os::Linux), 24_000);
-        assert!(arg_budget(Os::Linux) <= HELPER_ARG_MAX);
+        for os in Os::ALL {
+            // Never more than the helper accepts: it would refuse what the app sends.
+            assert!(arg_budget(os) <= HELPER_ARG_MAX, "{os:?}");
+        }
     }
 
     #[test]
@@ -1343,31 +1352,39 @@ mod tests {
     }
 
     #[test]
-    fn the_windows_budget_keeps_the_most_recent_names_that_fit() {
-        let sites: Vec<NofapSite> = (0..300)
+    fn the_budget_keeps_the_most_recent_names_that_fit() {
+        // Names long enough for the budget to bind before the count does.
+        let label = "a".repeat(60);
+        let name = |n: i64| format!("{label}.{label}.user-site-{n:03}.example");
+        let sites: Vec<NofapSite> = (0..300).map(|n| blocked(&name(n), n)).collect();
+        for os in Os::ALL {
+            let built = build_plan_with(&chosen(), &sites, ProductId::Ubiqx, os, &rules());
+            let kept = built.plan.extra.len();
+            assert!((60..200).contains(&kept), "{os:?}: {kept} names fit");
+            assert_eq!(built.extras_left_out as usize, 300 - kept, "{os:?}");
+            // The most recent ones, in order.
+            assert_eq!(built.plan.extra[0], name(299), "{os:?}");
+            assert_eq!(
+                built.plan.extra[kept - 1],
+                name(300 - kept as i64),
+                "{os:?}"
+            );
+            // Inside the budget, and one more name would not be.
+            assert!(encode_plan(&built.plan).len() <= arg_budget(os), "{os:?}");
+            let mut one_more = built.plan.clone();
+            one_more.extra.push(name(299 - kept as i64));
+            assert!(encode_plan(&one_more).len() > arg_budget(os), "{os:?}");
+            assert_eq!(validate(&built.plan, &rules(), &open(os)), Ok(()), "{os:?}");
+        }
+        // Names of ordinary length all fit, on every system.
+        let short: Vec<NofapSite> = (0..300)
             .map(|n| blocked(&format!("user-site-{n:03}.example"), n))
             .collect();
-        let built = build_plan_with(&chosen(), &sites, ProductId::Ubiqx, Os::Windows, &rules());
-        let kept = built.plan.extra.len();
-        assert!((40..120).contains(&kept), "{kept} names fit");
-        assert_eq!(built.extras_left_out as usize, 300 - kept);
-        // The most recent ones, in order.
-        assert_eq!(built.plan.extra[0], "user-site-299.example");
-        assert_eq!(
-            built.plan.extra[kept - 1],
-            format!("user-site-{:03}.example", 300 - kept)
-        );
-        // Inside the budget, and one more name would not be.
-        assert!(encode_plan(&built.plan).len() <= ARG_BUDGET_WINDOWS);
-        let mut one_more = built.plan.clone();
-        one_more
-            .extra
-            .push(format!("user-site-{:03}.example", 299 - kept));
-        assert!(encode_plan(&one_more).len() > ARG_BUDGET_WINDOWS);
-        // The same sites all fit on the other systems.
-        let unix = build_plan_with(&chosen(), &sites, ProductId::Ubiqx, Os::Linux, &rules());
-        assert_eq!(unix.plan.extra.len(), 300);
-        assert_eq!(unix.extras_left_out, 0);
+        for os in Os::ALL {
+            let built = build_plan_with(&chosen(), &short, ProductId::Ubiqx, os, &rules());
+            assert_eq!(built.plan.extra.len(), 300, "{os:?}");
+            assert_eq!(built.extras_left_out, 0, "{os:?}");
+        }
     }
 
     #[test]
