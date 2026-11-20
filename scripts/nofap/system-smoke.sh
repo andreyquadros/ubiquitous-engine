@@ -29,10 +29,12 @@
 #   5. Check the restore: the hosts file is byte for byte the saved copy, with the same owner and
 #      mode; DNS is what it was; the state directory is gone; the canary no longer resolves.
 #
-# If anything fails after step 1, the script puts the saved state back itself (hosts bytes, DNS,
-# state directory) and says so. It exits 0 only when every check passed and the helper's own
-# removal restored the machine; 1 on any mismatch, also when the fallback restore worked; 2 when
-# it refused to run.
+# If anything fails after step 1, or the run is interrupted, the script puts the saved state back
+# itself (the bytes, owner and mode of the hosts file, DNS, the state directory) and says so; an
+# interrupt during that restore is ignored. It exits 0 only when every check passed and the
+# helper's own removal restored the machine; 1 on any mismatch, also when the fallback restore
+# worked; 2 when it refused to run. After a run that was not green, the work directory named in
+# the last line keeps the saved hosts file and the saved DNS configuration.
 #
 # The expectations below (marker lines, hash rule, paths, the resolver's addresses, the plan's
 # shape) are written out again here on purpose and not read from the helper: the script checks
@@ -185,14 +187,19 @@ mismatch() {
 # shellcheck disable=SC2329  # called from `finish`, which the EXIT trap calls
 fallback_restore() {
   say "restoring the saved state without the helper"
-  if [ -f "$WORK/hosts.before" ] && ! cmp -s "$WORK/hosts.before" "$HOSTS"; then
-    # In place: the file keeps its inode, owner and mode, and a bind-mounted hosts file
-    # (containers) cannot be renamed over anyway.
-    if cat "$WORK/hosts.before" > "$HOSTS" && cmp -s "$WORK/hosts.before" "$HOSTS"; then
-      say "  $HOSTS: the saved bytes are back"
-    else
-      echo "system-smoke: COULD NOT RESTORE $HOSTS. The saved copy is $WORK/hosts.before" >&2
+  if [ -f "$WORK/hosts.before" ]; then
+    if ! cmp -s "$WORK/hosts.before" "$HOSTS"; then
+      # In place: a bind-mounted hosts file (containers) cannot be renamed over.
+      if cat "$WORK/hosts.before" > "$HOSTS" && cmp -s "$WORK/hosts.before" "$HOSTS"; then
+        say "  $HOSTS: the saved bytes are back"
+      else
+        echo "system-smoke: COULD NOT RESTORE $HOSTS. The saved copy is $WORK/hosts.before" >&2
+      fi
     fi
+    # The file may have been replaced by one with another owner or mode; the saved copy
+    # (`cp -p`) carries the ones it had.
+    python3 "$CHECK" restore-meta --saved "$WORK/hosts.before" --hosts "$HOSTS" \
+      || echo "system-smoke: COULD NOT RESTORE the owner and mode of $HOSTS. Compare with $WORK/hosts.before" >&2
   fi
   if [ -f "$WORK/dns.before.json" ]; then
     python3 "$CHECK" restore-dns --os "$OS" --saved "$WORK/dns.before.json" --dropin "$DROPIN" \
@@ -214,7 +221,9 @@ fallback_restore() {
 # shellcheck disable=SC2329  # the EXIT trap
 finish() {
   code=$?
-  trap - EXIT INT TERM
+  trap - EXIT
+  # What follows may be the only way back: a second interrupt must not cut it short.
+  trap '' INT TERM HUP
   if [ "$CHANGED" -eq 1 ] && [ "$RESTORED" -eq 0 ]; then
     FAILED=1
     fallback_restore
@@ -227,7 +236,7 @@ finish() {
   exit 1
 }
 trap finish EXIT
-trap 'exit 1' INT TERM
+trap 'exit 1' INT TERM HUP
 
 # The checks are one Python program: file comparisons, the hash of the block, the JSON that
 # `status` prints, lookups through the operating system and plain DNS questions to the resolver.
@@ -344,12 +353,17 @@ def parse_block(data):
     begin, end = begins[0], ends[0]
     if end <= begin:
         raise BlockError("the END line is not after the BEGIN line")
+    raw = lines[begin : end + 1]
+    # Every line of the block but the last is followed by "\n"; the END line is too unless
+    # the file stops there. The block is written with one line ending throughout.
+    ended = raw[:-1] + (raw[-1:] if end + 1 < len(lines) else [])
+    with_cr = sum(1 for line in ended if line.endswith(b"\r"))
+    if with_cr not in (0, len(ended)):
+        raise BlockError("the block mixes LF and CRLF line endings (%d of %d lines end with CRLF)" % (with_cr, len(ended)))
     try:
-        text = [line.decode("ascii") for line in lines[begin : end + 1]]
+        text = [(line[:-1] if line.endswith(b"\r") else line).decode("ascii") for line in raw]
     except UnicodeDecodeError:
         raise BlockError("the block holds bytes that are not ASCII")
-    if any(line.endswith("\r") for line in text):
-        raise BlockError("the block has CRLF line endings in a file that had none")
     declared = BEGIN_LINE.match(text[0])
     if not declared:
         raise BlockError("the BEGIN line is not `%s sha256=<64 hex> names=<n>`: %r" % (BEGIN_PREFIX, text[0]))
@@ -358,6 +372,7 @@ def parse_block(data):
         "sha256": declared.group(1),
         "names": int(declared.group(2)),
         "body": body,
+        "eol": b"\r\n" if with_cr else b"\n",
         # The rule of the design: SHA-256 over the lines between the markers, joined with "\n".
         "body_sha256": hashlib.sha256("\n".join(body).encode("ascii")).hexdigest(),
     }
@@ -384,6 +399,15 @@ def block_names(body):
     if len(set(names)) != len(names):
         raise BlockError("a name is written twice")
     return names
+
+
+def file_eol(saved):
+    """The line ending a block added to `saved` has to use: the file's own. CRLF when most of
+    its lines end so, and when it stops at a lone CR (a "\\n" right after that CR would join it
+    into one line ending and change what the last line says)."""
+    crlf = saved.count(b"\r\n")
+    lf = saved.count(b"\n") - crlf
+    return b"\r\n" if crlf > lf or saved.endswith(b"\r") else b"\n"
 
 
 def has_marker(data):
@@ -533,10 +557,28 @@ def dns_state(target, dropin):
         resolv_conf = None
     return {
         "dropin": os.path.lexists(dropin),
+        "dropin_dir": os.path.isdir(os.path.dirname(dropin)),
         "resolv_conf": resolv_conf,
         "resolved_global": resolved_global(),
         "resolved_active": (run_tool([SYSTEMCTL, "is-active", "systemd-resolved"]) or "").strip() == "active",
     }
+
+
+def same_dns(now, was):
+    """Whether two values of `dns_state` are the same configuration. The directory of the
+    drop-in is not part of it: the design has the helper delete its file, not the directory
+    it may have had to create."""
+
+    def without_dir(state):
+        return {key: value for key, value in state.items() if key != "dropin_dir"}
+
+    return without_dir(now) == without_dir(was)
+
+
+def dns_settles(target, dropin, was, seconds=15):
+    """`dns_state` once it equals `was`, or what it is after `seconds`: systemd-resolved
+    needs a moment after a restart before it answers `resolvectl`."""
+    return eventually(lambda: dns_state(target, dropin), lambda now: same_dns(now, was), seconds)
 
 
 def same_addresses(servers, wanted):
@@ -589,11 +631,32 @@ def cmd_restore_dns(args):
                 continue
             run_tool([NETWORKSETUP, "-setdnsservers", service] + (servers or ["empty"]))
             print("system-smoke:   DNS of %r: put back" % service)
-    elif not saved.get("dropin") and os.path.lexists(args.dropin):
-        os.remove(args.dropin)
-        run_tool([SYSTEMCTL, "restart", "systemd-resolved"])
-        print("system-smoke:   %s: removed, systemd-resolved restarted" % args.dropin)
-    return 0 if dns_state(args.os, args.dropin) == saved else 1
+    else:
+        if not saved.get("dropin") and os.path.lexists(args.dropin):
+            os.remove(args.dropin)
+            run_tool([SYSTEMCTL, "restart", "systemd-resolved"])
+            print("system-smoke:   %s: removed, systemd-resolved restarted" % args.dropin)
+        # The directory, when it was not there before the run and holds nothing now.
+        folder = os.path.dirname(args.dropin)
+        if saved.get("dropin_dir") is False and os.path.isdir(folder) and not os.path.islink(folder):
+            try:
+                os.rmdir(folder)
+                print("system-smoke:   %s: removed (it did not exist before the run)" % folder)
+            except OSError:
+                pass
+    return 0 if same_dns(dns_settles(args.os, args.dropin, saved), saved) else 1
+
+
+def cmd_restore_meta(args):
+    """Owner, group and mode of the hosts file as the saved copy has them."""
+    before, now = os.stat(args.saved), os.stat(args.hosts)
+    if (before.st_uid, before.st_gid) != (now.st_uid, now.st_gid):
+        os.chown(args.hosts, before.st_uid, before.st_gid)
+        print("system-smoke:   %s: owner %d:%d is back" % (args.hosts, before.st_uid, before.st_gid))
+    if stat.S_IMODE(before.st_mode) != stat.S_IMODE(now.st_mode):
+        os.chmod(args.hosts, stat.S_IMODE(before.st_mode))
+        print("system-smoke:   %s: mode %o is back" % (args.hosts, stat.S_IMODE(before.st_mode)))
+    return 0
 
 
 def reachable_still(report, baseline, when):
@@ -632,11 +695,14 @@ def cmd_applied(args):
             report.fail("hosts: %s" % error)
             block, names = None, []
         if block is not None:
+            eol = file_eol(saved)
+            report.check(block["eol"] == eol, "hosts: the block uses the line ending of the file (%s)" % ("CRLF" if eol == b"\r\n" else "LF"), "CRLF" if block["eol"] == b"\r\n" else "LF")
             # A saved file that does not end with a line break gets one in front of the block.
-            lead = b"" if not saved or saved.endswith(b"\n") else b"\n"
+            ended = not saved or saved.endswith(b"\n")
+            lead = b"" if ended else eol
             report.check(current[len(saved) :].startswith(lead + BEGIN_PREFIX.encode()), "hosts: the block starts right after the saved bytes, on a line of its own")
             # The file keeps its own ending: a line break after END exactly when the saved file had one.
-            tail = END_MARKER.encode() + (b"\n" if not saved or saved.endswith(b"\n") else b"")
+            tail = END_MARKER.encode() + (eol if ended else b"")
             report.check(current.endswith(tail), "hosts: the END line closes the file, ended as the saved file was")
             report.note("hosts: the block declares sha256=%s names=%d" % (block["sha256"], block["names"]))
             report.check(block["body_sha256"] == block["sha256"], "hosts: the declared hash is the hash of the lines between the markers", block["body_sha256"])
@@ -722,8 +788,10 @@ def cmd_removed(args):
     report.check(dig(status, "state") is None and dig(status, "state_error") is None, "status: no state file", dig(status, "state"))
     report.check(not has_marker((dig(status, "hosts", "text") or "").encode("utf-8", "replace")), "status: the unprivileged read sees no block")
     was = read_json(os.path.join(args.work, "dns.before.json"))
-    now = dns_state(args.os, args.dropin)
-    report.check(now == was, "DNS: the configuration is what it was before the run", now)
+    now = dns_settles(args.os, args.dropin, was)
+    report.check(same_dns(now, was), "DNS: the configuration is what it was before the run", now)
+    if was.get("dropin_dir") is False and now.get("dropin_dir"):
+        report.note("%s did not exist before the run and stays, empty (the helper deletes its file, not the directory)" % os.path.dirname(args.dropin))
 
     if "hosts" in tiers:
         found = eventually(lambda: resolve(CANARY), lambda addresses: not addresses, 10)
@@ -741,7 +809,7 @@ def cmd_removed(args):
 def main():
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest="command", required=True)
-    for name, run in [("plan", cmd_plan), ("dns-state", cmd_dns_state), ("baseline", cmd_baseline), ("restore-dns", cmd_restore_dns), ("applied", cmd_applied), ("removed", cmd_removed)]:
+    for name, run in [("plan", cmd_plan), ("dns-state", cmd_dns_state), ("baseline", cmd_baseline), ("restore-dns", cmd_restore_dns), ("restore-meta", cmd_restore_meta), ("applied", cmd_applied), ("removed", cmd_removed)]:
         sub = commands.add_parser(name)
         sub.set_defaults(run=run)
         sub.add_argument("--os", choices=["linux", "macos"])

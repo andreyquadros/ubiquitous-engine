@@ -74,3 +74,15 @@ own `docs/nofap/handoff/<unit>.md` when it finishes (deviations, contract notes,
     lands just before the timer is due. The timer now asks when it fires whether the card is still
     untouched (`touched`, `modeNow`). The whole suite passed three times in a row here afterwards.
     U6's reviewer: keep this behaviour, and check the other timers of the module for the same gap.
+
+16. **A container restart interrupted two reviews** (U4 and U9a) on 2026-11-20. The reviewers
+    start again from the beginning, but their earlier work is in the repository: for U4 the
+    commits `a127af1`, `412e146`, `088e403` and the review notes in `U4.md` if any; for U9a the
+    snapshot commits `18512ac` and `865faaf` (release scripts) and the snapshot of
+    `scripts/nofap/system-smoke.sh` committed with this note. Read those diffs first, keep what
+    is right, finish what was left half-way, and do not repeat checks whose result a commit
+    message already records unless you doubt it. Two CI failures found meanwhile were fixed by
+    the integrator: the native-shield test expected Linux on every runner (`08a39ac`), and the
+    name lookup answered the machine's own addresses for an empty name on Windows (`ce86d96`).
+    Tests of the platform crate run on the macOS and Windows runners too: nothing in them may
+    assume Linux (paths, `/bin/sh`, the current OS) without a `cfg` or a check of `Os::current()`.
