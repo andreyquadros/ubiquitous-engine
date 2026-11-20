@@ -1,0 +1,278 @@
+@import "tailwindcss";
+
+/*
+  ubiqX design tokens — see apps/desktop/DESIGN.md ("instrument panel at night").
+  Dark is the default theme; `.dark` on <html> is the switch, light is the alternative.
+  Fonts are loaded from the @fontsource-variable packages in src/main.tsx (never from Google).
+*/
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---- Light palette (the alternative theme; intentional, not inverted) ---- */
+:root {
+  --canvas: #f3f5fa;
+  --panel: #ffffff;
+  --panel-2: #f6f8fc;
+  --panel-3: #eceff6;
+  --line: rgb(15 23 42 / 0.08);
+  --line-2: rgb(15 23 42 / 0.16);
+  --ink: #0f172a;
+  --ink-2: #475569;
+  --ink-3: #5b6b85;
+  --ink-4: #8b98b0;
+
+  --volt: #2a62d6;
+  --volt-soft: rgb(42 98 214 / 0.1);
+  --on-volt: #ffffff;
+  --ember: #c2410c;
+  --ember-soft: rgb(194 65 12 / 0.1);
+  --on-ember: #ffffff;
+  --signal: #0e9f6e;
+  --rose: #e11d48;
+  --violet: #6d5bd0;
+  --amber: #a3660f;
+
+  --glow-volt: 0 0 24px rgb(42 98 214 / 0.28);
+  --glow-ember: 0 0 20px rgb(194 65 12 / 0.28);
+  --shadow-float: 0 4px 10px rgb(15 23 42 / 0.06), 0 24px 48px -20px rgb(15 23 42 / 0.28);
+  --hero-glow: radial-gradient(60% 80% at 22% 30%, rgb(42 98 214 / 0.1), transparent 70%);
+  --chart-grid: rgb(15 23 42 / 0.07);
+  color-scheme: light;
+}
+
+/* ---- Dark palette (default) ---- */
+.dark {
+  --canvas: #060a14;
+  --panel: #0c1220;
+  --panel-2: #121a2b;
+  --panel-3: #18213a;
+  --line: rgb(126 158 214 / 0.14);
+  --line-2: rgb(126 158 214 / 0.28);
+  --ink: #eaf0fa;
+  --ink-2: #9daec7;
+  --ink-3: #7487a6; /* 5.1:1 on panel — the brief's #5F6F8C (3.7:1) lives in --ink-4 for non-text marks */
+  --ink-4: #5f6f8c;
+
+  --volt: #4d8dff;
+  --volt-soft: rgb(77 141 255 / 0.14);
+  --on-volt: #06101f;
+  --ember: #ff7a1f;
+  --ember-soft: rgb(255 122 31 / 0.14);
+  --on-ember: #1a0c02;
+  --signal: #2ee6a6;
+  --rose: #ff5c7a;
+  --violet: #9b8cff;
+  --amber: #ffc24d;
+
+  --glow-volt: 0 0 24px rgb(77 141 255 / 0.45);
+  --glow-ember: 0 0 20px rgb(255 122 31 / 0.4);
+  --shadow-float: 0 4px 10px rgb(0 0 0 / 0.4), 0 24px 48px -20px rgb(0 0 0 / 0.75);
+  --hero-glow: radial-gradient(60% 80% at 22% 30%, rgb(77 141 255 / 0.16), transparent 70%);
+  --chart-grid: rgb(255 255 255 / 0.06);
+  color-scheme: dark;
+}
+
+@theme {
+  --font-sans: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Sora Variable", Sora, "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --radius-shell: 20px;
+  --radius-card: 14px;
+  --radius-control: 10px;
+  --radius-pill: 999px;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* legacy scales kept for the pages not yet migrated (brand = volt, accent = ember) */
+  --color-brand-50: #eaf2ff;
+  --color-brand-100: #d5e4ff;
+  --color-brand-200: #adc8ff;
+  --color-brand-300: #82abff;
+  --color-brand-400: #4d8dff;
+  --color-brand-500: #3b7bf0;
+  --color-brand-600: #2a62d6;
+  --color-brand-700: #234fae;
+  --color-brand-800: #1c3f8a;
+  --color-brand-900: #16306a;
+
+  --color-accent-50: #fff4ea;
+  --color-accent-100: #ffe4cc;
+  --color-accent-200: #ffc999;
+  --color-accent-300: #ffa666;
+  --color-accent-400: #ff8f3d;
+  --color-accent-500: #ff7a1f;
+  --color-accent-600: #e0620a;
+  --color-accent-700: #c2410c;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-panel-3: var(--panel-3);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-volt: var(--volt);
+  --color-volt-soft: var(--volt-soft);
+  --color-on-volt: var(--on-volt);
+  --color-ember: var(--ember);
+  --color-ember-soft: var(--ember-soft);
+  --color-on-ember: var(--on-ember);
+  --color-signal: var(--signal);
+  --color-rose: var(--rose);
+  --color-violet: var(--violet);
+  --color-amber: var(--amber);
+
+  /* aliases for the old vocabulary (surface → panel, line-strong → line-2) */
+  --color-surface: var(--panel);
+  --color-surface-2: var(--panel-2);
+  --color-surface-3: var(--panel-3);
+  --color-line-strong: var(--line-2);
+
+  --shadow-float: var(--shadow-float);
+  --shadow-glow: var(--glow-volt);
+  --shadow-glow-ember: var(--glow-ember);
+  /* legacy names */
+  --shadow-soft: none;
+  --shadow-pop: var(--shadow-float);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv11", "ss01";
+  }
+  body {
+    @apply bg-canvas text-ink;
+    margin: 0;
+    overflow: hidden;
+  }
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--volt) 30%, transparent);
+  }
+  *:focus-visible {
+    outline: 2px solid var(--volt);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  button, input, select, textarea {
+    font: inherit;
+    color: inherit;
+  }
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+  input[type="time"], input[type="month"], input[type="date"], input[type="number"] {
+    color-scheme: inherit;
+  }
+  kbd {
+    @apply inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-line-2 bg-panel-2 px-1 font-mono text-[10px] text-ink-2;
+  }
+  [data-tauri-drag-region] {
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+}
+
+@layer components {
+  /* Surfaces */
+  .panel {
+    @apply rounded-card border border-line bg-panel;
+  }
+  .panel-raised {
+    @apply rounded-card border border-line bg-panel-2;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  }
+  .glass {
+    @apply rounded-card border border-line-2 shadow-float;
+    background: color-mix(in oklab, var(--panel) 86%, transparent);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+  }
+  /* legacy alias: old pages keep working with the new surfaces */
+  .card {
+    @apply rounded-card border border-line bg-panel;
+  }
+
+  /* Type helpers */
+  .display {
+    @apply font-display font-semibold tracking-[-0.02em];
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  .eyebrow {
+    @apply text-xs font-medium text-ink-3;
+  }
+
+  /* Glow — reserved for the dial, active nav and primary buttons */
+  .glow-volt {
+    box-shadow: var(--glow-volt);
+  }
+  .glow-ember {
+    box-shadow: var(--glow-ember);
+  }
+
+  .focus-ring {
+    @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-volt;
+  }
+
+  .hairline {
+    @apply border-line;
+  }
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-2) transparent;
+  }
+  .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 8px; }
+  .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+
+  /* Markdown rendering (relatórios) */
+  .md { @apply text-[14px] leading-6 text-ink; }
+  .md h1 { @apply mt-1 mb-3 font-display text-xl font-semibold tracking-[-0.02em]; }
+  .md h2 { @apply mt-5 mb-2 text-base font-semibold; }
+  .md h3 { @apply mt-4 mb-1.5 text-sm font-semibold; }
+  .md p { @apply my-2; }
+  .md ul { @apply my-2 list-disc pl-5; }
+  .md ol { @apply my-2 list-decimal pl-5; }
+  .md li { @apply my-0.5; }
+  .md strong { @apply font-semibold; }
+  .md a { @apply text-volt underline underline-offset-2; }
+  .md code { @apply rounded bg-panel-2 px-1 py-0.5 font-mono text-[12px]; }
+  .md pre { @apply my-3 overflow-x-auto rounded-control bg-panel-2 p-3 font-mono text-[12px]; }
+  .md blockquote { @apply my-2 border-l-2 border-line-2 pl-3 text-ink-2; }
+  .md table { @apply my-3 w-full border-collapse text-[13px]; }
+  .md th { @apply border-b border-line py-1.5 text-left font-semibold; }
+  .md td { @apply border-b border-line py-1.5 align-top; }
+  .md hr { @apply my-4 border-line; }
+}
+
+/* Recharts theme */
+.recharts-tooltip-cursor { fill: color-mix(in oklab, var(--ink) 5%, transparent) !important; }
+.recharts-cartesian-axis-tick text,
+.recharts-cartesian-axis-tick-value,
+.recharts-polar-angle-axis-tick-value { fill: var(--ink-3); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.recharts-cartesian-axis-tick-value tspan { fill: inherit; }
+.recharts-cartesian-grid line { stroke: var(--chart-grid); }
+.recharts-cartesian-grid-horizontal line:first-child { stroke: transparent; }
+.recharts-surface { overflow: visible; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

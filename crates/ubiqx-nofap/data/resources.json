@@ -1,0 +1,57 @@
+[
+  {
+    "id": "cvv",
+    "country": "BR",
+    "name": "CVV",
+    "phone": "188",
+    "url": "https://cvv.org.br/chat",
+    "note_pt": "Apoio emocional gratuito por telefone, 24 horas. Também há chat.",
+    "note_en": "Free emotional support by phone, 24 hours. There is also a chat.",
+    "verified_on": "",
+    "verified_by": ""
+  },
+  {
+    "id": "samu",
+    "country": "BR",
+    "name": "SAMU",
+    "phone": "192",
+    "url": null,
+    "note_pt": "Emergência médica.",
+    "note_en": "Medical emergency.",
+    "verified_on": "",
+    "verified_by": ""
+  },
+  {
+    "id": "caps",
+    "country": "BR",
+    "name": "CAPS (SUS)",
+    "phone": null,
+    "url": "https://www.gov.br/saude/pt-br/caps",
+    "note_pt": "Atendimento público em saúde mental, sem agendamento.",
+    "note_en": "Public mental-health service, walk-in.",
+    "verified_on": "",
+    "verified_by": ""
+  },
+  {
+    "id": "crp",
+    "country": "BR",
+    "name": "CRP",
+    "phone": null,
+    "url": null,
+    "note_pt": "Procure um psicólogo com registro ativo no CRP.",
+    "note_en": "Look for a psychologist with an active CRP registration.",
+    "verified_on": "",
+    "verified_by": ""
+  },
+  {
+    "id": "findahelpline",
+    "country": "",
+    "name": "Find A Helpline",
+    "phone": null,
+    "url": "https://findahelpline.com",
+    "note_pt": "Linhas de apoio em outros países.",
+    "note_en": "Helplines in other countries.",
+    "verified_on": "",
+    "verified_by": ""
+  }
+]

@@ -21,3 +21,16 @@ Thumbs.db
 !.vscode/extensions.json
 # Local data created by the CLI during development
 /.ubiqx-dev
+
+# Python tooling (scripts/ubi-rig)
+__pycache__/
+*.pyc
+
+# Scratch worktrees created when an agent works on an isolated copy of the repo.
+/.claude/worktrees/
+
+# Staging dir built by .github/workflows/deploy-site.yml
+/infra/site/.stage/
+
+# Download cache of scripts/nofap/build_blocklist.py
+/scripts/nofap/.cache/

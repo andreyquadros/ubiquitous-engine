@@ -1,0 +1,49 @@
+# Example Fly.io deployment of the Ubi proxy (https://fly.io/docs/reference/configuration/).
+#
+#   fly launch --no-deploy --copy-config --name ubi-api      # once, from the REPO ROOT
+#   fly volumes create ubi_data --size 1 --region gru         # the SQLite ledger
+#   fly secrets set ANTHROPIC_API_KEY=sk-ant-... UBI_ADMIN_TOKEN=... UBI_WEBHOOK_SECRET=... \
+#                   UBI_LICENSE_PRIVKEY_HEX=...               # never in this file
+#   fly deploy --dockerfile services/ubi-api/Dockerfile
+#
+# Point the app at it with UBIQX_API_BASE=https://api.ubiqx.ai (custom domain → `fly certs add`).
+
+app = "ubi-api"
+primary_region = "gru"
+
+[build]
+  dockerfile = "services/ubi-api/Dockerfile"
+
+[env]
+  UBI_API_LISTEN = "0.0.0.0:8080"
+  UBI_DB = "/data/ubi-api.sqlite"
+  UBI_VENDOR = "anthropic"
+  UBI_MODEL_FAST = "claude-haiku-4-5-20251001"
+  UBI_MODEL_SMART = "claude-sonnet-5"
+  UBI_MONTHLY_BUDGET_USD = "6.0"
+  # Leave unset to trust the public key compiled into ubiqx-core; set to rotate.
+  # UBI_LICENSE_PUBKEY_HEX = "ba31f58756b2ea408d3ea7fa8116ca3a802aff3986919492f482ea7bf73e2282"
+  RUST_LOG = "info"
+
+[[mounts]]
+  source = "ubi_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  # A single machine: the ledger is one SQLite file on one volume.
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

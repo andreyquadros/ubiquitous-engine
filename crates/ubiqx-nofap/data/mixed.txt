@@ -1,0 +1,146 @@
+# mixed.txt: general platforms that also carry adult material and cannot be
+# split by domain (docs/nofap/DESIGN.md 3.3).
+#
+# A host under a rule of this file is never blocked by a keyword, and by the
+# list only where the list names a more specific subdomain (the matcher's longest
+# match: adult.contents.fc2.com stays blocked under fc2.com). While it is in
+# front, the screen check runs at its "signal" cadence,
+# and a block-grade word in the path (reddit.com/r/...) counts as a signal. The
+# user can block any of them whole in "modo estrito"; that is a user block, so
+# nothing here is on never-block.txt.
+#
+# Syntax: the same as never-block.txt (NAME, TLD and SECOND-LEVEL rules; "#"
+# lines and empty lines ignored; no end-of-line comments). Only NAME rules are
+# used here.
+#
+# Image search: Google and Bing serve image results from the same host as web
+# search, so they cannot be listed here without putting every search under the
+# screen check. A block-grade word in the window title covers them instead.
+# Only search engines with a host of their own for images are listed.
+#
+# Hand-maintained. After a change run: python3 scripts/nofap/build_blocklist.py
+
+# --- Social networks and forums ---
+reddit.com
+redd.it
+redditmedia.com
+x.com
+twitter.com
+twimg.com
+tumblr.com
+instagram.com
+facebook.com
+threads.net
+threads.com
+tiktok.com
+snapchat.com
+bsky.app
+mastodon.social
+vk.com
+vk.ru
+ok.ru
+my.mail.ru
+weibo.com
+pinterest.com
+pin.it
+9gag.com
+ifunny.co
+quora.com
+eyny.com
+jkforum.net
+ekstrabladet.dk
+
+# --- Public channels and pages of messaging services ---
+# The conversations themselves (web.telegram.org, discord.com, web.snapchat.com) are on
+# never-capture.txt: other people's messages are never pictured.
+t.me
+telegram.me
+telegra.ph
+
+# --- Live streaming and video ---
+twitch.tv
+kick.com
+dailymotion.com
+vimeo.com
+rumble.com
+bitchute.com
+odysee.com
+bilibili.com
+nicovideo.jp
+
+# --- Image boards, image hosts and file hosts ---
+# boards.4chan.org and sys.4chan.org are named by a public list; a rule equal
+# to a listed name takes it off the list, so they are repeated here.
+4chan.org
+boards.4chan.org
+sys.4chan.org
+4channel.org
+2chan.net
+reactor.cc
+joyreactor.cc
+joyreactor.com
+derpibooru.org
+imgur.com
+flickr.com
+giphy.com
+tenor.com
+imgbb.com
+ibb.co
+postimg.cc
+imgbox.com
+catbox.moe
+pixeldrain.com
+mega.nz
+mediafire.com
+chomikuj.pl
+# Torrent indexes with an adult category; a public list names each of them whole.
+1337x.to
+rutor.info
+1337xx.to
+1337xxx.to
+rutracker.net
+rargb.to
+thepiratebay0.org
+kickasstorrents.to
+katcr.to
+torrentdownloads.pro
+dmhy.org
+
+# --- Art, fan fiction and creator platforms ---
+deviantart.com
+pixiv.net
+artstation.com
+newgrounds.com
+archiveofourown.org
+fanfiction.net
+wattpad.com
+patreon.com
+ko-fi.com
+fanbox.cc
+fantia.jp
+booth.pm
+fc2.com
+mangago.me
+manhwaweb.com
+toomics.com
+
+# --- AI image generators and character chat ---
+civitai.com
+seaart.ai
+janitorai.com
+
+# --- Games, shops and classifieds with adult sections ---
+# dmm.co.jp (the adult storefront) stays on the list; dmm.com is the general one.
+itch.io
+steampowered.com
+steamcommunity.com
+dlsite.com
+dmm.com
+melonbooks.co.jp
+suruga-ya.jp
+quoka.de
+
+# --- Image search with a host of its own ---
+images.google.com
+images.search.yahoo.com
+image.baidu.com

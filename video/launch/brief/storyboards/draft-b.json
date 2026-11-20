@@ -1,0 +1,3290 @@
+{
+  "title": "ubiqX AI - Launch film, draft B: \"Você não deu play.\"",
+  "angle": "B - relentless product montage (Linear/Raycast): cold open on the real dashboard with a 3D push inside the first second, then one idea per 1-2 s on the real UI - camera pushes into exact hotspots, a keycap, cursor clicks and state changes (the queue shrinks after \"1\", \"Confirmar os 19\", the report writes itself) - kinetic headlines between beats, a Captura/Classifica/Revisa/Entrega crescendo, one beat of silence, the wordmark drop and the CTA.",
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+  "bpm": 120,
+  "durationInFrames": 1440,
+  "conventions": {
+    "grid": "beat = 15 f, bar = 60 f; every scene start is a multiple of 15",
+    "relativeFrames": "all frames inside a scene (copy, camera, cursor, motion, sfx) are relative to the scene startFrame",
+    "uiPlane": "Screen width W = 1600 px unless a scene says otherwise (window 1600 x 1000 at zoom 1). On-screen UI size = capture px x (W / 2880) x zoom; bitmap upsampling = (W / 2880) x zoom.",
+    "textBearingZoom": "any UI text we zoom INTO is >= 36 px on screen (see zoomCheck). Where that needs bitmap upsampling > 1.15, a crisp patch is mandatory (live HTML re-typeset of the exact UI string/element glued to the hotspot as a Screen child, same font/size/colour), and everything outside the hotspot gets DOF blur >= 4 px + dim >= 0.5. Preferred alternative for the patch: recapture that hotspot at DPR 4 with tools/capture-ui.mjs (newPage supports dpr).",
+    "copyFields": "inFrame = first frame of the entrance; landFrame = frame the last word/line has landed (spring >= 0.9); outFrame = first frame of the exit or the cut; hold = outFrame - landFrame >= max(24, 2 x chars) (slam words: >= 12 f each, final >= 30 f)",
+    "transitions": "no overlapping TransitionSeries: each transition is split into an outgoing half at the end of scene N (framesOut) and an incoming half at the start of scene N+1 (framesIn), same type name and total frames on both sides; symmetric transitions have their midpoint on the cut frame",
+    "sfx": "atFrame = frame where the HIT (hit_offset of sfx-manifest) must land, relative to the scene; build one master SFX track at absolute frames (scene start + atFrame - hit_offset) so tails and lead-ins can cross scene boundaries. gainDb is relative to the bed nominal level (style 7.3).",
+    "camera": "camera[].atFrame = arrival frame; the move runs over the frames given in ease; zoom interpolates in log space; tilt = plane rotateX/rotateY (deg); anchor = screen point where the target lands (Screen CameraKey.anchor)",
+    "cursor": "cursor[].atFrame = arrival (click frames are on beats); rendered in screen space, 30-34 px tall, scale capped at 1.5x with camera zoom; enters from off-frame or fades in at a rest point, never teleports",
+    "privacy": "never used: timeline.png, timeline-selected.png, timeline-reclassify.png, reports-generated.png, og.png, any brand/ai/* provider logo. report-1-meta (model id) and settings model-fields are kept out of frame; no Gmail/e-mail row is ever a camera target."
+  },
+  "music": {
+    "key": "A minor (relative of C major: the shimmer/sweep SFX are C-major pentatonic, the risers end on A4, dings C6/E6)",
+    "tempo": "120 BPM, 4/4, 24 bars = 48.0 s; the track starts ON a hit at frame 0 (no pickup); last sample of the tail <= frame 1439",
+    "progression": "Am - F - C - G (i-VI-III-VII), one chord per bar; breakdown Fmaj7 -> Am9; drop = the main riff over Am - F - C - G; final stab Am(add9); last note a low A + A5 bell",
+    "mix": "bed nominal -6 dB (BED 0.5); ducks: -5 dB at 210/225/240 and 1080/1095/1110/1125 (slams), -6 dB at 1200 (drop), -4 dB at 1260 (final hit); master -14 LUFS integrated, <= -1 dBTP; short-term: cold open ~-15, grooves ~-12, breakdown ~-18, drop ~-11 LUFS",
+    "sections": [
+      {
+        "name": "Cold open (product first)",
+        "startBar": 1,
+        "bars": 2,
+        "energy": 3,
+        "description": "Hit on frame 0 (kick + sub + short Am stab + crash), then a driving 8th-note bass pedal on A under a low-passed pluck arp (A-C-E-G), LPF opening 800 Hz -> 2 kHz over the 2 bars; closed hats on 16ths from bar 2; 1-beat snare fill into bar 3. No melody yet.",
+        "events": [
+          {
+            "frame": 0,
+            "type": "downbeat-hit",
+            "note": "track starts on a hit: poster frame, the 3D push begins"
+          },
+          {
+            "frame": 60,
+            "type": "downbeat-hit",
+            "note": "bar 2 kick, 16th hats enter; camera continues (match cut)"
+          },
+          {
+            "frame": 105,
+            "type": "filter-sweep",
+            "note": "snare fill + LPF fully open into bar 3"
+          }
+        ]
+      },
+      {
+        "name": "Groove A (Classifica)",
+        "startBar": 3,
+        "bars": 4,
+        "energy": 4,
+        "description": "Full groove: four-on-the-floor kick, sidechained saw bass (Am-F-C-G), clap on 2 and 4, 16th pluck arp. Stop-time stabs (band hits together) under the three slams, crash on the third.",
+        "events": [
+          {
+            "frame": 120,
+            "type": "drop",
+            "note": "groove enters exactly on the whip midpoint (S02 -> S03)"
+          },
+          {
+            "frame": 210,
+            "type": "downbeat-hit",
+            "note": "stab under \"Regras,\" (beat 3 of bar 4)"
+          },
+          {
+            "frame": 225,
+            "type": "downbeat-hit",
+            "note": "stab under \"memória,\""
+          },
+          {
+            "frame": 240,
+            "type": "downbeat-hit",
+            "note": "stab + crash under \"IA.\" (bar 5 downbeat)"
+          },
+          {
+            "frame": 285,
+            "type": "downbeat-hit",
+            "note": "tom accent on the cut to Revisão (beat 4)"
+          },
+          {
+            "frame": 345,
+            "type": "filter-sweep",
+            "note": "1-beat fill that sets up the stop"
+          }
+        ]
+      },
+      {
+        "name": "Groove B (Revisa) with stop-time",
+        "startBar": 7,
+        "bars": 4,
+        "energy": 4,
+        "description": "Bar 7 opens with a band STOP: one stab on the downbeat, then only a sub tail + closed hat 8ths for 2 beats so the key-down (375) is heard alone; groove re-enters on 390 with an added counter-melody (bell, C-major pentatonic E5-G5-A5) and open hats on the off-beats.",
+        "events": [
+          {
+            "frame": 360,
+            "type": "stop",
+            "note": "stab on the downbeat then stop (keycap scene) - near silence 361-389"
+          },
+          {
+            "frame": 375,
+            "type": "silence",
+            "note": "gap reserved for the key-down SFX (contact on the beat)"
+          },
+          {
+            "frame": 390,
+            "type": "downbeat-hit",
+            "note": "groove re-enters on beat 3 as the key morphs into the UI"
+          },
+          {
+            "frame": 450,
+            "type": "downbeat-hit",
+            "note": "snare accent on the cut to \"Confirmar os 19\""
+          },
+          {
+            "frame": 480,
+            "type": "downbeat-hit",
+            "note": "crash + chord change on the click (bar 9 downbeat)"
+          },
+          {
+            "frame": 540,
+            "type": "downbeat-hit",
+            "note": "cut to the empty queue"
+          },
+          {
+            "frame": 570,
+            "type": "stinger",
+            "note": "clap + A5 bell on UBI's landing (beat 3 of bar 10)"
+          }
+        ]
+      },
+      {
+        "name": "Groove C (Entrega + Foco)",
+        "startBar": 11,
+        "bars": 4,
+        "energy": 4,
+        "description": "Brighter arp, octave bass, ride on quarters; a low synth \"no\" stab for the intervention. Keeps the same drum pattern so the section feels like a lift, not a new song.",
+        "events": [
+          {
+            "frame": 615,
+            "type": "downbeat-hit",
+            "note": "cut to Relatórios (beat 2 accent)"
+          },
+          {
+            "frame": 660,
+            "type": "downbeat-hit",
+            "note": "crash on the \"Copiar Markdown\" click (bar 12 downbeat)"
+          },
+          {
+            "frame": 705,
+            "type": "downbeat-hit",
+            "note": "snare accent on the cut to Foco (beat 4)"
+          },
+          {
+            "frame": 765,
+            "type": "stinger",
+            "note": "low \"no\" stab as the intervention window pops (beat 4 of bar 13)"
+          },
+          {
+            "frame": 825,
+            "type": "downbeat-hit",
+            "note": "accent on the \"Ok, foco!\" click (beat 4 of bar 14)"
+          }
+        ]
+      },
+      {
+        "name": "Lift (Você escolhe a IA)",
+        "startBar": 15,
+        "bars": 2,
+        "energy": 4,
+        "description": "Drums thin to kick + hats, warm pad enters, filter slightly closed; a down-sweep at the end of bar 16 hands over to the breakdown.",
+        "events": [
+          {
+            "frame": 840,
+            "type": "downbeat-hit",
+            "note": "whip midpoint into Configurações (bar 15 downbeat)"
+          },
+          {
+            "frame": 900,
+            "type": "downbeat-hit",
+            "note": "\"IA do Ubi\" click (bar 16 downbeat)"
+          },
+          {
+            "frame": 945,
+            "type": "filter-sweep",
+            "note": "LPF closes into the breakdown"
+          }
+        ]
+      },
+      {
+        "name": "Breakdown (privacy breather)",
+        "startBar": 17,
+        "bars": 2,
+        "energy": 2,
+        "description": "Kick out. Pad Fmaj7 -> Am9, soft plucks, sub pulse on quarters; the most open, calm moment. The 2-bar riser (SFX) starts in the last 15 frames.",
+        "events": [
+          {
+            "frame": 960,
+            "type": "downbeat-hit",
+            "note": "soft pad swell at the blur-dissolve midpoint (bar 17)"
+          },
+          {
+            "frame": 1065,
+            "type": "riser-start",
+            "note": "riser-2bar.wav starts (its end lands on 1185)"
+          }
+        ]
+      },
+      {
+        "name": "Build (Captura / Classifica / Revisa / Entrega + recap)",
+        "startBar": 19,
+        "bars": 2,
+        "energy": 5,
+        "description": "Kick back on quarters, stabs under the four slams, snare roll 4ths -> 8ths (1140) -> 16ths (1170), HPF + LPF sweep up, bass on 8ths; then a FULL STOP on beat 4 of bar 20: 15 frames of true digital silence.",
+        "events": [
+          {
+            "frame": 1080,
+            "type": "downbeat-hit",
+            "note": "build starts, stab under \"Captura.\" (bar 19)"
+          },
+          {
+            "frame": 1095,
+            "type": "downbeat-hit",
+            "note": "stab \"Classifica.\""
+          },
+          {
+            "frame": 1110,
+            "type": "downbeat-hit",
+            "note": "stab \"Revisa.\""
+          },
+          {
+            "frame": 1125,
+            "type": "downbeat-hit",
+            "note": "stab \"Entrega.\""
+          },
+          {
+            "frame": 1140,
+            "type": "filter-sweep",
+            "note": "snare roll to 8ths, sweep up (bar 20)"
+          },
+          {
+            "frame": 1155,
+            "type": "downbeat-hit",
+            "note": "recap flash montage starts (beat 2 of bar 20): cuts ride the snare 8ths"
+          },
+          {
+            "frame": 1170,
+            "type": "filter-sweep",
+            "note": "snare roll to 16ths (recap flash cuts on 16ths)"
+          },
+          {
+            "frame": 1185,
+            "type": "silence",
+            "note": "PRE-REVEAL SILENCE 1185-1199 (15 f): everything stops, picture = canvas + grain"
+          }
+        ]
+      },
+      {
+        "name": "Drop (ubiqX AI)",
+        "startBar": 21,
+        "bars": 1,
+        "energy": 5,
+        "description": "The drop: main riff (saw lead, A minor) + full drums + sub + big crash; the loudest bar of the film.",
+        "events": [
+          {
+            "frame": 1200,
+            "type": "drop",
+            "note": "wordmark slam + flash; sub boom + deep impact (SFX)"
+          }
+        ]
+      },
+      {
+        "name": "Final hit + tail (end card)",
+        "startBar": 22,
+        "bars": 3,
+        "energy": 1,
+        "description": "Final hit on 1260 (Am(add9) stab + crash + sub) and the groove stops; a 2-bar tail of pad, reverb and a soft C-major-pentatonic arp echo decaying; one last soft \"button\" note on bar 24; the tail is fully decayed by frame 1435 (no fade needed, never trails past the picture).",
+        "events": [
+          {
+            "frame": 1260,
+            "type": "stinger",
+            "note": "FINAL HIT on the end card (bar 22 downbeat)"
+          },
+          {
+            "frame": 1380,
+            "type": "downbeat-hit",
+            "note": "soft button: low A + A5 bell (bar 24)"
+          },
+          {
+            "frame": 1435,
+            "type": "stop",
+            "note": "last audible sample; 1436-1439 silent, picture holds the end card"
+          }
+        ]
+      }
+    ]
+  },
+  "scenes": [
+    {
+      "id": "s01-cold-push",
+      "startFrame": 0,
+      "durationInFrames": 60,
+      "act": "hook",
+      "purpose": "Stop the scroll with the real product: the whole dashboard slams from a steep 3D angle into a readable push while the claim says the day was recorded without anyone pressing play.",
+      "shotTypes": [
+        "S01 cold-open hook frame",
+        "S09 hero product reveal (tilt-to-flat, compressed to 24 f)",
+        "S11 UI zoom-to-element with 3D tilt"
+      ],
+      "copy": [
+        {
+          "text": "Você não deu play.",
+          "role": "headline",
+          "inFrame": 0,
+          "landFrame": 0,
+          "outFrame": 45,
+          "emphasis": [
+            "play."
+          ],
+          "mode": "static",
+          "readRule": "standard",
+          "style": "Sora 700 112 px, tracking -0.035em, centred on x=960, cap-top y=150 (top title-safe band); ink, \"play.\" volt; fully set on frame 0 (poster); exit = mask-up (translateY 0 -> -110 %, 10 f, E.exit) rel 45 -> 55",
+          "note": "Double meaning on X: the feed autoplays the video without the viewer pressing play either."
+        }
+      ],
+      "visual": "Background variant \"grid\" (floor at 40 %, horizon 0.70) + volt orb D1100 above centre (0.20) + ember orb bottom-right (0.06); grain 0.045; vignette 0.5. ui/dashboard.png in a Screen with width 1600 (window 1600 x 1000 + 42 px title bar, neutral #3a4560 dots, radius 18, shadow tier 3 + volt under-glow 0.12). Frame 0 (poster/thumbnail): window centre offset (+60, +150) px, rotateX 26 deg, rotateY -18 deg, rotateZ -3 deg, scale 0.86 - the hero card (focus dial \"88 de foco\", the app headline \"5h de foco desde o almoço; 8 blocos esperam sua revisão.\", stats, the in-app UBI) reads on the near half; sidebar with the \"ubiqX\" wordmark readable at left. The headline sits above the receding top edge of the window on a canvas scrim (top 0-340 px, rgba(10,13,22,0.78) -> 0) so it never lies on busy UI.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/dashboard.png",
+          "hotspots": [
+            "hero",
+            "focus-dial",
+            "focus-score",
+            "headline",
+            "brand-wordmark",
+            "ubi-robot",
+            "stats-row"
+          ],
+          "note": "Poster pose, then push onto the hero; ends drifting toward focus-dial (camera continues into S02)."
+        },
+        {
+          "kind": "sfx",
+          "ref": "whoosh-fast.wav",
+          "hotspots": [],
+          "note": "push whoosh (hit_offset 8.1 f)"
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "full",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 26,
+            "ry": -18
+          },
+          "ease": "hold (poster pose)",
+          "note": "plane rotateZ -3 deg, scale 0.86, offset (+60,+150); nothing is mid-transition on frame 0"
+        },
+        {
+          "atFrame": 24,
+          "target": "hero",
+          "zoom": 1.5,
+          "tilt": {
+            "rx": 8,
+            "ry": -6
+          },
+          "ease": "E.push 24 f (rel 0 -> 24), 90 % done by rel 5 = the \"slam in\"",
+          "anchor": {
+            "x": 1080,
+            "y": 640
+          },
+          "note": "plane rotateZ -> 0, scale -> 1, offset -> 0; log-space zoom"
+        },
+        {
+          "atFrame": 59,
+          "target": "focus-dial",
+          "zoom": 1.62,
+          "tilt": {
+            "rx": 6,
+            "ry": -5
+          },
+          "ease": "linear drift rel 24 -> 59 (continues through the cut into S02)",
+          "anchor": {
+            "x": 760,
+            "y": 600
+          },
+          "note": "dial ends at screen ~(760, 600); float y = 6 sin(2 pi f/120)"
+        }
+      ],
+      "cursor": [],
+      "motion": "f0: designed poster, headline fully set, music starts ON a hit (no lead-in). rel 0-24: the 3D push (E.push): rotateX 26 -> 8, rotateY -18 -> -6, rotateZ -3 -> 0, scale 0.86 -> 1, offset -> 0, camera 1.0 -> 1.5 onto the hero; horizontal DirectionalBlur on the PLANE only while its velocity > 40 px/f (rel 0-5), never on the headline. The headline is pinned in screen space; the UI rises beneath it. rel 24-59: linear drift 1.5 -> 1.62 toward focus-dial, specular sheen crosses the glass (sheenAt rel 20). rel 45: headline exits (mask-up, 10 f, E.exit) - rel 55-59 the UI alone: \"88 de foco\" and the app headline are legible. rel 60: cut while the camera is still moving (continuity into S02).",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0,
+        "note": "film start: frame 0 is a designed, legible poster; no fade-in"
+      },
+      "transitionOut": {
+        "type": "match-cut",
+        "frames": 0,
+        "note": "same plane and camera path continue across the cut (Raycast-style continuous pan)"
+      },
+      "sfx": [
+        {
+          "ref": "whoosh-fast.wav",
+          "atFrame": 8,
+          "gainDb": -10,
+          "note": "loudest point on the fastest frames of the push; file start = rel 0 (hit_offset 8.1 f)"
+        }
+      ],
+      "zoomCheck": [
+        {
+          "target": "headline",
+          "file": "ui/dashboard.png",
+          "captureFontPx": 54,
+          "displayWidth": 1600,
+          "zoom": 1.62,
+          "formula": "54 x (1600/2880) x 1.62",
+          "onScreenPx": 48.6,
+          "upsampling": 0.9,
+          "textBearing": true,
+          "crispPatch": false,
+          "note": "app headline \"5h de foco desde o almoço; 8 blocos…\" (cap 39 px)"
+        },
+        {
+          "target": "focus-score",
+          "file": "ui/dashboard.png",
+          "captureFontPx": 126,
+          "displayWidth": 1600,
+          "zoom": 1.62,
+          "formula": "126 x (1600/2880) x 1.62",
+          "onScreenPx": 113.4,
+          "upsampling": 0.9,
+          "textBearing": true,
+          "crispPatch": false,
+          "note": "\"88\" digits (cap 91 px)"
+        }
+      ],
+      "readingCheck": "\"Você não deu play.\" 18 chars -> min max(24, 2x18) = 36 f; landed rel 0, out rel 45 -> held 45 f OK"
+    },
+    {
+      "id": "s02-day-records-itself",
+      "startFrame": 60,
+      "durationInFrames": 60,
+      "act": "hook",
+      "purpose": "Prove the claim instantly: the day's 24 h track fills itself block by block, from 08:00 to now - nothing was started by hand.",
+      "shotTypes": [
+        "S11 UI zoom-to-element (span glide)",
+        "S18 data build (timeline blocks)",
+        "S03 word-by-word stagger"
+      ],
+      "copy": [
+        {
+          "text": "Ele anotou o dia.",
+          "role": "headline",
+          "inFrame": 0,
+          "landFrame": 15,
+          "outFrame": 55,
+          "emphasis": [
+            "anotou"
+          ],
+          "mode": "stagger-words",
+          "readRule": "standard",
+          "style": "Sora 700 104 px, tracking -0.035em, left-aligned at x=144, cap-top y=132; ink, emphasis word volt as it lands; canvas scrim behind (linear-gradient 180deg rgba(10,13,22,0.82) 0 px -> 0 at 430 px); words start rel 0/3/6/9 (SNAPPY, translateY 28 -> 0, blur 8 -> 0)"
+        }
+      ],
+      "visual": "Same dashboard plane (continuity). The camera tilts down from the focus dial to day-track-card and frames the whole 24 h track across the screen (track at screen y ~640, full width). Upper band (y 0-420) = the hero's stats row, dimmed by the scrim, under the headline. Data build: an image-space overlay (Screen child) masks the day-track rect from x=1299 (08:00) to x=2294 (18:40, the capture's now-line) and reveals it left -> right; a 2 px volt playhead (+ 24 px soft glow) rides the mask edge; the category blocks already in the bitmap appear as the edge passes (6 px feathered edge). day-track-legend fades in after.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/dashboard.png",
+          "hotspots": [
+            "focus-dial",
+            "day-track-card",
+            "day-track",
+            "day-track-legend",
+            "stats-row"
+          ],
+          "note": "x per hour = 2236/24 = 93.2 image px; 08:00 = x 1299, 18:40 = x 2294 (image px)."
+        },
+        {
+          "kind": "sfx",
+          "ref": "sweep.wav",
+          "hotspots": [],
+          "note": "ONE tick cluster for the whole build (C-major pentatonic)"
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "focus-dial",
+          "zoom": 1.62,
+          "tilt": {
+            "rx": 6,
+            "ry": -5
+          },
+          "ease": "continuing drift from S01"
+        },
+        {
+          "atFrame": 30,
+          "target": "day-track-card",
+          "zoom": 1.42,
+          "tilt": {
+            "rx": 5,
+            "ry": -4
+          },
+          "ease": "E.glide 30 f span (rel 0 -> 30, beat to beat)",
+          "anchor": {
+            "x": 960,
+            "y": 640
+          },
+          "note": "track centred at screen y 640"
+        },
+        {
+          "atFrame": 59,
+          "target": "day-track",
+          "zoom": 1.48,
+          "tilt": {
+            "rx": 4,
+            "ry": -3
+          },
+          "ease": "linear drift rel 30 -> 59",
+          "anchor": {
+            "x": 960,
+            "y": 640
+          }
+        }
+      ],
+      "cursor": [],
+      "motion": "rel 0-15: headline words stagger in (3 f), \"anotou\" turns volt on landing (rel 9). rel 0-30: camera glide dial -> day-track-card. rel 24-48: build: mask edge sweeps 08:00 -> 18:40 (E.glide 24 f), playhead glow rides it. rel 40-48: legend fades in (E.enter). rel 48-55: drift, playhead parks on the now-line and pulses once. rel 55-59: whip-left OUT half (whole frame x 0 -> -960, E.exit, horizontal blur 0 -> 40 px).",
+      "transitionIn": {
+        "type": "match-cut",
+        "frames": 0,
+        "note": "continuous camera from S01"
+      },
+      "transitionOut": {
+        "type": "whip-left",
+        "frames": 10,
+        "framesOut": 5,
+        "framesIn": 5,
+        "note": "out half rel 55-59; cut (peak velocity) at abs 120 = bar 3 downbeat, where the groove enters"
+      },
+      "sfx": [
+        {
+          "ref": "sweep.wav",
+          "atFrame": 24,
+          "gainDb": -18,
+          "note": "group onset of the data build"
+        }
+      ],
+      "zoomCheck": [
+        {
+          "target": "day-track-legend",
+          "file": "ui/dashboard.png",
+          "captureFontPx": 24,
+          "displayWidth": 1600,
+          "zoom": 1.48,
+          "formula": "24 x (1600/2880) x 1.48",
+          "onScreenPx": 19.7,
+          "upsampling": 0.82,
+          "textBearing": false,
+          "crispPatch": false,
+          "note": "the target is the coloured track itself (no text); legend labels are texture"
+        }
+      ],
+      "readingCheck": "\"Ele anotou o dia.\" 17 chars -> min max(24, 2x17) = 34 f; landed rel 15, out rel 55 -> held 40 f OK"
+    },
+    {
+      "id": "s03-you-describe",
+      "startFrame": 120,
+      "durationInFrames": 90,
+      "act": "features",
+      "purpose": "The categories are the user's own: we watch the description of \"IFRO\" being written, the words say the AI follows it.",
+      "shotTypes": [
+        "S15 typing into a field (typewriter, speed-ramped)",
+        "S11 UI zoom-to-element",
+        "Module B (text column left, UI right)"
+      ],
+      "copy": [
+        {
+          "text": "Você descreve. A IA segue.",
+          "role": "headline",
+          "inFrame": 8,
+          "landFrame": 31,
+          "outFrame": 90,
+          "emphasis": [
+            "segue."
+          ],
+          "mode": "mask-up",
+          "readRule": "standard",
+          "lines": [
+            "Você descreve.",
+            "A IA segue."
+          ],
+          "style": "Sora 700 88 px, tracking -0.03em, left column x=144 (max 616 px), lines cap-top y=392 and y=486; masked lines (padding-top .16em, bottom .12em), 5 f line stagger; \"segue.\" volt on landing"
+        }
+      ],
+      "visual": "ui/categories.png, W 1600, rotateY -10 deg, rotateX 4 deg (module B plane leaning back to the left). Camera close on the description field of the IFRO editor (field rect x 1340 y 690 w 1450 h 210; label \"O que conta como trabalho desta categoria\" at x 1342 y 646). Focus image point (1368, 740) placed at screen (800, 600): the left 40 % of the frame shows the categories list (IFRO, Incubadora, Cidades Inteligentes) under a left scrim (canvas 85 % -> 0 at x 900) that carries the headline. Typewriter = crisp patch: a panel-coloured rect hides the bitmap text inside the field and the real string is typed live in Inter 400 (28 image px = 14 CSS px, ink, same padding): \"Docência no IFRO Campus Porto Velho Calama: aulas de Programação Web, orientação de TCC, reuniões de colegiado, SEI/SUAP, editais PROEX e e-mails institucionais.\" (the exact demo value). The label is re-typeset too (Inter 500 28 image px). Outside the field: DOF blur 4 px + dim 0.5 while zoom > 2.07.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/categories.png",
+          "hotspots": [
+            "category-editor",
+            "category-editor-title",
+            "categories-list-card",
+            "category-item-1"
+          ],
+          "note": "category-item-1 = IFRO (selected). Field rect derived from category-editor (measured)."
+        },
+        {
+          "kind": "sfx",
+          "ref": "whip_2.wav",
+          "hotspots": [],
+          "note": "whip hit on the cut"
+        },
+        {
+          "kind": "sfx",
+          "ref": "type-1.wav",
+          "hotspots": [],
+          "note": "typing ticks rotate type-1..4"
+        },
+        {
+          "kind": "sfx",
+          "ref": "type-2.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "type-3.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "type-4.wav",
+          "hotspots": [],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "category-editor",
+          "zoom": 2.4,
+          "tilt": {
+            "rx": 4,
+            "ry": -10
+          },
+          "ease": "static on arrival (whip-in carries the motion)",
+          "anchor": {
+            "x": 800,
+            "y": 600
+          },
+          "note": "focus image (1368, 740) at screen (800, 600)"
+        },
+        {
+          "atFrame": 45,
+          "target": "category-editor",
+          "zoom": 2.46,
+          "tilt": {
+            "rx": 4,
+            "ry": -10
+          },
+          "ease": "linear drift rel 0 -> 45 (0.4 px/f to the right, following the caret)",
+          "anchor": {
+            "x": 800,
+            "y": 600
+          }
+        },
+        {
+          "atFrame": 66,
+          "target": "category-editor",
+          "zoom": 1.3,
+          "tilt": {
+            "rx": 4,
+            "ry": -8
+          },
+          "ease": "E.push 21 f (rel 45 -> 66): pull back to the whole editor (IFRO, Nome, Horário do relatório 18:00, the field, Palavras-chave chips)",
+          "anchor": {
+            "x": 1240,
+            "y": 560
+          }
+        },
+        {
+          "atFrame": 89,
+          "target": "category-editor",
+          "zoom": 1.34,
+          "tilt": {
+            "rx": 4,
+            "ry": -8
+          },
+          "ease": "linear drift",
+          "anchor": {
+            "x": 1240,
+            "y": 560
+          }
+        }
+      ],
+      "cursor": [],
+      "motion": "rel 0-4: whip IN half (x +960 -> 0, E.push, blur 40 -> 0). rel 6: caret appears (solid while typing). rel 6-59: typing at 3 chars/f (speed-ramped, Arc-style), line 2 wraps exactly like the app; the visible part in the close-up is the first ~60 characters of each line. rel 8 / 13: headline lines mask up (18 f each); \"segue.\" lands rel 31 in volt. rel 45-66: pull back reveals the full editor; DOF/dim release over rel 45-57. rel 60+: caret blinks 8 on / 8 off. rel 90: hard cut on the beat.",
+      "transitionIn": {
+        "type": "whip-left",
+        "frames": 10,
+        "framesOut": 5,
+        "framesIn": 5,
+        "note": "in half rel 0-4; midpoint abs 120"
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0,
+        "note": "hard cut on abs 210 (beat)"
+      },
+      "sfx": [
+        {
+          "ref": "whip_2.wav",
+          "atFrame": 0,
+          "gainDb": -8,
+          "note": "loudest point (hit_offset 2.0 f) on the whip cut abs 120; file starts abs 118 (master SFX track)"
+        },
+        {
+          "ref": "type-1.wav",
+          "atFrame": 8,
+          "gainDb": -22,
+          "note": "typing texture on the 16th grid"
+        },
+        {
+          "ref": "type-2.wav",
+          "atFrame": 12,
+          "gainDb": -22,
+          "note": "typing texture on the 16th grid"
+        },
+        {
+          "ref": "type-3.wav",
+          "atFrame": 16,
+          "gainDb": -22,
+          "note": "typing texture on the 16th grid"
+        },
+        {
+          "ref": "type-4.wav",
+          "atFrame": 20,
+          "gainDb": -22,
+          "note": "typing texture on the 16th grid"
+        },
+        {
+          "ref": "type-1.wav",
+          "atFrame": 24,
+          "gainDb": -22,
+          "note": "typing texture on the 16th grid"
+        },
+        {
+          "ref": "type-2.wav",
+          "atFrame": 28,
+          "gainDb": -22,
+          "note": "typing texture on the 16th grid"
+        },
+        {
+          "ref": "type-3.wav",
+          "atFrame": 32,
+          "gainDb": -22,
+          "note": "typing texture on the 16th grid"
+        },
+        {
+          "ref": "type-4.wav",
+          "atFrame": 36,
+          "gainDb": -22,
+          "note": "typing texture on the 16th grid"
+        },
+        {
+          "ref": "type-1.wav",
+          "atFrame": 40,
+          "gainDb": -22,
+          "note": "typing texture on the 16th grid"
+        },
+        {
+          "ref": "type-2.wav",
+          "atFrame": 44,
+          "gainDb": -22,
+          "note": "typing texture on the 16th grid"
+        },
+        {
+          "ref": "type-3.wav",
+          "atFrame": 48,
+          "gainDb": -22,
+          "note": "typing texture on the 16th grid"
+        },
+        {
+          "ref": "type-4.wav",
+          "atFrame": 52,
+          "gainDb": -22,
+          "note": "typing texture on the 16th grid"
+        },
+        {
+          "ref": "type-1.wav",
+          "atFrame": 56,
+          "gainDb": -22,
+          "note": "typing texture on the 16th grid"
+        }
+      ],
+      "zoomCheck": [
+        {
+          "target": "category-editor",
+          "file": "ui/categories.png",
+          "captureFontPx": 28,
+          "displayWidth": 1600,
+          "zoom": 2.4,
+          "formula": "28 x (1600/2880) x 2.4",
+          "onScreenPx": 37.3,
+          "upsampling": 1.33,
+          "textBearing": true,
+          "crispPatch": true,
+          "note": "typed description, live re-typeset (crisp); bitmap around it is under DOF"
+        },
+        {
+          "target": "category-editor",
+          "file": "ui/categories.png",
+          "captureFontPx": 28,
+          "displayWidth": 1600,
+          "zoom": 2.4,
+          "formula": "28 x (1600/2880) x 2.4",
+          "onScreenPx": 37.3,
+          "upsampling": 1.33,
+          "textBearing": true,
+          "crispPatch": true,
+          "note": "field label \"O que conta como trabalho desta categoria\" (cap 20 px), re-typeset"
+        }
+      ],
+      "readingCheck": "\"Você descreve. A IA segue.\" 26 chars -> min max(24, 2x26) = 52 f; landed rel 31, out rel 90 -> held 59 f OK"
+    },
+    {
+      "id": "s04-rules-memory-ai",
+      "startFrame": 210,
+      "durationInFrames": 75,
+      "act": "features",
+      "purpose": "How it decides: free rules and memory first, AI only for the rest - each slammed word lands on the matching origin badge of a real classified row.",
+      "shotTypes": [
+        "S02 kinetic word slam (stacked, accumulating)",
+        "S12 camera push-in on a hotspot with focus dimming",
+        "S11 continuous tilt"
+      ],
+      "copy": [
+        {
+          "text": "Regras,",
+          "role": "hero",
+          "inFrame": 0,
+          "landFrame": 0,
+          "outFrame": 75,
+          "emphasis": [],
+          "mode": "slam",
+          "readRule": "slam-sequence",
+          "style": "Sora 800 150 px, tracking -0.045em, line 1 of a left stack at x=144, cap-top y=250; ink -> ink-2 (70 %) when the next word lands"
+        },
+        {
+          "text": "memória,",
+          "role": "hero",
+          "inFrame": 15,
+          "landFrame": 15,
+          "outFrame": 75,
+          "emphasis": [],
+          "mode": "slam",
+          "readRule": "slam-sequence",
+          "style": "line 2, cap-top y=393; ink -> ink-2 at rel 30"
+        },
+        {
+          "text": "IA.",
+          "role": "hero",
+          "inFrame": 30,
+          "landFrame": 30,
+          "outFrame": 75,
+          "emphasis": [
+            "IA."
+          ],
+          "mode": "slam",
+          "readRule": "slam-sequence",
+          "style": "line 3, cap-top y=536; lands in volt on the bar-5 downbeat"
+        }
+      ],
+      "phraseChecks": [
+        {
+          "text": "Regras, memória, IA.",
+          "landFrame": 30,
+          "outFrame": 75
+        }
+      ],
+      "visual": "ui/review-settled-expanded.png (\"Classificados neste dia (19)\" open), W 1600, rotateX 5 deg, rotateY -8 deg. Camera at zoom 2.0 on the right column of the reviewed rows (category chip, confidence bar, origin badge). Badge rects (image px, measured): row 1 \"regra\" x1826 y566 w114 h40; row 3 \"memória\" x1788 y792 w152 h40; row 5 \"IA\" x1858 y1020 w82 h40 (rows are 114 px apart from reviewed-row-1). Anchor places the badge column at screen x ~1480. Left 55 % carries the slam stack on a scrim (canvas 85 % -> 0 at x 1050). Spotlight (S12, inside the plane): 16 px padded badge rect, dim 0.62, 2 px volt ring + 40 px glow 0.3, radius 14; it hops badge to badge. Rows 1/3/5 = sei.ifro.edu.br (regra), docs.google.com (memória), Terminal pnpm test (IA): no e-mail content.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/review-settled-expanded.png",
+          "hotspots": [
+            "reviewed-row-1",
+            "reviewed-list",
+            "settled-header"
+          ],
+          "note": "Badge rects derived from reviewed-row-1 (+114 px per row). keys-legend stays out of frame/under the scrim."
+        },
+        {
+          "kind": "sfx",
+          "ref": "impact_soft_1.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "impact_soft_2.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "impact_soft_3.wav",
+          "hotspots": [],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "reviewed-row-1",
+          "zoom": 2.0,
+          "tilt": {
+            "rx": 5,
+            "ry": -8
+          },
+          "ease": "cut-in, row-1 badge at anchor",
+          "anchor": {
+            "x": 1480,
+            "y": 540
+          },
+          "note": "badge \"regra\" (1883, 586) at screen (1480, 540)"
+        },
+        {
+          "atFrame": 30,
+          "target": "reviewed-list",
+          "zoom": 2.0,
+          "tilt": {
+            "rx": 5,
+            "ry": -8
+          },
+          "ease": "E.glide 30 f span (rel 0 -> 30): continuous tilt down; at rel 15 (50 %) the row-3 badge passes the anchor exactly",
+          "anchor": {
+            "x": 1480,
+            "y": 540
+          },
+          "note": "ends on row-5 badge \"IA\" (1899, 1040)"
+        },
+        {
+          "atFrame": 74,
+          "target": "reviewed-list",
+          "zoom": 2.08,
+          "tilt": {
+            "rx": 5,
+            "ry": -8
+          },
+          "ease": "linear drift",
+          "anchor": {
+            "x": 1480,
+            "y": 540
+          }
+        }
+      ],
+      "cursor": [],
+      "motion": "rel 0 (abs 210, beat): hard cut straight INTO the contact: \"Regras,\" on screen at full opacity, scale 1.06 -> 1 (SLAM 4 f), camera shake noise 6 px decaying exp(-t/3) over 8 f; spotlight d 0 -> 1 on \"regra\" (12 f E.enter). rel 0-30: continuous tilt down the list. rel 13: spotlight rect morphs toward the \"memória\" badge (SNAPPY), arrives rel 15. rel 15 (beat): \"memória,\" hard-cuts in on line 2 (same slam), \"Regras,\" dims to ink-2 over 6 f. rel 28-30: spotlight -> \"IA\" badge. rel 30 (abs 240 = bar 5 downbeat): \"IA.\" lands in volt + shake + canvas lift #0a0d16 -> #121a2c -> #0a0d16 over 3 f. rel 30-74: hold; spotlight glow breathes (0.3 -> 0.22), camera drift. rel 75: hard cut.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 210; the cut IS the first slam contact"
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 285 (beat)"
+      },
+      "sfx": [
+        {
+          "ref": "impact_soft_1.wav",
+          "atFrame": 0,
+          "gainDb": 0,
+          "note": "slam \"Regras,\"; duck bed -5 dB"
+        },
+        {
+          "ref": "impact_soft_2.wav",
+          "atFrame": 15,
+          "gainDb": 0,
+          "note": "slam \"memória,\"; duck -5 dB"
+        },
+        {
+          "ref": "impact_soft_3.wav",
+          "atFrame": 30,
+          "gainDb": 2,
+          "note": "slam \"IA.\" on the downbeat; duck -5 dB"
+        }
+      ],
+      "zoomCheck": [
+        {
+          "target": "reviewed-list",
+          "file": "ui/review-settled-expanded.png",
+          "captureFontPx": 22,
+          "displayWidth": 1600,
+          "zoom": 2.0,
+          "formula": "22 x (1600/2880) x 2.0",
+          "onScreenPx": 24.4,
+          "upsampling": 1.11,
+          "textBearing": false,
+          "crispPatch": false,
+          "note": "origin badges are pointed at, the 150 px slam word carries the message; badge text ~24 px, app titles (29 px) -> 32 px"
+        }
+      ],
+      "readingCheck": "\"Regras,\" 7 chars, slam word: >= 12 f per word (style 3.6) -> held 75 f (land rel 0 -> out rel 75) OK | \"memória,\" 8 chars, slam word: >= 12 f per word (style 3.6) -> held 60 f (land rel 15 -> out rel 75) OK | \"IA.\" 3 chars, slam word: >= 12 f per word (style 3.6) -> held 45 f (land rel 30 -> out rel 75) OK | together \"Regras, memória, IA.\" 20 chars -> 40 f; held 45 f from last landing OK | Slam words: 1 per beat, each >= 12 f before the next, final word holds 45 f >= 30 (style 3.6)."
+    },
+    {
+      "id": "s05-only-doubts",
+      "startFrame": 285,
+      "durationInFrames": 75,
+      "act": "features",
+      "purpose": "Revisão is a short queue of doubts: only what the chain could not resolve waits for you.",
+      "shotTypes": [
+        "S11 UI zoom (slow span push)",
+        "S12 focus dimming",
+        "Module A variant (headline bottom-left)"
+      ],
+      "copy": [
+        {
+          "text": "Só pergunta o que não sabe.",
+          "role": "headline",
+          "inFrame": 0,
+          "landFrame": 16,
+          "outFrame": 75,
+          "emphasis": [
+            "sabe."
+          ],
+          "mode": "stagger-words",
+          "readRule": "standard",
+          "style": "Sora 700 104 px, tracking -0.035em, left-aligned x=144, baseline y=905 (bottom band, above the 120 px player strip); ink, \"sabe.\" volt; words 2 f stagger (spread 10 f); bottom scrim (canvas 85 % from y 1080 -> 0 at y 640)"
+        }
+      ],
+      "visual": "ui/review-queue-selected.png, W 1600, rotateX 4 deg, rotateY -6 deg. Opens medium (zoom 1.15): page title \"Revisão\", the queue card with the first group selected (Calendário, \"Sem categoria\", \"pendente\", 0 %) and three Finder rows in the same state, plus the \"Atribuir ao grupo selecionado\" card with the five numbered categories. Spotlight from rel 24 on the union of queue-row-1-app + queue-row-1-category (NOT the whole row: the hint line \"Pressione 1 a 9…\" at y 398-438 stays outside), dim 0.62 + DOF blur 4 px outside, so the \"1 a 9\" hint and the keys legend are never legible.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/review-queue-selected.png",
+          "hotspots": [
+            "page-title",
+            "queue-card",
+            "queue-row-1",
+            "queue-row-1-app",
+            "queue-row-1-category",
+            "queue-row-active-hint",
+            "assign-card",
+            "assign-picker",
+            "assign-option-1",
+            "keys-legend"
+          ],
+          "note": "queue-row-active-hint and keys-legend are listed because they must be kept dimmed/out of frame (they read \"1 a 9\")."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "queue-card",
+          "zoom": 1.15,
+          "tilt": {
+            "rx": 4,
+            "ry": -6
+          },
+          "ease": "cut-in",
+          "anchor": {
+            "x": 960,
+            "y": 430
+          },
+          "note": "focus image (1250, 470) at screen (960, 430)"
+        },
+        {
+          "atFrame": 60,
+          "target": "queue-row-1-app",
+          "zoom": 1.45,
+          "tilt": {
+            "rx": 3,
+            "ry": -5
+          },
+          "ease": "E.glide 60 f span (rel 0 -> 60)",
+          "anchor": {
+            "x": 960,
+            "y": 420
+          },
+          "note": "focus image (1150, 420) at screen (960, 420); visible x -40..2340: the \"1 - 9\" end of keys-legend (x > 2560) stays out"
+        },
+        {
+          "atFrame": 74,
+          "target": "assign-option-1",
+          "zoom": 1.6,
+          "tilt": {
+            "rx": 3,
+            "ry": -5
+          },
+          "ease": "E.push 15 f (rel 60 -> 75) anticipation push toward the picker; cut while moving",
+          "anchor": {
+            "x": 1160,
+            "y": 460
+          }
+        }
+      ],
+      "cursor": [],
+      "motion": "rel 0: cut in. rel 0-16: headline words stagger (2 f), \"sabe.\" volt on landing. rel 0-60: slow span push. rel 24-36: spotlight d 0 -> 1 on Calendário app + \"Sem categoria\" chip (E.enter 12 f); callout-free (the headline is the caption). rel 60-74: anticipation push toward the numbered picker - the next beat is the key. rel 75 (abs 360, bar 7 downbeat): hard cut on the band stop.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 285"
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 360, bar 7 downbeat (music stop)"
+      },
+      "sfx": [],
+      "zoomCheck": [
+        {
+          "target": "page-title",
+          "file": "ui/review-queue-selected.png",
+          "captureFontPx": 54,
+          "displayWidth": 1600,
+          "zoom": 1.45,
+          "formula": "54 x (1600/2880) x 1.45",
+          "onScreenPx": 43.5,
+          "upsampling": 0.81,
+          "textBearing": false,
+          "crispPatch": false,
+          "note": "\"Revisão\" page title (cap 39 px) - context label; rows are context texture (29 px -> 23 px)"
+        }
+      ],
+      "readingCheck": "\"Só pergunta o que não sabe.\" 27 chars -> min max(24, 2x27) = 54 f; landed rel 16, out rel 75 -> held 59 f OK"
+    },
+    {
+      "id": "s06-press-1",
+      "startFrame": 360,
+      "durationInFrames": 30,
+      "act": "features",
+      "purpose": "Keyboard speed: one key, \"1\", decides the group - a physical keycap press in the silence of a band stop.",
+      "shotTypes": [
+        "S14 keycap press close-up"
+      ],
+      "copy": [],
+      "visual": "Behind: the review-queue-selected plane (continuity, camera where S05 left it) with rack-focus blur 14 px and dim 0.55. KeyCap centred at (960, 560): 240 x 240 px, radius 34, top face gradient #1c2740 -> #141c2e, 1 px rgba(255,255,255,0.10) border, 18 px skirt #0c111d, floor shadow; parent perspective 1200 px, rotateX 28 deg, rotateZ -6 deg; legend \"1\" Inter 600 92 px ink (the digit exists in Inter: no SVG needed).",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/review-queue-selected.png",
+          "hotspots": [
+            "assign-picker"
+          ],
+          "note": "blurred backdrop only"
+        },
+        {
+          "kind": "sfx",
+          "ref": "key_down_1.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "key_up_1.wav",
+          "hotspots": [],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "assign-picker",
+          "zoom": 1.6,
+          "tilt": {
+            "rx": 3,
+            "ry": -5
+          },
+          "ease": "held (backdrop), composition push 1.00 -> 1.04 linear over the scene"
+        }
+      ],
+      "cursor": [],
+      "motion": "rel 0 (abs 360): cut on the band stop; keycap mounts scale 0.94 -> 1, y +20 -> 0 (SNAPPY, rel 0-8). rel 12-15: press (translateY 0 -> +14 px, skirt 18 -> 4 px, E.exit 3 f). rel 15 (abs 375, beat) CONTACT: legend turns volt, underglow 0 0 60px rgba(77,141,255,0.55) decaying over 8 f, 2 px micro-shake. rel 16-23: release (SNAPPY). rel 24-29: rest, legend stays volt (latched). rel 30: match cut.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 360"
+      },
+      "transitionOut": {
+        "type": "match-cut",
+        "frames": 0,
+        "note": "keycap rect/radius/colour identical in S06 last frame and S07 first frame; S07 morphs it into the assign-key-1 chip (12 f SNAPPY)"
+      },
+      "sfx": [
+        {
+          "ref": "key_down_1.wav",
+          "atFrame": 15,
+          "gainDb": -8,
+          "note": "contact frame, heard in the music stop"
+        },
+        {
+          "ref": "key_up_1.wav",
+          "atFrame": 21,
+          "gainDb": -18,
+          "note": "release"
+        }
+      ],
+      "zoomCheck": [],
+      "readingCheck": "no copy lines in this scene | Key legend \"1\" is a glyph, not copy."
+    },
+    {
+      "id": "s07-queue-moves",
+      "startFrame": 390,
+      "durationInFrames": 60,
+      "act": "features",
+      "purpose": "The press lands in the real UI: the key flies into option \"1 · IFRO\" and the doubtful group leaves the queue - the list closes the gap.",
+      "shotTypes": [
+        "T5 match cut on a UI element (keycap -> key chip)",
+        "S13 UI state change",
+        "S11 zoom (pull-back)"
+      ],
+      "copy": [],
+      "visual": "Plane W 1600, rotateX 3 deg, rotateY -5 deg. Before = ui/review-queue-selected.png, after = ui/review-after-assign.png (same geometry). rel 0: the S06 keycap overlay sits over the UI at its S06 rect; the camera starts at zoom 2.6 on assign-key-1 (the chip at screen ~(1180, 600), 58 px). The keycap morphs (x, y, size 240 -> chip rect, rotation -> plane tilt, radius 34 -> chip radius, colour panel -> chip) into the chip while the camera pulls back to frame the queue rows + the picker together (zoom 1.4). State change (S13): row 1 (Calendário) slides out left and the list closes up; Finder · Downloads becomes the active row; the page subtitle now reads \"9 grupos esperam sua decisão\"; the toast \"2 blocos classificados\" slides in bottom-right as texture (~23 px, not a must-read). CONTINUITY: the after-capture's settled header reads \"Classificados neste dia (20)\" at image y 1360 - it stays out of frame (visible image y <= ~1160 at zoom 1.4), so S08's \"Confirmar os 19\" (captured before the assignment) never contradicts it.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/review-queue-selected.png",
+          "hotspots": [
+            "assign-key-1",
+            "assign-option-1",
+            "queue-row-1",
+            "queue-row-active",
+            "queue-list",
+            "page-subtitle"
+          ],
+          "note": "before state"
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/review-after-assign.png",
+          "hotspots": [
+            "queue-row-active",
+            "queue-list",
+            "page-subtitle",
+            "toast",
+            "assign-option-1"
+          ],
+          "note": "after state (swap at rel 15)"
+        },
+        {
+          "kind": "sfx",
+          "ref": "ui_tick_1.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "whoosh_out_2.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "ui_pop_2.wav",
+          "hotspots": [],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "assign-key-1",
+          "zoom": 2.6,
+          "tilt": {
+            "rx": 3,
+            "ry": -5
+          },
+          "ease": "cut-in matching S06 (backdrop blurred 12 px, dim 0.4)",
+          "file": "ui/review-queue-selected.png",
+          "anchor": {
+            "x": 1180,
+            "y": 600
+          },
+          "note": "chip (2766, 422) at screen (1180, 600); bitmap upsampling 1.44 only while blurred (rel 0-8)"
+        },
+        {
+          "atFrame": 20,
+          "target": "queue-row-active",
+          "zoom": 1.4,
+          "tilt": {
+            "rx": 3,
+            "ry": -5
+          },
+          "ease": "E.push 20 f (rel 0 -> 20)",
+          "file": "ui/review-queue-selected.png",
+          "anchor": {
+            "x": 960,
+            "y": 560
+          },
+          "note": "union of queue rows 1-4 and the picker: focus image (1658, 492) at screen (960, 560)"
+        },
+        {
+          "atFrame": 59,
+          "target": "queue-row-active",
+          "zoom": 1.46,
+          "tilt": {
+            "rx": 3,
+            "ry": -5
+          },
+          "ease": "linear drift",
+          "file": "ui/review-after-assign.png",
+          "anchor": {
+            "x": 960,
+            "y": 560
+          }
+        }
+      ],
+      "cursor": [],
+      "motion": "rel 0-12: keycap -> chip morph (SNAPPY), UI blur 12 -> 0 and dim 0.4 -> 0 (SMOOTH 12 f), camera pull-back. rel 12: the patch dissolves into the bitmap chip; assign-option-1 (\"IFRO\", key 1) gets the pressed tint (volt 16 %, 6 f). rel 15 (abs 405, beat) STATE CHANGE: swap to review-after-assign; a slice of the before-bitmap row 1 slides x 0 -> -140 px, opacity 1 -> 0 (E.exit 6 f) while the after-bitmap rows (y 238-1440) enter translateY +112 -> 0 (SNAPPY 8 f) - the queue visibly shrinks; new active row flashes mint 12 % for 8 f. rel 17: toast slides up 32 px -> 0 (SNAPPY), texture only. rel 20-59: drift, hold. rel 60: hard cut.",
+      "transitionIn": {
+        "type": "match-cut",
+        "frames": 0,
+        "note": "keycap -> assign-key-1 chip (T5), 12 f morph inside this scene"
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 450 (beat)"
+      },
+      "sfx": [
+        {
+          "ref": "ui_tick_1.wav",
+          "atFrame": 12,
+          "gainDb": -18,
+          "note": "chip lights"
+        },
+        {
+          "ref": "whoosh_out_2.wav",
+          "atFrame": 15,
+          "gainDb": -16,
+          "note": "row leaves the queue (early peak, hit_offset 2.5 f: file starts rel 12.5)"
+        },
+        {
+          "ref": "ui_pop_2.wav",
+          "atFrame": 17,
+          "gainDb": -18,
+          "note": "toast"
+        }
+      ],
+      "zoomCheck": [
+        {
+          "target": "queue-row-active",
+          "file": "ui/review-after-assign.png",
+          "captureFontPx": 29,
+          "displayWidth": 1600,
+          "zoom": 1.46,
+          "formula": "29 x (1600/2880) x 1.46",
+          "onScreenPx": 23.5,
+          "upsampling": 0.81,
+          "textBearing": false,
+          "crispPatch": false,
+          "note": "medium shot; the change is carried by motion (row exit), texts are context"
+        }
+      ],
+      "readingCheck": "no copy lines in this scene"
+    },
+    {
+      "id": "s08-confirm-19",
+      "startFrame": 450,
+      "durationInFrames": 90,
+      "act": "features",
+      "purpose": "One click turns everything the Ubi decided into your own answers - \"Confirmar os 19\" - and the whole list flips to \"você\".",
+      "shotTypes": [
+        "S12 camera push-in on a hotspot with focus dimming",
+        "S13 cursor move, click ripple and UI state change",
+        "S11 pull-back"
+      ],
+      "copy": [
+        {
+          "text": "Um clique vira memória.",
+          "role": "headline",
+          "inFrame": 0,
+          "landFrame": 15,
+          "outFrame": 90,
+          "emphasis": [
+            "memória."
+          ],
+          "mode": "stagger-words",
+          "readRule": "standard",
+          "style": "Sora 700 104 px, tracking -0.035em, left-aligned at x=144, cap-top y=132; ink, emphasis word volt as it lands; canvas scrim behind (linear-gradient 180deg rgba(10,13,22,0.82) 0 px -> 0 at 430 px); words start rel 0/3/6/9"
+        },
+        {
+          "text": "Confirmar os 19",
+          "role": "ui-caption",
+          "inFrame": 0,
+          "landFrame": 0,
+          "outFrame": 32,
+          "emphasis": [],
+          "mode": "static",
+          "readRule": "standard",
+          "style": "the real button label, crisp patch: Inter 500 25 image px (12.5 CSS) ink on the button's panel fill, 1 px line border, radius 16 image px - on screen 37 px",
+          "note": "UI text zoomed into (>= 36 px); readable until the state swap at rel 32"
+        }
+      ],
+      "visual": "ui/review-settled-expanded.png -> ui/review-confirmed.png, W 1600, rotateX 4 deg, rotateY -8 deg. Opens at zoom 2.7 on confirm-all-button with the button anchored at screen (1300, 620) (visible image x 1031-2311: the \"1 - 9\" end of keys-legend is outside). DOF blur 4 px + dim 0.5 outside confirm-bar while zoom > 2.07. After the click the confirm bar collapses and every classified row turns \"você\" 100 % (mint) in a top-to-bottom wave; the camera pulls back to show the whole list and the toast \"19 grupos confirmados\" (texture at this size).",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/review-settled-expanded.png",
+          "hotspots": [
+            "confirm-all-button",
+            "confirm-bar",
+            "settled-header",
+            "reviewed-list",
+            "keys-legend"
+          ],
+          "note": "before (keys-legend kept out of frame)"
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/review-confirmed.png",
+          "hotspots": [
+            "reviewed-list",
+            "reviewed-row-1",
+            "toast",
+            "settled-header"
+          ],
+          "note": "after (swap rel 32)"
+        },
+        {
+          "kind": "sfx",
+          "ref": "ui_click_1.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "shimmer_1.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "ui_pop_1.wav",
+          "hotspots": [],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "confirm-all-button",
+          "zoom": 2.7,
+          "tilt": {
+            "rx": 4,
+            "ry": -8
+          },
+          "ease": "cut-in on the button",
+          "file": "ui/review-settled-expanded.png",
+          "anchor": {
+            "x": 1300,
+            "y": 620
+          },
+          "note": "button centre (1898, 478) at screen (1300, 620)"
+        },
+        {
+          "atFrame": 32,
+          "target": "confirm-all-button",
+          "zoom": 2.78,
+          "tilt": {
+            "rx": 4,
+            "ry": -8
+          },
+          "ease": "linear drift",
+          "file": "ui/review-settled-expanded.png",
+          "anchor": {
+            "x": 1300,
+            "y": 620
+          }
+        },
+        {
+          "atFrame": 52,
+          "target": "reviewed-list",
+          "zoom": 1.3,
+          "tilt": {
+            "rx": 4,
+            "ry": -6
+          },
+          "ease": "E.push 18 f (rel 34 -> 52) pull-back",
+          "file": "ui/review-confirmed.png",
+          "anchor": {
+            "x": 960,
+            "y": 560
+          },
+          "note": "focus image (1650, 1040) at screen (960, 560): whole list + toast in frame"
+        },
+        {
+          "atFrame": 89,
+          "target": "reviewed-list",
+          "zoom": 1.34,
+          "tilt": {
+            "rx": 4,
+            "ry": -6
+          },
+          "ease": "linear drift",
+          "file": "ui/review-confirmed.png",
+          "anchor": {
+            "x": 960,
+            "y": 560
+          }
+        }
+      ],
+      "cursor": [
+        {
+          "atFrame": 4,
+          "to": "offscreen-bottom-right",
+          "click": false,
+          "note": "enters from screen (1990, 1140) - never teleports"
+        },
+        {
+          "atFrame": 26,
+          "to": "confirm-all-button",
+          "click": false,
+          "note": "arc 12 %, E.cursor 22 f (clamp(10 + dist/60, 12, 26)); arrives 4 f early; hover background fades in rel 24"
+        },
+        {
+          "atFrame": 30,
+          "to": "confirm-all-button",
+          "click": true,
+          "note": "CLICK on abs 480 = bar 9 downbeat; cursor 30 px tall (x1.5 max with camera), press 1 -> 0.85 -> 1, ripple 0 -> 44 px + second ring 64 px"
+        }
+      ],
+      "motion": "rel 0-15: headline stagger (3 f), \"memória.\" volt. rel 4-26: cursor arcs in; rel 24 hover. rel 30 (abs 480) CLICK: button patch scale 0.96 + volt-tint pressed colour, ripple. rel 32: swap to review-confirmed: confirm-bar slice collapses 96 -> 0 px (SNAPPY 8 f) while the rows slide up 98 px to their new positions; badges now read \"você\" 100 %; mint wave = row flash mint 12 % for 8 f, staggered 2 f top -> bottom (spread 18 f). DOF/dim release rel 32-40. rel 34-52: pull-back reveals the wave running down the list. rel 36: toast slides in (SNAPPY). rel 52-89: hold, drift. rel 90: cut.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 450 (beat)"
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 540, bar 10 downbeat"
+      },
+      "sfx": [
+        {
+          "ref": "ui_click_1.wav",
+          "atFrame": 30,
+          "gainDb": -12,
+          "note": "click"
+        },
+        {
+          "ref": "shimmer_1.wav",
+          "atFrame": 33,
+          "gainDb": -14,
+          "note": "success C+3"
+        },
+        {
+          "ref": "ui_pop_1.wav",
+          "atFrame": 36,
+          "gainDb": -18,
+          "note": "toast"
+        }
+      ],
+      "zoomCheck": [
+        {
+          "target": "confirm-all-button",
+          "file": "ui/review-settled-expanded.png",
+          "captureFontPx": 25,
+          "displayWidth": 1600,
+          "zoom": 2.7,
+          "formula": "25 x (1600/2880) x 2.7",
+          "onScreenPx": 37.5,
+          "upsampling": 1.5,
+          "textBearing": true,
+          "crispPatch": true,
+          "note": "\"Confirmar os 19\" (cap 18 px); bitmap upsampling 1.5 -> crisp patch mandatory, DOF outside"
+        }
+      ],
+      "readingCheck": "\"Um clique vira memória.\" 23 chars -> min max(24, 2x23) = 46 f; landed rel 15, out rel 90 -> held 75 f OK | \"Confirmar os 19\" 15 chars -> min max(24, 2x15) = 30 f; landed rel 0, out rel 32 -> held 32 f OK"
+    },
+    {
+      "id": "s09-nothing-in-doubt",
+      "startFrame": 540,
+      "durationInFrames": 75,
+      "act": "features",
+      "purpose": "Payoff: the queue is empty and UBI jumps out of the UI to celebrate - \"Nada em dúvida!\".",
+      "shotTypes": [
+        "S11 UI zoom-to-element",
+        "T5 match cut on a UI element (in-app UBI -> 3D UBI)",
+        "S19 mascot entrance + speech bubble"
+      ],
+      "copy": [
+        {
+          "text": "Nada em dúvida!",
+          "role": "label",
+          "inFrame": 36,
+          "landFrame": 42,
+          "outFrame": 75,
+          "emphasis": [],
+          "mode": "stagger-words",
+          "readRule": "standard",
+          "style": "S19 speech bubble: panel-2 fill, 1 px rgba(255,255,255,0.08) border, radius 22, tail toward UBI's head (anchor headCenter 449,303 of the clip frame); Inter 500 40 px ink; words 2 f stagger",
+          "note": "Real UBI line (review.ts:83); pops above-right of the head"
+        }
+      ],
+      "visual": "ui/review-done.png (empty queue: in-app UBI, \"Nada esperando por você\", sidebar Revisão badge gone), W 1600, rotateX 4 deg, rotateY +6 deg (leans the other way for variety). rel 0-15 push onto review-done-ubi. rel 15 match cut: the in-app UBI render is replaced by the 3D clip at the same screen position and size (clip frame displayed 472 px, scale 0.524, so the 635 px silhouette = 333 px = the in-app body at zoom 2.0; feet at screen y ~828). Then the UI plane racks out of focus (blur 0 -> 8 px, dim 0 -> 0.65, SMOOTH 10 f) and the composition pushes 1.00 -> 1.30 on UBI (E.push rel 15 -> 35) while he jumps. Volt elliptical floor glow + soft contact shadow under the feet; ember orb 0.07 behind (warm scene).",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/review-done.png",
+          "hotspots": [
+            "review-done",
+            "review-done-ubi",
+            "queue-card"
+          ],
+          "note": "empty-state card; becomes a blurred backdrop"
+        },
+        {
+          "kind": "ubi",
+          "ref": "ubi/jump-from-idle",
+          "hotspots": [],
+          "note": "start at clip frame 6 on rel 15; apex frame 15 = rel 24; ground contact frame 21 = rel 30 (abs 570); squash peak frame 24 = rel 33; clip ends frame 40 = rel 49"
+        },
+        {
+          "kind": "ubi",
+          "ref": "ubi/idle",
+          "hotspots": [],
+          "note": "rel 50-74: idle from frame 11 (splice per manifest: jump-from-idle last frame == idle frame 10)"
+        },
+        {
+          "kind": "sfx",
+          "ref": "bloop_1.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "pop+2.wav",
+          "hotspots": [],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "review-done",
+          "zoom": 1.2,
+          "tilt": {
+            "rx": 4,
+            "ry": 6
+          },
+          "ease": "cut-in",
+          "anchor": {
+            "x": 960,
+            "y": 540
+          },
+          "note": "focus image (1280, 680) at screen (960, 540)"
+        },
+        {
+          "atFrame": 15,
+          "target": "review-done-ubi",
+          "zoom": 2.0,
+          "tilt": {
+            "rx": 3,
+            "ry": 5
+          },
+          "ease": "E.push 15 f (rel 0 -> 15)",
+          "anchor": {
+            "x": 820,
+            "y": 600
+          },
+          "note": "in-app UBI at screen (820, 600)"
+        },
+        {
+          "atFrame": 74,
+          "target": "review-done-ubi",
+          "zoom": 2.0,
+          "tilt": {
+            "rx": 3,
+            "ry": 5
+          },
+          "ease": "plane held (now a blurred backdrop); composition push 1.00 -> 1.30 E.push rel 15 -> 35, then 1.30 -> 1.33 linear",
+          "anchor": {
+            "x": 820,
+            "y": 600
+          }
+        }
+      ],
+      "cursor": [],
+      "motion": "rel 0-15: push; the empty-state heading and the in-app bubble are context (not text targets). rel 15 (abs 555, beat): match cut in-app UBI -> 3D UBI (jump-from-idle frame 6, mid-crouch) + rack focus. rel 18-24: take-off to apex; rel 30 (abs 570, beat 3 = clap): ground contact, 3 px camera shake; squash is baked into the clip (<= 3 %). rel 36: bubble pops from its tail (BOUNCY_SUBTLE - the only bouncy element), words stagger 2 f, landed rel 42. rel 50-74: idle loop + float y = 8 sin(2 pi f/126). rel 75: hard cut.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 540"
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 615 (beat)"
+      },
+      "sfx": [
+        {
+          "ref": "bloop_1.wav",
+          "atFrame": 30,
+          "gainDb": -12,
+          "note": "UBI lands"
+        },
+        {
+          "ref": "pop+2.wav",
+          "atFrame": 36,
+          "gainDb": -18,
+          "note": "bubble"
+        }
+      ],
+      "zoomCheck": [
+        {
+          "target": "review-done-ubi",
+          "file": "ui/review-done.png",
+          "captureFontPx": 36,
+          "displayWidth": 1600,
+          "zoom": 2.0,
+          "formula": "36 x (1600/2880) x 2.0",
+          "onScreenPx": 40.0,
+          "upsampling": 1.11,
+          "textBearing": false,
+          "crispPatch": false,
+          "note": "target is the mascot render; empty-state heading \"Nada esperando por você\" (cap 26) reads 40 px as context"
+        }
+      ],
+      "readingCheck": "\"Nada em dúvida!\" 15 chars -> min max(24, 2x15) = 30 f; landed rel 42, out rel 75 -> held 33 f OK"
+    },
+    {
+      "id": "s10-report-ready",
+      "startFrame": 615,
+      "durationInFrames": 90,
+      "act": "features",
+      "purpose": "Delivery: the daily report per category writes itself, and one click copies it as Markdown.",
+      "shotTypes": [
+        "S18 data build (report rows write on)",
+        "S13 cursor click + success",
+        "S12 push-in on a hotspot",
+        "Module B (text column left, UI right)"
+      ],
+      "copy": [
+        {
+          "text": "O relatório sai pronto.",
+          "role": "headline",
+          "inFrame": 2,
+          "landFrame": 25,
+          "outFrame": 90,
+          "emphasis": [
+            "pronto."
+          ],
+          "mode": "mask-up",
+          "readRule": "standard",
+          "lines": [
+            "O relatório",
+            "sai pronto."
+          ],
+          "style": "Sora 700 88 px, left column x=144 (max 616 px), cap-top y=380 / 474; masked lines 5 f apart; \"pronto.\" volt on landing; left scrim canvas 85 % -> 0 at x 900"
+        },
+        {
+          "text": "Copiar Markdown",
+          "role": "ui-caption",
+          "inFrame": 45,
+          "landFrame": 45,
+          "outFrame": 90,
+          "emphasis": [],
+          "mode": "static",
+          "readRule": "standard",
+          "style": "real button label, crisp patch (Inter 500 25 image px) - 36 px on screen once the camera arrives (rel 45)"
+        },
+        {
+          "text": "Markdown copiado",
+          "role": "ui-caption",
+          "inFrame": 46,
+          "landFrame": 52,
+          "outFrame": 90,
+          "emphasis": [],
+          "mode": "static",
+          "readRule": "standard",
+          "style": "Callout pill (S12): Inter 600 36 px ink on rgba(46,204,143,0.16), radius 999, 1.5 px leader line drawn over 10 f, side \"bottom\" of report-1-copy; mint accent",
+          "note": "The app's own toast string (reports.ts:47 toast_copied) set as a motion-graphics callout, not a fake toast"
+        }
+      ],
+      "visual": "ui/reports.png (Relatórios, Diário, card \"IFRO\"), W 1600, rotateX 5 deg, rotateY -10 deg, module B: UI on the right, headline column on the left over a scrim. PRIVACY/CLAIMS FRAME RULE: report-1-meta (\"Gerado 29/09 18:00 com <model id>\", image x 651-1844, y 440-463) contains a model version name -> it must never be legible: at the opening framing the frame top edge stays below image y 492, and at the button framing the frame left edge stays right of image x 1190 (the model id ends at x ~1140). Write-on: the six item rows of report-1-items are revealed by left -> right masks (10 f each, E.enter, 2 f stagger, spread 10 f), minutes and type chips included - the report \"writes itself\". Row 6 shows only the domain \"mail.google.com\" (no address) and is never a camera target.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/reports.png",
+          "hotspots": [
+            "report-card-1",
+            "report-1-items",
+            "report-1-item-1",
+            "report-1-copy",
+            "report-1-regenerate",
+            "report-1-meta",
+            "report-1-title"
+          ],
+          "note": "report-1-meta listed only to keep it OUT of frame (model id)"
+        },
+        {
+          "kind": "sfx",
+          "ref": "sweep_2.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "ui_click_2.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "success_chime_1.wav",
+          "hotspots": [],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "report-1-items",
+          "zoom": 1.9,
+          "tilt": {
+            "rx": 5,
+            "ry": -10
+          },
+          "ease": "cut-in",
+          "anchor": {
+            "x": 1250,
+            "y": 600
+          },
+          "note": "focus image (2150, 1100) at screen (1250, 600): visible image y >= 532 (meta out), x >= 966"
+        },
+        {
+          "atFrame": 15,
+          "target": "report-1-items",
+          "zoom": 1.94,
+          "tilt": {
+            "rx": 5,
+            "ry": -10
+          },
+          "ease": "linear drift during the write-on",
+          "anchor": {
+            "x": 1250,
+            "y": 600
+          }
+        },
+        {
+          "atFrame": 45,
+          "target": "report-1-copy",
+          "zoom": 2.6,
+          "tilt": {
+            "rx": 4,
+            "ry": -8
+          },
+          "ease": "E.glide 30 f span (rel 15 -> 45)",
+          "anchor": {
+            "x": 1300,
+            "y": 560
+          },
+          "note": "button centre (2426, 424) at screen (1300, 560): visible image x 1526-2856, y 36-784"
+        },
+        {
+          "atFrame": 89,
+          "target": "report-1-copy",
+          "zoom": 2.66,
+          "tilt": {
+            "rx": 4,
+            "ry": -8
+          },
+          "ease": "linear drift",
+          "anchor": {
+            "x": 1300,
+            "y": 560
+          }
+        }
+      ],
+      "cursor": [
+        {
+          "atFrame": 18,
+          "to": "offscreen-right",
+          "click": false,
+          "note": "enters from screen (1990, 700)"
+        },
+        {
+          "atFrame": 41,
+          "to": "report-1-copy",
+          "click": false,
+          "note": "arc, E.cursor 23 f; hover rel 39"
+        },
+        {
+          "atFrame": 45,
+          "to": "report-1-copy",
+          "click": true,
+          "note": "CLICK on abs 660 = bar 12 downbeat, ripple"
+        }
+      ],
+      "motion": "rel 0-20: rows write on (2 f stagger). rel 2 / 7: headline lines mask up, \"pronto.\" lands rel 25 in volt. rel 15-45: glide up-right to the \"Copiar Markdown\" button; DOF 4 px + dim 0.5 outside the button from rel 38 (zoom > 2.07). rel 45 CLICK: button patch pressed; rel 47: its copy icon morphs into a mint check (evolvePath 10 f), button flashes mint 12 % for 8 f. rel 46: callout \"Markdown copiado\" pops (SNAPPY), leader line draws on, landed rel 52. rel 52-89: hold, drift. rel 90: hard cut.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 615"
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 705 (beat 4 accent)"
+      },
+      "sfx": [
+        {
+          "ref": "sweep_2.wav",
+          "atFrame": 0,
+          "gainDb": -18,
+          "note": "rows write on (one cluster)"
+        },
+        {
+          "ref": "ui_click_2.wav",
+          "atFrame": 45,
+          "gainDb": -12,
+          "note": "click"
+        },
+        {
+          "ref": "success_chime_1.wav",
+          "atFrame": 48,
+          "gainDb": -14,
+          "note": "copied (C6 -> E6)"
+        }
+      ],
+      "zoomCheck": [
+        {
+          "target": "report-1-copy",
+          "file": "ui/reports.png",
+          "captureFontPx": 25,
+          "displayWidth": 1600,
+          "zoom": 2.6,
+          "formula": "25 x (1600/2880) x 2.6",
+          "onScreenPx": 36.1,
+          "upsampling": 1.44,
+          "textBearing": true,
+          "crispPatch": true,
+          "note": "\"Copiar Markdown\" (cap 18 px); upsampling 1.44 -> crisp patch, DOF outside"
+        },
+        {
+          "target": "report-1-items",
+          "file": "ui/reports.png",
+          "captureFontPx": 26,
+          "displayWidth": 1600,
+          "zoom": 1.94,
+          "formula": "26 x (1600/2880) x 1.94",
+          "onScreenPx": 28.0,
+          "upsampling": 1.08,
+          "textBearing": false,
+          "crispPatch": false,
+          "note": "opening: rows are texture (27 px) under the write-on masks; the headline carries the message"
+        }
+      ],
+      "readingCheck": "\"O relatório sai pronto.\" 23 chars -> min max(24, 2x23) = 46 f; landed rel 25, out rel 90 -> held 65 f OK | \"Copiar Markdown\" 15 chars -> min max(24, 2x15) = 30 f; landed rel 45, out rel 90 -> held 45 f OK | \"Markdown copiado\" 16 chars -> min max(24, 2x16) = 32 f; landed rel 52, out rel 90 -> held 38 f OK"
+    },
+    {
+      "id": "s11-focus-defends",
+      "startFrame": 705,
+      "durationInFrames": 60,
+      "act": "features",
+      "purpose": "Focus mode: a real session is running - the task, the countdown - and it is guarded.",
+      "shotTypes": [
+        "S11 UI zoom-to-element",
+        "S07-style live number (countdown tick)"
+      ],
+      "copy": [
+        {
+          "text": "Foco que se defende.",
+          "role": "headline",
+          "inFrame": 0,
+          "landFrame": 12,
+          "outFrame": 60,
+          "emphasis": [
+            "defende."
+          ],
+          "mode": "stagger-words",
+          "readRule": "standard",
+          "style": "Sora 700 104 px, x=144, cap-top y=110 - sits over the canvas ABOVE the window (the window top edge is at screen y ~220 at this framing); words 2 f stagger; exits by hard cut at rel 60"
+        }
+      ],
+      "visual": "ui/focus-session.png, W 1600, rotateX 4 deg, rotateY -6 deg, camera zoom 1.8 on session-card: \"Sessão de foco\", the task \"terminar o relatório do IFRO\" (41 px on screen), \"Restam 33:00\" (88 px), \"1 distração segurada\", \"Outras janelas escondidas\"; the Bloqueios card (Instagram, YouTube, Discord) below. Live countdown patch over session-countdown: Sora 700, volt, tabular figures, same size; ticks 33:00 -> 32:59 at rel 30 (4 f vertical roll) - the app counts down in reality.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/focus-session.png",
+          "hotspots": [
+            "session-card",
+            "session-task",
+            "session-countdown",
+            "targets-card"
+          ],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "session-card",
+          "zoom": 1.8,
+          "tilt": {
+            "rx": 4,
+            "ry": -6
+          },
+          "ease": "cut-in",
+          "anchor": {
+            "x": 1000,
+            "y": 640
+          },
+          "note": "focus image (1280, 420) at screen (1000, 640)"
+        },
+        {
+          "atFrame": 59,
+          "target": "session-countdown",
+          "zoom": 1.9,
+          "tilt": {
+            "rx": 3,
+            "ry": -5
+          },
+          "ease": "linear drift toward the countdown (continues into S12)",
+          "anchor": {
+            "x": 1000,
+            "y": 640
+          }
+        }
+      ],
+      "cursor": [],
+      "motion": "rel 0-12: headline stagger (2 f), \"defende.\" volt. rel 0-59: drift. rel 30: countdown ticks 33:00 -> 32:59. rel 52-59: plane dim 0 -> 0.2 in anticipation. rel 60: headline hard-cuts out; the plane continues into S12 (match cut).",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 705 (beat 4 of bar 12)"
+      },
+      "transitionOut": {
+        "type": "match-cut",
+        "frames": 0,
+        "note": "same plane and camera continue; only the headline cuts"
+      },
+      "sfx": [],
+      "zoomCheck": [
+        {
+          "target": "session-task",
+          "file": "ui/focus-session.png",
+          "captureFontPx": 41,
+          "displayWidth": 1600,
+          "zoom": 1.8,
+          "formula": "41 x (1600/2880) x 1.8",
+          "onScreenPx": 41.0,
+          "upsampling": 1.0,
+          "textBearing": true,
+          "crispPatch": false,
+          "note": "task text"
+        },
+        {
+          "target": "session-countdown",
+          "file": "ui/focus-session.png",
+          "captureFontPx": 88,
+          "displayWidth": 1600,
+          "zoom": 1.8,
+          "formula": "88 x (1600/2880) x 1.8",
+          "onScreenPx": 88.0,
+          "upsampling": 1.0,
+          "textBearing": true,
+          "crispPatch": false,
+          "note": "countdown digits (cap 62 px)"
+        }
+      ],
+      "readingCheck": "\"Foco que se defende.\" 20 chars -> min max(24, 2x20) = 40 f; landed rel 12, out rel 60 -> held 48 f OK"
+    },
+    {
+      "id": "s12-ubi-intervenes",
+      "startFrame": 765,
+      "durationInFrames": 75,
+      "act": "features",
+      "purpose": "The guard in action: YouTube showed up, UBI closed it and says so - and you answer \"Ok, foco!\".",
+      "shotTypes": [
+        "S06 notification pop-in (window as the subject)",
+        "S13 cursor click"
+      ],
+      "copy": [
+        {
+          "text": "Não! Foque na sua produtividade.",
+          "role": "ui-caption",
+          "inFrame": 0,
+          "landFrame": 6,
+          "outFrame": 70,
+          "emphasis": [],
+          "mode": "static",
+          "readRule": "standard",
+          "style": "UI bitmap text inside intervention.png (real UBI line, focus.ts:128): 42 px on screen",
+          "note": "message hotspot"
+        },
+        {
+          "text": "Ok, foco!",
+          "role": "ui-caption",
+          "inFrame": 0,
+          "landFrame": 6,
+          "outFrame": 70,
+          "emphasis": [],
+          "mode": "static",
+          "readRule": "standard",
+          "style": "UI bitmap button label: 36.5 px on screen"
+        }
+      ],
+      "visual": "Backdrop: the focus-session plane continues from S11, dims 0.2 -> 0.62 and blurs 0 -> 6 px over 8 f (SMOOTH). ui/intervention.png (1840 x 752, transparent; imageSize {w:1840,h:752}) displayed 1400 px wide (factor 0.761), centred at (960, 520), chrome \"none\" (it has its own panel), shadow tier 3 + volt glow 0.25: the in-app UBI, the bubble \"Não! Foque na sua produtividade.\", the rose \"YouTube\" badge and the volt \"Ok, foco!\" button.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/intervention.png",
+          "hotspots": [
+            "panel",
+            "ubi",
+            "message",
+            "target-badge",
+            "ok-button"
+          ],
+          "note": "imageSize 1840x752 - pass it to Screen"
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/focus-session.png",
+          "hotspots": [
+            "session-card",
+            "targets-card"
+          ],
+          "note": "dimmed backdrop"
+        },
+        {
+          "kind": "sfx",
+          "ref": "ui_pop_3.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "ui_click_3.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "whoosh_out_1.wav",
+          "hotspots": [],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "panel",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "window pops: translateY -32 -> 0, scale 0.94 -> 1, opacity 0 -> 1 (SNAPPY, <= 2 % overshoot)",
+          "file": "ui/intervention.png",
+          "note": "display width 1400 for a 1840-px image"
+        },
+        {
+          "atFrame": 69,
+          "target": "message",
+          "zoom": 1.06,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "linear push 1.00 -> 1.06",
+          "file": "ui/intervention.png"
+        }
+      ],
+      "cursor": [
+        {
+          "atFrame": 34,
+          "to": "offscreen-bottom-right",
+          "click": false,
+          "note": "fades in at rest point screen (1520, 930), 6 f"
+        },
+        {
+          "atFrame": 56,
+          "to": "ok-button",
+          "click": false,
+          "note": "arc, E.cursor 22 f; arrives 4 f early; 34 px tall, screen space"
+        },
+        {
+          "atFrame": 60,
+          "to": "ok-button",
+          "click": true,
+          "note": "CLICK on abs 825 (beat 4 of bar 14); button scale 0.96, ripple"
+        }
+      ],
+      "motion": "rel 0 (abs 765, beat): window pops (first moving frame rel 0, landed >= 0.9 at rel 6), backdrop dims/blurs. rel 6-69: message and badge fully legible, push drifts. rel 34-56: cursor fades in and travels. rel 60: CLICK + ripple. rel 70-74: window leaves (scale 1 -> 0.96, opacity -> 0, E.exit 5 f) together with the whip-left OUT half (midpoint abs 840, bar 15 downbeat).",
+      "transitionIn": {
+        "type": "match-cut",
+        "frames": 0,
+        "note": "backdrop plane continues from S11"
+      },
+      "transitionOut": {
+        "type": "whip-left",
+        "frames": 10,
+        "framesOut": 5,
+        "framesIn": 5,
+        "note": "out half rel 70-74; midpoint abs 840"
+      },
+      "sfx": [
+        {
+          "ref": "ui_pop_3.wav",
+          "atFrame": 0,
+          "gainDb": -12,
+          "note": "window pop (on the music stinger)"
+        },
+        {
+          "ref": "ui_click_3.wav",
+          "atFrame": 60,
+          "gainDb": -12,
+          "note": "Ok, foco!"
+        },
+        {
+          "ref": "whoosh_out_1.wav",
+          "atFrame": 72,
+          "gainDb": -16,
+          "note": "window dismissed (hit_offset 2.5 f: file starts rel 69.5)"
+        }
+      ],
+      "zoomCheck": [
+        {
+          "target": "message",
+          "file": "ui/intervention.png",
+          "captureFontPx": 55,
+          "displayWidth": 1400,
+          "zoom": 1.0,
+          "formula": "55 x (1400/1840) x 1.0",
+          "onScreenPx": 41.8,
+          "upsampling": 0.76,
+          "textBearing": true,
+          "crispPatch": false,
+          "note": "intervention.png is 1840 px wide, shown 1400 px wide"
+        },
+        {
+          "target": "ok-button",
+          "file": "ui/intervention.png",
+          "captureFontPx": 48,
+          "displayWidth": 1400,
+          "zoom": 1.0,
+          "formula": "48 x (1400/1840) x 1.0",
+          "onScreenPx": 36.5,
+          "upsampling": 0.76,
+          "textBearing": true,
+          "crispPatch": false,
+          "note": "\"Ok, foco!\" label"
+        }
+      ],
+      "readingCheck": "\"Não! Foque na sua produtividade.\" 32 chars -> min max(24, 2x32) = 64 f; landed rel 6, out rel 70 -> held 64 f OK | \"Ok, foco!\" 9 chars -> min max(24, 2x9) = 24 f; landed rel 6, out rel 70 -> held 64 f OK | The message sits in the UI bitmap; min hold met exactly (64/64) - the dismissal is locked to rel 70."
+    },
+    {
+      "id": "s13-choose-your-ai",
+      "startFrame": 840,
+      "durationInFrames": 60,
+      "act": "features",
+      "purpose": "Bring your own AI: Claude, OpenAI or Grok - named in plain text in the real settings, no logos.",
+      "shotTypes": [
+        "S11 UI zoom-to-element",
+        "S13 cursor hover path",
+        "Module A variant (headline bottom-left)"
+      ],
+      "copy": [
+        {
+          "text": "Você escolhe a IA.",
+          "role": "headline",
+          "inFrame": 5,
+          "landFrame": 20,
+          "outFrame": 60,
+          "emphasis": [
+            "IA."
+          ],
+          "mode": "stagger-words",
+          "readRule": "standard",
+          "style": "Sora 700 104 px, x=144, baseline y=905, words 3 f stagger; bottom scrim; hard cut at rel 60 (the scene continues as S14)"
+        }
+      ],
+      "visual": "ui/settings-ai.png (Configurações > IA, \"Anthropic Claude\" active), W 1600, rotateX 3 deg, rotateY -7 deg, camera zoom 2.33 on provider-picker anchored at screen (1010, 470). Crisp patch on the segmented control: the four labels \"Anthropic Claude\", \"OpenAI\", \"xAI Grok\", \"IA do Ubi\" re-typeset (Inter 500 28 image px) with the green key icons, plus the active pill. DOF blur 4 px + dim 0.5 outside the picker: the helper line (price estimate) and the key form are texture. model-fields (y >= 961, model ids) is out of frame (visible image y 90-925).",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/settings-ai.png",
+          "hotspots": [
+            "section-ia",
+            "provider-picker",
+            "provider-anthropic",
+            "provider-openai",
+            "provider-xai",
+            "provider-ia-do-ubi",
+            "provider-active",
+            "model-fields"
+          ],
+          "note": "model-fields listed only to keep it OUT of frame (model ids)"
+        },
+        {
+          "kind": "sfx",
+          "ref": "whip_1.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "ui_tick_2.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "ui_tick_3.wav",
+          "hotspots": [],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "provider-picker",
+          "zoom": 2.33,
+          "tilt": {
+            "rx": 3,
+            "ry": -7
+          },
+          "ease": "arrives with the whip-in",
+          "anchor": {
+            "x": 1010,
+            "y": 470
+          },
+          "note": "picker centre (1583, 453) at screen (1010, 470)"
+        },
+        {
+          "atFrame": 59,
+          "target": "provider-picker",
+          "zoom": 2.38,
+          "tilt": {
+            "rx": 3,
+            "ry": -7
+          },
+          "ease": "linear drift",
+          "anchor": {
+            "x": 1010,
+            "y": 470
+          }
+        }
+      ],
+      "cursor": [
+        {
+          "atFrame": 8,
+          "to": "offscreen-bottom-right",
+          "click": false,
+          "note": "fades in at rest point screen (1560, 820), 6 f"
+        },
+        {
+          "atFrame": 30,
+          "to": "provider-openai",
+          "click": false,
+          "note": "hover: panel-2 hover bg fades in 4 f"
+        },
+        {
+          "atFrame": 42,
+          "to": "provider-xai",
+          "click": false,
+          "note": "hover"
+        },
+        {
+          "atFrame": 56,
+          "to": "provider-ia-do-ubi",
+          "click": false,
+          "note": "arrives 4 f before the click on abs 900 (S14 rel 0)"
+        }
+      ],
+      "motion": "rel 0-4: whip IN half. rel 5-20: headline words stagger, \"IA.\" volt on landing. rel 8-56: cursor glides along the segmented control, hover states follow it (the viewer reads the four names). rel 60: headline hard-cuts; camera and cursor continue into S14.",
+      "transitionIn": {
+        "type": "whip-left",
+        "frames": 10,
+        "framesOut": 5,
+        "framesIn": 5,
+        "note": "in half rel 0-4; midpoint abs 840 (bar 15 downbeat)"
+      },
+      "transitionOut": {
+        "type": "match-cut",
+        "frames": 0,
+        "note": "same plane/camera/cursor continue; state change happens in S14"
+      },
+      "sfx": [
+        {
+          "ref": "whip_1.wav",
+          "atFrame": 0,
+          "gainDb": -8,
+          "note": "whip cut (hit_offset 2.55 f, file starts abs 837.5)"
+        },
+        {
+          "ref": "ui_tick_2.wav",
+          "atFrame": 30,
+          "gainDb": -22,
+          "note": "hover"
+        },
+        {
+          "ref": "ui_tick_3.wav",
+          "atFrame": 42,
+          "gainDb": -22,
+          "note": "hover"
+        }
+      ],
+      "zoomCheck": [
+        {
+          "target": "provider-picker",
+          "file": "ui/settings-ai.png",
+          "captureFontPx": 28,
+          "displayWidth": 1600,
+          "zoom": 2.33,
+          "formula": "28 x (1600/2880) x 2.33",
+          "onScreenPx": 36.2,
+          "upsampling": 1.29,
+          "textBearing": true,
+          "crispPatch": true,
+          "note": "provider names (cap 20-21 px); upsampling 1.29 -> crisp patch, DOF outside"
+        }
+      ],
+      "readingCheck": "\"Você escolhe a IA.\" 18 chars -> min max(24, 2x18) = 36 f; landed rel 20, out rel 60 -> held 40 f OK"
+    },
+    {
+      "id": "s14-or-leave-it-to-ubi",
+      "startFrame": 900,
+      "durationInFrames": 60,
+      "act": "features",
+      "purpose": "Or skip the API key: \"IA do Ubi\" is one click away in the same picker.",
+      "shotTypes": [
+        "S13 click + UI state change",
+        "S11 span glide"
+      ],
+      "copy": [
+        {
+          "text": "Ou deixe com o Ubi.",
+          "role": "headline",
+          "inFrame": 2,
+          "landFrame": 16,
+          "outFrame": 60,
+          "emphasis": [
+            "Ubi."
+          ],
+          "mode": "stagger-words",
+          "readRule": "standard",
+          "style": "Sora 700 104 px, x=144, baseline y=905, words 2 f stagger; excluded from the blur-dissolve: it hard-cuts on the dissolve midpoint (abs 960)"
+        }
+      ],
+      "visual": "Same plane. Click on \"IA do Ubi\" -> ui/settings-ai-ubi.png (IA do Ubi active). The active pill (patch) slides from \"Anthropic Claude\" to \"IA do Ubi\" over 8 f (SNAPPY); the helper line under the picker changes to the managed-plan line (kept under DOF: context, not a claim we make). Camera keeps creeping in (2.38 -> 2.46).",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/settings-ai.png",
+          "hotspots": [
+            "provider-ia-do-ubi",
+            "provider-picker"
+          ],
+          "note": "before (rel 0-1)"
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/settings-ai-ubi.png",
+          "hotspots": [
+            "provider-picker",
+            "provider-ia-do-ubi",
+            "provider-active",
+            "model-fields"
+          ],
+          "note": "after (rel 2+); model-fields stays out of frame"
+        },
+        {
+          "kind": "sfx",
+          "ref": "ui_click_2.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "ui_tick_1.wav",
+          "hotspots": [],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "provider-ia-do-ubi",
+          "zoom": 2.38,
+          "tilt": {
+            "rx": 3,
+            "ry": -7
+          },
+          "ease": "continuing",
+          "file": "ui/settings-ai.png",
+          "anchor": {
+            "x": 1010,
+            "y": 470
+          }
+        },
+        {
+          "atFrame": 30,
+          "target": "provider-picker",
+          "zoom": 2.42,
+          "tilt": {
+            "rx": 3,
+            "ry": -6
+          },
+          "ease": "E.glide 30 f span (rel 0 -> 30): small settle toward the picker centre as the pill lands",
+          "file": "ui/settings-ai-ubi.png",
+          "anchor": {
+            "x": 1010,
+            "y": 470
+          }
+        },
+        {
+          "atFrame": 59,
+          "target": "provider-picker",
+          "zoom": 2.46,
+          "tilt": {
+            "rx": 3,
+            "ry": -6
+          },
+          "ease": "linear drift",
+          "file": "ui/settings-ai-ubi.png",
+          "anchor": {
+            "x": 1010,
+            "y": 470
+          }
+        }
+      ],
+      "cursor": [
+        {
+          "atFrame": 0,
+          "to": "provider-ia-do-ubi",
+          "click": true,
+          "note": "CLICK on abs 900 = bar 16 downbeat, ripple"
+        },
+        {
+          "atFrame": 26,
+          "to": "provider-ia-do-ubi",
+          "click": false,
+          "note": "rests, then fades out rel 20-26"
+        }
+      ],
+      "motion": "rel 0 CLICK. rel 2: swap to settings-ai-ubi; active pill slides (SNAPPY 8 f). rel 2-16: headline stagger, \"Ubi.\" volt. rel 0-30: glide. rel 54-59: blur-dissolve OUT half on the UI/background layers (blur 0 -> 16, opacity 1 -> 0, scale 1 -> 1.03); the headline stays crisp and hard-cuts at rel 60.",
+      "transitionIn": {
+        "type": "match-cut",
+        "frames": 0,
+        "note": "continuous from S13"
+      },
+      "transitionOut": {
+        "type": "blur-dissolve",
+        "frames": 12,
+        "framesOut": 6,
+        "framesIn": 6,
+        "note": "out half rel 54-59, midpoint abs 960 (bar 17 downbeat): mood change into the breather"
+      },
+      "sfx": [
+        {
+          "ref": "ui_click_2.wav",
+          "atFrame": 0,
+          "gainDb": -12,
+          "note": "click"
+        },
+        {
+          "ref": "ui_tick_1.wav",
+          "atFrame": 4,
+          "gainDb": -20,
+          "note": "pill lands"
+        }
+      ],
+      "zoomCheck": [
+        {
+          "target": "provider-picker",
+          "file": "ui/settings-ai-ubi.png",
+          "captureFontPx": 28,
+          "displayWidth": 1600,
+          "zoom": 2.38,
+          "formula": "28 x (1600/2880) x 2.38",
+          "onScreenPx": 37.0,
+          "upsampling": 1.32,
+          "textBearing": true,
+          "crispPatch": true,
+          "note": "labels stay patched; zoom only grows (2.38 -> 2.46) so they stay >= 37 px"
+        }
+      ],
+      "readingCheck": "\"Ou deixe com o Ubi.\" 19 chars -> min max(24, 2x19) = 38 f; landed rel 16, out rel 60 -> held 44 f OK"
+    },
+    {
+      "id": "s15-privacy-breather",
+      "startFrame": 960,
+      "durationInFrames": 120,
+      "act": "features",
+      "purpose": "The breather: trust. The data stays with you and the AI sees only the minimum - UBI glances around and looks up at the words.",
+      "shotTypes": [
+        "S04 masked line reveal",
+        "S19 mascot (idle -> look)"
+      ],
+      "copy": [
+        {
+          "text": "Seus dados ficam com você. A IA vê só o mínimo.",
+          "role": "headline",
+          "inFrame": 2,
+          "landFrame": 25,
+          "outFrame": 120,
+          "emphasis": [
+            "mínimo."
+          ],
+          "mode": "mask-up",
+          "readRule": "standard",
+          "lines": [
+            "Seus dados ficam com você.",
+            "A IA vê só o mínimo."
+          ],
+          "style": "Sora 700 72 px, tracking -0.03em, left-aligned at x=780 (line 1 ~962 px wide, ends x ~1742 < 1776 title-safe), cap-tops y=452 / 548; line stagger 5 f; underline sweep (volt, 0.08em, E.glide 12 f) under \"mínimo.\" from rel 27 - the single emphasis"
+        }
+      ],
+      "visual": "Background \"plain\" + orbs: volt top-right 0.16, ember bottom-left 0.07 (warm scene), grain 0.045, vignette 0.55; composition push 1.00 -> 1.04 linear over 120 f. UBI 3D on the left: clip frame displayed 780 px (scale 0.867, silhouette ~550 px), centre x 420, feet at screen y 930; volt floor glow + soft shadow; float 8 px / 126 f. No UI: the calmest frame in the film.",
+      "assets": [
+        {
+          "kind": "ubi",
+          "ref": "ubi/idle",
+          "hotspots": [],
+          "note": "rel 0-29: idle frames 90-119 (ends on 119 so look splices cleanly)"
+        },
+        {
+          "kind": "ubi",
+          "ref": "ubi/look",
+          "hotspots": [],
+          "note": "rel 30-119: look frames 0-89 (left -> centre -> right -> up-right, settled ~frame 63 = rel 93: he ends looking up at the text on his right)"
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "full",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "composition push 1.00 -> 1.04 linear (rel 0 -> 119)",
+          "note": "no UI plane in this scene"
+        }
+      ],
+      "cursor": [],
+      "motion": "rel 0-5: blur-dissolve IN half (background + UBI: blur 16 -> 0, opacity 0 -> 1, scale 1.03 -> 1). rel 2 / 7: lines mask up (18 f, E.enter), last lands rel 25. rel 27-39: underline sweeps under \"mínimo.\". rel 30-93: UBI glances (look clip) and ends looking up-right at the words. rel 105 (abs 1065): the riser starts under the pad (SFX track). rel 120: hard cut on the build.",
+      "transitionIn": {
+        "type": "blur-dissolve",
+        "frames": 12,
+        "framesOut": 6,
+        "framesIn": 6,
+        "note": "in half rel 0-5"
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 1080, bar 19 downbeat"
+      },
+      "sfx": [],
+      "zoomCheck": [],
+      "readingCheck": "\"Seus dados ficam com você. A IA vê só o mínimo.\" 47 chars -> min max(24, 2x47) = 94 f; landed rel 25, out rel 120 -> held 95 f OK"
+    },
+    {
+      "id": "s16-wall-captura-entrega",
+      "startFrame": 1080,
+      "durationInFrames": 75,
+      "act": "proof",
+      "purpose": "Proof of breadth: a whole app on a 3D wall while the loop slams in four verbs - Captura, Classifica, Revisa, Entrega.",
+      "shotTypes": [
+        "S21 tabletop wall of screens",
+        "S02 kinetic word slam"
+      ],
+      "copy": [
+        {
+          "text": "Captura.",
+          "role": "hero",
+          "inFrame": 0,
+          "landFrame": 0,
+          "outFrame": 15,
+          "emphasis": [],
+          "mode": "slam",
+          "readRule": "slam-sequence",
+          "style": "Sora 800 200 px, tracking -0.045em, centred; words replace each other by hard cut (no exit)"
+        },
+        {
+          "text": "Classifica.",
+          "role": "hero",
+          "inFrame": 15,
+          "landFrame": 15,
+          "outFrame": 30,
+          "emphasis": [],
+          "mode": "slam",
+          "readRule": "slam-sequence",
+          "style": "same"
+        },
+        {
+          "text": "Revisa.",
+          "role": "hero",
+          "inFrame": 30,
+          "landFrame": 30,
+          "outFrame": 45,
+          "emphasis": [],
+          "mode": "slam",
+          "readRule": "slam-sequence",
+          "style": "same"
+        },
+        {
+          "text": "Entrega.",
+          "role": "hero",
+          "inFrame": 45,
+          "landFrame": 45,
+          "outFrame": 75,
+          "emphasis": [
+            "Entrega."
+          ],
+          "mode": "slam",
+          "readRule": "slam-sequence",
+          "style": "same; lands in volt; final word holds 30 f"
+        }
+      ],
+      "visual": "Background \"grid\" (floor 35 %), volt orb 0.20. Tabletop plane: perspective 2400 px, rotateX 55 deg, rotateZ -32 deg; six screens 900 px wide, 48 px gaps, shadow tier 2, radius 18: row A dashboard.png, categories.png, review-confirmed.png; row B reports.png, focus-session.png, insights.png. The camera travels diagonally so the screen under the word matches it: dashboard at rel 0 (Captura), categories at 15 (Classifica), review-confirmed at 30 (Revisa), reports at 45 (Entrega). Screens dim to 55 % + 3 px blur; a radial scrim (60 %) behind each word. Tilt > 14 deg is allowed here only (no reading; UI text ~9 px, unreadable by design).",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/dashboard.png",
+          "hotspots": [],
+          "note": "wall tile"
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/categories.png",
+          "hotspots": [],
+          "note": "wall tile"
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/review-confirmed.png",
+          "hotspots": [],
+          "note": "wall tile"
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/reports.png",
+          "hotspots": [],
+          "note": "wall tile (text ~9 px: model id unreadable)"
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/focus-session.png",
+          "hotspots": [],
+          "note": "wall tile"
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/insights.png",
+          "hotspots": [],
+          "note": "wall tile"
+        },
+        {
+          "kind": "sfx",
+          "ref": "impact_soft_1.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "impact_soft_2.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "impact_soft_3.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "impact.wav",
+          "hotspots": [],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "full",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 55,
+            "ry": 0
+          },
+          "ease": "tabletop travel starts (rotateZ -32 on the plane)",
+          "note": "over dashboard.png"
+        },
+        {
+          "atFrame": 74,
+          "target": "full",
+          "zoom": 1.12,
+          "tilt": {
+            "rx": 55,
+            "ry": 0
+          },
+          "ease": "diagonal travel, linear with 10 f ease ends (E.glide shoulders), + zoom 1.0 -> 1.12",
+          "note": "ends over reports.png"
+        }
+      ],
+      "cursor": [],
+      "motion": "Contacts on every beat: rel 0 (abs 1080, bar 19 downbeat) \"Captura.\" (hard cut in, scale 1.06 -> 1, SLAM, shake 6 px/8 f); rel 15 \"Classifica.\"; rel 30 \"Revisa.\"; rel 45 \"Entrega.\" in volt + canvas lift 3 f; each word replaces the previous one (hard cut). Wall travels under them the whole time. rel 75: hard cut.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 1080"
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 1155 (beat)"
+      },
+      "sfx": [
+        {
+          "ref": "impact_soft_1.wav",
+          "atFrame": 0,
+          "gainDb": 0,
+          "note": "duck -5"
+        },
+        {
+          "ref": "impact_soft_2.wav",
+          "atFrame": 15,
+          "gainDb": 0,
+          "note": "duck -5"
+        },
+        {
+          "ref": "impact_soft_3.wav",
+          "atFrame": 30,
+          "gainDb": 0,
+          "note": "duck -5"
+        },
+        {
+          "ref": "impact.wav",
+          "atFrame": 45,
+          "gainDb": 1,
+          "note": "duck -5"
+        }
+      ],
+      "zoomCheck": [],
+      "readingCheck": "\"Captura.\" 8 chars, slam word: >= 12 f per word (style 3.6) -> held 15 f (land rel 0 -> out rel 15) OK | \"Classifica.\" 11 chars, slam word: >= 12 f per word (style 3.6) -> held 15 f (land rel 15 -> out rel 30) OK | \"Revisa.\" 7 chars, slam word: >= 12 f per word (style 3.6) -> held 15 f (land rel 30 -> out rel 45) OK | \"Entrega.\" 8 chars, slam word: >= 12 f per word (style 3.6) -> held 30 f (land rel 45 -> out rel 75) OK | Slam sequence of 4 words (max allowed): 15 f each >= 12, rate 1/beat, final \"Entrega.\" holds 30 f >= 30 (style 3.6)."
+    },
+    {
+      "id": "s17-recap-flash-dropout",
+      "startFrame": 1155,
+      "durationInFrames": 45,
+      "act": "proof",
+      "purpose": "Crescendo: the film's hero moments flash by on 8ths then 16ths, end on the volt X, then one beat of total silence.",
+      "shotTypes": [
+        "S05 flash-cut montage (positive recap)",
+        "T8 drop-out"
+      ],
+      "copy": [],
+      "visual": "Five flash shots, each with its own push (scale 1.00 -> 1.06 linear, rotation +/-2 deg from random(seed)), all on the dark canvas (no luminance flips): rel 0-7 dashboard focus-dial \"88\" (zoom 2.2); rel 8-14 the keycap \"1\" pressed, volt legend (KeyCap component); rel 15-18 \"Confirmar os 19\" button (S08 framing + patch, ripple frozen at peak); rel 19-22 reports item rows (report-1-items, zoom 2.0, meta out of frame); rel 23-29 the volt \"X\" alone (path wm-X of ubiqx-wordmark-bold.svg, 420 px tall, centred, glow 0.3) - the tease. rel 30-44 DROP-OUT: canvas #0a0d16 + grain only, true silence (music and SFX).",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/dashboard.png",
+          "hotspots": [
+            "focus-dial"
+          ],
+          "note": "flash 1"
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/review-settled-expanded.png",
+          "hotspots": [
+            "confirm-all-button"
+          ],
+          "note": "flash 3 (with patch)"
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/reports.png",
+          "hotspots": [
+            "report-1-items"
+          ],
+          "note": "flash 4 (top edge below image y 492)"
+        },
+        {
+          "kind": "brand",
+          "ref": "brand/ubiqx-wordmark-bold.svg",
+          "hotspots": [],
+          "note": "path id \"wm-X\" only (#4d8dff)"
+        },
+        {
+          "kind": "sfx",
+          "ref": "riser-2bar.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "glitch_1.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "glitch_2.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "glitch_3.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "glitch.wav",
+          "hotspots": [],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "focus-dial",
+          "zoom": 2.2,
+          "tilt": {
+            "rx": 4,
+            "ry": -4
+          },
+          "ease": "flash 1: push 1.00 -> 1.06 linear",
+          "file": "ui/dashboard.png"
+        },
+        {
+          "atFrame": 15,
+          "target": "confirm-all-button",
+          "zoom": 2.7,
+          "tilt": {
+            "rx": 4,
+            "ry": -8
+          },
+          "ease": "flash 3",
+          "file": "ui/review-settled-expanded.png",
+          "anchor": {
+            "x": 960,
+            "y": 560
+          }
+        },
+        {
+          "atFrame": 19,
+          "target": "report-1-items",
+          "zoom": 2.0,
+          "tilt": {
+            "rx": 5,
+            "ry": -10
+          },
+          "ease": "flash 4",
+          "file": "ui/reports.png"
+        },
+        {
+          "atFrame": 30,
+          "target": "full",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "drop-out: no picture but canvas + grain"
+        }
+      ],
+      "cursor": [],
+      "motion": "Cut grid (global 8th/16th positions): abs 1155 (8th), 1163 (8th), 1170 (16th), 1174 (16th), 1178 (16th) -> shot lengths 8/7/4/4/7 f (>= 4 f each). abs 1185 (beat 4 of bar 20): hard cut to black + grain; 15 f of silence (1185-1199). No flash-to-white anywhere in the montage.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0,
+        "note": "abs 1155"
+      },
+      "transitionOut": {
+        "type": "flash",
+        "frames": 19,
+        "framesOut": 15,
+        "framesIn": 4,
+        "note": "T8 drop-out (rel 30-44: black, silence) then T7 flash decay in S18 rel 0-3 on the drop"
+      },
+      "sfx": [
+        {
+          "ref": "riser-2bar.wav",
+          "atFrame": 30,
+          "gainDb": -6,
+          "note": "the riser's end (its hit/last sample) lands on abs 1185 where the silence starts; file starts abs 1065 (S15 rel 105); crescendo -24 -> -6 dB baked"
+        },
+        {
+          "ref": "glitch_1.wav",
+          "atFrame": 0,
+          "gainDb": -16,
+          "note": "flash cut"
+        },
+        {
+          "ref": "glitch_2.wav",
+          "atFrame": 8,
+          "gainDb": -16,
+          "note": "flash cut"
+        },
+        {
+          "ref": "glitch_3.wav",
+          "atFrame": 15,
+          "gainDb": -18,
+          "note": "flash cut"
+        },
+        {
+          "ref": "glitch.wav",
+          "atFrame": 19,
+          "gainDb": -18,
+          "note": "flash cut"
+        }
+      ],
+      "zoomCheck": [
+        {
+          "target": "confirm-all-button",
+          "file": "ui/review-settled-expanded.png",
+          "captureFontPx": 25,
+          "displayWidth": 1600,
+          "zoom": 2.7,
+          "formula": "25 x (1600/2880) x 2.7",
+          "onScreenPx": 37.5,
+          "upsampling": 1.5,
+          "textBearing": false,
+          "crispPatch": true,
+          "note": "4-frame flash, patched as in S08"
+        }
+      ],
+      "readingCheck": "no copy lines in this scene | Flash shots of 4-8 f are recap texture of moments already read (S01, S06, S08, S10); nothing new to read."
+    },
+    {
+      "id": "s18-wordmark-drop",
+      "startFrame": 1200,
+      "durationInFrames": 60,
+      "act": "reveal",
+      "purpose": "The resolve: after the silence, the drop - \"ubiqX AI\" slams in, the X pops, light glints across the letters.",
+      "shotTypes": [
+        "S08 logo reveal slam",
+        "T7 flash cut on the hit"
+      ],
+      "copy": [
+        {
+          "text": "ubiqX AI",
+          "role": "hero",
+          "inFrame": 0,
+          "landFrame": 0,
+          "outFrame": 60,
+          "emphasis": [
+            "X"
+          ],
+          "mode": "slam",
+          "readRule": "standard",
+          "style": "wordmark = brand/ubiqx-wordmark-bold.svg rendered at font-size 200 (height 0.969 x 200 = 194 px, width ~584 px), ink letters + volt X; \"AI\" pill Sora 600 56 px volt on rgba(77,141,255,0.14), radius 999, padding .2em .5em; group centred at (960, 520)",
+          "note": "continues into S19 (wordmark stays on screen)"
+        }
+      ],
+      "visual": "Background orbs: volt orb behind the wordmark 0 -> 0.30 over 6 f, settles 0.18 by rel 30; grid floor 20 %; grain. Per-letter SVG paths wm-u, wm-b, wm-i, wm-q (ink #e8edf9) and wm-X (volt #4d8dff). Wordmark text-shadow glow 0 0 40px rgba(77,141,255,0.30) for this bar only.",
+      "assets": [
+        {
+          "kind": "brand",
+          "ref": "brand/ubiqx-wordmark-bold.svg",
+          "hotspots": [],
+          "note": "per-letter paths wm-u/wm-b/wm-i/wm-q/wm-X"
+        },
+        {
+          "kind": "sfx",
+          "ref": "impact_deep_1.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "sub_drop_1.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "shimmer_3.wav",
+          "hotspots": [],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "full",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "composition push 1.00 -> 1.03 linear (rel 0 -> 59)",
+          "note": "no UI plane"
+        }
+      ],
+      "cursor": [],
+      "motion": "rel 0 (abs 1200, bar 21 downbeat = THE DROP): wordmark on screen at full opacity, scale 1.10 -> 1 (SLAM); letters converge (tracking +0.02em -> -0.03em equivalent, x offsets, E.push 20 f); flash overlay #e8edf9 at 0.35 decaying to 0 over 4 f (T7 incoming half). rel 3: the X pops separately: rotate -90 -> 0 deg, scale 0 -> 1 (BOUNCY_SUBTLE - the only bouncy element). rel 8: \"AI\" pill enters (SNAPPY, no bounce). rel 10-28: glint - 140 px diagonal white 18 % band masked to the glyphs. rel 28-59: hold, orb settles.",
+      "transitionIn": {
+        "type": "flash",
+        "frames": 19,
+        "framesOut": 15,
+        "framesIn": 4,
+        "note": "flash decay rel 0-3 after the 15-f drop-out"
+      },
+      "transitionOut": {
+        "type": "match-cut",
+        "frames": 0,
+        "note": "wordmark continues into the end-card lockup"
+      },
+      "sfx": [
+        {
+          "ref": "impact_deep_1.wav",
+          "atFrame": 0,
+          "gainDb": 2,
+          "note": "the drop; duck bed -6 dB"
+        },
+        {
+          "ref": "sub_drop_1.wav",
+          "atFrame": 0,
+          "gainDb": 0,
+          "note": "sub boom stacked"
+        },
+        {
+          "ref": "shimmer_3.wav",
+          "atFrame": 10,
+          "gainDb": -14,
+          "note": "glint"
+        }
+      ],
+      "zoomCheck": [],
+      "readingCheck": "\"ubiqX AI\" 8 chars -> min max(24, 2x8) = 24 f; landed rel 0, out rel 60 -> held 60 f OK"
+    },
+    {
+      "id": "s19-end-card",
+      "startFrame": 1260,
+      "durationInFrames": 180,
+      "act": "cta",
+      "purpose": "The CTA: wordmark lockup, tagline, \"Baixe em ubiqx.com.br\", the three platforms - and UBI waving goodbye. The last frame is the end card.",
+      "shotTypes": [
+        "S22 end card (CTA)",
+        "S19 mascot (wave)",
+        "S20 logo row (platforms)"
+      ],
+      "copy": [
+        {
+          "text": "Retome o controle do seu dia.",
+          "role": "sub",
+          "inFrame": 0,
+          "landFrame": 18,
+          "outFrame": 180,
+          "emphasis": [],
+          "mode": "mask-up",
+          "readRule": "standard",
+          "style": "Inter 500 48 px, ink-2, centred x=960, cap-top y=598 (masked line, E.enter 18 f)"
+        },
+        {
+          "text": "Baixe em ubiqx.com.br",
+          "role": "label",
+          "inFrame": 8,
+          "landFrame": 14,
+          "outFrame": 180,
+          "emphasis": [],
+          "mode": "static",
+          "readRule": "standard",
+          "style": "CTA pill: Sora 600 44 px, #0a0d16 text on volt #4d8dff (6.1:1), radius 999, padding 22 x 44, centred at y=720; pops BOUNCY_SUBTLE (the only bouncy element)"
+        },
+        {
+          "text": "macOS · Windows · Linux",
+          "role": "label",
+          "inFrame": 12,
+          "landFrame": 26,
+          "outFrame": 180,
+          "emphasis": [],
+          "mode": "static",
+          "readRule": "standard",
+          "style": "Inter 500 36 px, ink-2 at 85 %, centred at y=832 (bottom of text at y ~850 < 960); monochrome glyphs brand/os/apple.svg, windows11.svg, linux.svg (30 px, ink-2) before each name; row fades up as one unit (y 16 -> 0, blur 6 -> 0, E.enter 14 f), glyphs 3 f apart"
+        }
+      ],
+      "phraseChecks": [
+        {
+          "text": "Retome o controle do seu dia. Baixe em ubiqx.com.br macOS · Windows · Linux",
+          "landFrame": 26,
+          "outFrame": 180
+        }
+      ],
+      "visual": "Background \"grid\" at 20 %, volt orb breathing (scale 1 <-> 1.05 over 120 f), small ember orb 0.06 near UBI, grain, vignette. Lockup centred as a group: UBI 3D (clip frame displayed 420 px, silhouette ~300 px, centre x ~595, feet y ~470) left of the wordmark (170 px tall, x ~735-1247) and the \"AI\" pill (x ~1267-1425), baseline y ~430; tagline, CTA pill and platform row centred below. Nothing in the bottom 120 px or the 200 x 120 corners. No fade to black: the last frame IS the end card.",
+      "assets": [
+        {
+          "kind": "brand",
+          "ref": "brand/ubiqx-wordmark-bold.svg",
+          "hotspots": [],
+          "note": "lockup"
+        },
+        {
+          "kind": "brand",
+          "ref": "brand/os/apple.svg",
+          "hotspots": [],
+          "note": "macOS glyph"
+        },
+        {
+          "kind": "brand",
+          "ref": "brand/os/windows11.svg",
+          "hotspots": [],
+          "note": "Windows glyph"
+        },
+        {
+          "kind": "brand",
+          "ref": "brand/os/linux.svg",
+          "hotspots": [],
+          "note": "Linux glyph"
+        },
+        {
+          "kind": "ubi",
+          "ref": "ubi/idle",
+          "hotspots": [],
+          "note": "rel 4-19 idle frames 104-119, then after the wave from idle frame 11"
+        },
+        {
+          "kind": "ubi",
+          "ref": "ubi/wave-from-idle",
+          "hotspots": [],
+          "note": "rel 20-90 (71 f): the goodbye wave"
+        },
+        {
+          "kind": "sfx",
+          "ref": "impact_deep_2.wav",
+          "hotspots": [],
+          "note": ""
+        },
+        {
+          "kind": "sfx",
+          "ref": "ui_pop_1.wav",
+          "hotspots": [],
+          "note": ""
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "full",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "static composition; only the orb breathes and UBI floats (always alive)"
+        }
+      ],
+      "cursor": [],
+      "motion": "rel 0 (abs 1260, bar 22 downbeat = FINAL HIT): the wordmark (from S18) glides up into the lockup (y 520 -> 430, scale 1 -> 0.876 = 170 px, SMOOTH 20 f); tagline masks up (lands rel 18). rel 4-20: UBI rises in beside the wordmark (y +120 -> 0, opacity 0 -> 1, SMOOTH - not bouncy). rel 8: CTA pill pops (BOUNCY_SUBTLE, landed rel 14). rel 12: platform row enters (landed rel 26). rel 20-90: UBI waves. rel 26-179: everything fully legible (153 f). rel 179: last frame = end card.",
+      "transitionIn": {
+        "type": "match-cut",
+        "frames": 0,
+        "note": "wordmark continues from S18"
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0,
+        "note": "end of film; last frame is the end card (X loops cleanly back to the poster)"
+      },
+      "sfx": [
+        {
+          "ref": "impact_deep_2.wav",
+          "atFrame": 0,
+          "gainDb": -2,
+          "note": "final hit layered on the music stinger; duck -4 dB"
+        },
+        {
+          "ref": "ui_pop_1.wav",
+          "atFrame": 8,
+          "gainDb": -14,
+          "note": "CTA pill"
+        }
+      ],
+      "zoomCheck": [],
+      "readingCheck": "\"Retome o controle do seu dia.\" 29 chars -> min max(24, 2x29) = 58 f; landed rel 18, out rel 180 -> held 162 f OK | \"Baixe em ubiqx.com.br\" 21 chars -> min max(24, 2x21) = 42 f; landed rel 14, out rel 180 -> held 166 f OK | \"macOS · Windows · Linux\" 23 chars -> min max(24, 2x23) = 46 f; landed rel 26, out rel 180 -> held 154 f OK | together \"Retome o controle do seu dia. Baixe em ubiqx.com.br macOS · Windows · Linux\" 75 chars -> 150 f; held 154 f from last landing OK | Wordmark \"ubiqX AI\" (8 chars) was read in S18 (60 f). End card fully legible for 153 f after the last element lands (>= 90 f rule; CTA/domain >= 60 f rule)."
+    }
+  ]
+}

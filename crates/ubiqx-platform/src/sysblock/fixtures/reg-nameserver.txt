@@ -1,0 +1,8 @@
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{11111111-2222-3333-4444-555555555555}
+    NameServer    REG_SZ    1.1.1.3,1.0.0.3
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}
+    NameServer    REG_SZ    
+
+Fim da pesquisa: 2 correspondência(s) encontrada(s).

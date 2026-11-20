@@ -21,8 +21,25 @@ pub enum CoreError {
     #[error("AI provider is not configured (missing API key)")]
     AiNotConfigured,
 
+    /// The provider rejected the account or the model (no credits, unknown model, disabled
+    /// key). Not transient and not the request's fault: the user has to act.
+    #[error("AI provider rejected the account/model: {0}")]
+    AiRejected(String),
+
+    /// The model refused to answer this specific content (`stop_reason = refusal`). A
+    /// per-content decision, not an outage: never retry the same payload.
+    #[error("AI provider refused the request (stop_reason=refusal)")]
+    AiRefused,
+
     #[error("rate limited by AI provider; retry after {retry_after_secs}s")]
     RateLimited { retry_after_secs: u64 },
+
+    /// The action needs a license the app does not have: selecting the managed AI provider
+    /// without a valid `monthly_managed` license, or any AI feature under
+    /// [`crate::license::LicenseEnforcement::Hard`] while unlicensed. Tracking, the
+    /// timeline and manual categorisation never produce it.
+    #[error("a valid ubiqX license is required for this action")]
+    LicenseRequired,
 
     #[error("invalid input: {0}")]
     Invalid(String),
