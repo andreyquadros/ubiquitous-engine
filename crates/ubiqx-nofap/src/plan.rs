@@ -3078,6 +3078,22 @@ mod tests {
                 ),
                 // Still ours, in another order, and up.
                 interface("15", true, &reordered),
+                // Three of the four: the user took one out, so it is the user's now.
+                interface("17", true, &reordered[..3]),
+                // Somebody else's servers, on a service that is on and on one that is off,
+                // and the same operator's other filter, which is not the set we wrote.
+                interface("19", true, &["9.9.9.9", "149.112.112.112"]),
+                interface("21", false, &["9.9.9.9"]),
+                interface(
+                    "23",
+                    true,
+                    &[
+                        "1.1.1.2",
+                        "1.0.0.2",
+                        "2606:4700:4700::1112",
+                        "2606:4700:4700::1002",
+                    ],
+                ),
             ],
             &[],
         );

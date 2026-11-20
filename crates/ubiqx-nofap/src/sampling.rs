@@ -1682,6 +1682,57 @@ mod tests {
     }
 
     #[test]
+    fn the_spread_does_not_depend_on_the_length_of_a_guard_pass() {
+        // The guard does not run every second. With a pass every `step` seconds a check
+        // comes at the first pass after it is due, and the six of an hour stay spread:
+        // six in every hour, each at most one pass late, never two closer than 45 s, and
+        // never more than six in any hour.
+        let ctx = browser(Verdict::Unknown(HostClass::Mixed));
+        let due = [5, 50, 140, 320, 680, 1_400];
+        for step in [2_i64, 3, 5, 7, 11, 13, 30, 45, 60] {
+            let mut memory = SamplerMemory::default();
+            let mut sent = Vec::new();
+            let mut second = 0;
+            while second < 6 * HOUR_SECS {
+                record(&mut memory, KEY, SampleEvent::Front, DAY, at(second));
+                if let Decision::Capture { signal } = decide(&ctx, &memory, DAY, at(second)) {
+                    assert!(signal);
+                    let picture = (second as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+                    record(&mut memory, KEY, clean(picture), DAY, at(second));
+                    sent.push(second);
+                }
+                second += step;
+            }
+            assert_eq!(sent.len(), 36, "a pass every {step} s: {sent:?}");
+            for (hour, checks) in sent.chunks(6).enumerate() {
+                // The hour of the key begins with its first check; the others follow it
+                // at the doubled gaps, each rounded up to a pass.
+                let late_start = checks[0] - (hour as i64 * HOUR_SECS + due[0]);
+                assert!(
+                    (0..6 * step).contains(&late_start),
+                    "a pass every {step} s, hour {hour}: first check at {}",
+                    checks[0]
+                );
+                for (n, pair) in checks.windows(2).enumerate() {
+                    let gap = pair[1] - pair[0];
+                    let wanted = due[n + 1] - due[n];
+                    assert!(
+                        (wanted..wanted + step).contains(&gap),
+                        "a pass every {step} s, hour {hour}: gap {gap} after check {n}"
+                    );
+                }
+            }
+            for (n, first) in sent.iter().enumerate() {
+                let within = sent[n..]
+                    .iter()
+                    .filter(|second| *second - first < HOUR_SECS)
+                    .count();
+                assert!(within <= 6, "a pass every {step} s: {within} from {first}");
+            }
+        }
+    }
+
+    #[test]
     fn a_new_hour_of_the_key_resets_the_gap_but_not_the_cap() {
         let ctx = browser(Verdict::Unknown(HostClass::Mixed));
         let mut memory = in_front(&ctx);

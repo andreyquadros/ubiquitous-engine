@@ -196,7 +196,7 @@ describe('turning protection off', () => {
 describe('a switch whose change is waiting (integrator decision 22)', () => {
   beforeEach(() => resetNofap('on'));
 
-  const NOTE = 'Pedido em espera: isto continua ligado até você confirmar ou cancelar o pedido.';
+  const NOTE = 'Pedido em espera: isto continua ligado até você confirmar o pedido. Se você cancelar, fica como está.';
   /** Puts requests into the waiting list the way the engine would, each with the full delay ahead of it. */
   const wait = (...changes: NofapChange[]) => {
     const requested_at = new Date().toISOString();
@@ -228,6 +228,9 @@ describe('a switch whose change is waiting (integrator decision 22)', () => {
     fireEvent.click(within(banner).getByRole('button', { name: 'Manter proteção' }));
     await waitFor(() => expect(hosts()).toBeEnabled());
     expect(within(tab).queryByTestId('waiting-set_hosts')).toBeNull();
+    // What the line said: cancelled, the switch is as it was, still on.
+    expect(hosts()).toHaveAttribute('aria-checked', 'true');
+    expect(__nofapMock.state().config.system.hosts).toBe(true);
   });
 
   it('covers every switch of the protection tab, and only the scope switch that is being turned off', async () => {
@@ -253,7 +256,7 @@ describe('a switch whose change is waiting (integrator decision 22)', () => {
     expect(within(tab).getByRole('switch', { name: 'Sites desconhecidos' })).toBeEnabled();
     expect(within(tab).getByRole('switch', { name: 'Apps de mensagens' })).toBeEnabled();
     expect(within(tab).getByRole('switch', { name: 'Janelas anônimas' })).toBeEnabled();
-    expect(within(tab).getByTestId('waiting-set_vision_scope')).toHaveTextContent('Pedido em espera: o que está ligado aqui continua assim até você confirmar ou cancelar o pedido.');
+    expect(within(tab).getByTestId('waiting-set_vision_scope')).toHaveTextContent('Pedido em espera: o que está ligado aqui continua assim até você confirmar o pedido. Se você cancelar, fica como está.');
 
     // Turning everything off is waiting too: the button is disabled, next to the sentence the status uses.
     expect(screen.getByTestId('nofap-off-button')).toBeDisabled();
@@ -271,8 +274,8 @@ describe('a switch whose change is waiting (integrator decision 22)', () => {
   });
 
   it('says so in English too', () => {
-    expect(translate('en', 'nofap.pending.switch_waiting')).toBe('Request waiting: this stays on until you confirm or cancel the request.');
-    expect(translate('en', 'nofap.pending.scope_waiting')).toBe('Request waiting: what is on here stays on until you confirm or cancel the request.');
+    expect(translate('en', 'nofap.pending.switch_waiting')).toBe('Request waiting: this stays on until you confirm the request. If you cancel it, this stays as it is.');
+    expect(translate('en', 'nofap.pending.scope_waiting')).toBe('Request waiting: what is on here stays on until you confirm the request. If you cancel it, this stays as it is.');
   });
 
   it('never calls a switch that is off waiting, nor one whose waiting request turns something on', () => {

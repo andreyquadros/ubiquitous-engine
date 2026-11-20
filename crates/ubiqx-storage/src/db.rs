@@ -251,4 +251,79 @@ mod tests {
         }
         assert!(on_disk(&path, KEPT_VALUE));
     }
+
+    const LONG_PART: &str = "trecho-de-um-texto-longo.example ";
+    const DROPPED_VALUE: &str = "texto-de-uma-tabela-removida.example";
+
+    /// Stores a value that spans several pages and a table of its own, folds the log into
+    /// the file, then deletes the long value, empties and drops the table, and folds the
+    /// log again. What goes here is whole pages, not a cell inside a page that stays.
+    fn store_and_free_pages(conn: &Connection, path: &Path) {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS notes (key TEXT PRIMARY KEY, value TEXT); \
+             CREATE TABLE scratch (value TEXT);",
+        )
+        .expect("tables");
+        // About 20 kB: the first part stays in the row's page, the rest is a chain of
+        // overflow pages.
+        let long = LONG_PART.repeat(600);
+        conn.execute(
+            "INSERT INTO notes (key, value) VALUES ('longa', ?1)",
+            [&long],
+        )
+        .expect("insert");
+        conn.execute(
+            "INSERT INTO notes (key, value) VALUES ('mantida', ?1)",
+            [KEPT_VALUE],
+        )
+        .expect("insert");
+        for _ in 0..200 {
+            conn.execute("INSERT INTO scratch (value) VALUES (?1)", [DROPPED_VALUE])
+                .expect("insert");
+        }
+        conn.query_row(CHECKPOINT, [], |_| Ok(()))
+            .expect("checkpoint");
+        for stored in [LONG_PART, DROPPED_VALUE, KEPT_VALUE] {
+            assert!(on_disk(path, stored), "the search finds `{stored}`");
+        }
+
+        let deleted = conn
+            .execute("DELETE FROM notes WHERE key = 'longa'", [])
+            .expect("delete");
+        assert_eq!(deleted, 1);
+        conn.execute_batch("DELETE FROM scratch; DROP TABLE scratch;")
+            .expect("drop");
+        conn.query_row(CHECKPOINT, [], |_| Ok(()))
+            .expect("checkpoint");
+    }
+
+    #[test]
+    fn freed_pages_do_not_keep_their_text() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("ubiqx.sqlite");
+        let db = Db::open(&path).expect("open");
+        db.with(|conn| {
+            store_and_free_pages(conn, &path);
+            Ok(())
+        })
+        .expect("with");
+        for gone in [LONG_PART, DROPPED_VALUE] {
+            assert!(!on_disk(&path, gone), "`{gone}` is still in the file");
+        }
+        assert!(on_disk(&path, KEPT_VALUE), "what was kept is still there");
+
+        // The control: a connection that does not overwrite leaves both in the pages it
+        // freed.
+        let plain = dir.path().join("plain.sqlite");
+        let conn = Connection::open(&plain).expect("open");
+        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA secure_delete = OFF;")
+            .expect("pragmas");
+        store_and_free_pages(&conn, &plain);
+        for left_behind in [LONG_PART, DROPPED_VALUE] {
+            assert!(
+                on_disk(&plain, left_behind),
+                "`{left_behind}` was expected to stay without the pragma"
+            );
+        }
+    }
 }

@@ -527,6 +527,114 @@ mod tests {
         assert_eq!(reconcile(&after, &[], back).len(), 2);
     }
 
+    /// One verify pass as the service runs it: reconcile, then credit the running time.
+    fn pass(
+        lists: &ExclusionLists,
+        seen: &[ExclusionSeen],
+        enabled_at: DateTime<Utc>,
+        elapsed_secs: u32,
+        now: DateTime<Utc>,
+    ) -> Vec<ExclusionSeen> {
+        let mut seen = reconcile_since(lists, seen, Some(enabled_at), now);
+        observe(&mut seen, elapsed_secs);
+        seen
+    }
+
+    /// `seen` as it is after the app was closed and opened again: written and read back.
+    fn restarted(seen: &[ExclusionSeen]) -> Vec<ExclusionSeen> {
+        serde_json::from_str(&serde_json::to_string(seen).expect("written")).expect("read back")
+    }
+
+    #[test]
+    fn the_running_time_survives_a_restart_and_a_restart_adds_none() {
+        let enabled_at = at(0);
+        let before = lists(&["com.example.notes"], &[]);
+        let after = lists(&["com.example.notes"], &["videos.example.org"]);
+        let mut seen = reconcile(&before, &[], enabled_at);
+        // The entry is added, and the clock is set a week ahead before the next pass.
+        let week = 7 * 86_400;
+        seen = pass(&after, &seen, enabled_at, 45, at(1_000));
+        assert_eq!(seen[1].observed_secs, 45);
+        // The app is closed and opened three times; every first pass after a start claims
+        // the whole week as elapsed time and is credited one step.
+        for start in 1..=3 {
+            seen = restarted(&seen);
+            seen = pass(&after, &seen, enabled_at, 604_800, at(1_000 + week + start));
+            assert_eq!(seen[1].first_seen_at, at(1_000), "start {start}");
+            assert_eq!(
+                effective(&after, &seen, Some(enabled_at), DELAY, at(2_000 + week)),
+                before,
+                "start {start}: {} s of running time",
+                seen[1].observed_secs
+            );
+        }
+        assert_eq!(seen[1].observed_secs, 45 + 3 * OBSERVE_STEP_MAX_SECS);
+        // A restart alone, with no pass in between, changes nothing.
+        assert_eq!(restarted(&restarted(&seen)), seen);
+        // The fourth pass reaches the 600 s the delay asks for.
+        seen = pass(&after, &restarted(&seen), enabled_at, 45, at(2_000 + week));
+        assert_eq!(seen[1].observed_secs, 540);
+        assert_eq!(
+            effective(&after, &seen, Some(enabled_at), DELAY, at(2_000 + week)),
+            before
+        );
+        seen = pass(&after, &restarted(&seen), enabled_at, 60, at(2_060 + week));
+        assert_eq!(
+            effective(&after, &seen, Some(enabled_at), DELAY, at(2_060 + week)),
+            after
+        );
+        // The entry that was there at enabling was effective all along, whatever the clock.
+        for now in [at(-week), at(0), at(week)] {
+            assert_eq!(
+                effective(&after, &seen, Some(enabled_at), DELAY, now).apps,
+                before.apps
+            );
+        }
+    }
+
+    #[test]
+    fn entries_stored_by_a_build_without_the_running_time_wait_it_out() {
+        // What an earlier build stored: no `observed_secs`. One entry from the enabling
+        // instant, one added later that had already waited its delay by the clock.
+        let enabled_at = at(0);
+        let stored = format!(
+            r#"[{{"key":"app:com.example.notes","first_seen_at":"{}"}},
+                {{"key":"domain:videos.example.org","first_seen_at":"{}"}}]"#,
+            at(0).to_rfc3339(),
+            at(500).to_rfc3339()
+        );
+        let mut seen: Vec<ExclusionSeen> = serde_json::from_str(&stored).expect("old data reads");
+        assert_eq!(seen[0].observed_secs, 0);
+        assert_eq!(seen[1].observed_secs, 0);
+        let both = lists(&["com.example.notes"], &["videos.example.org"]);
+        let only_app = lists(&["com.example.notes"], &[]);
+        let now = at(86_400);
+        // The entry of the enabling instant needs no running time.
+        assert_eq!(
+            effective(&both, &seen, Some(enabled_at), DELAY, now),
+            only_app
+        );
+        // The later one gets it pass by pass, and keeps its first sighting.
+        for n in 1..=13 {
+            seen = pass(
+                &both,
+                &seen,
+                enabled_at,
+                45,
+                now + Duration::seconds(45 * n),
+            );
+            assert_eq!(
+                effective(&both, &seen, Some(enabled_at), DELAY, now),
+                only_app,
+                "pass {n}"
+            );
+        }
+        seen = pass(&both, &seen, enabled_at, 45, now + Duration::seconds(630));
+        assert_eq!(seen[1].first_seen_at, at(500));
+        assert_eq!(seen[1].observed_secs, 630);
+        assert_eq!(effective(&both, &seen, Some(enabled_at), DELAY, now), both);
+    }
+
     #[test]
     fn excludes_matches_like_the_tracker() {
         let effective = lists(&["com.example.Notes", "Video Player"], &["example.com"]);
