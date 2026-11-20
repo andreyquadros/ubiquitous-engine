@@ -441,8 +441,9 @@ anything on macOS or Windows; PowerShell. I did not read any CI run.
 
 - **U9b:** nothing in the interface of the scripts changed. The Windows job needs
   PowerShell 7 (`pwsh -File scripts/nofap/system-smoke.ps1`) in the runner's elevated shell,
-  with `CI=true` (set by GitHub). `.gitattributes` now keeps `*.sh` and `*.ps1` LF
-  (integrator, `f284172` and `8f3d13b`).
+  with `CI=true` (set by GitHub). `.gitattributes` keeps `scripts/**/*.sh` LF on every
+  checkout (integrator, `f284172`); `system-smoke.ps1` is stored with LF and has no rule, so
+  a Windows checkout may give it CRLF, which PowerShell reads either way.
 - **U4:** checklist items 26 and 27 are about your code; the Windows run will say.
 - **U7, U8:** if the uninstall hooks are cut, `REMOVAL.md` part 1 needs only its table
   changed; the paragraph under it already tells the user not to rely on them. If the
