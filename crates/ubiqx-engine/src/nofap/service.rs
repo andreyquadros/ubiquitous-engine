@@ -29,7 +29,7 @@ use ubiqx_nofap::{help, messages};
 use super::cards::{self, CardContext, Outbox, AWAY_FLOW_SECS, SURF_FLOW_SECS};
 use super::{
     context_key, ensure_salt, error_class, recent, salt_of, unreadable_config, NofapService,
-    Runtime,
+    Runtime, SystemMemory,
 };
 
 /// Every counter there is: the range "Exportar dados" asks the repository for.
@@ -326,6 +326,25 @@ impl NofapService {
             }
             if matches!(change, NofapChange::Disable) && was_on {
                 outbox.events.push(NofapEvent::PendingChanged);
+            }
+        }
+        // A choice about the system tiers, or a site that belongs in the hosts block,
+        // changes what the machine is compared with: look again (unprivileged).
+        let system_changed = matches!(
+            change,
+            NofapChange::SetHosts { .. }
+                | NofapChange::SetResolver { .. }
+                | NofapChange::SetPolicies { .. }
+                | NofapChange::SetHostsUserSites { .. }
+                | NofapChange::AddBlock { .. }
+                | NofapChange::RemoveBlock { .. }
+        );
+        if system_changed && self.enabled() {
+            if let Err(error) = self.read_system(false, false) {
+                tracing::debug!(
+                    class = error_class(&error),
+                    "nofap: the system was not read"
+                );
             }
         }
         if matches!(change, NofapChange::Disable) {
@@ -758,6 +777,8 @@ impl NofapService {
             }
             rt.config = NofapConfig::default();
             rt.config_error = false;
+            // What was known about the machine was judged against the old choices.
+            rt.system = SystemMemory::default();
             self.save_config(&mut rt)?;
             for origin in SiteOrigin::ALL {
                 self.deps.repo.delete_sites_by_origin(origin)?;
@@ -855,7 +876,6 @@ impl NofapService {
             || heuristics::title_signal(title)
             || recent(rt.hits.get(&key), now)
             || recent(rt.signals.get(&key), now)
-            || rt.sampler.has_signal(key, now)
     }
 
     /// The language of the host, for the tray labels (`ubiqx_nofap::messages`).

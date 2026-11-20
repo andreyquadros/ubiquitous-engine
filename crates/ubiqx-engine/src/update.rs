@@ -388,6 +388,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn nofap_a_feed_of_the_other_product_is_ignored() {
+        // The standalone app's feed, however it got to ubiqX's checker: no update is
+        // offered, nobody is notified, and the status says why.
+        let mut other = feed("9.9.9", 1_758_221_040);
+        other.product = ubiqx_core::product::SHIELD.feed_product.into();
+        let rig_ubiqx = rig(current(1_758_200_000), Some(other.clone()), "pt-BR");
+        let st = rig_ubiqx.checker.check_now().await.unwrap();
+        assert!(st.available.is_none());
+        assert!(st
+            .last_error
+            .as_deref()
+            .is_some_and(|e| e.contains("another product")));
+        assert!(rig_ubiqx.notifier.0.lock().is_empty());
+        assert_eq!(events(&rig_ubiqx), 0);
+
+        // The standalone app's own checker takes that feed, and ignores ubiqX's.
+        let mut shield = rig(current(1_758_200_000), Some(other), "pt-BR");
+        shield.checker = shield
+            .checker
+            .for_product(ubiqx_core::product::SHIELD.feed_product);
+        let st = shield.checker.check_now().await.unwrap();
+        assert!(st.available.is_some() && st.last_error.is_none());
+        shield.feed.0.lock().replace(feed("9.9.9", 1_758_221_040));
+        let st = shield.checker.check_now().await.unwrap();
+        assert!(st.available.is_none() && st.last_error.is_some());
+
+        // A feed written before the field existed is ubiqX's.
+        let mut legacy = feed("9.9.9", 1_758_221_040);
+        legacy.product = String::new();
+        let old = rig(current(1_758_200_000), Some(legacy), "pt-BR");
+        assert!(old.checker.check_now().await.unwrap().available.is_some());
+    }
+
+    #[tokio::test]
     async fn newer_feed_is_available_and_announced_once() {
         let rig = rig(
             current(1_758_200_000),

@@ -254,6 +254,12 @@ impl NofapService {
                         dhash,
                     };
                     sampling::record(&mut rt.sampler, job.key, event, &day, now);
+                    if outcome != Outcome::Clean {
+                        // An answer other than `none` is a signal for that window: the
+                        // tracker takes no productivity screenshot of it for ten minutes.
+                        rt.signals.insert(job.key, now);
+                        forget_old(&mut rt.signals, now);
+                    }
                     was
                 };
                 if was_degraded {

@@ -6,8 +6,8 @@
 //! own readiness, and neither side can pause the other.
 
 use std::sync::{OnceLock, Weak};
-use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use ubiqx_core::nofap::{AiReadiness, NofapEnv, NofapEnvSnapshot};
 use ubiqx_core::{AiProvider, UiLanguage};
@@ -17,14 +17,14 @@ use crate::state::EngineState;
 /// How long an answer of the secret store is reused. The guard asks every couple of
 /// seconds, and the store is the operating system's keychain; a removed key stops the
 /// check at once all the same, because the AI client reads the key for every call.
-const KEY_ANSWER_FOR: Duration = Duration::from_secs(15);
+const KEY_ANSWER_FOR_SECS: i64 = 15;
 
 /// [`NofapEnv`] over the engine's state. It is created before the state exists (the
 /// service is a field of the state) and bound to it right after.
 #[derive(Default)]
 pub struct EngineEnv {
     state: OnceLock<Weak<EngineState>>,
-    key: Mutex<Option<(AiProvider, bool, Instant)>>,
+    key: Mutex<Option<(AiProvider, bool, DateTime<Utc>)>>,
 }
 
 impl EngineEnv {
@@ -38,9 +38,11 @@ impl EngineEnv {
     }
 
     fn has_key(&self, state: &EngineState, provider: AiProvider) -> bool {
+        let now = state.now();
         let mut cached = self.key.lock();
         if let Some((of, present, at)) = *cached {
-            if of == provider && at.elapsed() < KEY_ANSWER_FOR {
+            // An answer from the future (the clock was set back) is asked for again.
+            if of == provider && (0..KEY_ANSWER_FOR_SECS).contains(&(now - at).num_seconds()) {
                 return present;
             }
         }
@@ -48,7 +50,7 @@ impl EngineEnv {
             state.deps.platform.secrets.get(provider.secret_key()),
             Ok(Some(key)) if !key.trim().is_empty()
         );
-        *cached = Some((provider, present, Instant::now()));
+        *cached = Some((provider, present, now));
         present
     }
 

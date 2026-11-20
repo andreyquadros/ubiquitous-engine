@@ -145,8 +145,9 @@ impl NofapService {
         } else {
             self.vision_state(&env)
         };
+        // A secondary runs no pass and asks the platform nothing.
         let automation_denied =
-            self.deps.permissions.status().automation == PermissionState::Denied;
+            !secondary && self.deps.permissions.status().automation == PermissionState::Denied;
 
         let rt = self.rt.lock();
         let [hosts, resolver, policies] = tier_states(&rt, Some(&capabilities));

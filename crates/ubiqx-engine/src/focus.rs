@@ -652,6 +652,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn nofap_both_products_are_exempt_on_every_desktop() {
+        for product in ubiqx_core::product::ALL {
+            for stem in product.exe_stems {
+                for list in [EXEMPT_APP_IDS_WINDOWS, EXEMPT_APP_IDS_LINUX] {
+                    assert!(list.contains(stem), "{stem} is missing from an exempt list");
+                }
+                assert!(is_exempt_window(stem, "", None), "{stem}");
+                assert!(
+                    is_exempt_window(&stem.to_uppercase(), "", Some(500)),
+                    "{stem}"
+                );
+            }
+            assert!(is_exempt_window(product.bundle_id, "", None));
+            for name in product.app_names {
+                assert!(is_exempt_window("", name, None), "{name}");
+            }
+        }
+        // An ordinary application is not.
+        assert!(!is_exempt_window("firefox", "Firefox", None));
+    }
+
+    #[test]
     fn exemptions_cover_every_desktop() {
         // The core rules still apply.
         assert!(is_exempt_window("ai.ubiqx.app", "ubiqX", None));
