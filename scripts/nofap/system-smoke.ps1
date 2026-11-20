@@ -803,7 +803,9 @@ function Test-Applied {
         # What the app's own check of the hosts tier reads: the helper asks for the canary
         # the way the app does and prints the answer.
         $canary = Get-Field $status @('canary')
-        $canaryList = if ($null -eq $canary) { @() } else { @($canary) }
+        # Collected with @(...) around the whole `if`: an `if` used as a value hands a list of
+        # one back as that one item, and a list of none as nothing.
+        $canaryList = @(if ($null -ne $canary) { $canary })
         Assert-That ($canaryList.Count -gt 0 -and @($canaryList | Where-Object { $_ -notin $NullAddresses }).Count -eq 0) 'status: the canary reads as the null address, as the check in the app needs it' $canaryList
 
         $canaryBlocked = Test-Blocked -Addresses $firstLookup.Found
