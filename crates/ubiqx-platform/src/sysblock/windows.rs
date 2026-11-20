@@ -22,11 +22,16 @@ use ubiqx_nofap::{plan, state_dir};
 use super::parse::{self, Adapter};
 use super::{policy_reg, Fs, NoteCreated, OsBackend, Output, Runner};
 
-/// Lists every adapter that is up with its DNS servers of both address families, as JSON.
-pub const FULL_READ_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; $rows = @(NetAdapter\\Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { [pscustomobject]@{ index = [int]$_.ifIndex; guid = [string]$_.InterfaceGuid; name = [string]$_.Name; servers = @(DnsClient\\Get-DnsClientServerAddress -InterfaceIndex $_.ifIndex | ForEach-Object { $_.ServerAddresses }) } }); ConvertTo-Json -InputObject $rows -Depth 3 -Compress";
-/// Sets the resolver on every adapter that is up (Windows asks all of them in parallel).
-/// `{servers}` is replaced with the quoted addresses of the compiled table.
-pub const SET_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; NetAdapter\\Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { DnsClient\\Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses ({servers}) }";
+/// Lists every adapter that is up and has a DNS client configuration, with its DNS servers
+/// of both address families, as JSON. An adapter can be up without one (a network card
+/// bound to a virtual switch, the accelerated-networking twin of a cloud adapter): the
+/// DNS client then has no object for it, the question fails for that adapter alone, and
+/// there is nothing on it to read or to set.
+pub const FULL_READ_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; $rows = @(NetAdapter\\Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { $a = $_; $dns = @(DnsClient\\Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ErrorAction SilentlyContinue); if ($dns.Count -gt 0) { [pscustomobject]@{ index = [int]$a.ifIndex; guid = [string]$a.InterfaceGuid; name = [string]$a.Name; servers = @($dns | ForEach-Object { $_.ServerAddresses }) } } }); ConvertTo-Json -InputObject $rows -Depth 3 -Compress";
+/// Sets the resolver on the listed adapters: the ones the full read found (Windows asks
+/// all of them in parallel). `{indexes}` is replaced with interface index numbers,
+/// `{servers}` with the quoted addresses of the compiled table.
+pub const SET_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; foreach ($i in @({indexes})) { DnsClient\\Set-DnsClientServerAddress -InterfaceIndex $i -ServerAddresses ({servers}) }";
 /// Puts the listed adapters back on automatic DNS. `{indexes}` is replaced with interface
 /// index numbers.
 pub const RESET_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; foreach ($i in @({indexes})) { DnsClient\\Set-DnsClientServerAddress -InterfaceIndex $i -ResetServerAddresses }";
@@ -207,10 +212,23 @@ impl OsBackend for WindowsBackend {
     fn apply_resolver(
         &self,
         id: ResolverId,
-        _observed: &ResolverObservation,
+        observed: &ResolverObservation,
         runner: &dyn Runner,
         _fs: &dyn Fs,
     ) -> Result<(), String> {
+        // The adapters the look found, by interface index read back as a number: nothing
+        // else can reach the script. No such adapter, nothing to set.
+        let mut indexes: Vec<u32> = observed
+            .interfaces
+            .iter()
+            .filter(|interface| interface.active)
+            .filter_map(|interface| interface.id.parse().ok())
+            .collect();
+        indexes.sort_unstable();
+        indexes.dedup();
+        if indexes.is_empty() {
+            return Ok(());
+        }
         // The addresses are constants of the compiled table; the check keeps anything
         // that is not an address out of a script even if the table were wrong.
         let addresses = resolvers::lookup(id).addresses();
@@ -221,7 +239,10 @@ impl OsBackend for WindowsBackend {
             return Err(reason::FAILED.to_owned());
         }
         let quoted: Vec<String> = addresses.iter().map(|a| format!("'{a}'")).collect();
-        let script = SET_SCRIPT.replace("{servers}", &quoted.join(","));
+        let list: Vec<String> = indexes.iter().map(u32::to_string).collect();
+        let script = SET_SCRIPT
+            .replace("{indexes}", &list.join(","))
+            .replace("{servers}", &quoted.join(","));
         self.run_script(runner, &script)
             .map(|_| ())
             .ok_or_else(|| reason::FAILED.to_owned())

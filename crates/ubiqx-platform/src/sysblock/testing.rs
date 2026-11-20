@@ -503,6 +503,9 @@ pub(crate) struct WinAdapter {
     pub guid: String,
     pub name: String,
     pub up: bool,
+    /// Whether the DNS client has a configuration for it. An adapter can be up without
+    /// one; asking for or setting its servers then fails.
+    pub configured: bool,
     /// Servers set by hand; empty means automatic.
     pub fixed: Vec<String>,
     /// What the network hands out while nothing is set by hand.
@@ -527,19 +530,20 @@ fn between<'a>(text: &'a str, open: &str, close: &str) -> &'a str {
 
 impl WinMachine {
     fn powershell(&self, script: &str) -> io::Result<Output> {
-        let set_prefix = windows::SET_SCRIPT
-            .split("{servers}")
-            .next()
-            .unwrap_or_default();
-        let reset_prefix = windows::RESET_SCRIPT
-            .split("{indexes}")
-            .next()
-            .unwrap_or_default();
+        // The two scripts with placeholders, rebuilt from what this one carries: anything
+        // but an exact match is a script the back-end must never run.
+        let indexes = between(script, "in @(", ")");
+        let servers = between(script, "-ServerAddresses (", ")");
+        let set = windows::SET_SCRIPT
+            .replace("{indexes}", indexes)
+            .replace("{servers}", servers);
+        let reset = windows::RESET_SCRIPT.replace("{indexes}", indexes);
+        let no_object = || exit(1, "No matching MSFT_DNSClientServerAddress objects found");
         let mut adapters = self.adapters.lock();
         if script == windows::FULL_READ_SCRIPT {
             let rows: Vec<serde_json::Value> = adapters
                 .iter()
-                .filter(|adapter| adapter.up)
+                .filter(|adapter| adapter.up && adapter.configured)
                 .map(|adapter| {
                     let servers = if adapter.fixed.is_empty() {
                         &adapter.automatic
@@ -551,20 +555,25 @@ impl WinMachine {
                 })
                 .collect();
             ok(serde_json::Value::from(rows).to_string())
-        } else if script.starts_with(set_prefix) {
-            let servers: Vec<String> = between(script, "-ServerAddresses (", ")")
+        } else if script == set || script == reset {
+            let servers: Vec<String> = servers
                 .split(',')
                 .map(|server| server.trim_matches('\'').to_owned())
                 .collect();
-            for adapter in adapters.iter_mut().filter(|adapter| adapter.up) {
-                adapter.fixed.clone_from(&servers);
-            }
-            ok("")
-        } else if script.starts_with(reset_prefix) {
-            for index in between(script, "@(", ")").split(',') {
+            for index in indexes.split(',') {
                 let index: u32 = index.parse().expect("an interface index");
-                let adapter = adapters.iter_mut().find(|adapter| adapter.index == index);
-                adapter.expect("a known adapter").fixed.clear();
+                // The cmdlet stops at an adapter the DNS client does not know.
+                let Some(adapter) = adapters
+                    .iter_mut()
+                    .find(|adapter| adapter.index == index && adapter.configured)
+                else {
+                    return no_object();
+                };
+                if script == set {
+                    adapter.fixed.clone_from(&servers);
+                } else {
+                    adapter.fixed.clear();
+                }
             }
             ok("")
         } else {
@@ -858,6 +867,7 @@ impl Rig {
                         guid: "{11111111-2222-3333-4444-555555555555}".into(),
                         name: "Wi-Fi".into(),
                         up: true,
+                        configured: true,
                         fixed: Vec::new(),
                         automatic: vec!["192.168.0.1".into()],
                     },
@@ -866,6 +876,7 @@ impl Rig {
                         guid: "{AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}".into(),
                         name: "Ethernet".into(),
                         up: false,
+                        configured: true,
                         fixed: Vec::new(),
                         automatic: Vec::new(),
                     },

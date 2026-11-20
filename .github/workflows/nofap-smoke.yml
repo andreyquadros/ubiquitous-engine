@@ -72,6 +72,8 @@ jobs:
           fi
           ls -l /etc/hosts
           python3 --version
+          # What the helper sees without privilege (the `status` verb only reads).
+          target/debug/ubiqx-shield-helper status
           mkdir -p "$RUNNER_TEMP/nofap-smoke"
           sudo cat /etc/hosts > "$RUNNER_TEMP/nofap-smoke/hosts.before"
           shasum -a 256 "$RUNNER_TEMP/nofap-smoke/hosts.before"
@@ -116,6 +118,8 @@ jobs:
           Get-DnsClientServerAddress | Format-Table -AutoSize InterfaceAlias, InterfaceIndex, AddressFamily, ServerAddresses
           $hosts = Join-Path ([Environment]::SystemDirectory) 'drivers\etc\hosts'
           (Get-Acl -LiteralPath $hosts).Sddl
+          # What the helper sees without privilege (the `status` verb only reads).
+          & target\debug\ubiqx-shield-helper.exe status
           $saved = Join-Path $env:RUNNER_TEMP 'nofap-smoke-hosts.before'
           [System.IO.File]::WriteAllBytes($saved, [System.IO.File]::ReadAllBytes($hosts))
           (Get-FileHash -LiteralPath $saved -Algorithm SHA256).Hash

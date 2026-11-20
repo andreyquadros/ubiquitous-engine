@@ -477,16 +477,35 @@ function Get-StaticServers {
     return [string](Get-Field $item @('NameServer'))
 }
 
+function Get-UpAdapters {
+    # One adapter per pipeline object; call it as @(Get-UpAdapters).
+    return @(Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Sort-Object -Property ifIndex)
+}
+
+function Get-AdapterDns {
+    # The DNS client's configuration of one adapter: one object per address family it is
+    # bound to, none when the DNS client does not know the adapter (it is up, but TCP/IP is
+    # not bound to it: a network card behind a virtual switch, the accelerated-networking
+    # twin of a cloud adapter). Asking for such an adapter is an error, silenced here.
+    # One object per pipeline object; call it as @(Get-AdapterDns ...).
+    param([Parameter(Mandatory)][int]$Index)
+    return @(Get-DnsClientServerAddress -InterfaceIndex $Index -ErrorAction SilentlyContinue)
+}
+
 function Get-DnsSnapshot {
-    $rows = @(foreach ($adapter in @(Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Sort-Object -Property ifIndex)) {
+    # Every adapter that is up and has a DNS client configuration: the adapters on which
+    # there is something to set and to put back.
+    $rows = @(foreach ($adapter in @(Get-UpAdapters)) {
         $index = [int]$adapter.ifIndex
         $guid = [string]$adapter.InterfaceGuid
+        $dns = @(Get-AdapterDns -Index $index)
+        if ($dns.Count -eq 0) { continue }
         [pscustomobject]@{
             Index    = $index
             Guid     = $guid
             Name     = [string]$adapter.Name
-            V4       = @(Get-DnsClientServerAddress -InterfaceIndex $index -AddressFamily IPv4 | ForEach-Object { $_.ServerAddresses })
-            V6       = @(Get-DnsClientServerAddress -InterfaceIndex $index -AddressFamily IPv6 | ForEach-Object { $_.ServerAddresses })
+            V4       = @($dns | Where-Object { [int]$_.AddressFamily -eq 2 } | ForEach-Object { $_.ServerAddresses })
+            V6       = @($dns | Where-Object { [int]$_.AddressFamily -eq 23 } | ForEach-Object { $_.ServerAddresses })
             StaticV4 = Get-StaticServers -Stack 'Tcpip' -Guid $guid
             StaticV6 = Get-StaticServers -Stack 'Tcpip6' -Guid $guid
         }
@@ -494,6 +513,14 @@ function Get-DnsSnapshot {
     # The comma keeps the list whole for `$x = Get-DnsSnapshot` and `(Get-DnsSnapshot)`, also
     # when it holds one adapter or none. Never wrap a call in @(...): that would nest it.
     return , $rows
+}
+
+function Get-AdaptersWithoutDns {
+    # "<index> (<name>)" of every adapter that is up and unknown to the DNS client. One per
+    # pipeline object; call it as @(Get-AdaptersWithoutDns).
+    return @(foreach ($adapter in @(Get-UpAdapters)) {
+        if (@(Get-AdapterDns -Index ([int]$adapter.ifIndex)).Count -eq 0) { "$([int]$adapter.ifIndex) ($([string]$adapter.Name))" }
+    })
 }
 
 function ConvertTo-DnsText {
@@ -655,6 +682,8 @@ function Test-Applied {
             $script:Evidence['names'] = $block.Names
             $script:Evidence['block_sha256'] = $block.Sha256
         }
+        $sddl = (Get-Acl -LiteralPath $HostsPath).Sddl
+        Assert-That ($sddl -ceq $script:SavedHostsSddl) 'hosts: owner and access list are unchanged with the block in place' "$sddl (it was: $($script:SavedHostsSddl))"
         $text = [string](Get-Field $status @('hosts', 'text'))
         Assert-That ($text.Contains($BeginPrefix) -and $text.Contains($EndMarker)) 'status: the unprivileged read sees the block'
         Assert-That ($null -eq (Get-Field $status @('hosts', 'error'))) 'status: no hosts error' (Get-Field $status @('hosts', 'error'))
@@ -684,6 +713,9 @@ function Test-Applied {
             Assert-That (Test-SameAddresses -Servers @(Split-Servers $row.StaticV6) -Wanted $ResolverV6) "registry: Tcpip6 NameServer of $($row.Guid) holds the IPv6 pair" $row.StaticV6
         }
         $active = @(@(Get-Field $status @('resolver', 'interfaces')) | Where-Object { $null -ne $_ -and (Get-Field $_ @('active')) })
+        $seen = @($active | ForEach-Object { [string](Get-Field $_ @('id')) } | Sort-Object)
+        $expected = @(@($now) | ForEach-Object { [string]$_.Index } | Sort-Object)
+        Assert-That (($seen -join ' ') -ceq ($expected -join ' ')) 'status: lists exactly the adapters that are up and have a DNS client configuration' "$($seen -join ' ') (expected: $($expected -join ' '))"
         $wrong = @($active | Where-Object { -not (Test-SameAddresses -Servers @(Get-Field $_ @('servers')) -Wanted ($ResolverV4 + $ResolverV6)) } | ForEach-Object { "$(Get-Field $_ @('name')): $(@(Get-Field $_ @('servers')) -join ' ')" })
         Assert-That ($active.Count -gt 0 -and $wrong.Count -eq 0) 'status: every active interface reads as the resolver''s set' $wrong
         foreach ($server in $ResolverV4) {
@@ -726,7 +758,8 @@ function Test-Removed {
     $before = $script:Failures
     $current = [System.IO.File]::ReadAllBytes($HostsPath)
     Assert-That (Test-SameBytes -Left $current -Right $SavedHosts) "hosts: byte for byte the saved file ($($SavedHosts.Length) bytes)" "$($current.Length) bytes"
-    Assert-That ((Get-Acl -LiteralPath $HostsPath).Sddl -eq $script:SavedHostsSddl) 'hosts: owner and access list are what they were'
+    $sddl = (Get-Acl -LiteralPath $HostsPath).Sddl
+    Assert-That ($sddl -ceq $script:SavedHostsSddl) 'hosts: owner and access list are what they were' "$sddl (it was: $($script:SavedHostsSddl))"
     Assert-That (-not (Test-Path -LiteralPath $StateDir)) 'the state directory is gone'
     $status = Get-Status -Environment $Environment
     Assert-That ($null -eq (Get-Field $status @('state')) -and $null -eq (Get-Field $status @('state_error'))) 'status: no state file'
@@ -750,6 +783,23 @@ function Test-Removed {
         Assert-That (Test-Reachable -Addresses $found) "$Reachable still resolves after the removal" $found
     }
     return ($script:Failures -eq $before)
+}
+
+function Write-HelperReport {
+    # What the helper recorded and what it sees, after an apply that did not exit 0.
+    param([hashtable]$Environment = @{})
+    $status = Get-Status -Environment $Environment
+    foreach ($row in @(Get-Field $status @('state', 'report'))) {
+        if ($null -ne $row) {
+            Write-Note "state report: tier=$(Get-Field $row @('tier')) ok=$(Get-Field $row @('ok')) reason=$(Get-Field $row @('reason'))"
+        }
+    }
+    Write-Note "status: hosts.error=$(Get-Field $status @('hosts', 'error')) resolver.error=$(Get-Field $status @('resolver', 'error')) state_error=$(Get-Field $status @('state_error'))"
+    foreach ($interface in @(Get-Field $status @('resolver', 'interfaces'))) {
+        if ($null -ne $interface) {
+            Write-Note "status: interface $(Get-Field $interface @('id')) ($(Get-Field $interface @('name'))) servers=[$(@(Get-Field $interface @('servers')) -join ' ')]"
+        }
+    }
 }
 
 function Invoke-Removal {
@@ -776,6 +826,9 @@ function Invoke-Cycle {
     if ($apply.ExitCode -eq 0) {
         Write-Step 'checking what was applied'
         $facts = Test-Applied -Hosts $WithHosts -Resolver $WithResolver -AfterApply $afterApply -Environment $Environment
+    }
+    else {
+        Write-HelperReport -Environment $Environment
     }
     Invoke-Removal -Facts $facts -Environment $Environment
 }
@@ -928,6 +981,9 @@ $script:SavedDnsText = ConvertTo-DnsText $script:SavedDns
 $script:BaselineResolves = Test-Reachable -Addresses @(Resolve-Through -Name $Reachable)
 $script:Plan = ConvertTo-PlanArgument -Hosts $WithHosts -Resolver $WithResolver
 Write-Step "saved: $HostsPath ($($SavedHosts.Length) bytes), its access list and the DNS of $(@($script:SavedDns).Count) adapter(s): $($script:SavedDnsText)"
+foreach ($adapter in @(Get-AdaptersWithoutDns)) {
+    Write-Note "adapter $adapter is up and the DNS client has no configuration for it: there is nothing on it to set, and it is left out"
+}
 
 $scratch = Join-Path ([System.IO.Path]::GetTempPath()) ("ubiqx-shield-smoke-" + [Guid]::NewGuid().ToString('N'))
 $exitCode = 1
@@ -953,6 +1009,14 @@ try {
     else {
         $null = New-Item -ItemType Directory -Path $scratch
         $hostile = @{ windir = $scratch; SystemRoot = $scratch; ProgramData = $scratch; PSModulePath = $scratch }
+        # Not a check, a fact for the record: whether a program that is started with these
+        # variables can still resolve a name (the helper looks one up before and after it
+        # changes DNS). `ping.exe` asks the operating system the same way the helper does.
+        if ($script:BaselineResolves) {
+            $ping = Start-Tool -FilePath (Join-Path $System32 'ping.exe') -Arguments @('-n', '1', '-w', '1000', $Reachable) -Environment $hostile
+            $said = @($ping.StdOut -split "`r?`n" | Where-Object { $_.Trim() -ne '' } | Select-Object -First 1)
+            Write-Note "name lookups in a program started with these variables: ping.exe exited $($ping.ExitCode) and said: $($said -join '')"
+        }
         Invoke-Cycle -Label 'windir, SystemRoot, ProgramData and PSModulePath pointing at a scratch directory' -Environment $hostile
         $left = @(Get-ChildItem -LiteralPath $scratch -Force -Recurse)
         Assert-That ($left.Count -eq 0) 'nothing was created in the scratch directory the variables pointed at' (@($left | ForEach-Object { $_.FullName }))

@@ -97,7 +97,7 @@ fn linux_runs_exactly_these_commands() {
 }
 
 const POWERSHELL: &str = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -NonInteractive -Command ";
-const FULL_READ: &str = "$ErrorActionPreference = 'Stop'; $rows = @(NetAdapter\\Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { [pscustomobject]@{ index = [int]$_.ifIndex; guid = [string]$_.InterfaceGuid; name = [string]$_.Name; servers = @(DnsClient\\Get-DnsClientServerAddress -InterfaceIndex $_.ifIndex | ForEach-Object { $_.ServerAddresses }) } }); ConvertTo-Json -InputObject $rows -Depth 3 -Compress";
+const FULL_READ: &str = "$ErrorActionPreference = 'Stop'; $rows = @(NetAdapter\\Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { $a = $_; $dns = @(DnsClient\\Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ErrorAction SilentlyContinue); if ($dns.Count -gt 0) { [pscustomobject]@{ index = [int]$a.ifIndex; guid = [string]$a.InterfaceGuid; name = [string]$a.Name; servers = @($dns | ForEach-Object { $_.ServerAddresses }) } } }); ConvertTo-Json -InputObject $rows -Depth 3 -Compress";
 
 fn windows_look() -> Vec<String> {
     let mut look = vec![format!("{POWERSHELL}{FULL_READ}")];
@@ -119,7 +119,7 @@ fn windows_runs_exactly_these_commands() {
     let reg = "C:\\Windows\\System32\\reg.exe";
     let mut expected = windows_look();
     expected.extend([
-        format!("{POWERSHELL}$ErrorActionPreference = 'Stop'; NetAdapter\\Get-NetAdapter | Where-Object {{ $_.Status -eq 'Up' }} | ForEach-Object {{ DnsClient\\Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses ('1.1.1.3','1.0.0.3','2606:4700:4700::1113','2606:4700:4700::1003') }}"),
+        format!("{POWERSHELL}$ErrorActionPreference = 'Stop'; foreach ($i in @(12)) {{ DnsClient\\Set-DnsClientServerAddress -InterfaceIndex $i -ServerAddresses ('1.1.1.3','1.0.0.3','2606:4700:4700::1113','2606:4700:4700::1003') }}"),
         format!("{reg} add HKLM\\SOFTWARE\\Policies\\Google\\Chrome /v DnsOverHttpsMode /t REG_SZ /d off /f"),
         format!("{reg} add HKLM\\SOFTWARE\\Policies\\Google\\Chrome /v ForceGoogleSafeSearch /t REG_DWORD /d 1 /f"),
         format!("{reg} add HKLM\\SOFTWARE\\Policies\\Mozilla\\Firefox\\DNSOverHTTPS /v Enabled /t REG_DWORD /d 0 /f"),
@@ -141,7 +141,7 @@ fn windows_runs_exactly_these_commands() {
     assert_eq!(windows::FULL_READ_SCRIPT, FULL_READ);
     assert_eq!(
         windows::SET_SCRIPT,
-        "$ErrorActionPreference = 'Stop'; NetAdapter\\Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { DnsClient\\Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses ({servers}) }"
+        "$ErrorActionPreference = 'Stop'; foreach ($i in @({indexes})) { DnsClient\\Set-DnsClientServerAddress -InterfaceIndex $i -ServerAddresses ({servers}) }"
     );
     assert_eq!(
         windows::RESET_SCRIPT,

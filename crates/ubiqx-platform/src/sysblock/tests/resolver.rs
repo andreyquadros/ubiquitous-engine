@@ -7,7 +7,7 @@ use ubiqx_nofap::hosts::{self, BlockInspection};
 use ubiqx_nofap::plan::{EXIT_APPLIED, EXIT_PARTIAL};
 use ubiqx_nofap::resolvers;
 
-use crate::sysblock::testing::{all_open, cf_servers, plan_of, Rig, CF};
+use crate::sysblock::testing::{all_open, cf_servers, plan_of, Rig, WinAdapter, CF};
 
 /// Whether the pretend machine currently has the family resolver set.
 fn resolver_set(rig: &Rig) -> bool {
@@ -275,6 +275,89 @@ fn windows_sets_adapters_that_are_up_and_resets_only_those_still_ours() {
         .collect();
     assert_eq!(resets.len(), 1);
     assert!(resets[0].contains("foreach ($i in @(7))"), "{}", resets[0]);
+}
+
+/// The lines of the calls that set DNS servers on Windows adapters.
+fn windows_sets(rig: &Rig) -> Vec<String> {
+    rig.calls()
+        .iter()
+        .map(|call| call.line())
+        .filter(|line| line.contains("-ServerAddresses ("))
+        .collect()
+}
+
+/// What the first smoke run on a real Windows machine showed: a cloud runner whose third
+/// adapter (the accelerated-networking twin of the second) is up and unknown to the DNS
+/// client. Asking for its servers fails, and so does setting them. Such an adapter is not
+/// read, not set and not reset, and it does not stop the tier for the others.
+#[test]
+fn windows_leaves_out_an_adapter_the_dns_client_has_no_configuration_for() {
+    let rig = Rig::new(Os::Windows);
+    rig.win.adapters.lock().push(WinAdapter {
+        index: 9,
+        guid: "{99999999-8888-7777-6666-555555555555}".into(),
+        name: "Ethernet 4".into(),
+        up: true,
+        configured: false,
+        fixed: Vec::new(),
+        automatic: Vec::new(),
+    });
+    let plan = plan_of(ProductId::Ubiqx, &[]);
+    assert_eq!(rig.apply(&plan), EXIT_APPLIED);
+    let sets = windows_sets(&rig);
+    assert_eq!(sets.len(), 1, "{sets:?}");
+    assert!(sets[0].contains("foreach ($i in @(12))"), "{}", sets[0]);
+    assert_eq!(rig.win.adapters.lock()[0].fixed, cf_servers());
+    assert!(rig.win.adapters.lock()[2].fixed.is_empty());
+
+    let observed = rig.observe();
+    assert_eq!(observed.resolver.error, None);
+    let ids: Vec<&str> = observed
+        .resolver
+        .interfaces
+        .iter()
+        .map(|interface| interface.id.as_str())
+        .collect();
+    assert_eq!(ids, ["12"], "only the adapter the DNS client knows");
+    assert_eq!(rig.assess(&plan).resolver, TierState::Applied);
+
+    rig.clear_calls();
+    assert_eq!(rig.remove("ubiqx", "all"), EXIT_APPLIED);
+    assert!(rig.win.adapters.lock()[0].fixed.is_empty());
+    let resets: Vec<String> = rig
+        .calls()
+        .iter()
+        .map(|call| call.line())
+        .filter(|line| line.contains("-ResetServerAddresses"))
+        .collect();
+    assert_eq!(resets.len(), 1, "{resets:?}");
+    assert!(resets[0].contains("foreach ($i in @(12))"), "{}", resets[0]);
+}
+
+/// The set script names its adapters, so with none to name it is not started at all: an
+/// empty list would be a script that does nothing and says it worked.
+#[test]
+fn windows_with_no_adapter_to_set_starts_no_set_script() {
+    let rig = Rig::new(Os::Windows);
+    for adapter in rig.win.adapters.lock().iter_mut() {
+        adapter.configured = false;
+    }
+    let plan = plan_of(ProductId::Ubiqx, &[]);
+    assert_eq!(rig.apply(&plan), EXIT_APPLIED);
+    assert_eq!(windows_sets(&rig), Vec::<String>::new());
+    let observed = rig.observe();
+    assert_eq!(observed.resolver.error, None);
+    assert!(observed.resolver.interfaces.is_empty());
+    assert!(rig.win.adapters.lock().iter().all(|a| a.fixed.is_empty()));
+
+    // The adapter gets its configuration (the cable goes in) with the network's own
+    // DNS: the judgement sees it, and the next apply covers it.
+    rig.win.adapters.lock()[0].configured = true;
+    assert_eq!(rig.assess(&plan).resolver, TierState::Changed);
+    assert_eq!(rig.apply(&plan), EXIT_APPLIED);
+    assert_eq!(windows_sets(&rig).len(), 1);
+    assert_eq!(rig.win.adapters.lock()[0].fixed, cf_servers());
+    assert_eq!(rig.assess(&plan).resolver, TierState::Applied);
 }
 
 #[test]
