@@ -1384,6 +1384,19 @@ async fn s13_what_is_never_captured() {
     h.browse(POPULAR);
     assert!(!h.two_passes());
     assert_eq!(h.closes(), closed_before + 1);
+
+    // The same on a platform that cannot be split by domain: one page of it is closed,
+    // the platform is not learned.
+    h.advance(700);
+    h.frames
+        .set_fallback(Some(ScriptedFrameSource::sample_frame(4)));
+    h.browse(MIXED);
+    let job = h.job_within(60).expect("a mixed platform is looked at");
+    h.detector.push(Ok(explicit(Confidence::High)));
+    assert!(h.service.vision_check(job).await.unwrap().hit);
+    assert_eq!(h.closes(), closed_before + 2);
+    assert_eq!(h.learned(), 0);
+    assert!(!h.two_passes());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3386,6 +3399,16 @@ struct Standalone {
 /// One `NofapService` built from ports alone, as the standalone app builds it: no
 /// `Engine`, no engine state, no tracker.
 fn standalone(repo: Arc<Flaky>) -> Standalone {
+    standalone_with(repo, None, Duration::from_secs(5))
+}
+
+/// The same with another detector (the fake one when `None`) and another bound on its
+/// answer.
+fn standalone_with(
+    repo: Arc<Flaky>,
+    other_detector: Option<Arc<dyn ExplicitDetector>>,
+    check_timeout: Duration,
+) -> Standalone {
     captured_log();
     let tmp = tempfile::tempdir().unwrap();
     let foreground = Arc::new(Foreground::default());
@@ -3396,14 +3419,14 @@ fn standalone(repo: Arc<Flaky>) -> Standalone {
     let ports = NofapPorts {
         system: Arc::new(NoSystemShield),
         frames: Arc::new(ScriptedFrameSource::new()),
-        detector: Some(detector.clone()),
+        detector: Some(other_detector.unwrap_or_else(|| detector.clone())),
         presenter: Arc::new(LogNofapPresenter),
         sink: Arc::new(NullNofapSink),
         repo: repo.clone(),
         shared_dir: None,
         tuning: Tuning {
             confirm_after: Duration::from_millis(5),
-            check_timeout: Duration::from_secs(5),
+            check_timeout,
             background: Background::Inline,
             display: DisplaySession::Full,
         },
@@ -3670,6 +3693,76 @@ async fn the_engine_loop_enforces_spawns_the_check_and_scrubs_the_open_block() {
         .calls()
         .contains(&EnforcerCall::HideOthers("ai.ubiqx.app".into())));
     handle.shutdown();
+}
+
+/// A detector whose answer does not come until the test lets it.
+struct HeldDetector {
+    asked: AtomicUsize,
+    answer: tokio::sync::Semaphore,
+}
+
+#[async_trait::async_trait]
+impl ExplicitDetector for HeldDetector {
+    async fn check(&self, _image: &EncodedImage, _model: &str) -> CoreResult<ExplicitCheck> {
+        self.asked.fetch_add(1, Ordering::SeqCst);
+        let _released = self.answer.acquire().await;
+        Ok(clean())
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_loop_keeps_closing_tabs_while_a_check_waits_for_its_answer() {
+    let held = Arc::new(HeldDetector {
+        asked: AtomicUsize::new(0),
+        answer: tokio::sync::Semaphore::new(0),
+    });
+    let s = standalone_with(
+        Arc::new(Flaky::default()),
+        Some(held.clone()),
+        Duration::from_secs(120),
+    );
+    s.service.enable(standalone_options()).unwrap();
+    let wait_for = |what: &str, done: &dyn Fn() -> bool| {
+        let started = std::time::Instant::now();
+        while !done() {
+            assert!(started.elapsed() < Duration::from_secs(20), "{what}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+
+    // A player in front long enough: the loop starts a check, and the provider is slow.
+    s.foreground
+        .set(window("VLC", VLC, "ferias.mp4", Some(9)), None);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let running = tokio::spawn(ubiqx_engine::nofap::run_guard_loop(
+        s.service.clone(),
+        Duration::from_millis(15),
+        cancel.clone(),
+        Arc::new(|| {}),
+    ));
+    wait_for("the loop never started a check", &|| {
+        s.clock.advance(ChronoDuration::seconds(5));
+        held.asked.load(Ordering::SeqCst) >= 1
+    });
+
+    // The answer is still out and a listed tab comes to the front: closed all the same.
+    s.foreground.set(
+        window("Google Chrome", CHROME, TAB_TITLE, Some(7)),
+        Some(&url_of(listed())),
+    );
+    wait_for("the guard waited for the check", &|| {
+        s.enforcer
+            .calls()
+            .contains(&EnforcerCall::CloseActiveTab(CHROME.into()))
+    });
+    assert_eq!(held.asked.load(Ordering::SeqCst), 1, "one check at a time");
+
+    held.answer.add_permits(1);
+    cancel.cancel();
+    tokio::time::timeout(Duration::from_secs(20), running)
+        .await
+        .expect("the loop ends when cancelled")
+        .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
