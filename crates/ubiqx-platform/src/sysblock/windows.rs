@@ -25,9 +25,12 @@ use super::{policy_reg, Fs, NoteCreated, OsBackend, Output, Runner};
 /// Lists every adapter that is up and has a DNS client configuration, with its DNS servers
 /// of both address families, as JSON. An adapter can be up without one (a network card
 /// bound to a virtual switch, the accelerated-networking twin of a cloud adapter): the
-/// DNS client then has no object for it, the question fails for that adapter alone, and
-/// there is nothing on it to read or to set.
-pub const FULL_READ_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; $rows = @(NetAdapter\\Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { $a = $_; $dns = @(DnsClient\\Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ErrorAction SilentlyContinue); if ($dns.Count -gt 0) { [pscustomobject]@{ index = [int]$a.ifIndex; guid = [string]$a.InterfaceGuid; name = [string]$a.Name; servers = @($dns | ForEach-Object { $_.ServerAddresses }) } } }); ConvertTo-Json -InputObject $rows -Depth 3 -Compress";
+/// DNS client then has no object for it, and there is nothing on it to read or to set.
+/// Asking by interface index alone is not enough to tell. On one real machine the
+/// question failed for such an adapter; on another the adapter carried the interface
+/// index of a second adapter, and the question answered with that one's servers. So the
+/// answer counts only when the DNS client files it under the adapter's own name.
+pub const FULL_READ_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; $rows = @(NetAdapter\\Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { $a = $_; $dns = @(DnsClient\\Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -eq $a.Name }); if ($dns.Count -gt 0) { [pscustomobject]@{ index = [int]$a.ifIndex; guid = [string]$a.InterfaceGuid; name = [string]$a.Name; servers = @($dns | ForEach-Object { $_.ServerAddresses }) } } }); ConvertTo-Json -InputObject $rows -Depth 3 -Compress";
 /// Sets the resolver on the listed adapters: the ones the full read found (Windows asks
 /// all of them in parallel). `{indexes}` is replaced with interface index numbers,
 /// `{servers}` with the quoted addresses of the compiled table.

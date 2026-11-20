@@ -334,6 +334,43 @@ fn windows_leaves_out_an_adapter_the_dns_client_has_no_configuration_for() {
     assert!(resets[0].contains("foreach ($i in @(12))"), "{}", resets[0]);
 }
 
+/// What a later smoke run showed on another Windows machine: the adapter the DNS client
+/// does not know carried the interface index of an adapter it does know, so a question by
+/// index answered with the other one's servers. Listed as an adapter of its own, it would
+/// have read as set after an apply (by index) and as not set in the quick registry read
+/// (by its own GUID, which holds nothing): a drift that is none. It is left out like any
+/// adapter without a DNS client configuration, and the quick read agrees with the full one.
+#[test]
+fn windows_leaves_out_an_adapter_that_borrows_the_index_of_another() {
+    let rig = Rig::new(Os::Windows);
+    rig.win.adapters.lock().push(WinAdapter {
+        index: 12,
+        guid: "{20202020-8888-7777-6666-555555555555}".into(),
+        name: "Ethernet 4".into(),
+        up: true,
+        configured: false,
+        fixed: Vec::new(),
+        automatic: Vec::new(),
+    });
+    let shield = rig.shield(ProductId::Ubiqx, all_open(Os::Windows));
+    let plan = plan_of(ProductId::Ubiqx, &[]);
+    assert_eq!(rig.apply(&plan), EXIT_APPLIED);
+    assert_eq!(rig.win.adapters.lock()[0].fixed, cf_servers());
+    assert!(rig.win.adapters.lock()[2].fixed.is_empty());
+    for opts in [ObserveOpts::FULL, ObserveOpts::QUICK] {
+        let seen = shield.observe(opts).unwrap().resolver;
+        assert_eq!(seen.error, None);
+        let listed: Vec<(&str, &str)> = seen
+            .interfaces
+            .iter()
+            .map(|interface| (interface.id.as_str(), interface.name.as_str()))
+            .collect();
+        assert_eq!(listed, [("12", "Wi-Fi")], "full read: {}", opts.full);
+        assert!(resolvers::is_exactly(CF, &seen.interfaces[0].servers));
+    }
+    assert_eq!(rig.assess(&plan).resolver, TierState::Applied);
+}
+
 /// The set script names its adapters, so with none to name it is not started at all: an
 /// empty list would be a script that does nothing and says it worked.
 #[test]

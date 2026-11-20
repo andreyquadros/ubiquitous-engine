@@ -575,10 +575,14 @@ function Get-AdapterDns {
     # The DNS client's configuration of one adapter: one object per address family it is
     # bound to, none when the DNS client does not know the adapter (it is up, but TCP/IP is
     # not bound to it: a network card behind a virtual switch, the accelerated-networking
-    # twin of a cloud adapter). Asking for such an adapter is an error, silenced here.
+    # twin of a cloud adapter). Asking for such an adapter by its interface index is an
+    # error, silenced here; and where the adapter carries the index of another adapter
+    # (seen on a runner), the question answers with that one's objects, so only the
+    # objects filed under the adapter's own name count.
     # One object per pipeline object; call it as @(Get-AdapterDns ...).
-    param([Parameter(Mandatory)][int]$Index)
-    return @(Get-DnsClientServerAddress -InterfaceIndex $Index -ErrorAction SilentlyContinue)
+    param([Parameter(Mandatory)]$Adapter)
+    $name = [string]$Adapter.Name
+    return @(Get-DnsClientServerAddress -InterfaceIndex ([int]$Adapter.ifIndex) -ErrorAction SilentlyContinue | Where-Object { [string]$_.InterfaceAlias -eq $name })
 }
 
 function Get-DnsSnapshot {
@@ -587,7 +591,7 @@ function Get-DnsSnapshot {
     $rows = @(foreach ($adapter in @(Get-UpAdapters)) {
         $index = [int]$adapter.ifIndex
         $guid = [string]$adapter.InterfaceGuid
-        $dns = @(Get-AdapterDns -Index $index)
+        $dns = @(Get-AdapterDns -Adapter $adapter)
         if ($dns.Count -eq 0) { continue }
         [pscustomobject]@{
             Index    = $index
@@ -608,7 +612,7 @@ function Get-AdaptersWithoutDns {
     # "<index> (<name>)" of every adapter that is up and unknown to the DNS client. One per
     # pipeline object; call it as @(Get-AdaptersWithoutDns).
     return @(foreach ($adapter in @(Get-UpAdapters)) {
-        if (@(Get-AdapterDns -Index ([int]$adapter.ifIndex)).Count -eq 0) { "$([int]$adapter.ifIndex) ($([string]$adapter.Name))" }
+        if (@(Get-AdapterDns -Adapter $adapter).Count -eq 0) { "$([int]$adapter.ifIndex) ($([string]$adapter.Name))" }
     })
 }
 

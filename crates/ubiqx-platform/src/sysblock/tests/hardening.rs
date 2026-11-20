@@ -97,7 +97,7 @@ fn linux_runs_exactly_these_commands() {
 }
 
 const POWERSHELL: &str = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -NonInteractive -Command ";
-const FULL_READ: &str = "$ErrorActionPreference = 'Stop'; $rows = @(NetAdapter\\Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { $a = $_; $dns = @(DnsClient\\Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ErrorAction SilentlyContinue); if ($dns.Count -gt 0) { [pscustomobject]@{ index = [int]$a.ifIndex; guid = [string]$a.InterfaceGuid; name = [string]$a.Name; servers = @($dns | ForEach-Object { $_.ServerAddresses }) } } }); ConvertTo-Json -InputObject $rows -Depth 3 -Compress";
+const FULL_READ: &str = "$ErrorActionPreference = 'Stop'; $rows = @(NetAdapter\\Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { $a = $_; $dns = @(DnsClient\\Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -eq $a.Name }); if ($dns.Count -gt 0) { [pscustomobject]@{ index = [int]$a.ifIndex; guid = [string]$a.InterfaceGuid; name = [string]$a.Name; servers = @($dns | ForEach-Object { $_.ServerAddresses }) } } }); ConvertTo-Json -InputObject $rows -Depth 3 -Compress";
 
 fn windows_look() -> Vec<String> {
     let mut look = vec![format!("{POWERSHELL}{FULL_READ}")];
