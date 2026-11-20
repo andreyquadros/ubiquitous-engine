@@ -89,6 +89,9 @@ struct Foreground {
     fresh: Mutex<Option<Option<String>>>,
     /// Answers `peek_foreground` gives first, one per call.
     peeks: Mutex<VecDeque<Option<ForegroundWindow>>>,
+    /// Runs once inside the next `resolve_fresh`: something that happens while a pass is
+    /// between its first read and its action.
+    during_fresh: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     calls: AtomicUsize,
     idle_secs: Mutex<f64>,
     permissions: Mutex<PermissionStatus>,
@@ -101,6 +104,7 @@ impl Default for Foreground {
             url: Mutex::new(None),
             fresh: Mutex::new(None),
             peeks: Mutex::new(VecDeque::new()),
+            during_fresh: Mutex::new(None),
             calls: AtomicUsize::new(0),
             idle_secs: Mutex::new(0.0),
             permissions: Mutex::new(PermissionStatus {
@@ -166,6 +170,10 @@ impl BrowserUrlResolver for Foreground {
 
     fn resolve_fresh(&self, _window: &ForegroundWindow) -> CoreResult<Option<String>> {
         self.count();
+        let meanwhile = self.during_fresh.lock().take();
+        if let Some(meanwhile) = meanwhile {
+            meanwhile();
+        }
         match self.fresh.lock().clone() {
             Some(fresh) => Ok(fresh),
             None => Ok(self.url.lock().clone()),
@@ -3331,17 +3339,32 @@ impl NofapEnv for StaticEnv {
     }
 }
 
-/// A repository whose stored configuration cannot be read, or whose writes fail.
+/// A repository whose stored configuration cannot be read, or whose writes fail, or
+/// whose lists or counters cannot be reached. Counts every call it gets.
 #[derive(Default)]
 struct Flaky {
     inner: MemoryNofapRepo,
     unreadable: AtomicBool,
     fail_saves: AtomicBool,
+    fail_lists: AtomicBool,
+    fail_counters: AtomicBool,
     saves: AtomicUsize,
+    calls: AtomicUsize,
+}
+
+impl Flaky {
+    fn called(&self) {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
 }
 
 impl NofapRepo for Flaky {
     fn load_config(&self) -> CoreResult<NofapConfig> {
+        self.called();
         if self.unreadable.load(Ordering::SeqCst) {
             return Err(CoreError::Storage("line 1 column 9".into()));
         }
@@ -3349,6 +3372,7 @@ impl NofapRepo for Flaky {
     }
 
     fn save_config(&self, config: &NofapConfig) -> CoreResult<()> {
+        self.called();
         if self.fail_saves.load(Ordering::SeqCst) {
             return Err(CoreError::Storage("disk full".into()));
         }
@@ -3357,38 +3381,56 @@ impl NofapRepo for Flaky {
     }
 
     fn list_sites(&self) -> CoreResult<Vec<NofapSite>> {
+        self.called();
+        if self.fail_lists.load(Ordering::SeqCst) {
+            return Err(CoreError::Storage("database is locked".into()));
+        }
         self.inner.list_sites()
     }
 
     fn upsert_site(&self, site: &NofapSite) -> CoreResult<()> {
+        self.called();
         self.inner.upsert_site(site)
     }
 
     fn delete_site(&self, id: &str) -> CoreResult<()> {
+        self.called();
         self.inner.delete_site(id)
     }
 
     fn delete_sites_by_origin(&self, origin: SiteOrigin) -> CoreResult<u64> {
+        self.called();
         self.inner.delete_sites_by_origin(origin)
     }
 
     fn purge_expired_sites(&self, now: DateTime<Utc>) -> CoreResult<u64> {
+        self.called();
         self.inner.purge_expired_sites(now)
     }
 
     fn bump_day(&self, day: &str, hour: u8, kind: DayKind, by: u32) -> CoreResult<()> {
+        self.called();
+        if self.fail_counters.load(Ordering::SeqCst) {
+            return Err(CoreError::Storage("database is locked".into()));
+        }
         self.inner.bump_day(day, hour, kind, by)
     }
 
     fn days_between(&self, from: &str, to: &str) -> CoreResult<Vec<DayCount>> {
+        self.called();
+        if self.fail_counters.load(Ordering::SeqCst) {
+            return Err(CoreError::Storage("database is locked".into()));
+        }
         self.inner.days_between(from, to)
     }
 
     fn delete_days_before(&self, day: &str) -> CoreResult<u64> {
+        self.called();
         self.inner.delete_days_before(day)
     }
 
     fn erase_history(&self) -> CoreResult<()> {
+        self.called();
         self.inner.erase_history()
     }
 }
@@ -3707,6 +3749,8 @@ async fn the_engine_loop_enforces_spawns_the_check_and_scrubs_the_open_block() {
 struct HeldDetector {
     asked: AtomicUsize,
     answer: tokio::sync::Semaphore,
+    /// What it answers once the test lets it.
+    verdict: ExplicitCheck,
 }
 
 #[async_trait::async_trait]
@@ -3714,7 +3758,7 @@ impl ExplicitDetector for HeldDetector {
     async fn check(&self, _image: &EncodedImage, _model: &str) -> CoreResult<ExplicitCheck> {
         self.asked.fetch_add(1, Ordering::SeqCst);
         let _released = self.answer.acquire().await;
-        Ok(clean())
+        Ok(self.verdict)
     }
 }
 
@@ -3723,6 +3767,7 @@ async fn the_loop_keeps_closing_tabs_while_a_check_waits_for_its_answer() {
     let held = Arc::new(HeldDetector {
         asked: AtomicUsize::new(0),
         answer: tokio::sync::Semaphore::new(0),
+        verdict: clean(),
     });
     let s = standalone_with(
         Arc::new(Flaky::default()),
@@ -4038,4 +4083,1219 @@ async fn names_that_stop_resolving_offer_to_give_the_network_back_and_change_not
     assert!(h.events().contains(&NofapEvent::CardClosed {
         id: cards[0].id.clone()
     }));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Review: what the plan does not list (a failing store, a module switched off in the middle of
+// a pass, an answer that comes late, a clock that jumps, the same thing asked twice)
+// ---------------------------------------------------------------------------------------------
+
+/// The host's settings as a test changes them.
+struct SwitchEnv {
+    ai: Mutex<AiReadiness>,
+    calls: AtomicUsize,
+}
+
+impl NofapEnv for SwitchEnv {
+    fn snapshot(&self) -> NofapEnvSnapshot {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        NofapEnvSnapshot {
+            language: UiLanguage::En,
+            provider: AiProvider::OpenAi,
+            vision_model: "a-vision-model".into(),
+            ai: *self.ai.lock(),
+            excluded_apps: Vec::new(),
+            excluded_domains: Vec::new(),
+        }
+    }
+}
+
+/// The pretend machine, except that taking the tiers off fails (the helper is gone, the
+/// prompt cannot be raised).
+struct FailingRemove(Arc<MockSystemShield>);
+
+impl SystemShield for FailingRemove {
+    fn capabilities(&self) -> SystemCapabilities {
+        self.0.capabilities()
+    }
+
+    fn observe(&self, opts: ObserveOpts) -> CoreResult<SystemObservation> {
+        self.0.observe(opts)
+    }
+
+    fn preview(&self, plan: &SystemPlan) -> CoreResult<Vec<PlannedChange>> {
+        self.0.preview(plan)
+    }
+
+    fn apply(&self, plan: &SystemPlan) -> CoreResult<ApplyOutcome> {
+        self.0.apply(plan)
+    }
+
+    fn remove(&self, _owner: ProductId, _scope: RemoveScope) -> CoreResult<ApplyOutcome> {
+        Err(CoreError::Platform(
+            "the helper could not be started".into(),
+        ))
+    }
+}
+
+#[derive(Default)]
+struct RigSetup {
+    repo: Arc<Flaky>,
+    /// Another detector than the fake one.
+    detector: Option<Arc<dyn ExplicitDetector>>,
+    failing_remove: bool,
+    /// A directory for the primary lock.
+    shared: bool,
+}
+
+/// The service built from ports alone, with every port a review test scripts or reads.
+struct Rig {
+    service: Arc<NofapService>,
+    repo: Arc<Flaky>,
+    foreground: Arc<Foreground>,
+    enforcer: Arc<MockEnforcer>,
+    frames: Arc<ScriptedFrameSource>,
+    detector: Arc<FakeExplicitDetector>,
+    shield: Arc<MockSystemShield>,
+    presenter: Arc<RecordingPresenter>,
+    sink: Arc<RecordingSink>,
+    env: Arc<SwitchEnv>,
+    clock: FixedClock,
+    tmp: tempfile::TempDir,
+}
+
+fn rig(setup: RigSetup) -> Rig {
+    captured_log();
+    let tmp = tempfile::tempdir().unwrap();
+    let foreground = Arc::new(Foreground::default());
+    let enforcer = Arc::new(MockEnforcer::default());
+    let frames = Arc::new(ScriptedFrameSource::new());
+    let detector = Arc::new(FakeExplicitDetector::new());
+    let shield = Arc::new(MockSystemShield::new(Os::Linux));
+    shield.set_capabilities(SystemCapabilities {
+        os: Some(Os::Linux),
+        hosts: TierCapability::Available,
+        resolver: TierCapability::Available,
+        policies: TierCapability::Available,
+        unverified: Tier::ALL.to_vec(),
+    });
+    let system: Arc<dyn SystemShield> = if setup.failing_remove {
+        Arc::new(FailingRemove(shield.clone()))
+    } else {
+        shield.clone()
+    };
+    let presenter = Arc::new(RecordingPresenter {
+        shows: AtomicBool::new(true),
+        seen: Mutex::new(Vec::new()),
+    });
+    let sink = Arc::new(RecordingSink::default());
+    let env = Arc::new(SwitchEnv {
+        ai: Mutex::new(AiReadiness::Ready),
+        calls: AtomicUsize::new(0),
+    });
+    let clock = FixedClock::new(fixed_now());
+    let ports = NofapPorts {
+        system,
+        frames: frames.clone(),
+        detector: Some(setup.detector.unwrap_or_else(|| detector.clone())),
+        presenter: presenter.clone(),
+        sink: sink.clone(),
+        repo: setup.repo.clone(),
+        shared_dir: setup.shared.then(|| tmp.path().join("shared")),
+        tuning: Tuning {
+            confirm_after: Duration::from_millis(5),
+            check_timeout: Duration::from_secs(60),
+            background: Background::Inline,
+            display: DisplaySession::Full,
+        },
+    };
+    let host = NofapHost {
+        env: env.clone(),
+        activity: foreground.clone(),
+        urls: foreground.clone(),
+        enforcer: enforcer.clone(),
+        permissions: foreground.clone(),
+        notifier: Arc::new(RecordingNotifier::default()),
+        usage: Arc::new(ubiqx_ai::fake::MemoryUsageRepo::new()),
+        clock: Arc::new(clock.clone()),
+        identity: &ubiqx_core::product::SHIELD,
+        export_dir: tmp.path().join("exports"),
+    };
+    Rig {
+        service: NofapService::new(NofapDeps::assemble(ports, host)),
+        repo: setup.repo,
+        foreground,
+        enforcer,
+        frames,
+        detector,
+        shield,
+        presenter,
+        sink,
+        env,
+        clock,
+        tmp,
+    }
+}
+
+impl Rig {
+    fn browse(&self, host: &str) {
+        self.foreground.set(
+            window("Google Chrome", CHROME, TAB_TITLE, Some(7)),
+            Some(&url_of(host)),
+        );
+    }
+
+    fn player(&self) {
+        self.foreground
+            .set(window("VLC", VLC, "ferias.mp4", Some(9)), None);
+    }
+
+    fn pass(&self) -> GuardOutcome {
+        self.service.guard_pass().unwrap()
+    }
+
+    /// A pass every five seconds until the sampler asks for a check.
+    fn job_within(&self, within: i64) -> Option<VisionJob> {
+        let mut waited = 0;
+        loop {
+            if let Some(job) = self.pass().job {
+                return Some(job);
+            }
+            if waited >= within {
+                return None;
+            }
+            self.clock.advance(ChronoDuration::seconds(5));
+            waited += 5;
+        }
+    }
+
+    fn cards_of(&self, kind: CardKind) -> Vec<NofapCard> {
+        self.presenter
+            .seen
+            .lock()
+            .iter()
+            .filter(|card| card.kind == kind)
+            .cloned()
+            .collect()
+    }
+
+    fn counter(&self, kind: DayKind) -> u32 {
+        self.repo
+            .inner
+            .days_between("0000-01-01", "9999-12-31")
+            .unwrap()
+            .iter()
+            .filter(|count| count.kind == kind)
+            .map(|count| count.n)
+            .sum()
+    }
+
+    /// Asks to turn the module off; with no delay the request is ready at once and still
+    /// waits for its confirmation.
+    fn ask_off(&self) -> PendingView {
+        match self.service.request(NofapChange::Disable).unwrap() {
+            ChangeOutcome::Pending(waiting) => waiting,
+            ChangeOutcome::Applied(_) => panic!("turning it off is never immediate"),
+        }
+    }
+}
+
+fn no_delay() -> EnableOptions {
+    EnableOptions {
+        delay_secs: 0,
+        ..standalone_options()
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_change_that_cannot_be_stored_is_not_made_in_memory_either() {
+    let r = rig(RigSetup::default());
+    r.service.enable(no_delay()).unwrap();
+    let waiting = r.ask_off();
+    assert!(waiting.ready);
+
+    // The disk refuses: the confirmation did not happen, in memory either. The request
+    // still waits and the module is still on.
+    r.repo.fail_saves.store(true, Ordering::SeqCst);
+    assert!(matches!(
+        r.service.confirm_pending(&waiting.id),
+        Err(CoreError::Storage(_))
+    ));
+    assert!(r.service.enabled());
+    // Neither did a sentence, a request that would wait, or a cancellation.
+    for refused in [
+        r.service
+            .request(NofapChange::SetValues {
+                text: "outra frase".into(),
+            })
+            .map(|_| ()),
+        r.service
+            .request(NofapChange::SetVision { on: false })
+            .map(|_| ()),
+        r.service.cancel_pending(&waiting.id).map(|_| ()),
+        r.service
+            .consent_vision(ConsentArgs {
+                provider: AiProvider::Anthropic,
+                managed: false,
+            })
+            .map(|_| ()),
+    ] {
+        assert!(matches!(refused, Err(CoreError::Storage(_))), "{refused:?}");
+    }
+    let view = r.service.view().unwrap();
+    assert_eq!(view.config.values, no_delay().values);
+    assert_eq!(view.config.pending.len(), 1);
+    assert_eq!(
+        view.config
+            .vision
+            .consent
+            .as_ref()
+            .map(|consent| consent.provider),
+        Some(AiProvider::OpenAi)
+    );
+    assert_eq!(view.status.overall, Overall::PendingOff);
+    assert_eq!(
+        ubiqx_core::nofap_ipc::ConfigView::from(&r.repo.inner.load_config().unwrap()),
+        view.config,
+        "memory and disk say the same"
+    );
+    r.browse(listed());
+    r.pass();
+    assert!(r.pass().hit, "still enforcing");
+
+    // The disk works again: the same confirmation goes through.
+    r.repo.fail_saves.store(false, Ordering::SeqCst);
+    let view = r.service.confirm_pending(&waiting.id).unwrap();
+    assert!(!view.config.enabled);
+    assert!(!r.repo.inner.load_config().unwrap().enabled);
+    assert!(!r.pass().hit);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_verify_pass_that_cannot_store_still_reads_the_machine_and_shows_its_card() {
+    let r = rig(RigSetup::default());
+    let view = r
+        .service
+        .enable(EnableOptions {
+            hosts: true,
+            ..standalone_options()
+        })
+        .unwrap();
+    assert_eq!(view.status.hosts, TierState::Applied);
+    // Something waits, so every pass has running time to credit: a write.
+    r.service
+        .request(NofapChange::SetVision { on: false })
+        .unwrap();
+    r.shield
+        .edit_observation(|machine| machine.hosts.text = Some("127.0.0.1 localhost\n".into()));
+
+    r.repo.fail_saves.store(true, Ordering::SeqCst);
+    let pass = r.service.verify_pass_after(Duration::from_secs(120));
+    assert!(
+        matches!(pass, Err(CoreError::Storage(_))),
+        "the failure is reported: {pass:?}"
+    );
+    // The pass went on all the same: the machine was read, the page is told, the card is
+    // shown (a card that was kept and never shown would hold back the next one).
+    let status = r.service.status();
+    assert_eq!(status.hosts, TierState::Missing);
+    assert_eq!(status.overall, Overall::Reduced);
+    assert!(r.sink.0.lock().iter().any(
+        |event| matches!(event, NofapEvent::Status { status } if status.hosts == TierState::Missing)
+    ));
+    assert_eq!(r.cards_of(CardKind::Drift).len(), 1);
+    assert_eq!(r.counter(DayKind::Drift), 1);
+    // Running time that could not be stored was not credited in memory only.
+    assert_eq!(status.pending[0].remaining_secs, 600);
+
+    // The same drift does not say it again, also while its time cannot be stored.
+    r.clock.advance(ChronoDuration::seconds(120));
+    assert!(r
+        .service
+        .verify_pass_after(Duration::from_secs(120))
+        .is_err());
+    assert_eq!(r.cards_of(CardKind::Drift).len(), 1);
+
+    // The disk works again: the pass succeeds and the wait is credited.
+    r.repo.fail_saves.store(false, Ordering::SeqCst);
+    r.service
+        .verify_pass_after(Duration::from_secs(120))
+        .unwrap();
+    assert_eq!(
+        r.repo.inner.load_config().unwrap().pending[0].observed_secs,
+        120
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn turning_it_off_is_done_whatever_the_removal_answers() {
+    let r = rig(RigSetup {
+        failing_remove: true,
+        ..RigSetup::default()
+    });
+    let view = r
+        .service
+        .enable(EnableOptions {
+            hosts: true,
+            ..no_delay()
+        })
+        .unwrap();
+    assert_eq!(view.status.hosts, TierState::Applied);
+    let waiting = r.ask_off();
+    r.sink.0.lock().clear();
+
+    // The removal fails outright. The module is off all the same, the page is told, and
+    // the tier that is still on the machine keeps showing so it can be removed later.
+    let view = r.service.confirm_pending(&waiting.id).unwrap();
+    assert!(!view.config.enabled);
+    assert_eq!(view.status.overall, Overall::Off);
+    assert_eq!(view.status.hosts, TierState::Applied);
+    let events = r.sink.0.lock().clone();
+    assert!(events.contains(&NofapEvent::PendingChanged));
+    assert!(events.iter().any(
+        |event| matches!(event, NofapEvent::Status { status } if status.overall == Overall::Off)
+    ));
+    assert!(!r.repo.inner.load_config().unwrap().enabled);
+    r.browse(listed());
+    let before = r.foreground.calls();
+    assert!(!r.pass().hit && !r.pass().hit);
+    assert_eq!(r.foreground.calls(), before, "off: no platform call");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn switched_off_in_the_middle_of_a_pass_nothing_is_closed_and_nothing_is_shown() {
+    let r = rig(RigSetup {
+        shared: true,
+        ..RigSetup::default()
+    });
+    let lock = r.tmp.path().join("shared").join(primary::LOCK_FILE);
+    r.service.enable(no_delay()).unwrap();
+    r.browse(listed());
+    assert!(!r.pass().hit, "the first of two passes");
+    assert!(lock.exists(), "this product runs the passes");
+
+    // The second pass has read the window and is about to act when the confirmation of
+    // "turn it off" arrives.
+    let waiting = r.ask_off();
+    let service = r.service.clone();
+    *r.foreground.during_fresh.lock() = Some(Box::new(move || {
+        service.confirm_pending(&waiting.id).unwrap();
+    }));
+    let outcome = r.pass();
+    assert!(!r.service.enabled());
+    assert!(!outcome.hit && outcome.job.is_none());
+    assert!(
+        r.enforcer.calls().is_empty(),
+        "an off module closes nothing"
+    );
+    assert!(r.presenter.seen.lock().is_empty(), "and shows nothing");
+    assert_eq!(r.counter(DayKind::BlockList), 0);
+    assert!(!lock.exists(), "and leaves no heartbeat behind");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn switched_on_and_off_over_and_over_while_the_passes_run() {
+    let r = rig(RigSetup {
+        shared: true,
+        ..RigSetup::default()
+    });
+    let lock = r.tmp.path().join("shared").join(primary::LOCK_FILE);
+    r.browse(listed());
+
+    // One thread runs the two passes as fast as it can, as the loops do.
+    let stop = Arc::new(AtomicBool::new(false));
+    let passes = {
+        let (service, stop) = (r.service.clone(), stop.clone());
+        std::thread::spawn(move || {
+            let mut made = 0u32;
+            while !stop.load(Ordering::SeqCst) {
+                service.guard_pass().unwrap();
+                service.verify_pass_after(Duration::from_secs(1)).unwrap();
+                made += 1;
+            }
+            made
+        })
+    };
+    // The other switches the module on and off, forty times.
+    for _ in 0..40 {
+        r.service.enable(no_delay()).unwrap();
+        let waiting = r.ask_off();
+        let view = r.service.confirm_pending(&waiting.id).unwrap();
+        assert!(!view.config.enabled);
+    }
+    stop.store(true, Ordering::SeqCst);
+    let made = passes.join().expect("no pass panicked");
+    assert!(made > 0);
+
+    // It ends off, and off means untouched: no pass, no lock, nothing waiting.
+    assert!(!r.service.enabled());
+    assert_eq!(r.service.status().overall, Overall::Off);
+    assert!(!lock.exists(), "an off module holds no lock");
+    let before = (r.foreground.calls(), r.enforcer.calls().len());
+    assert!(!r.pass().hit);
+    r.service.verify_pass().unwrap();
+    assert_eq!((r.foreground.calls(), r.enforcer.calls().len()), before);
+    assert!(r.repo.inner.load_config().unwrap().pending.is_empty());
+
+    // And on again it works as on the first day.
+    r.service.enable(no_delay()).unwrap();
+    r.pass();
+    assert!(r.pass().hit);
+    assert!(lock.exists());
+}
+
+/// A detector that answers `explicit` at medium confidence (so a second frame is asked
+/// for) and, during its first call, lets the test change something.
+struct MediumDetector {
+    calls: AtomicUsize,
+    during_first: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+}
+
+#[async_trait::async_trait]
+impl ExplicitDetector for MediumDetector {
+    async fn check(&self, _image: &EncodedImage, _model: &str) -> CoreResult<ExplicitCheck> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let meanwhile = self.during_first.lock().take();
+        if let Some(meanwhile) = meanwhile {
+            meanwhile();
+        }
+        Ok(explicit(Confidence::Medium))
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn nothing_is_captured_or_sent_once_the_user_withdrew_the_check() {
+    // "Local only" switched on between the two frames of one check.
+    let medium = Arc::new(MediumDetector {
+        calls: AtomicUsize::new(0),
+        during_first: Mutex::new(None),
+    });
+    let r = rig(RigSetup {
+        detector: Some(medium.clone()),
+        ..RigSetup::default()
+    });
+    r.service.enable(standalone_options()).unwrap();
+    r.player();
+    let job = r.job_within(30).expect("a check");
+    let env = r.env.clone();
+    *medium.during_first.lock() = Some(Box::new(move || {
+        *env.ai.lock() = AiReadiness::LocalOnly;
+    }));
+    assert!(!r.service.vision_check(job).await.unwrap().hit);
+    assert_eq!(r.frames.calls().len(), 1, "no second frame was taken");
+    assert_eq!(medium.calls.load(Ordering::SeqCst), 1, "and none was sent");
+    assert!(r.enforcer.calls().is_empty());
+    assert!(r.presenter.seen.lock().is_empty());
+
+    // The module switched off between the pass that asked for a check and the check.
+    let r = rig(RigSetup::default());
+    r.service.enable(no_delay()).unwrap();
+    r.player();
+    let job = r.job_within(30).expect("a check");
+    let waiting = r.ask_off();
+    r.service.confirm_pending(&waiting.id).unwrap();
+    r.detector.push(Ok(explicit(Confidence::High)));
+    assert!(!r.service.vision_check(job).await.unwrap().hit);
+    assert!(
+        r.frames.calls().is_empty(),
+        "an off module captures nothing"
+    );
+    assert_eq!(r.detector.calls(), 0);
+    assert!(r.enforcer.calls().is_empty());
+
+    // With everything in place the same two frames are taken and the second decides.
+    let medium = Arc::new(MediumDetector {
+        calls: AtomicUsize::new(0),
+        during_first: Mutex::new(None),
+    });
+    let r = rig(RigSetup {
+        detector: Some(medium.clone()),
+        ..RigSetup::default()
+    });
+    r.service.enable(standalone_options()).unwrap();
+    r.player();
+    let job = r.job_within(30).expect("a check");
+    assert!(r.service.vision_check(job).await.unwrap().hit);
+    assert_eq!(r.frames.calls().len(), 2);
+    assert_eq!(medium.calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_hit_scrubs_only_the_block_of_its_own_window() {
+    let h = harness().await;
+    h.enable(true);
+    let state = h.state().clone();
+    let feed = |front: &ForegroundWindow, url: Option<String>| {
+        for _ in 0..4 {
+            h.advance(30);
+            ubiqx_engine::tracker::handle_sample(&state, sample_of(&h, front, url.clone()))
+                .unwrap();
+        }
+        BlockRepo::open_block(h.store.as_ref()).unwrap().unwrap()
+    };
+
+    // The tracker has a block open on an editor. A listed tab comes to the front and the
+    // guard closes it before the tracker samples again: the editor's block is not the
+    // hit's, and stays as it is.
+    let editor = window("Editor", "com.example.editor", "relatorio.md", Some(3));
+    let work = feed(&editor, None);
+    h.browse(listed());
+    assert!(h.two_passes());
+    ubiqx_engine::tracker::scrub_open_block(&state).unwrap();
+    let after = BlockRepo::get(h.store.as_ref(), &work.id).unwrap().unwrap();
+    assert!(after.is_open, "the work before the hit was closed");
+    assert_eq!(after.title, "relatorio.md");
+    assert_eq!(after.category_id, work.category_id);
+    assert!(!h.service.covers_open_block("com.example.editor", None));
+
+    // The same browser, with another site in the tracker's open block: not the hit's.
+    let docs = window("Google Chrome", CHROME, "Enciclopédia", Some(7));
+    let reading = feed(&docs, Some(url_of(POPULAR)));
+    assert_eq!(reading.domain.as_deref(), Some(POPULAR));
+    h.browse(listed());
+    assert!(h.two_passes());
+    ubiqx_engine::tracker::scrub_open_block(&state).unwrap();
+    let after = BlockRepo::get(h.store.as_ref(), &reading.id)
+        .unwrap()
+        .unwrap();
+    assert!(after.is_open);
+    assert_eq!(after.title, reading.title);
+    assert_eq!(after.url, Some(url_of(POPULAR)));
+    assert!(!h.service.covers_open_block(CHROME, Some(&url_of(POPULAR))));
+
+    // A block of the page the hit was about goes: by its host, and, for a block without
+    // an address, by its application.
+    assert!(h.service.covers_open_block(CHROME, Some(&url_of(listed()))));
+    assert!(h.service.covers_open_block(CHROME, None));
+    let player = window("VLC", VLC, "ferias.mp4", Some(9));
+    let watching = feed(&player, None);
+    h.foreground
+        .set(window("VLC", VLC, "ferias (2).mp4", Some(9)), None);
+    h.detector.push(Ok(explicit(Confidence::High)));
+    assert_eq!(h.check_within(30).await, Some(true));
+    ubiqx_engine::tracker::scrub_open_block(&state).unwrap();
+    let after = BlockRepo::get(h.store.as_ref(), &watching.id)
+        .unwrap()
+        .unwrap();
+    assert!(!after.is_open, "the title changed, the application did not");
+    assert_eq!(after.title, PRIVATE_TITLE);
+
+    // Ten minutes later a hit is not remembered any more.
+    h.advance(601);
+    assert!(!h.service.covers_open_block(VLC, None));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn site_lists_that_cannot_be_read_are_said_and_read_again() {
+    // The person blocked a site of their own; then the app starts while the lists cannot
+    // be read.
+    let repo = Arc::new(Flaky::default());
+    let first = rig(RigSetup {
+        repo: repo.clone(),
+        ..RigSetup::default()
+    });
+    first.service.enable(standalone_options()).unwrap();
+    first
+        .service
+        .request(NofapChange::AddBlock {
+            host: UNKNOWN.into(),
+        })
+        .unwrap();
+    drop(first);
+
+    repo.fail_lists.store(true, Ordering::SeqCst);
+    let r = rig(RigSetup {
+        repo: repo.clone(),
+        ..RigSetup::default()
+    });
+    assert!(r.service.enabled());
+    // Not "protected": a site the person blocked may be missing, and the page says so.
+    assert_eq!(r.service.status().overall, Overall::Reduced);
+    assert_eq!(r.service.view().unwrap().status.overall, Overall::Reduced);
+    // The embedded list still works meanwhile.
+    r.browse(listed());
+    r.pass();
+    assert!(r.pass().hit);
+
+    // The verify pass reads them again; from then on the person's own list is back.
+    repo.fail_lists.store(false, Ordering::SeqCst);
+    r.service.verify_pass_after(Duration::from_secs(1)).unwrap();
+    assert_eq!(r.service.status().overall, Overall::Protected);
+    assert_eq!(r.service.sites().blocked.len(), 1);
+    r.browse(UNKNOWN);
+    r.pass();
+    assert!(r.pass().hit);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_correction_counts_once_however_often_its_button_is_pressed() {
+    let h = harness().await;
+    h.enable(true);
+    h.browse(KEYWORD);
+    assert!(h.two_passes());
+    let card = h.cards().pop().unwrap();
+    assert!(card.actions.contains(&CardAction::NotIt));
+    for _ in 0..3 {
+        h.service.card_action(&card.id, CardAction::NotIt).unwrap();
+    }
+    assert_eq!(
+        h.counter(DayKind::NotIt),
+        1,
+        "one of the day's three, not three"
+    );
+    let snoozes = h
+        .stored_sites()
+        .iter()
+        .filter(|site| site.origin == SiteOrigin::Snooze)
+        .count();
+    assert_eq!(snoozes, 1);
+
+    // The same on a card of the AI check: one independent look is bought, once.
+    h.advance(200);
+    let card = positive_on_unknown(&h).await;
+    for _ in 0..3 {
+        h.service.card_action(&card.id, CardAction::NotIt).unwrap();
+    }
+    assert_eq!(h.counter(DayKind::NotIt), 2);
+    // Another button of the same card still works.
+    h.service
+        .card_action(&card.id, CardAction::AddToList)
+        .unwrap();
+    assert_eq!(h.service.sites().blocked.len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn two_hits_in_the_same_second() {
+    let h = harness().await;
+    h.enable(true);
+    // A player in front long enough for a check to be due; its answer is still out.
+    h.open_app("VLC", VLC, "ferias.mp4");
+    let job = h.job_within(30).expect("a check");
+
+    // A listed tab: three passes inside one second act twice, count once, show one card.
+    h.browse(listed());
+    assert!(!h.pass().hit);
+    assert!(h.pass().hit);
+    assert!(h.pass().hit);
+    assert_eq!(h.closes(), 2);
+    assert_eq!(h.counter(DayKind::BlockList), 1);
+    assert_eq!(h.cards().len(), 1);
+
+    // In that same second the player is back in front and its answer arrives, positive:
+    // acted on and counted, and no second card inside the minute.
+    let player = window("VLC", VLC, "ferias.mp4", Some(9));
+    h.foreground.set(player.clone(), None);
+    h.detector.push(Ok(explicit(Confidence::High)));
+    assert!(h.service.vision_check(job).await.unwrap().hit);
+    assert!(h
+        .enforcer
+        .calls()
+        .contains(&EnforcerCall::HideOthers("ai.ubiqx.app".into())));
+    assert_eq!(h.counter(DayKind::VisionHit), 1);
+    assert_eq!(h.counter(DayKind::BlockList), 1);
+    assert_eq!(h.cards().len(), 1, "one card a minute");
+    // The tracker forgets both windows.
+    assert!(h.service.redacts(&sample_of(&h, &player, None)));
+    let tab = window("Google Chrome", CHROME, TAB_TITLE, Some(7));
+    assert!(h
+        .service
+        .redacts(&sample_of(&h, &tab, Some(url_of(listed())))));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_request_confirmed_twice_is_applied_once() {
+    let h = harness_with(Setup {
+        os: Os::Linux,
+        ..Setup::default()
+    })
+    .await;
+    h.service.enable(with_hosts(false)).unwrap();
+    let ChangeOutcome::Pending(waiting) = h.service.request(NofapChange::Disable).unwrap() else {
+        panic!("pending");
+    };
+    h.advance(600);
+    h.observe_running(600);
+    let card = h.cards_of(CardKind::PendingReady).pop().expect("the card");
+    h.shield.clear_calls();
+
+    // The page and the card window confirm at the same moment.
+    let confirm = |service: Arc<NofapService>, id: Id| {
+        std::thread::spawn(move || service.confirm_pending(&id).map(|view| view.config.enabled))
+    };
+    let (page, window) = (
+        confirm(h.service.clone(), waiting.id.clone()),
+        confirm(h.service.clone(), waiting.id.clone()),
+    );
+    let answers = [page.join().unwrap(), window.join().unwrap()];
+    assert_eq!(
+        answers.iter().filter(|answer| answer.is_ok()).count(),
+        1,
+        "{answers:?}"
+    );
+    assert!(answers
+        .iter()
+        .any(|answer| matches!(answer, Err(CoreError::NotFound(_)))));
+    let removes = |h: &Harness| {
+        h.shield
+            .calls()
+            .into_iter()
+            .filter(|call| matches!(call, SystemCall::Remove(..)))
+            .count()
+    };
+    assert_eq!(removes(&h), 1, "the system is asked once");
+    assert!(!h.service.enabled());
+
+    // Late presses change nothing more.
+    h.service
+        .card_action(&card.id, CardAction::TurnOff)
+        .unwrap();
+    assert!(matches!(
+        h.service.confirm_pending(&waiting.id),
+        Err(CoreError::NotFound(_))
+    ));
+    assert_eq!(removes(&h), 1);
+    assert_eq!(h.counter(DayKind::OverrideRequest), 1);
+    assert_eq!(h.stored_config().pending.len(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_clock_jumps_while_a_check_waits_for_its_answer() {
+    let held = Arc::new(HeldDetector {
+        asked: AtomicUsize::new(0),
+        answer: tokio::sync::Semaphore::new(0),
+        verdict: explicit(Confidence::High),
+    });
+    let r = rig(RigSetup {
+        detector: Some(held.clone()),
+        ..RigSetup::default()
+    });
+    r.service.enable(standalone_options()).unwrap();
+    let asked = |times: usize| {
+        let started = std::time::Instant::now();
+        while held.asked.load(Ordering::SeqCst) < times {
+            assert!(
+                started.elapsed() < Duration::from_secs(20),
+                "the check never asked"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    };
+    let run = |job: VisionJob| {
+        let service = r.service.clone();
+        tokio::spawn(async move { service.vision_check(job).await.unwrap().hit })
+    };
+
+    // The clock is set back three hours while the provider thinks. The answer is acted on
+    // all the same: what counts is that the window and the host are the ones captured.
+    r.browse(UNKNOWN);
+    let check = run(r.job_within(30).expect("a check"));
+    asked(1);
+    r.clock.advance(ChronoDuration::hours(-3));
+    held.answer.add_permits(1);
+    assert!(tokio::time::timeout(Duration::from_secs(20), check)
+        .await
+        .expect("the answer was handled")
+        .unwrap());
+    assert_eq!(
+        r.enforcer.calls(),
+        vec![EnforcerCall::CloseActiveTab(CHROME.into())]
+    );
+    assert_eq!(r.service.sites().learned_count, 1);
+    assert_eq!(r.counter(DayKind::VisionCheck), 1);
+    // The guard goes on by the clock as it is now: the learned page is closed again...
+    r.pass();
+    assert!(r.pass().hit);
+    // ...and another unknown page is still looked at in its time, not three hours later.
+    r.browse(UNKNOWN_2);
+    let check = run(r.job_within(60).expect("a check within a minute"));
+    asked(2);
+
+    // This time the clock goes forward two days while the answer is out.
+    r.clock.advance(ChronoDuration::days(2));
+    held.answer.add_permits(1);
+    assert!(tokio::time::timeout(Duration::from_secs(20), check)
+        .await
+        .expect("the answer was handled")
+        .unwrap());
+    assert_eq!(r.service.sites().learned_count, 2);
+    assert_eq!(r.counter(DayKind::VisionCheck), 2);
+    assert_eq!(r.service.status().vision, VisionState::On);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_clock_set_back_does_not_end_a_wait_and_set_forward_does_not_shorten_it() {
+    let h = harness().await;
+    h.enable(false);
+    let ChangeOutcome::Pending(waiting) = h.service.request(NofapChange::Disable).unwrap() else {
+        panic!("pending");
+    };
+
+    // Back one day, with all the running time the request needs: the clock says no.
+    h.advance(-86_400);
+    h.observe_running(600);
+    let view = h.service.view().unwrap();
+    assert!(!view.status.pending[0].ready);
+    assert_eq!(view.status.pending[0].remaining_secs, 86_400 + 600);
+    assert!(matches!(
+        h.service.confirm_pending(&waiting.id),
+        Err(CoreError::Invalid(_))
+    ));
+    assert!(h.service.enabled());
+    h.browse(listed());
+    assert!(h.two_passes(), "still enforcing");
+
+    // Forward again to the moment it was promised for: ready, and it needs the confirmation.
+    h.advance(86_400 + 600);
+    assert!(h.service.view().unwrap().status.pending[0].ready);
+    assert!(h.service.enabled());
+    assert!(
+        !h.service
+            .confirm_pending(&waiting.id)
+            .unwrap()
+            .config
+            .enabled
+    );
+
+    // A second request, and the clock jumps a month ahead with a minute of running time.
+    h.enable(false);
+    let ChangeOutcome::Pending(second) = h.service.request(NofapChange::Disable).unwrap() else {
+        panic!("pending");
+    };
+    h.advance(30 * 86_400);
+    h.observe_running(60);
+    assert!(!h.service.view().unwrap().status.pending[0].ready);
+    assert!(h.service.confirm_pending(&second.id).is_err());
+    assert!(h.service.enabled());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_store_failing_in_the_middle_of_a_pass_does_not_stop_the_guard() {
+    let r = rig(RigSetup::default());
+    r.service.enable(standalone_options()).unwrap();
+
+    // The counters cannot be reached: the tab is closed and the card shown all the same,
+    // and the card does not hand out a snooze it cannot count.
+    r.repo.fail_counters.store(true, Ordering::SeqCst);
+    r.browse(KEYWORD);
+    assert!(!r.pass().hit);
+    assert!(r.pass().hit);
+    assert_eq!(
+        r.enforcer.calls(),
+        vec![EnforcerCall::CloseActiveTab(CHROME.into())]
+    );
+    let card = r.cards_of(CardKind::Blocked).pop().expect("the card");
+    assert!(card.actions.contains(&CardAction::RequestException));
+    assert!(!card.actions.contains(&CardAction::NotIt));
+
+    // An AI check runs and acts though it cannot count itself.
+    r.clock.advance(ChronoDuration::seconds(200));
+    r.player();
+    let job = r.job_within(30).expect("a check");
+    r.detector.push(Ok(explicit(Confidence::High)));
+    assert!(r.service.vision_check(job).await.unwrap().hit);
+    assert!(r
+        .enforcer
+        .calls()
+        .contains(&EnforcerCall::HideOthers("ai.ubiqx.shield".into())));
+
+    // A positive that cannot be stored as a learned site still closes the tab.
+    r.repo.fail_counters.store(false, Ordering::SeqCst);
+    r.repo.fail_lists.store(true, Ordering::SeqCst);
+    r.clock.advance(ChronoDuration::seconds(200));
+    r.enforcer.clear();
+    r.browse(UNKNOWN);
+    let job = r.job_within(30).expect("a check");
+    r.detector.push(Ok(explicit(Confidence::High)));
+    assert!(r.service.vision_check(job).await.unwrap().hit);
+    assert_eq!(
+        r.enforcer.calls(),
+        vec![EnforcerCall::CloseActiveTab(CHROME.into())]
+    );
+    // The page says that the lists could not be read.
+    assert_eq!(r.service.view().unwrap().status.overall, Overall::Reduced);
+}
+
+/// Every port of the service. Any call fails the test.
+struct Untouchable;
+
+impl SystemShield for Untouchable {
+    fn capabilities(&self) -> SystemCapabilities {
+        panic!("the system layer was asked for its capabilities")
+    }
+
+    fn observe(&self, _opts: ObserveOpts) -> CoreResult<SystemObservation> {
+        panic!("the system was read")
+    }
+
+    fn preview(&self, _plan: &SystemPlan) -> CoreResult<Vec<PlannedChange>> {
+        panic!("a plan was previewed")
+    }
+
+    fn apply(&self, _plan: &SystemPlan) -> CoreResult<ApplyOutcome> {
+        panic!("a plan was applied")
+    }
+
+    fn remove(&self, _owner: ProductId, _scope: RemoveScope) -> CoreResult<ApplyOutcome> {
+        panic!("the tiers were removed")
+    }
+}
+
+impl FrameSource for Untouchable {
+    fn frame(&self, _window_id: u32, _opts: FrameOpts) -> CoreResult<Option<Frame>> {
+        panic!("a frame was taken")
+    }
+}
+
+#[async_trait::async_trait]
+impl ExplicitDetector for Untouchable {
+    async fn check(&self, _image: &EncodedImage, _model: &str) -> CoreResult<ExplicitCheck> {
+        panic!("an image was sent")
+    }
+}
+
+impl NofapPresenter for Untouchable {
+    fn show(&self, _card: &NofapCard) -> CoreResult<bool> {
+        panic!("a card was shown")
+    }
+
+    fn dismiss(&self, _id: &str) {
+        panic!("a card was dismissed")
+    }
+}
+
+impl NofapSink for Untouchable {
+    fn emit(&self, _event: NofapEvent) {
+        panic!("an event was emitted")
+    }
+}
+
+impl NofapEnv for Untouchable {
+    fn snapshot(&self) -> NofapEnvSnapshot {
+        panic!("the host's settings were read")
+    }
+}
+
+impl ActivitySource for Untouchable {
+    fn foreground(&self) -> CoreResult<Option<ForegroundWindow>> {
+        panic!("the window in front was read")
+    }
+
+    fn peek_foreground(&self) -> CoreResult<Option<ForegroundWindow>> {
+        panic!("the window in front was read")
+    }
+}
+
+impl BrowserUrlResolver for Untouchable {
+    fn supports(&self, _app_id: &str) -> bool {
+        panic!("the URL resolver was asked")
+    }
+
+    fn resolve(&self, _window: &ForegroundWindow) -> CoreResult<Option<String>> {
+        panic!("an address was read")
+    }
+
+    fn resolve_fresh(&self, _window: &ForegroundWindow) -> CoreResult<Option<String>> {
+        panic!("an address was read")
+    }
+}
+
+impl Enforcer for Untouchable {
+    fn quit_app(&self, _bundle_id: &str) -> CoreResult<bool> {
+        panic!("an application was quit")
+    }
+
+    fn close_active_tab(&self, _browser_bundle_id: &str) -> CoreResult<bool> {
+        panic!("a tab was closed")
+    }
+
+    fn blank_active_tab(&self, _browser_bundle_id: &str) -> CoreResult<bool> {
+        panic!("a tab was blanked")
+    }
+
+    fn hide_others(&self, _keep_bundle_id: &str) -> CoreResult<bool> {
+        panic!("windows were hidden")
+    }
+
+    fn run_shortcut(&self, _name: &str) -> CoreResult<bool> {
+        panic!("a shortcut was run")
+    }
+}
+
+impl PermissionChecker for Untouchable {
+    fn status(&self) -> PermissionStatus {
+        panic!("the permissions were read")
+    }
+
+    fn request(&self, _kind: PermissionKind) -> CoreResult<()> {
+        panic!("a permission was asked for")
+    }
+}
+
+impl Notifier for Untouchable {
+    fn notify(&self, _title: &str, _body: &str) -> CoreResult<()> {
+        panic!("a notification was sent")
+    }
+}
+
+impl UsageRepo for Untouchable {
+    fn record(&self, _usage: &AiUsage) -> CoreResult<()> {
+        panic!("the ledger was written")
+    }
+
+    fn totals(&self, _range: TimeRange) -> CoreResult<AiUsageTotals> {
+        panic!("the ledger was read")
+    }
+
+    fn totals_by_kind(&self, _range: TimeRange) -> CoreResult<Vec<(AiUsageKind, AiUsageTotals)>> {
+        panic!("the ledger was read")
+    }
+}
+
+/// The service over ports that must not be touched, and the repository it may read once,
+/// when it is built.
+fn untouchable(repo: Arc<Flaky>) -> Arc<NofapService> {
+    let port = Arc::new(Untouchable);
+    let ports = NofapPorts {
+        system: port.clone(),
+        frames: port.clone(),
+        detector: Some(port.clone()),
+        presenter: port.clone(),
+        sink: port.clone(),
+        repo,
+        shared_dir: None,
+        tuning: Tuning {
+            confirm_after: Duration::from_millis(5),
+            check_timeout: Duration::from_secs(5),
+            background: Background::Inline,
+            display: DisplaySession::Full,
+        },
+    };
+    let host = NofapHost {
+        env: port.clone(),
+        activity: port.clone(),
+        urls: port.clone(),
+        enforcer: port.clone(),
+        permissions: port.clone(),
+        notifier: port.clone(),
+        usage: port,
+        clock: Arc::new(FixedClock::new(fixed_now())),
+        identity: &ubiqx_core::product::SHIELD,
+        export_dir: std::env::temp_dir().join("never-written"),
+    };
+    NofapService::new(NofapDeps::assemble(ports, host))
+}
+
+#[test]
+fn with_the_module_off_no_port_is_called() {
+    let sample = ActivitySample {
+        at: fixed_now(),
+        app_name: "Google Chrome".into(),
+        app_id: CHROME.into(),
+        window_title: TAB_TITLE.into(),
+        url: Some(url_of(listed())),
+        idle_secs: Some(0.0),
+        window_id: Some(7),
+    };
+    let everything_a_host_calls_by_itself = |service: &NofapService, repo: &Flaky| {
+        let stored = repo.calls();
+        for _ in 0..3 {
+            let outcome = service.guard_pass().unwrap();
+            assert!(!outcome.hit && outcome.job.is_none());
+        }
+        service.verify_pass().unwrap();
+        service.verify_pass_after(Duration::from_secs(120)).unwrap();
+        assert!(!service.redacts(&sample));
+        assert!(!service.capture_veto(CHROME, Some(listed()), TAB_TITLE));
+        assert!(!service.covers_open_block(CHROME, Some(&url_of(listed()))));
+        assert!(!service.enabled());
+        service.status();
+        service.on_quit();
+        service.release_primary();
+        assert_eq!(repo.calls(), stored, "the database was asked");
+    };
+
+    // Never enabled.
+    let repo = Arc::new(Flaky::default());
+    let service = untouchable(repo.clone());
+    assert_eq!(service.status(), NofapStatus::off());
+    everything_a_host_calls_by_itself(&service, &repo);
+
+    // A stored configuration that cannot be read: nothing is assumed, nothing is touched.
+    let repo = Arc::new(Flaky::default());
+    repo.unreadable.store(true, Ordering::SeqCst);
+    let service = untouchable(repo.clone());
+    assert_eq!(service.status().overall, Overall::Reduced);
+    everything_a_host_calls_by_itself(&service, &repo);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_pass_over_a_page_that_is_not_blocked_asks_the_database_nothing() {
+    // With the AI check on, between two checks: the pass reads the window, its address and
+    // the host's settings, and that is all. No list is read again, no counter, no ledger.
+    let r = rig(RigSetup::default());
+    r.service.enable(standalone_options()).unwrap();
+    r.browse(UNKNOWN);
+    r.pass();
+    let stored = r.repo.calls();
+    for _ in 0..200 {
+        let outcome = r.pass();
+        assert!(!outcome.hit && outcome.job.is_none());
+    }
+    assert_eq!(r.repo.calls(), stored);
+    assert!(r.frames.calls().is_empty());
+
+    // With the AI check off the host's settings are not read either.
+    let r = rig(RigSetup::default());
+    r.service
+        .enable(EnableOptions {
+            vision: false,
+            vision_consent: None,
+            ..standalone_options()
+        })
+        .unwrap();
+    r.browse(UNKNOWN);
+    r.pass();
+    let before = (r.repo.calls(), r.env.calls.load(Ordering::SeqCst));
+    for _ in 0..200 {
+        r.pass();
+    }
+    assert_eq!((r.repo.calls(), r.env.calls.load(Ordering::SeqCst)), before);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn d10_the_ways_out_of_an_unreadable_configuration() {
+    let repo = Arc::new(Flaky::default());
+    repo.unreadable.store(true, Ordering::SeqCst);
+    let r = rig(RigSetup {
+        repo: repo.clone(),
+        ..RigSetup::default()
+    });
+    assert_eq!(r.service.status().overall, Overall::Reduced);
+    // No file is written that would show the defaults as the person's configuration.
+    assert!(matches!(r.service.export(), Err(CoreError::Storage(_))));
+    assert!(!r.tmp.path().join("exports").exists());
+    // Erasing one's history stays possible and replaces nothing.
+    r.service.erase_history().unwrap();
+    assert_eq!(repo.saves.load(Ordering::SeqCst), 0);
+    assert_eq!(r.service.status().overall, Overall::Reduced);
+
+    // "Apagar tudo" is a way out: a fresh configuration, off, stored.
+    r.service.reset().unwrap();
+    assert_eq!(repo.saves.load(Ordering::SeqCst), 1);
+    assert_eq!(r.service.status(), NofapStatus::off());
+    assert_eq!(repo.inner.load_config().unwrap(), NofapConfig::default());
+    assert!(r.service.export().is_ok());
+
+    // A reset that cannot be stored leaves the unreadable state as it was.
+    let repo = Arc::new(Flaky::default());
+    repo.unreadable.store(true, Ordering::SeqCst);
+    repo.fail_saves.store(true, Ordering::SeqCst);
+    let r = rig(RigSetup {
+        repo,
+        ..RigSetup::default()
+    });
+    assert!(r.service.reset().is_err());
+    assert!(r.service.enable(standalone_options()).is_err());
+    assert_eq!(r.service.status().overall, Overall::Reduced);
+    assert!(!r.service.enabled());
 }

@@ -33,8 +33,9 @@ use crate::resolvers::{self, RESOLVERS, UNREACHABLE_AFTER_FAILS};
 /// own elevation command on a Windows runner with plans of 1,800, 4,000, 12,000 and
 /// 24,000 characters: each reached the helper intact, with every name in the block
 /// (`docs/nofap/REAL-MACHINE-CHECKLIST.md`, section 3 and item 18). The longest that was
-/// measured is also the longest the helper accepts, so that is the budget. The runner has
-/// UAC switched off: the consent prompt's own path is not part of that measurement.
+/// measured is also the longest the helper accepts, so that is the budget. The runner's
+/// shell is already elevated (its `EnableLUA` is 1), so the command started without a
+/// consent prompt: what a prompt adds on the way is not part of that measurement.
 pub const ARG_BUDGET_UNIX: usize = 24_000;
 pub const ARG_BUDGET_WINDOWS: usize = 24_000;
 /// Longest `--plan-b64` value the helper accepts, on every system.

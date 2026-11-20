@@ -121,8 +121,11 @@ jobs:
           Get-DnsClientServerAddress | Format-Table -AutoSize InterfaceAlias, InterfaceIndex, AddressFamily, ServerAddresses
           $hosts = Join-Path ([Environment]::SystemDirectory) 'drivers\etc\hosts'
           (Get-Acl -LiteralPath $hosts).Sddl
-          # Whether the elevation command of the smoke run meets a consent prompt.
-          "EnableLUA: $((Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System').EnableLUA)"
+          # What the elevation command of the smoke run meets: the UAC settings of the runner
+          # and the integrity level this shell already has.
+          $uac = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+          "UAC: EnableLUA=$($uac.EnableLUA) ConsentPromptBehaviorAdmin=$($uac.ConsentPromptBehaviorAdmin) PromptOnSecureDesktop=$($uac.PromptOnSecureDesktop)"
+          whoami /groups | Select-String -Pattern 'Mandatory Label' | ForEach-Object { $_.Line.Trim() }
           # What the helper sees without privilege (the `status` verb only reads).
           & target\debug\ubiqx-shield-helper.exe status
           $saved = Join-Path $env:RUNNER_TEMP 'nofap-smoke-hosts.before'
