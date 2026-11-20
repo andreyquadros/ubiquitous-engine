@@ -18,7 +18,7 @@ pub const TIER_GATE: [(Os, Tier, bool); 9] = [
     (Os::Macos, Tier::Hosts, true),
     (Os::Macos, Tier::Resolver, true),
     (Os::Macos, Tier::Policies, false),
-    (Os::Windows, Tier::Hosts, false),
+    (Os::Windows, Tier::Hosts, true),
     (Os::Windows, Tier::Resolver, false),
     (Os::Windows, Tier::Policies, false),
     (Os::Linux, Tier::Hosts, true),
@@ -102,11 +102,12 @@ mod tests {
     /// The entries that are open, each with its evidence in section 1 of
     /// `docs/nofap/REAL-MACHINE-CHECKLIST.md`. Opening an entry means adding it here in
     /// the commit that changes the table and records the run.
-    const OPEN: [(Os, Tier); 4] = [
+    const OPEN: [(Os, Tier); 5] = [
         (Os::Linux, Tier::Hosts),
         (Os::Linux, Tier::Resolver),
         (Os::Macos, Tier::Hosts),
         (Os::Macos, Tier::Resolver),
+        (Os::Windows, Tier::Hosts),
     ];
 
     #[test]

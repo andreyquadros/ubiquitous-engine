@@ -34,7 +34,7 @@ the gate as it stands; the list `OPEN` in the tests of `gate.rs` names the same 
 | macOS | hosts | **yes** | "feat(nofap): the gate opens (macOS, hosts) and (macOS, resolver)" | section 3, run 1, `macos-latest` (green) |
 | macOS | resolver | **yes** | "feat(nofap): the gate opens (macOS, hosts) and (macOS, resolver)" | section 3, run 1, `macos-latest` (green) |
 | macOS | policies | no | | item 9 |
-| Windows | hosts | no | | Windows run of section 3 |
+| Windows | hosts | **yes** | "feat(nofap): the gate opens (Windows, hosts)" | section 3, run 6, `windows-latest` (green); runs 2 to 5 for what had to be fixed first |
 | Windows | resolver | no | | Windows run of section 3; item 6 (execution policy) |
 | Windows | policies | no | | item 9 |
 
@@ -137,9 +137,9 @@ evidence about the helper: it is logged below as red, fixed, and run again.
 
 | Runner | Tiers | Result | Run, job | Commit | `GREEN` line of the log |
 |---|---|---|---|---|---|
-| `ubuntu-latest` (Ubuntu 26.04.1, systemd-resolved active, `/etc/resolv.conf` the stub) | hosts, resolver | **green** | run 5: `44662940118`, job `136045282597` | `4a12960` | `system-smoke: GREEN os=linux tiers=hosts,resolver commit=4a12960 helper_sha256=cb0eeafe8872bde8fe821ea9d7d0c507291e8ab190923fc320f03b44b623f1ea` |
-| `macos-latest` (macOS 26.7.2, arm64, one network service, "Ethernet") | hosts, resolver | **green** | run 5: `44662940118`, job `136045282682` | `4a12960` | `system-smoke: GREEN os=macos tiers=hosts,resolver commit=4a12960 helper_sha256=9e7a3966fc3ac5302bb62b24eb55d4289f1c07d4c74a4daeff6156380bc91097` |
-| `windows-latest` (Windows Server 2025 Datacenter, PowerShell 7.6.10, execution policy `RemoteSigned` for the machine) | hosts, resolver | **red** | run 5: `44662940118`, job `136045282233` | `4a12960` | none: see the log of runs |
+| `ubuntu-latest` (Ubuntu 26.04.1, systemd-resolved active, `/etc/resolv.conf` the stub) | hosts, resolver | **green** | run 6: `44663846392`, job `136048260668` | `06cbc59` | `system-smoke: GREEN os=linux tiers=hosts,resolver commit=06cbc59 helper_sha256=f491378f884966038ef46551290e8b025051cf18ac44da8e8b22915a683a8ea6` |
+| `macos-latest` (macOS 26.7.2, arm64, one network service, "Ethernet") | hosts, resolver | **green** | run 6: `44663846392`, job `136048260654` | `06cbc59` | `system-smoke: GREEN os=macos tiers=hosts,resolver commit=06cbc59 helper_sha256=0ce04a39a992193eef64efde9b994d99a51c76faff77bb938024f31d2de63047` |
+| `windows-latest` (Windows Server 2025 Datacenter, PowerShell 7.6.10, execution policy `RemoteSigned` for the machine, UAC off) | hosts, resolver | **green** | run 6: `44663846392`, job `136048260438` | `06cbc59` | `system-smoke: GREEN os=windows tiers=hosts,resolver commit=06cbc59 helper_sha256=abf2c719087a21cd1f78c17b8b9747fb0ea01b8c52701ff1cc0c6b03c7c89e6e names=8000 block_sha256=6ebc3afbd82d9548e808039c95a59a50dd0f7e5630846257f9397b793bd05354 first_lookup_s=0.1 longest_plan=24000` |
 
 ### Log of every run
 
@@ -167,29 +167,47 @@ One row per run and system, oldest first. "Changed afterwards" is what the resul
 | 5, `44662940118` | `4a12960` | `macos-latest` | green | As run 4. | nothing |
 | 5, `44662940118` | `4a12960` | `windows-latest` | red, 8 checks, all about one adapter | **Everything about the hosts tier is `ok`, in all seven cycles** (this shell, five elevated plans, the hostile environment): the block of 8,000 names; owner and access list unchanged; `status` reads the canary as the null address; the canary and `xhamster.com` are blocked for a program that asks the operating system (`no-data`), the first lookup 0.1 s after the helper returned and 0.7 to 0.8 s after the file was written; after each removal the file is byte for byte the saved one and the canary fails with 11001. **The elevation command** worked in the four-variable environment with every length: the plans of 1,800, 4,000, 12,000 and 24,000 characters (26, 60, 185 and 373 extra names) reached the helper intact and all their names were in the block. **The resolver** was set and read back on the adapters, both resolvers answered and refused, the operating system resolved through the family resolver, DNS was put back. **What failed:** this runner's third adapter ("Ethernet 4", here a "Microsoft Azure Network Adapter") reported the interface index of "vEthernet (nat)" (both 10). Asked by index, the DNS client answered for it with the other adapter's objects, so the helper and the script both listed it as a third configured adapter; set by index it read as set, but the registry holds nothing under its own GUID, and the four registry checks for that GUID failed in the two cycles with the resolver. In the app the quick registry read would have shown that adapter as not set: a drift that is none. | The helper's full read counts the DNS client's answer for an adapter only when it is filed under the adapter's own name (`InterfaceAlias`), and so does the script (`windows.rs`, with a test of the quick read agreeing with the full one). |
 
+| 6, `44663846392` | `06cbc59` | `ubuntu-latest` | green | As run 4. The system layer's own tests: 103 passed. | nothing |
+| 6, `44663846392` | `06cbc59` | `macos-latest` | green | As run 4. 103 tests passed. | nothing |
+| 6, `44663846392` | `06cbc59` | `windows-latest` | **green**: 321 checks `ok`, none failed | The first green run on Windows. Seven cycles of apply and remove (this shell's environment with both tiers; the elevation command with the plan without extra names and with plans of 1,800, 4,000, 12,000 and 24,000 characters; both tiers with `windir`, `SystemRoot`, `ProgramData` and `PSModulePath` pointing at a scratch directory), every check `ok` in each. Two adapters carry a DNS configuration ("vEthernet (nat)", "Ethernet 3"); "Ethernet 4" (here a Mellanox ConnectX-5 virtual adapter with an interface index of its own) is up without one and is left out by the helper and by the script alike. The job's own comparison of the hosts file: identical, no state directory. The system layer's own tests: 103 passed. **Not exercised by this run:** the adapter that borrows another adapter's index (run 5): this runner did not have one, so the fix made after run 5 is covered by its tests and by the pinned script text only. | The gate entries of Windows are opened; `ARG_BUDGET_WINDOWS` is set from the measurement. |
+
 Numbers the Windows run reports, and the constants they decide (design 2.1, 2.2):
 
-| Measurement | Value from the run | Constant | Value in the code | Changed to |
+| Measurement | Value from the run (run 6, and the same in run 5) | Constant | Value in the code before | Changed to |
 |---|---|---|---|---|
-| Names in the block | | `hosts::CAP_WINDOWS` | 8,000 | |
-| Seconds from the helper returning to the first successful lookup of the canary | | (limit: 10 s) | | |
-| Longest `--plan-b64` value that reached the helper through the elevation command | | `plan::ARG_BUDGET_WINDOWS` | 1,800 | |
+| Names in the block | 8,000 | `hosts::CAP_WINDOWS` | 8,000 | unchanged |
+| Seconds from the helper returning to the first lookup of the canary that showed it blocked | 0.1 s (0.7 to 1.4 s after the hosts file was written), in each of the seven cycles | (limit: 10 s) | | the limit holds with a wide margin; whether more than 8,000 names would also do was not measured |
+| Longest `--plan-b64` value that reached the helper through the elevation command | 24,000 characters (373 extra names, all of them in the block); 1,800, 4,000 and 12,000 arrived too | `plan::ARG_BUDGET_WINDOWS` | 1,800 | 24,000, which is also the longest value the helper accepts (`HELPER_ARG_MAX`) |
+
+What the measurement of the argument does **not** cover: the runner is an administrator
+with UAC switched off, so `Start-Process -Verb RunAs` went through `ShellExecuteEx` without
+the consent prompt. The limit of about 2,048 characters that the design feared is one of
+`ShellExecuteEx` itself, and it did not show; the path through the consent prompt was not
+part of the run. Item 18 keeps a line for a person at a machine with UAC on.
+
+What the Windows runs showed about **how Windows blocks a name** (runs 3 and 5): a program
+that asks the operating system for a name whose only answer is the null address, from the
+hosts file or from the family resolver, gets no address and the Winsock error 11004
+("valid name, no data") within a millisecond; `Resolve-DnsName` prints `A 0.0.0.0` and
+`AAAA ::` for the same name; without the block the canary fails with 11001 ("host not
+found"). The helper and the app read 11004 for the canary as "blocked"
+(`NameLookup::lookup_blocked`); every other system hands out the null address itself.
 
 What the scripts check, so that a green run can be read against the items below:
 
 | Check in the log | Items |
 |---|---|
 | `hosts: every byte of the saved file is still in front`, `the declared hash is the hash of the lines between the markers`, `the declared count is the number of names`, `state: records the hash and the count` | 1 |
-| `the canary resolves to the null address through the operating system`, `a name of the list (…) resolves to the null address`, `example.com still resolves` | 1 |
-| `hosts: byte for byte the saved file`, `owner, group and mode are what they were` (Windows: `owner and access list`), `the state directory is gone`, `the canary no longer resolves` | 1 |
+| `the canary resolves to the null address through the operating system` and `a name of the list (…) resolves to the null address` (Linux, macOS), `the canary is blocked for a program that asks the operating system (the null address, or "no data")` and `a name of the list (…) is blocked …` (Windows), `status: the canary reads as the null address, as the check in the app needs it`, `example.com still resolves` | 1 |
+| `hosts: byte for byte the saved file`, `owner, group and mode are what they were` (Windows: `owner and access list`), `the state directory is gone`, `the canary no longer resolves`, `without the block the canary fails as an unknown name (Winsock error 11001)` (Windows) | 1 |
 | `the first lookup after the write comes within 10 seconds` (Windows) | 2 |
 | `DNS: … uses exactly the resolver's four addresses` (macOS), `DNS: adapter … uses the resolver's two IPv4 / IPv6 addresses` (Windows), `DNS: the drop-in holds exactly the expected four lines` and `systemd-resolved's global servers are the resolver's four addresses` (Linux), `DNS: the configuration is what it was before the run` | 3 |
 | `the resolver 1.1.1.3 answers for example.com`, `the resolver 1.1.1.3 refuses a listed name`, the same for `1.0.0.3`, `the operating system resolves through the family resolver` | 4 |
-| `registry: Tcpip NameServer of … holds the IPv4 pair`, `registry: Tcpip6 NameServer of … holds the IPv6 pair`, `… cannot be written by a standard user`, `… can be read by a standard user` (Windows) | 6 |
+| `registry: Tcpip NameServer of … holds the IPv4 pair`, `registry: Tcpip6 NameServer of … holds the IPv6 pair`, `reg.exe: the NameServer value of Tcpip / Tcpip6 for … reads as the pair` (the read the app does), `status: lists exactly the adapters that are up and have a DNS client configuration`, `… cannot be written by a standard user`, `… can be read by a standard user` (Windows) | 6 |
 | `ARG_BUDGET evidence: the longest --plan-b64 value that reached the helper intact has … characters` (Windows) | 18 |
 | `nothing was created in the scratch directory the variables pointed at` (Windows, hostile environment) | design 2.5, 9.3 step 6 |
 | `the elevation command works at all with the shortest plan` (Windows; the command runs in the app's four-variable environment) | 20, 27 |
-| `hosts: owner and access list are what they were` (Windows) | 26 |
+| `hosts: owner and access list are unchanged with the block in place`, `hosts: owner and access list are what they were` (Windows) | 26 |
 
 ## 4. The items of design 11.4
 
