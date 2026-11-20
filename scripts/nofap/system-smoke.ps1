@@ -451,6 +451,58 @@ function Wait-Lookup {
     }
 }
 
+function Write-LookupDetail {
+    # For the record, when a lookup through the operating system did not give what was
+    # expected: what each way of asking for the name says, and how long it takes.
+    param([Parameter(Mandatory)][string]$Name)
+    foreach ($family in @('Unspecified', 'InterNetwork', 'InterNetworkV6')) {
+        $clock = [System.Diagnostics.Stopwatch]::StartNew()
+        try {
+            $found = @([System.Net.Dns]::GetHostAddresses($Name, [System.Net.Sockets.AddressFamily]$family) | ForEach-Object { $_.ToString() })
+            Write-Note "lookup detail: getaddrinfo($Name, $family) gave [$($found -join ' ')] in $([int]$clock.Elapsed.TotalMilliseconds) ms"
+        }
+        catch {
+            $inner = $_.Exception
+            while ($null -ne $inner.InnerException) { $inner = $inner.InnerException }
+            $code = if ($inner -is [System.Net.Sockets.SocketException]) { "$($inner.SocketErrorCode) ($($inner.NativeErrorCode))" } else { $inner.GetType().Name }
+            Write-Note "lookup detail: getaddrinfo($Name, $family) failed with $code in $([int]$clock.Elapsed.TotalMilliseconds) ms: $($inner.Message)"
+        }
+    }
+    try {
+        $ping = Start-Tool -FilePath (Join-Path $System32 'ping.exe') -Arguments @('-n', '1', '-w', '500', $Name)
+        $said = @($ping.StdOut -split "`r?`n" | Where-Object { $_.Trim() -ne '' } | Select-Object -First 2)
+        Write-Note "lookup detail: ping.exe $Name exited $($ping.ExitCode) and said: $($said -join ' | ')"
+    }
+    catch {
+        Write-Note "lookup detail: ping.exe could not be run: $($_.Exception.Message)"
+    }
+    try {
+        $records = @(Resolve-DnsName -Name $Name -ErrorAction Stop | ForEach-Object { "$(Get-Field $_ @('Type')) $(Get-Field $_ @('IPAddress')) ($(Get-Field $_ @('Section')))" })
+        Write-Note "lookup detail: Resolve-DnsName $Name gave: $($records -join '; ')"
+    }
+    catch {
+        Write-Note "lookup detail: Resolve-DnsName $Name failed: $($_.Exception.Message)"
+    }
+    try {
+        $cache = Start-Tool -FilePath (Join-Path $System32 'ipconfig.exe') -Arguments @('/displaydns')
+        $lines = @($cache.StdOut -split "`r?`n")
+        $at = -1
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].Trim() -eq $Name) { $at = $i; break }
+        }
+        if ($at -lt 0) {
+            Write-Note "lookup detail: ipconfig /displaydns lists no entry for $Name ($($lines.Count) lines)"
+        }
+        else {
+            $entry = @($lines[$at..([Math]::Min($at + 16, $lines.Count - 1))] | Where-Object { $_.Trim() -ne '' } | ForEach-Object { $_.Trim() })
+            Write-Note "lookup detail: ipconfig /displaydns for $Name`: $($entry -join ' | ')"
+        }
+    }
+    catch {
+        Write-Note "lookup detail: ipconfig /displaydns could not be read: $($_.Exception.Message)"
+    }
+}
+
 function Get-DirectAnswer {
     # The A records one resolver gives for a name, asked of it directly; Answered is false
     # when it did not answer.
@@ -543,10 +595,33 @@ function Test-SameAddresses {
 }
 
 function Split-Servers {
-    # A `NameServer` registry value: addresses separated by commas or blanks. One address
-    # per pipeline object; call it as @(Split-Servers ...).
+    # A `NameServer` registry value: addresses separated by commas or blanks. Windows pads
+    # the value it writes with NUL characters after the text; what counts is the text in
+    # front of the first one. One address per pipeline object; call it as
+    # @(Split-Servers ...).
     param([string]$Value)
-    return @($Value -split '[,\s]+' | Where-Object { $_ -ne '' })
+    $text = $Value.Split([char]0)[0]
+    return @($text -split '[,\s]+' | Where-Object { $_ -ne '' })
+}
+
+function Get-RegNameServers {
+    # What the quick read of the app sees: the output of
+    # `reg.exe query <Interfaces key> /s /v NameServer`, run with the environment the app
+    # gives it, as a table from interface GUID to the value's text.
+    param([Parameter(Mandatory)][string]$Stack)
+    $key = "HKLM\SYSTEM\CurrentControlSet\Services\$Stack\Parameters\Interfaces"
+    $query = Start-Tool -FilePath (Join-Path $System32 'reg.exe') -Arguments @('query', $key, '/s', '/v', 'NameServer') -Environment $AppChildEnvironment -OnlyEnvironment
+    $table = @{}
+    $guid = ''
+    foreach ($line in @($query.StdOut -split "`r?`n")) {
+        if ($line.StartsWith('HKEY_')) {
+            $guid = ($line.TrimEnd() -split '\\')[-1]
+        }
+        elseif ($guid -ne '' -and $line -match '^\s+NameServer\s+REG_SZ(\s+(?<data>.*))?$') {
+            $table[$guid] = [string]$Matches['data']
+        }
+    }
+    return $table
 }
 
 # ----------------------------------------------------------------------------------------------
@@ -689,8 +764,15 @@ function Test-Applied {
         Assert-That ($null -eq (Get-Field $status @('hosts', 'error'))) 'status: no hosts error' (Get-Field $status @('hosts', 'error'))
         Assert-That ((Get-Field $status @('state', 'owners', $Owner, 'hosts')) -eq $true) "state: the owner '$Owner' wants the hosts tier"
 
-        Assert-That (Test-Blocked -Addresses $firstLookup.Found) 'the canary resolves to the null address through the operating system' $firstLookup.Found
-        Write-Note ('the first lookup of the canary succeeded {0:n1} s after the helper returned and {1:n1} s after the hosts file was written; the lookup itself took {2} ms' -f $firstLookup.AfterApply, $firstLookup.AfterWrite, $firstLookupMs)
+        $canaryBlocked = Test-Blocked -Addresses $firstLookup.Found
+        Assert-That $canaryBlocked 'the canary resolves to the null address through the operating system' $firstLookup.Found
+        if ($canaryBlocked) {
+            Write-Note ('the first lookup of the canary succeeded {0:n1} s after the helper returned and {1:n1} s after the hosts file was written; the lookup itself took {2} ms' -f $firstLookup.AfterApply, $firstLookup.AfterWrite, $firstLookupMs)
+        }
+        else {
+            Write-Note ('the canary did not resolve to the null address in {0:n1} s of asking' -f ($firstLookupMs / 1000))
+            Write-LookupDetail -Name $Canary
+        }
         Assert-That ($firstLookup.AfterApply -lt $FirstLookupLimitSeconds) "the first lookup after the write comes within $FirstLookupLimitSeconds seconds" ('{0:n1} s' -f $firstLookup.AfterApply)
         $script:Evidence['first_lookup_s'] = '{0:n1}' -f $firstLookup.AfterApply
         if ($null -eq $facts.Listed) {
@@ -699,6 +781,9 @@ function Test-Applied {
         else {
             $found = @(Wait-Lookup -Name $facts.Listed -Wanted { param($a) Test-Blocked -Addresses $a })
             Assert-That (Test-Blocked -Addresses $found) "a name of the list ($($facts.Listed)) resolves to the null address" $found
+            if (-not (Test-Blocked -Addresses $found)) {
+                Write-LookupDetail -Name $facts.Listed
+            }
         }
     }
 
@@ -706,7 +791,11 @@ function Test-Applied {
         Assert-That ((Get-Field $status @('state', 'owners', $Owner, 'resolver')) -eq $ResolverId) "state: the owner '$Owner' wants the resolver $ResolverId" (Get-Field $status @('state', 'owners', $Owner, 'resolver'))
         $now = Get-DnsSnapshot
         Assert-That (@($now).Count -gt 0) 'DNS: at least one adapter is up'
+        $reg4 = Get-RegNameServers -Stack 'Tcpip'
+        $reg6 = Get-RegNameServers -Stack 'Tcpip6'
         foreach ($row in @($now)) {
+            Assert-That (Test-SameAddresses -Servers @(Split-Servers ([string]$reg4[$row.Guid])) -Wanted $ResolverV4) "reg.exe: the NameServer value of Tcpip for $($row.Guid) reads as the IPv4 pair" ([string]$reg4[$row.Guid])
+            Assert-That (Test-SameAddresses -Servers @(Split-Servers ([string]$reg6[$row.Guid])) -Wanted $ResolverV6) "reg.exe: the NameServer value of Tcpip6 for $($row.Guid) reads as the IPv6 pair" ([string]$reg6[$row.Guid])
             Assert-That (Test-SameAddresses -Servers $row.V4 -Wanted $ResolverV4) "DNS: adapter $($row.Index) ($($row.Name)) uses the resolver's two IPv4 addresses" $row.V4
             Assert-That (Test-SameAddresses -Servers $row.V6 -Wanted $ResolverV6) "DNS: adapter $($row.Index) ($($row.Name)) uses the resolver's two IPv6 addresses" $row.V6
             Assert-That (Test-SameAddresses -Servers @(Split-Servers $row.StaticV4) -Wanted $ResolverV4) "registry: Tcpip NameServer of $($row.Guid) holds the IPv4 pair" $row.StaticV4
@@ -736,6 +825,9 @@ function Test-Applied {
             $facts.FilterTest = $true
             $found = @(Wait-Lookup -Name $FilterTestName -Wanted { param($a) Test-Blocked -Addresses $a } -Seconds 15)
             Assert-That (Test-Blocked -Addresses $found) "the operating system resolves through the family resolver ($FilterTestName is refused)" $found
+            if (-not (Test-Blocked -Addresses $found)) {
+                Write-LookupDetail -Name $FilterTestName
+            }
         }
         else {
             Write-Note "the resolver did not refuse its operator's test name $FilterTestName (answer: $($direct.Addresses -join ' ')), so whether the operating system asks it is shown by the configuration only"
