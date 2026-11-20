@@ -29,7 +29,7 @@ the gate as it stands; the list `OPEN` in the tests of `gate.rs` names the same 
 | OS | Tier | Open? | Opened by (commit subject) | Evidence |
 |---|---|---|---|---|
 | Linux | hosts | **yes** | "feat(nofap): the gate opens (Linux, hosts)" | section 2 (the sandbox run, green); section 3, run 1, `ubuntu-latest` (green) |
-| Linux | resolver | no | | Ubuntu run of section 3 |
+| Linux | resolver | **yes** | "feat(nofap): the gate opens (Linux, resolver)" | section 3, run 1, `ubuntu-latest` (green) |
 | Linux | policies | no | | item 9 |
 | macOS | hosts | no | | macOS run of section 3 |
 | macOS | resolver | no | | macOS run of section 3 |
