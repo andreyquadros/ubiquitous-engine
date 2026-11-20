@@ -328,7 +328,9 @@ fn a_run_writes_only_the_tiers_its_own_gate_opens() {
         assert_eq!(exit, EXIT_APPLIED, "{os:?}: {err}");
         // The resolver ubiqX still wants is not put back by a run whose gate is closed
         // for it; the hosts block that was there is kept, with ubiqX's names.
-        for call in rig.calls() {
+        let resolver_closed =
+            !ubiqx_nofap::gate::tier_enabled(os, ubiqx_core::nofap::Tier::Resolver);
+        for call in rig.calls().into_iter().filter(|_| resolver_closed) {
             let line = call.line();
             assert!(
                 !line.contains("-setdnsservers")

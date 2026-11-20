@@ -5,11 +5,13 @@ use ubiqx_core::nofap::{
     ApplyOutcome, ObserveOpts, Os, RemoveScope, SystemShield, Tier, TierCapability, TierState,
 };
 use ubiqx_core::{CoreError, ProductId};
-use ubiqx_nofap::gate::Gate;
+use ubiqx_nofap::gate::{self, Gate};
 use ubiqx_nofap::plan::{self, EXIT_FAILED, EXIT_GATED, EXIT_INVALID_PLAN};
 use ubiqx_nofap::{hosts, resolvers};
 
-use crate::sysblock::testing::{all_open, plan_of, Rig, ALL_TIERS};
+use crate::sysblock::testing::{
+    all_open, closed_tier, plan_for, plan_of, unverified_arg, Rig, ALL_TIERS,
+};
 use crate::sysblock::{ElevatedExit, NativeSystemShield};
 
 fn strings(list: &[&str]) -> Vec<String> {
@@ -20,22 +22,35 @@ fn strings(list: &[&str]) -> Vec<String> {
 fn capabilities_follow_the_gate_and_the_packaging() {
     for os in Os::ALL {
         let rig = Rig::new(os);
-        // The table as it ships: every tier is gated.
-        let closed = rig
+        // Without an override a tier is what the table says: gated until it is opened.
+        let by_table = |tier: Tier| {
+            if gate::tier_enabled(os, tier) {
+                TierCapability::Available
+            } else {
+                TierCapability::Gated
+            }
+        };
+        let plain = rig
             .shield(ProductId::Ubiqx, Gate::new(os, Vec::new()))
             .capabilities();
-        assert_eq!(closed.os, Some(os));
+        assert_eq!(plain.os, Some(os));
         for tier in Tier::ALL {
-            assert_eq!(*closed.of(tier), TierCapability::Gated, "{os:?} {tier:?}");
+            assert_eq!(*plain.of(tier), by_table(tier), "{os:?} {tier:?}");
         }
-        assert!(closed.unverified.is_empty());
-        // A tester's override opens what it names and is labelled.
+        assert!(plain.unverified.is_empty());
+        // A tester's override opens what it names, and what it opened is labelled.
         let partly = rig
             .shield(ProductId::Ubiqx, Gate::new(os, vec![Tier::Hosts]))
             .capabilities();
         assert_eq!(partly.hosts, TierCapability::Available);
-        assert_eq!(partly.resolver, TierCapability::Gated);
-        assert_eq!(partly.unverified, vec![Tier::Hosts]);
+        assert_eq!(partly.resolver, by_table(Tier::Resolver));
+        let labelled: Vec<Tier> = unverified_arg(os, &[Tier::Hosts])
+            .map(|_| vec![Tier::Hosts])
+            .unwrap_or_default();
+        assert_eq!(partly.unverified, labelled);
+        if let Some(tier) = closed_tier(os) {
+            assert_eq!(*plain.of(tier), TierCapability::Gated, "{os:?} {tier:?}");
+        }
         // From an AppImage nothing can be applied, and the reason is given.
         let appimage = rig
             .shield(ProductId::Ubiqx, all_open(os))
@@ -106,10 +121,18 @@ fn apply_and_remove_send_exactly_these_arguments() {
             ApplyOutcome::Applied
         );
         let encoded = plan::encode_plan(&plan);
+        // The override travels as an argument, naming what the table does not open.
+        let mut apply = strings(&["apply", "--plan-b64", &encoded]);
+        if let Some(tiers) = unverified_arg(os, &Tier::ALL) {
+            apply.extend(strings(&["--unverified", &tiers]));
+        }
+        if closed_tier(os) == Some(Tier::Hosts) {
+            assert_eq!(apply[3..], strings(&["--unverified", ALL_TIERS]));
+        }
         assert_eq!(
             *rig.elevated.lock(),
             vec![
-                strings(&["apply", "--plan-b64", &encoded, "--unverified", ALL_TIERS]),
+                apply,
                 strings(&["remove", "--owner", "shield", "--scope", "resolver"]),
                 strings(&["remove", "--owner", "shield", "--scope", "all"]),
             ],
@@ -151,39 +174,44 @@ fn apply_through_the_shield_reads_applied_for_what_was_asked() {
 
 #[test]
 fn a_plan_the_helper_would_refuse_never_reaches_the_prompt() {
-    let rig = Rig::new(Os::Linux);
-    let plan = plan_of(ProductId::Ubiqx, &[]);
-    // The gate as it ships: nobody is asked for a password for a tier that is closed.
-    let closed = rig.shield(ProductId::Ubiqx, Gate::new(Os::Linux, Vec::new()));
-    assert_eq!(
-        closed.apply(&plan).unwrap(),
-        ApplyOutcome::Unavailable("gated".into())
-    );
-    // What is left of a plan once the closed tiers are taken out asks for nothing: it
-    // is not sent either.
-    let nothing_left = plan::without_gated(&plan, &Gate::new(Os::Linux, Vec::new()));
-    assert_eq!(
-        closed.apply(&nothing_left).unwrap(),
-        ApplyOutcome::Unavailable("gated".into())
-    );
-    assert!(matches!(
-        rig.shield(ProductId::Ubiqx, all_open(Os::Linux))
-            .apply(&nothing_left),
-        Err(CoreError::Invalid(_))
-    ));
-    // A preview of a gated plan shows no change at all.
-    assert_eq!(closed.preview(&plan).unwrap(), Vec::new());
-    // A plan with a name that cannot be blocked is an error, not a prompt.
-    let open = rig.shield(ProductId::Ubiqx, all_open(Os::Linux));
-    for name in ["localhost", "10.0.0.1", "portal.example.gov.br"] {
-        let bad = plan_of(ProductId::Ubiqx, &[name]);
-        assert!(
-            matches!(open.apply(&bad), Err(CoreError::Invalid(_))),
-            "{name}"
-        );
+    for os in Os::ALL {
+        let rig = Rig::new(os);
+        let open = rig.shield(ProductId::Ubiqx, all_open(os));
+        // A tier the gate keeps closed: nobody is asked for a password for it.
+        if let Some(tier) = closed_tier(os) {
+            let by_table = Gate::new(os, Vec::new());
+            let closed = rig.shield(ProductId::Ubiqx, by_table.clone());
+            let plan = plan_for(ProductId::Ubiqx, tier);
+            assert_eq!(
+                closed.apply(&plan).unwrap(),
+                ApplyOutcome::Unavailable("gated".into()),
+                "{os:?} {tier:?}"
+            );
+            // What is left of the plan once the closed tier is taken out asks for
+            // nothing: it is not sent either, and its preview shows no change.
+            let nothing_left = plan::without_gated(&plan, &by_table);
+            assert_eq!(
+                closed.apply(&nothing_left).unwrap(),
+                ApplyOutcome::Unavailable("gated".into())
+            );
+            assert_eq!(closed.preview(&plan).unwrap(), Vec::new());
+            // With every tier open, a plan without a tier is the caller's mistake.
+            assert!(matches!(
+                open.apply(&nothing_left),
+                Err(CoreError::Invalid(_))
+            ));
+        }
+        // A plan with a name that cannot be blocked is an error, not a prompt.
+        for name in ["localhost", "10.0.0.1", "portal.example.gov.br"] {
+            let bad = plan_of(ProductId::Ubiqx, &[name]);
+            assert!(
+                matches!(open.apply(&bad), Err(CoreError::Invalid(_))),
+                "{name}"
+            );
+        }
+        assert!(rig.elevated.lock().is_empty(), "{os:?}");
+        assert_eq!(rig.fs.mutations(), Vec::<String>::new(), "{os:?}");
     }
-    assert!(rig.elevated.lock().is_empty());
-    assert_eq!(rig.fs.mutations(), Vec::<String>::new());
 }
 
 #[test]
@@ -233,7 +261,7 @@ fn the_exit_of_the_elevated_run_becomes_the_outcome() {
 }
 
 #[test]
-fn the_native_shield_of_this_machine_ships_with_every_tier_gated() {
+fn the_native_shield_of_this_machine_follows_the_gate_table() {
     // Reads the gate and the executable path only; nothing on the system is touched.
     let Some(os) = Os::current() else {
         assert!(NativeSystemShield::native(ProductId::Ubiqx).is_none());
@@ -243,15 +271,21 @@ fn the_native_shield_of_this_machine_ships_with_every_tier_gated() {
     let capabilities = shield.capabilities();
     assert_eq!(capabilities.os, Some(os));
     for tier in Tier::ALL {
-        if !capabilities.unverified.contains(&tier) {
-            assert_eq!(*capabilities.of(tier), TierCapability::Gated, "{tier:?}");
-        }
-    }
-    // A gated plan is turned down before any elevation is attempted.
-    if capabilities.unverified.is_empty() {
-        let plan = plan_of(ProductId::Ubiqx, &[]);
+        let opened = gate::tier_enabled(os, tier) || capabilities.unverified.contains(&tier);
         assert_eq!(
-            shield.apply(&plan).unwrap(),
+            *capabilities.of(tier) == TierCapability::Gated,
+            !opened,
+            "{tier:?}"
+        );
+    }
+    // A plan for a tier that is gated is turned down before any elevation is attempted.
+    // Only such a plan is ever handed to this shield: its elevator is the real one.
+    let gated = Tier::ALL
+        .into_iter()
+        .find(|tier| *capabilities.of(*tier) == TierCapability::Gated);
+    if let Some(tier) = gated {
+        assert_eq!(
+            shield.apply(&plan_for(ProductId::Ubiqx, tier)).unwrap(),
             ApplyOutcome::Unavailable("gated".into())
         );
     }

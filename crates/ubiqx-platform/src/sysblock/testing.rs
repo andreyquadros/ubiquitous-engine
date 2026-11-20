@@ -1016,3 +1016,34 @@ pub(crate) fn b64(text: &str) -> String {
     }
     encoded
 }
+
+/// A tier the gate table keeps closed on `os`, if one is left. Tests about closed tiers
+/// ask here, so they keep their meaning when an entry of the table is opened.
+pub(crate) fn closed_tier(os: Os) -> Option<Tier> {
+    Tier::ALL
+        .into_iter()
+        .find(|tier| !ubiqx_nofap::gate::tier_enabled(os, *tier))
+}
+
+/// The tiers of `named` that only a tester's override opens on `os`, as `--unverified`
+/// carries them; `None` when the table opens them all.
+pub(crate) fn unverified_arg(os: Os, named: &[Tier]) -> Option<String> {
+    let names: Vec<&str> = Tier::ALL
+        .into_iter()
+        .filter(|tier| named.contains(tier) && !ubiqx_nofap::gate::tier_enabled(os, *tier))
+        .map(Tier::as_str)
+        .collect();
+    (!names.is_empty()).then(|| names.join(","))
+}
+
+/// A plan that asks for `tier` and nothing else.
+pub(crate) fn plan_for(owner: ProductId, tier: Tier) -> SystemPlan {
+    SystemPlan {
+        v: CONFIG_VERSION,
+        owner,
+        hosts: tier == Tier::Hosts,
+        extra: Vec::new(),
+        resolver: (tier == Tier::Resolver).then_some(CF),
+        policies: tier == Tier::Policies,
+    }
+}

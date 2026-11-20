@@ -3,7 +3,7 @@
 
 use chrono::{TimeZone, Utc};
 use ubiqx_core::nofap::{
-    NofapConfig, NofapSite, Os, RemoveScope, SiteList, SiteOrigin, SystemObservation,
+    NofapConfig, NofapSite, Os, RemoveScope, SiteList, SiteOrigin, SystemObservation, Tier,
 };
 use ubiqx_core::ProductId;
 use ubiqx_nofap::plan::{self, ARG_BUDGET_WINDOWS, EXIT_APPLIED, EXIT_GATED, EXIT_INVALID_PLAN};
@@ -11,7 +11,9 @@ use ubiqx_nofap::{hosts, matcher};
 
 use crate::sysblock::elevate;
 use crate::sysblock::helper::{after_flag, apply_args, parse, remove_args, Verb};
-use crate::sysblock::testing::{all_open, b64, plan_of, Rig, ALL_TIERS, CF, EXE};
+use crate::sysblock::testing::{
+    all_open, b64, closed_tier, plan_for, plan_of, unverified_arg, Rig, ALL_TIERS, CF, EXE,
+};
 
 /// Runs the helper and asserts that it refused with `code` before touching anything.
 fn refused(rig: &Rig, args: &[&str], code: i32) {
@@ -115,30 +117,27 @@ fn a_plan_the_helper_cannot_accept_is_refused_before_anything_is_touched() {
         invalid(&hand_made("null", &many.join(",")));
 
         // A valid plan for a tier the gate keeps closed: exit 5, with and without an
-        // override for another tier.
-        let wanted = plan::encode_plan(&plan_of(ProductId::Shield, &["blocked.example"]));
-        refused(&rig, &["apply", "--plan-b64", &wanted], EXIT_GATED);
-        refused(
-            &rig,
-            &["apply", "--plan-b64", &wanted, "--unverified", "hosts"],
-            EXIT_GATED,
-        );
-        refused(
-            &rig,
-            &[
-                "apply",
-                "--plan-b64",
-                &wanted,
-                "--unverified",
-                "hosts,policies",
-            ],
-            EXIT_GATED,
-        );
-        refused(
-            &rig,
-            &["apply", "--plan-b64", &wanted, "--unverified", "everything"],
-            EXIT_GATED,
-        );
+        // override for the other tiers.
+        if let Some(tier) = closed_tier(os) {
+            let wanted = plan::encode_plan(&plan_for(ProductId::Shield, tier));
+            let others: Vec<&str> = Tier::ALL
+                .iter()
+                .filter(|other| **other != tier)
+                .map(|other| other.as_str())
+                .collect();
+            refused(&rig, &["apply", "--plan-b64", &wanted], EXIT_GATED);
+            for named in [
+                others[0].to_owned(),
+                others.join(","),
+                "everything".to_owned(),
+            ] {
+                refused(
+                    &rig,
+                    &["apply", "--plan-b64", &wanted, "--unverified", &named],
+                    EXIT_GATED,
+                );
+            }
+        }
         assert_eq!(rig.hosts_text(), rig.observe().hosts.text.unwrap());
         assert!(rig.observe().state.is_none());
     }
@@ -185,8 +184,13 @@ fn elevate_argv_prints_the_real_command_line_and_runs_nothing() {
         assert_eq!(exit, EXIT_APPLIED);
         let printed: Vec<String> = serde_json::from_str(&out).expect("a JSON array of strings");
         let backend = crate::sysblock::testing::backend_for(os);
-        // The tier list is normalised, never passed through as it came.
-        let args = apply_args(&encoded, Some("hosts,resolver"));
+        // The tier list is normalised, never passed through as it came: the two tiers
+        // it names, in the table's order, without what the table already opens.
+        let named = unverified_arg(os, &[Tier::Hosts, Tier::Resolver]);
+        if closed_tier(os) == Some(Tier::Hosts) {
+            assert_eq!(named.as_deref(), Some("hosts,resolver"));
+        }
+        let args = apply_args(&encoded, named.as_deref());
         let expected = elevate::argv(
             os,
             &backend.elevation_tool(),
