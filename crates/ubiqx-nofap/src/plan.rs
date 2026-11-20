@@ -1079,11 +1079,12 @@ mod tests {
         RuleSet::parse(["gov", "gov.*", "bank.example", "accounts.vendor.example"])
     }
 
-    /// Every tier open (through the tester's override: the table opens none).
+    /// Every tier open: what the table keeps closed is opened by the tester's override.
     fn open(os: Os) -> Gate {
         Gate::new(os, Tier::ALL.to_vec())
     }
 
+    /// The gate without an override: open is what the table opens for `os`.
     fn closed(os: Os) -> Gate {
         Gate::new(os, Vec::new())
     }
@@ -1827,37 +1828,69 @@ mod tests {
     #[test]
     fn a_gated_tier_is_refused_with_its_own_exit_code() {
         let all = plan(&[]);
+        let only = |tier: Tier| SystemPlan {
+            hosts: tier == Tier::Hosts,
+            resolver: (tier == Tier::Resolver).then_some(CF),
+            policies: tier == Tier::Policies,
+            ..plan(&[])
+        };
+        // Which tiers a gate without an override keeps closed is the table's business (it
+        // opens an entry once that system's checks have passed); what is tested here is that
+        // a closed tier is refused, an open one is not, and the first closed one is named.
         for os in Os::ALL {
-            let error = validate(&all, &rules(), &closed(os)).unwrap_err();
-            assert_eq!(error, PlanError::Gated { tier: Tier::Hosts });
-            assert_eq!(error.exit_code(), EXIT_GATED);
-        }
-        let hosts_only = Gate::new(Os::Linux, vec![Tier::Hosts]);
-        assert_eq!(
-            validate(&all, &rules(), &hosts_only),
-            Err(PlanError::Gated {
-                tier: Tier::Resolver
-            })
-        );
-        let no_policies = Gate::new(Os::Linux, vec![Tier::Hosts, Tier::Resolver]);
-        assert_eq!(
-            validate(&all, &rules(), &no_policies),
-            Err(PlanError::Gated {
-                tier: Tier::Policies
-            })
-        );
-        // What the app sends has the closed tiers taken out.
-        let sent = without_gated(&plan(&["example.com"]), &hosts_only);
-        assert_eq!(
-            sent,
-            SystemPlan {
-                resolver: None,
-                policies: false,
-                ..plan(&["example.com"])
+            let gate = closed(os);
+            let first_closed = Tier::ALL.into_iter().find(|tier| !gate.open(*tier));
+            assert_eq!(
+                validate(&all, &rules(), &gate),
+                first_closed.map_or(Ok(()), |tier| Err(PlanError::Gated { tier })),
+                "{os:?}"
+            );
+            for tier in Tier::ALL {
+                let asked = validate(&only(tier), &rules(), &gate);
+                if gate.open(tier) {
+                    assert_eq!(asked, Ok(()), "{os:?} {tier:?}");
+                } else {
+                    assert_eq!(asked, Err(PlanError::Gated { tier }), "{os:?} {tier:?}");
+                    assert_eq!(asked.unwrap_err().exit_code(), EXIT_GATED);
+                }
             }
-        );
-        assert_eq!(validate(&sent, &rules(), &hosts_only), Ok(()));
-        let nothing = without_gated(&plan(&["example.com"]), &closed(Os::Linux));
+            // What the app sends has the closed tiers taken out, and is then accepted.
+            let sent = without_gated(&plan(&["example.com"]), &gate);
+            assert_eq!(sent.hosts, gate.open(Tier::Hosts), "{os:?}");
+            assert_eq!(sent.extra.is_empty(), !gate.open(Tier::Hosts), "{os:?}");
+            assert_eq!(sent.resolver.is_some(), gate.open(Tier::Resolver), "{os:?}");
+            assert_eq!(sent.policies, gate.open(Tier::Policies), "{os:?}");
+            assert_eq!(validate(&sent, &rules(), &gate), Ok(()), "{os:?}");
+        }
+        // The policies tier is closed on every system until a person has checked the
+        // browsers, so a gate that opens the other two names it, on any table.
+        for os in Os::ALL {
+            let no_policies = Gate::new(os, vec![Tier::Hosts, Tier::Resolver]);
+            let error = validate(&all, &rules(), &no_policies).unwrap_err();
+            assert_eq!(
+                error,
+                PlanError::Gated {
+                    tier: Tier::Policies
+                }
+            );
+            assert_eq!(error.exit_code(), EXIT_GATED);
+            let sent = without_gated(&plan(&["example.com"]), &no_policies);
+            assert_eq!(
+                sent,
+                SystemPlan {
+                    policies: false,
+                    ..plan(&["example.com"])
+                }
+            );
+            assert_eq!(validate(&sent, &rules(), &no_policies), Ok(()));
+        }
+        // A plan that asks for nothing passes any gate.
+        let nothing = SystemPlan {
+            hosts: false,
+            resolver: None,
+            policies: false,
+            ..plan(&[])
+        };
         assert_eq!(wants_of(&nothing), OwnerWants::default());
         assert_eq!(validate(&nothing, &rules(), &closed(Os::Linux)), Ok(()));
     }
@@ -2137,15 +2170,33 @@ mod tests {
     }
 
     #[test]
-    fn hosts_gated_when_the_gate_is_closed() {
+    fn a_tier_reads_gated_exactly_when_the_gate_keeps_it_closed() {
         let owners = [(ProductId::Ubiqx, my_wants())];
         let observation = hosts_observation(Some(&block_for(&owners, Os::Linux)), &owners);
         for os in Os::ALL {
-            let assessment = assessed_with(&chosen(), &observation, os, &closed(os), 0);
-            assert_eq!(assessment.hosts, TierState::Gated);
-            assert_eq!(assessment.resolver, TierState::Gated);
-            assert_eq!(assessment.policies, TierState::Gated);
-            assert!(assessment.issues.is_empty());
+            // Without an override the table decides; the policies tier is closed everywhere.
+            let gate = closed(os);
+            let assessment = assessed_with(&chosen(), &observation, os, &gate, 0);
+            let gated = |state: &TierState| *state == TierState::Gated;
+            assert_eq!(gated(&assessment.hosts), !gate.open(Tier::Hosts), "{os:?}");
+            assert_eq!(
+                gated(&assessment.resolver),
+                !gate.open(Tier::Resolver),
+                "{os:?}"
+            );
+            assert_eq!(assessment.policies, TierState::Gated, "{os:?}");
+            // A gated tier raises no issue: the policy conflict and the advisory note
+            // belong to a tier that could be applied.
+            assert!(
+                !assessment.issues.contains(&Issue::PolicyConflict)
+                    && !assessment.issues.contains(&Issue::PolicyAdvisoryOnly),
+                "{os:?}"
+            );
+            // With every tier opened by the override nothing reads gated.
+            let assessment = assessed_with(&chosen(), &observation, os, &open(os), 0);
+            assert!(!gated(&assessment.hosts), "{os:?}");
+            assert!(!gated(&assessment.resolver), "{os:?}");
+            assert!(!gated(&assessment.policies), "{os:?}");
         }
     }
 
@@ -3010,16 +3061,22 @@ mod tests {
         flatpak.error = Some(reason::FLATPAK.to_owned());
         observation.policies = vec![flatpak];
         assert!(previewed(&plan(&["mine.example"]), &observation, Os::Linux).is_empty());
-        // A gated tier is not in the plan that is sent, so it adds no line either.
+        // A gated tier is not in the plan that is sent, so it adds no line either. The
+        // policies tier is the one every table keeps closed.
+        let policy_lines = [line::POLICIES_SET, line::POLICIES_DISCLOSURE];
+        let full = previewed(&plan(&["mine.example"]), &untouched(Os::Linux), Os::Linux);
+        assert!(policy_lines.iter().all(|key| keys(&full).contains(key)));
         let sent = without_gated(
             &plan(&["mine.example"]),
-            &Gate::new(Os::Linux, vec![Tier::Policies]),
+            &Gate::new(Os::Linux, vec![Tier::Hosts, Tier::Resolver]),
         );
         let lines = previewed(&sent, &untouched(Os::Linux), Os::Linux);
-        assert_eq!(
-            keys(&lines),
-            vec![line::POLICIES_SET, line::POLICIES_DISCLOSURE]
-        );
+        let without_policies: Vec<&str> = keys(&full)
+            .into_iter()
+            .filter(|key| !policy_lines.contains(key))
+            .collect();
+        assert!(!without_policies.is_empty());
+        assert_eq!(keys(&lines), without_policies);
     }
 
     #[test]
