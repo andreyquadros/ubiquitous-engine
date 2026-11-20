@@ -3777,3 +3777,72 @@ async fn a_reader_or_source_view_of_a_blocked_page_is_closed_and_names_no_host()
     }
     assert_eq!(h.closes(), closes);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn names_that_stop_resolving_offer_to_give_the_network_back_and_change_nothing() {
+    let h = harness().await;
+    h.service
+        .enable(EnableOptions {
+            resolver: Some(ResolverId::CloudflareFamily),
+            ..options(false)
+        })
+        .unwrap();
+    assert_eq!(h.service.status().resolver, TierState::Applied);
+
+    // The probe name fails on two looks: not yet an outage (a laptop lid, a tunnel).
+    h.shield.set_probe_ok(false);
+    for _ in 0..2 {
+        h.advance(120);
+        h.service
+            .verify_pass_after(Duration::from_secs(120))
+            .unwrap();
+    }
+    assert!(!h
+        .service
+        .status()
+        .issues
+        .contains(&Issue::ResolverUnreachable));
+    assert!(h.cards().is_empty());
+
+    // The third in a row: the issue, and one card that offers the way out.
+    h.shield.clear_calls();
+    for _ in 0..3 {
+        h.advance(120);
+        h.service
+            .verify_pass_after(Duration::from_secs(120))
+            .unwrap();
+    }
+    let status = h.service.status();
+    assert!(status.issues.contains(&Issue::ResolverUnreachable));
+    assert_eq!(status.overall, Overall::Reduced);
+    let cards = h.cards_of(CardKind::ResolverUnreachable);
+    assert_eq!(cards.len(), 1, "once per outage");
+    assert_eq!(cards[0].message_key, "resolver.unreachable");
+    assert_eq!(
+        cards[0].actions,
+        vec![CardAction::RestoreNetwork, CardAction::Later]
+    );
+    assert!(
+        h.shield
+            .calls()
+            .iter()
+            .all(|call| matches!(call, SystemCall::Observe(_))),
+        "nothing changes by itself"
+    );
+    assert_eq!(h.service.status().resolver, TierState::Applied);
+
+    // The button: the resolver goes, undelayed, and the card closes.
+    h.service
+        .card_action(&cards[0].id, CardAction::RestoreNetwork)
+        .unwrap();
+    assert!(h
+        .shield
+        .calls()
+        .contains(&SystemCall::Remove(ProductId::Ubiqx, RemoveScope::Resolver)));
+    let status = h.service.status();
+    assert_eq!(status.resolver, TierState::NotApplied);
+    assert!(!status.issues.contains(&Issue::ResolverUnreachable));
+    assert!(h.events().contains(&NofapEvent::CardClosed {
+        id: cards[0].id.clone()
+    }));
+}

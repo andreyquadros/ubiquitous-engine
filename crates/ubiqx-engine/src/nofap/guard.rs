@@ -103,13 +103,15 @@ impl NofapService {
 
         let Some(window) = self.deps.activity.peek_foreground()? else {
             self.rt.lock().confirmer.clear();
-            self.note_limit(None);
+            if self.deps.tuning.display == DisplaySession::Wayland {
+                // Nothing in front is all a Wayland session ever answers.
+                self.note_limit(None);
+            }
             return Ok(GuardOutcome::default());
         };
         // Both products, the desktop shell and its settings are never acted on.
         if crate::focus::is_exempt_window(&window.app_id, &window.app_name, None) {
             self.rt.lock().confirmer.clear();
-            self.note_limit(None);
             return Ok(GuardOutcome::default());
         }
         let front = self.read_front(&matcher, window);
@@ -388,7 +390,11 @@ impl NofapService {
                 rt.config.delay_secs,
             )
         };
-        self.note_limit(self.limit_of(front));
+        // What limits the guard is said about browsers: it stays as it is while another
+        // application is in front, so the status does not flip with every window switch.
+        if matches!(kind, WindowKind::Browser | WindowKind::UnreadableBrowser) {
+            self.note_limit(self.limit_of(front));
+        }
         if !prefs.enabled || prefs.consent.is_none() {
             return Ok(GuardOutcome::default());
         }
