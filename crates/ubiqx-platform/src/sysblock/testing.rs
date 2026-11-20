@@ -749,6 +749,8 @@ type Answer = dyn Fn(&str) -> Vec<String> + Send + Sync;
 /// A name lookup that answers from a closure and records what was asked.
 pub(crate) struct FakeLookup {
     pub asked: Mutex<Vec<String>>,
+    /// The names of `asked` that were asked as names expected to be blocked.
+    pub asked_as_blocked: Mutex<Vec<String>>,
     answer: Box<Answer>,
 }
 
@@ -756,6 +758,7 @@ impl FakeLookup {
     pub(crate) fn new(answer: impl Fn(&str) -> Vec<String> + Send + Sync + 'static) -> Self {
         Self {
             asked: Mutex::new(Vec::new()),
+            asked_as_blocked: Mutex::new(Vec::new()),
             answer: Box::new(answer),
         }
     }
@@ -765,6 +768,11 @@ impl NameLookup for FakeLookup {
     fn lookup(&self, name: &str) -> Vec<String> {
         self.asked.lock().push(name.to_owned());
         (self.answer)(name)
+    }
+
+    fn lookup_blocked(&self, name: &str) -> Vec<String> {
+        self.asked_as_blocked.lock().push(name.to_owned());
+        self.lookup(name)
     }
 }
 

@@ -165,7 +165,7 @@ impl SystemShield for NativeSystemShield {
             observed.hosts.error = Some(reason::APPIMAGE.to_owned());
         }
         if opts.canary {
-            observed.canary = Some(self.names.lookup(CANARY_NAME));
+            observed.canary = Some(self.names.lookup_blocked(CANARY_NAME));
         }
         if opts.probe {
             observed.probe_ok = Some(!self.names.lookup(PROBE_NAME).is_empty());

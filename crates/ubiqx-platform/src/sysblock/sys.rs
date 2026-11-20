@@ -9,6 +9,7 @@ use std::net::ToSocketAddrs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use ubiqx_nofap::hosts;
 use ubiqx_nofap::state_dir::DirMeta;
 
 use super::{Fs, NameLookup, Output, Runner};
@@ -181,19 +182,50 @@ impl Fs for SystemFs {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SystemLookup;
 
+/// Winsock's `WSANO_DATA`: "the requested name is valid, but no data of the requested type
+/// was found".
+pub const WSANO_DATA: i32 = 11004;
+
+/// `getaddrinfo` for `name`: the addresses as text, sorted, each once.
+fn resolve(name: &str) -> io::Result<Vec<String>> {
+    // Windows answers an empty name with this machine's own addresses; no name, no answer.
+    if name.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut addresses: Vec<String> = (name, 0)
+        .to_socket_addrs()?
+        .map(|address| address.ip().to_string())
+        .collect();
+    addresses.sort();
+    addresses.dedup();
+    Ok(addresses)
+}
+
+/// What a lookup of a name that is expected to be blocked says, in the one shape the
+/// judgement reads. `windows`: the lookup ran on Windows, where `getaddrinfo` does not
+/// hand out the null address. The smoke run on a real Windows machine showed what it does
+/// instead: with the block in the hosts file the canary and every listed name fail with
+/// [`WSANO_DATA`] within a millisecond (the DNS client holds their `0.0.0.0` and `::`
+/// records, `Resolve-DnsName` prints them), and so does a name the family resolver
+/// refuses; the canary without the block fails with "host not found". So on Windows, and
+/// only there, "no data" for such a name is the null address.
+pub fn blocked_answer(resolved: io::Result<Vec<String>>, windows: bool) -> Vec<String> {
+    match resolved {
+        Ok(addresses) => addresses,
+        Err(error) if windows && error.raw_os_error() == Some(WSANO_DATA) => {
+            vec![hosts::NULL_V4.to_owned()]
+        }
+        Err(_) => Vec::new(),
+    }
+}
+
 impl NameLookup for SystemLookup {
     fn lookup(&self, name: &str) -> Vec<String> {
-        // Windows answers an empty name with this machine's own addresses; no name, no answer.
-        if name.is_empty() {
-            return Vec::new();
-        }
-        let found = (name, 0).to_socket_addrs();
-        let mut addresses: Vec<String> = found
-            .map(|found| found.map(|address| address.ip().to_string()).collect())
-            .unwrap_or_default();
-        addresses.sort();
-        addresses.dedup();
-        addresses
+        resolve(name).unwrap_or_default()
+    }
+
+    fn lookup_blocked(&self, name: &str) -> Vec<String> {
+        blocked_answer(resolve(name), cfg!(windows))
     }
 }
 

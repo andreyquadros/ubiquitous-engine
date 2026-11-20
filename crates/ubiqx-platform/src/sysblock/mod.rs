@@ -123,6 +123,17 @@ pub trait Elevator: Send + Sync {
 pub trait NameLookup: Send + Sync {
     /// The addresses `name` resolves to; empty when it does not resolve.
     fn lookup(&self, name: &str) -> Vec<String>;
+
+    /// [`lookup`](Self::lookup) for a name that is expected to be blocked (the canary of
+    /// the hosts block). A system whose resolver library never hands out the null address
+    /// says "blocked" another way, and that answer is given here as the null address, so
+    /// the judgement reads one shape on every system. Windows is such a system: for a
+    /// name whose only answer is the null address, from the hosts file or from DNS,
+    /// `getaddrinfo` fails with "valid name, no data", while a name nobody knows fails
+    /// with "host not found".
+    fn lookup_blocked(&self, name: &str) -> Vec<String> {
+        self.lookup(name)
+    }
 }
 
 /// Records the policy values a back-end is about to create (see

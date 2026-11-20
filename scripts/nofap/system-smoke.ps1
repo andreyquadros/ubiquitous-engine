@@ -27,8 +27,11 @@ What a run does:
   3. Check: the block is in the file, intact, with the hash and the count it declares; every
      byte in front of it is the saved file; the state file agrees and its directory under
      Program Files can be read but not written by a standard user; the canary and a name of
-     the list resolve to the null address, the first such lookup within 10 seconds (the
-     measurement behind the cap of names on Windows); another name still resolves. Resolver
+     the list are blocked for a program that asks the operating system (Windows answers
+     "valid name, no data" where other systems answer the null address), the first such
+     lookup within 10 seconds (the measurement behind the cap of names on Windows), and
+     the helper's `status` reads the canary as the app's own check needs it; another name
+     still resolves. Resolver
      tier: every adapter that is up uses the provider's set, the registry value the quick
      read relies on holds it, both IPv4 resolvers answer and refuse a listed name.
   4. `remove --owner all --scope all`, then check the restore: the hosts file is byte for
@@ -92,6 +95,11 @@ $BeginLine = '^# >>> ubiqx-shield v1 BEGIN sha256=([0-9a-f]{64}) names=([0-9]+)$
 $NamesPerLine = 6
 $CapWindows = 8000
 $NullAddresses = @('0.0.0.0', '::')
+# Winsock's two ways of saying that a name has no address: WSANO_DATA ("valid name, no data
+# of the requested type") and WSAHOST_NOT_FOUND ("no such host is known").
+$WsaNoData = 11004
+$WsaHostNotFound = 11001
+$NoData = 'no-data'
 $Owner = 'shield'
 $ResolverId = 'cloudflare_family'
 $ResolverV4 = @('1.1.1.3', '1.0.0.3')
@@ -410,24 +418,53 @@ function Get-ShieldBlock {
 # Lookups
 
 function Resolve-Through {
-    # Addresses a name resolves to through the operating system; empty when it does not.
+    # What a name resolves to through the operating system (`getaddrinfo`, as every program
+    # asks): its addresses; $NoData alone when Winsock says "valid name, no data"; nothing
+    # when the name is not known at all. Windows never hands out the null address: for a
+    # name whose only answer is the null address, from the hosts file or from DNS, it
+    # answers "no data" (the first complete run of this script showed it; the DNS client
+    # itself holds the `0.0.0.0` and `::` records, and `Resolve-DnsName` prints them).
     param([Parameter(Mandatory)][string]$Name)
     try {
         return @([System.Net.Dns]::GetHostAddresses($Name) | ForEach-Object { $_.ToString() })
     }
     catch {
+        if ((Get-SocketError $_) -eq $WsaNoData) { return @($NoData) }
         return @()
     }
 }
 
+function Get-SocketError {
+    # The Winsock error number behind a failed lookup; 0 when the failure is something else.
+    param([Parameter(Mandatory)]$ErrorRecord)
+    $inner = $ErrorRecord.Exception
+    while ($null -ne $inner.InnerException) { $inner = $inner.InnerException }
+    if ($inner -is [System.Net.Sockets.SocketException]) { return [int]$inner.NativeErrorCode }
+    return 0
+}
+
+function Get-LookupError {
+    # The Winsock error number a lookup of the name fails with; 0 when it resolves.
+    param([Parameter(Mandatory)][string]$Name)
+    try {
+        $null = [System.Net.Dns]::GetHostAddresses($Name)
+        return 0
+    }
+    catch {
+        return (Get-SocketError $_)
+    }
+}
+
 function Test-Blocked {
+    # Blocked for a program that asks the operating system: the null address and nothing
+    # else, or "no data".
     param([string[]]$Addresses)
-    return ($Addresses.Count -gt 0) -and (@($Addresses | Where-Object { $_ -notin $NullAddresses }).Count -eq 0)
+    return ($Addresses.Count -gt 0) -and (@($Addresses | Where-Object { $_ -notin $NullAddresses -and $_ -ne $NoData }).Count -eq 0)
 }
 
 function Test-Reachable {
     param([string[]]$Addresses)
-    return @($Addresses | Where-Object { $_ -notin $NullAddresses }).Count -gt 0
+    return @($Addresses | Where-Object { $_ -notin $NullAddresses -and $_ -ne $NoData }).Count -gt 0
 }
 
 function Wait-Lookup {
@@ -763,14 +800,19 @@ function Test-Applied {
         Assert-That ($text.Contains($BeginPrefix) -and $text.Contains($EndMarker)) 'status: the unprivileged read sees the block'
         Assert-That ($null -eq (Get-Field $status @('hosts', 'error'))) 'status: no hosts error' (Get-Field $status @('hosts', 'error'))
         Assert-That ((Get-Field $status @('state', 'owners', $Owner, 'hosts')) -eq $true) "state: the owner '$Owner' wants the hosts tier"
+        # What the app's own check of the hosts tier reads: the helper asks for the canary
+        # the way the app does and prints the answer.
+        $canary = Get-Field $status @('canary')
+        $canaryList = if ($null -eq $canary) { @() } else { @($canary) }
+        Assert-That ($canaryList.Count -gt 0 -and @($canaryList | Where-Object { $_ -notin $NullAddresses }).Count -eq 0) 'status: the canary reads as the null address, as the check in the app needs it' $canaryList
 
         $canaryBlocked = Test-Blocked -Addresses $firstLookup.Found
-        Assert-That $canaryBlocked 'the canary resolves to the null address through the operating system' $firstLookup.Found
+        Assert-That $canaryBlocked 'the canary is blocked for a program that asks the operating system (the null address, or "no data")' $firstLookup.Found
         if ($canaryBlocked) {
-            Write-Note ('the first lookup of the canary succeeded {0:n1} s after the helper returned and {1:n1} s after the hosts file was written; the lookup itself took {2} ms' -f $firstLookup.AfterApply, $firstLookup.AfterWrite, $firstLookupMs)
+            Write-Note ('the first lookup of the canary gave [{3}] {0:n1} s after the helper returned and {1:n1} s after the hosts file was written; the lookup itself took {2} ms' -f $firstLookup.AfterApply, $firstLookup.AfterWrite, $firstLookupMs, ($firstLookup.Found -join ' '))
         }
         else {
-            Write-Note ('the canary did not resolve to the null address in {0:n1} s of asking' -f ($firstLookupMs / 1000))
+            Write-Note ('the canary was not blocked in {0:n1} s of asking' -f ($firstLookupMs / 1000))
             Write-LookupDetail -Name $Canary
         }
         Assert-That ($firstLookup.AfterApply -lt $FirstLookupLimitSeconds) "the first lookup after the write comes within $FirstLookupLimitSeconds seconds" ('{0:n1} s' -f $firstLookup.AfterApply)
@@ -780,7 +822,7 @@ function Test-Applied {
         }
         else {
             $found = @(Wait-Lookup -Name $facts.Listed -Wanted { param($a) Test-Blocked -Addresses $a })
-            Assert-That (Test-Blocked -Addresses $found) "a name of the list ($($facts.Listed)) resolves to the null address" $found
+            Assert-That (Test-Blocked -Addresses $found) "a name of the list ($($facts.Listed)) is blocked for a program that asks the operating system" $found
             if (-not (Test-Blocked -Addresses $found)) {
                 Write-LookupDetail -Name $facts.Listed
             }
@@ -860,8 +902,13 @@ function Test-Removed {
     $now = ConvertTo-DnsText (Get-DnsSnapshot)
     Assert-That ($now -ceq $script:SavedDnsText) 'DNS: every adapter has the servers it had before the run, and the registry holds what it held' $now
 
+    Assert-That ($null -eq (Get-Field $status @('canary'))) 'status: the canary is not asked for without the block' (Get-Field $status @('canary'))
     $found = @(Wait-Lookup -Name $Canary -Wanted { param($a) $a.Count -eq 0 })
     Assert-That ($found.Count -eq 0) 'the canary no longer resolves' $found
+    # The difference the helper relies on: with the block the canary is "no data", without
+    # it the name is one nobody knows.
+    $code = Get-LookupError -Name $Canary
+    Assert-That ($code -eq $WsaHostNotFound) "without the block the canary fails as an unknown name (Winsock error $WsaHostNotFound), not as `"no data`" ($WsaNoData)" $code
     if ($null -ne $Facts -and $null -ne $Facts.Listed) {
         $found = @(Wait-Lookup -Name $Facts.Listed -Wanted { param($a) -not (Test-Blocked -Addresses $a) })
         Assert-That (-not (Test-Blocked -Addresses $found)) "the listed name ($($Facts.Listed)) is no longer pinned to the null address" $found

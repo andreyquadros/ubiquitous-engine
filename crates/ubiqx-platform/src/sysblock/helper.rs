@@ -8,7 +8,7 @@
 //!
 //! | Verb | Privilege | Does |
 //! |---|---|---|
-//! | `status` | none | prints `SystemObservation` as JSON |
+//! | `status` | none | prints `SystemObservation` as JSON, with the canary's answer while the block is in the hosts file |
 //! | `elevate-argv --plan-b64 <b64>` | none | prints the elevation command line as a JSON array and runs nothing |
 //! | `apply --plan-b64 <b64> [--unverified <tiers>]` | admin | validates, records the owner's wants, applies the union of all owners' wants |
 //! | `remove --owner <ubiqx\|shield\|all> --scope <all\|resolver>` | admin | drops that owner's wants, re-applies what other owners still want, removes what nobody wants |
@@ -26,6 +26,7 @@ use std::time::Duration;
 use ubiqx_core::nofap::RemoveScope;
 use ubiqx_core::ProductId;
 use ubiqx_nofap::gate::{self, Gate};
+use ubiqx_nofap::hosts::CANARY_NAME;
 use ubiqx_nofap::matcher;
 use ubiqx_nofap::plan::{self, EXIT_APPLIED, EXIT_FAILED, EXIT_INVALID_PLAN};
 
@@ -203,7 +204,12 @@ pub fn run_with(
     };
     match verb {
         Verb::Status => {
-            let observed = observe::observe(backend, ports.runner, ports.fs, true);
+            let mut observed = observe::observe(backend, ports.runner, ports.fs, true);
+            // The canary is looked up only while the block is in the file, so the reserved
+            // name never leaves a machine without it. It is what the app's own check reads.
+            if observe::block_present(observed.hosts.text.as_deref()) {
+                observed.canary = Some(ports.names.lookup_blocked(CANARY_NAME));
+            }
             match serde_json::to_string_pretty(&observed) {
                 Ok(json) => {
                     let _ = writeln!(out, "{json}");

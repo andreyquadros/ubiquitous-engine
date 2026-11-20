@@ -96,6 +96,9 @@ fn names_are_looked_up_only_when_the_caller_asks() {
         rig.names.asked.lock().last().map(String::as_str),
         Some(resolvers::PROBE_NAME)
     );
+    // Only the canary is asked as a name that is expected to be blocked: "no data" for
+    // the probe name must never read as an answer.
+    assert_eq!(*rig.names.asked_as_blocked.lock(), [hosts::CANARY_NAME]);
 }
 
 #[test]

@@ -714,6 +714,10 @@ def cmd_applied(args):
         report.check(BEGIN_PREFIX in text and END_MARKER in text, "status: the unprivileged read sees the block")
         report.check(dig(status, "hosts", "error") is None, "status: no hosts error", dig(status, "hosts", "error"))
         report.check(dig(status, "state", "owners", OWNER, "hosts") is True, "state: the owner %r wants the hosts tier" % OWNER)
+        # What the app's own check of the hosts tier reads: the helper asks for the canary
+        # the way the app does and prints the answer.
+        canary = dig(status, "canary")
+        report.check(isinstance(canary, list) and bool(canary) and set(canary) <= NULL_ADDRESSES, "status: the canary reads as the null address, as the check in the app needs it", canary)
 
         found = eventually(lambda: resolve(CANARY), is_blocked, 10)
         report.check(is_blocked(found), "the canary resolves to the null address through the operating system", sorted(found))
@@ -787,6 +791,7 @@ def cmd_removed(args):
     report.check(not os.path.lexists(args.state_dir), "the state directory is gone")
     report.check(dig(status, "state") is None and dig(status, "state_error") is None, "status: no state file", dig(status, "state"))
     report.check(not has_marker((dig(status, "hosts", "text") or "").encode("utf-8", "replace")), "status: the unprivileged read sees no block")
+    report.check(dig(status, "canary") is None, "status: the canary is not asked for without the block", dig(status, "canary"))
     was = read_json(os.path.join(args.work, "dns.before.json"))
     now = dns_settles(args.os, args.dropin, was)
     report.check(same_dns(now, was), "DNS: the configuration is what it was before the run", now)

@@ -147,19 +147,37 @@ fn a_plan_the_helper_cannot_accept_is_refused_before_anything_is_touched() {
 fn status_prints_the_observation_and_changes_nothing() {
     for os in Os::ALL {
         let rig = Rig::new(os);
+        // Without the block in the hosts file no name is looked up: the reserved name
+        // never leaves a machine that does not carry it.
+        let (exit, out, err) = rig.helper(&["status"]);
+        assert_eq!((exit, err.as_str()), (EXIT_APPLIED, ""));
+        let printed: SystemObservation = serde_json::from_str(&out).expect("valid JSON");
+        assert_eq!((printed.canary, printed.probe_ok), (None, None), "{os:?}");
+        assert!(rig.names.asked.lock().is_empty(), "{os:?}");
+
         rig.apply(&plan_of(ProductId::Ubiqx, &["blocked.example"]));
         rig.fs.clear_log();
         rig.names.asked.lock().clear();
+        rig.names.asked_as_blocked.lock().clear();
         let (exit, out, err) = rig.helper(&["status"]);
         assert_eq!((exit, err.as_str()), (EXIT_APPLIED, ""));
-        assert!(
-            rig.names.asked.lock().is_empty(),
-            "`status` looks no name up"
+        // With the block in place the canary is asked for, once, the way the app's own
+        // check asks, and nothing else is.
+        assert_eq!(*rig.names.asked.lock(), [hosts::CANARY_NAME], "{os:?}");
+        assert_eq!(
+            *rig.names.asked_as_blocked.lock(),
+            [hosts::CANARY_NAME],
+            "{os:?}"
         );
         let printed: SystemObservation = serde_json::from_str(&out).expect("valid JSON");
         let mut seen = rig.observe();
-        (seen.canary, seen.probe_ok) = (None, None);
+        seen.probe_ok = None;
         assert_eq!(printed, seen, "{os:?}");
+        assert_eq!(
+            printed.canary,
+            Some(vec!["203.0.113.10".to_owned()]),
+            "{os:?}"
+        );
         assert!(printed.hosts.text.unwrap().contains(hosts::CANARY_NAME));
         assert_eq!(
             printed.state.unwrap().owners[&ProductId::Ubiqx].resolver,

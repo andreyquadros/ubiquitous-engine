@@ -165,6 +165,42 @@ fn real_lookup_answers_addresses_as_text() {
     // What a blocked name resolves to, as the canary check reads it.
     assert_eq!(SystemLookup.lookup("0.0.0.0"), ["0.0.0.0"]);
     assert_eq!(SystemLookup.lookup(""), Vec::<String>::new());
+    // Asked as a name that is expected to be blocked, an answer is the same answer.
+    assert_eq!(SystemLookup.lookup_blocked("0.0.0.0"), ["0.0.0.0"]);
+    assert_eq!(SystemLookup.lookup_blocked("192.0.2.7"), ["192.0.2.7"]);
+    assert_eq!(SystemLookup.lookup_blocked(""), Vec::<String>::new());
+}
+
+/// What the smoke run on a real Windows machine showed: `getaddrinfo` never hands out the
+/// null address there. A name that resolves to nothing else fails with "valid name, no
+/// data" (11004), a name nobody knows with "host not found" (11001).
+#[test]
+fn windows_no_data_for_a_blocked_name_reads_as_the_null_address() {
+    let failed = |code: i32| Err(std::io::Error::from_raw_os_error(code));
+    let no_data = sys::WSANO_DATA;
+    assert_eq!(no_data, 11004);
+    let host_not_found = 11001;
+    assert_eq!(sys::blocked_answer(failed(no_data), true), ["0.0.0.0"]);
+    assert_eq!(
+        sys::blocked_answer(failed(host_not_found), true),
+        Vec::<String>::new()
+    );
+    // Only on Windows: the same number means something else to another system.
+    assert_eq!(
+        sys::blocked_answer(failed(no_data), false),
+        Vec::<String>::new()
+    );
+    // An answer is the answer, whatever it is: a canary that resolves to a real address
+    // is a hosts file that is not honoured.
+    let real = vec!["203.0.113.7".to_owned()];
+    assert_eq!(sys::blocked_answer(Ok(real.clone()), true), real);
+    assert_eq!(sys::blocked_answer(Ok(real.clone()), false), real);
+    assert_eq!(
+        sys::blocked_answer(Ok(Vec::new()), true),
+        Vec::<String>::new()
+    );
+    let other = std::io::Error::other("no number");
+    assert_eq!(sys::blocked_answer(Err(other), true), Vec::<String>::new());
 }
 
 const INNER_LOOKUP_TEST: &str =
