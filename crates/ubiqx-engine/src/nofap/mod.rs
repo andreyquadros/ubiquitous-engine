@@ -21,6 +21,11 @@
 //!   user takes; a guard pass must not wait for it. Each method copies what it needs,
 //!   releases the lock, calls out and locks again to record the result. Repository calls
 //!   are short and may run under the lock.
+//! * **A change to the configuration is stored before it counts.** Every change is made
+//!   on a copy, the copy is written, and only then does it replace the configuration in
+//!   memory (`update_config`). A write that fails leaves the module as it was: one that
+//!   could not be stored as "off" keeps running, and a request that could not be stored
+//!   is not waiting.
 //! * **Nothing names what was seen.** No host, title, URL or application leaves the
 //!   service in a card, an event, a notification, a counter or a log line. Log lines are
 //!   written for state changes only (enabled, disabled, a tier applied, the AI check

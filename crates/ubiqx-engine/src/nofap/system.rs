@@ -1017,3 +1017,151 @@ impl NofapService {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use chrono::TimeZone;
+    use ubiqx_ai::fake::MemoryUsageRepo;
+    use ubiqx_core::clock::FixedClock;
+    use ubiqx_core::nofap::{AiReadiness, NofapEnv};
+    use ubiqx_core::nofap_ipc::{EnableOptions, VisionScope};
+    use ubiqx_core::ports::{
+        ActivitySource, BrowserUrlResolver, Notifier, PermissionChecker, PermissionKind,
+        PermissionStatus,
+    };
+    use ubiqx_core::{AiProvider, ForegroundWindow, UiLanguage};
+    use ubiqx_platform::mock::MockEnforcer;
+
+    use super::*;
+    use crate::deps::NofapPorts;
+    use crate::nofap::{DisplaySession, NofapDeps, NofapHost, Tuning};
+
+    /// The host's ports with nothing behind them: no window in front, no key.
+    struct Nothing;
+
+    impl NofapEnv for Nothing {
+        fn snapshot(&self) -> NofapEnvSnapshot {
+            NofapEnvSnapshot {
+                language: UiLanguage::En,
+                provider: AiProvider::OpenAi,
+                vision_model: String::new(),
+                ai: AiReadiness::NoKey,
+                excluded_apps: Vec::new(),
+                excluded_domains: Vec::new(),
+            }
+        }
+    }
+
+    impl ActivitySource for Nothing {
+        fn foreground(&self) -> CoreResult<Option<ForegroundWindow>> {
+            Ok(None)
+        }
+    }
+
+    impl BrowserUrlResolver for Nothing {
+        fn supports(&self, _app_id: &str) -> bool {
+            false
+        }
+
+        fn resolve(&self, _window: &ForegroundWindow) -> CoreResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    impl PermissionChecker for Nothing {
+        fn status(&self) -> PermissionStatus {
+            PermissionStatus {
+                screen_recording: PermissionState::Granted,
+                automation: PermissionState::Granted,
+                accessibility: PermissionState::Granted,
+            }
+        }
+
+        fn request(&self, _kind: PermissionKind) -> CoreResult<()> {
+            Ok(())
+        }
+    }
+
+    impl Notifier for Nothing {
+        fn notify(&self, _title: &str, _body: &str) -> CoreResult<()> {
+            Ok(())
+        }
+    }
+
+    /// The race this guards against cannot be staged through the public calls (a pass
+    /// checks "on" and asks for its role without a port call in between), so the role is
+    /// asked for directly, in the state a pass finds when the module was switched off
+    /// right after its check.
+    #[test]
+    fn a_module_that_is_off_writes_no_heartbeat() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shared = tmp.path().join("shared");
+        let lock = shared.join(LOCK_FILE);
+        let nothing = Arc::new(Nothing);
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 9, 17, 15, 0, 0).unwrap());
+        let service = NofapService::new(NofapDeps::assemble(
+            NofapPorts {
+                shared_dir: Some(shared),
+                tuning: Tuning {
+                    background: Background::Inline,
+                    display: DisplaySession::Full,
+                    ..Tuning::default()
+                },
+                ..NofapPorts::inert()
+            },
+            NofapHost {
+                env: nothing.clone(),
+                activity: nothing.clone(),
+                urls: nothing.clone(),
+                enforcer: Arc::new(MockEnforcer::default()),
+                permissions: nothing.clone(),
+                notifier: nothing,
+                usage: Arc::new(MemoryUsageRepo::new()),
+                clock: Arc::new(clock),
+                identity: &ubiqx_core::product::SHIELD,
+                export_dir: tmp.path().join("exports"),
+            },
+        ));
+        service
+            .enable(EnableOptions {
+                self_use: true,
+                hosts: false,
+                resolver: None,
+                policies: false,
+                vision: false,
+                vision_consent: None,
+                vision_scope: VisionScope {
+                    unknown_sites: true,
+                    media_apps: true,
+                    messaging_apps: false,
+                    private_windows: true,
+                },
+                delay_secs: 0,
+                values: String::new(),
+                discreet: true,
+            })
+            .unwrap();
+        let now = service.now();
+        assert_eq!(service.role_at(now), Role::Primary);
+        assert!(lock.exists(), "the product that runs the passes says so");
+
+        // "Turn it off" lands between a pass's check and its question: the module goes
+        // off, then the lock is given up (the order `carry_out` keeps).
+        service.rt.lock().config.enabled = false;
+        service.release_primary();
+        assert!(!lock.exists());
+        assert_eq!(
+            service.role_at(now),
+            Role::Secondary,
+            "the pass does nothing"
+        );
+        assert!(!lock.exists(), "a module that is off wrote a heartbeat");
+
+        // On again, it takes the role back.
+        service.rt.lock().config.enabled = true;
+        assert_eq!(service.role_at(now), Role::Primary);
+        assert!(lock.exists());
+    }
+}
