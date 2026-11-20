@@ -134,3 +134,34 @@ and no TypeScript type carries it.
   out; a reordered set on an active interface is still ours) and
   `a_switched_off_interface_is_neither_reset_nor_promised_a_reset`. The platform crate's tests
   (169) pass unchanged.
+
+## 4. Decision 20: deleted rows are overwritten in the database file
+
+- `crates/ubiqx-storage/src/db.rs`: `PRAGMA secure_delete = ON` is the fifth connection pragma,
+  applied by `Db::init`, which both `Db::open` and `Db::open_in_memory` go through. No other
+  code of the workspace opens a connection outside tests (searched). It applies to both
+  products, and to every table, not only the module's.
+- Tests in `db.rs`:
+  - `every_connection_overwrites_what_it_deletes`: the setting reads `1` on a first connection, a
+    second one on the same file, one opened after both are gone, and an in-memory one.
+  - `a_deleted_row_and_a_replaced_value_do_not_stay_in_the_file`: after a `DELETE` and an
+    `UPDATE` (no `VACUUM`) and a checkpoint, neither the deleted key, nor the deleted value, nor
+    the replaced value is in the file or in the log; the kept text is. The file is read the way
+    the erase tests of `tests/nofap.rs` read it.
+  - `without_the_pragma_the_deleted_text_stays_in_the_file`: the same steps on a plain
+    connection with `secure_delete = OFF` leave all three texts in the file. It is the proof that
+    the test above can fail.
+- **One existing assertion had to change** (the brief asked for the existing suite unchanged; it
+  cannot be): `tests/nofap.rs`, `erased_history_does_not_stay_in_the_file`, asserted that the
+  connection's setting is `0` after an erase ("back to what it was"). What it was is now `1`.
+  Nothing else of the suite changed: 14 + 23 + 29 + 1 tests pass.
+- `repos/nofap.rs::overwriting` (U3) still switches the setting on around its statements and
+  restores what it found. With the pragma on everywhere it is a no-op and could go; it was left
+  as it is (not this unit's file, and harmless).
+- **What the pragma does not do** (unchanged limits, for whoever writes the privacy text):
+  in WAL mode the overwritten page is in the log first and reaches the main file at the next
+  checkpoint (automatic after about 1,000 pages, or when the last connection closes), and the
+  log may still hold an older copy of the page until it is reset. `erase_history` and
+  `wipe_user_data` run a `wal_checkpoint(TRUNCATE)` themselves, so they leave nothing; a single
+  deleted row (a scrubbed block) is out of the main file after the next checkpoint, not at once.
+  It also says nothing about copies the file system or a backup may keep.

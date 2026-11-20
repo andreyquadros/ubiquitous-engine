@@ -867,12 +867,12 @@ fn erased_history_does_not_stay_in_the_file() {
     assert!(!on_disk(&path, b"2031-12-25"));
     assert!(on_disk(&path, &key(0xAB)), "what was kept is still there");
 
-    // The connection's own setting is back to what it was.
+    // The connection's own setting is back to what it was: on, as for every connection.
     let secure: i64 = s
         .db()
         .with(|c| Ok(c.query_row("PRAGMA secure_delete", [], |r| r.get(0))?))
         .expect("pragma");
-    assert_eq!(secure, 0);
+    assert_eq!(secure, 1);
 }
 
 // ---------------------------------------------------------------------------------------------
