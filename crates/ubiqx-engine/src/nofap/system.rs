@@ -160,6 +160,12 @@ impl NofapService {
             !secondary && self.deps.permissions.status().automation == PermissionState::Denied;
 
         let rt = self.rt.lock();
+        if rt.config_error || !rt.config.enabled {
+            // Switched off (or found unreadable) while the ports were asked: what was
+            // read belongs to a module that is no longer on.
+            drop(rt);
+            return self.compute_status();
+        }
         let [hosts, resolver, policies] = tier_states(&rt, Some(&capabilities));
         let pending: Vec<_> = rt
             .config

@@ -311,6 +311,11 @@ pub struct NofapService {
     /// Serialises the reading and writing of the primary lock (the guard loop and the
     /// verify loop both ask for the role). Never taken while the runtime lock is held.
     pub(crate) role_lock: Mutex<()>,
+    /// One status at a time is computed, stored and announced, so a status computed
+    /// before a change can never be stored or sent after the one computed behind it
+    /// (every change is followed by its own refresh). Never taken while the runtime lock
+    /// is held.
+    pub(crate) status_gate: Mutex<()>,
     pub(crate) matcher_data: MatcherData,
 }
 
@@ -391,6 +396,7 @@ impl NofapService {
             reading: AtomicBool::new(false),
             verified: Mutex::new(Instant::now()),
             role_lock: Mutex::new(()),
+            status_gate: Mutex::new(()),
             matcher_data,
         });
         service.seed_day_count();
@@ -548,6 +554,10 @@ impl NofapService {
 
     /// Recomputes the status and tells the shell when it changed.
     pub(crate) fn refresh_status(&self) -> NofapStatus {
+        // Held until the status is stored and sent: a pass that read the configuration
+        // just before the module was switched off must not write "protected" over the
+        // "off" of the switch, nor send it afterwards.
+        let _one_at_a_time = self.status_gate.lock();
         let status = self.compute_status();
         let changed = {
             let mut rt = self.rt.lock();
