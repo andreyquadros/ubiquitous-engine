@@ -181,6 +181,10 @@ pub struct SystemLookup;
 
 impl NameLookup for SystemLookup {
     fn lookup(&self, name: &str) -> Vec<String> {
+        // Windows answers an empty name with this machine's own addresses; no name, no answer.
+        if name.is_empty() {
+            return Vec::new();
+        }
         let found = (name, 0).to_socket_addrs();
         let mut addresses: Vec<String> = found
             .map(|found| found.map(|address| address.ip().to_string()).collect())
