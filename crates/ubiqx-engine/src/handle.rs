@@ -48,6 +48,12 @@ impl EngineHandle {
         self.state.settings()
     }
 
+    /// The `nofap` module's service (the body of the shells' `nofap` command is
+    /// [`crate::nofap::ipc::handle`] over it).
+    pub fn nofap(&self) -> &Arc<crate::nofap::NofapService> {
+        &self.state.nofap
+    }
+
     pub fn update_settings(&self, settings: Settings) -> CoreResult<()> {
         self.state.apply_settings(settings)
     }
@@ -448,7 +454,8 @@ impl EngineHandle {
     /// (rows and files), reports, corrections, learned rules, nudges, the AI usage ledger, the
     /// key/value cache (advice, report scheduling) and the JSON exports folder. Categories,
     /// user rules, settings and the API key are kept, as the confirmation dialog promises.
-    /// Irreversible. The license key is kept too.
+    /// Irreversible. The license key is kept too, and so are the `nofap` module's
+    /// configuration and lists (only its counters and its in-memory state go).
     pub fn delete_all_data(&self) -> CoreResult<()> {
         let repos = &self.state.deps.repos;
         let now = self.state.now();
@@ -475,6 +482,10 @@ impl EngineHandle {
         {
             let _ = crate::classify::budget_allows(&self.state);
         }
+        // The module's counters are gone with the rest; its configuration and its lists
+        // stay (wiping them would be an off switch without a delay). What it kept in
+        // memory per window goes too.
+        self.state.nofap.clear_memory();
         Ok(())
     }
 

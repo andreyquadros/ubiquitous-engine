@@ -209,6 +209,9 @@ pub struct NofapPorts {
     /// (`<data_local_dir>/ubiqx-shield`). `None`: no lock is read or written and this
     /// process always runs the passes (tests, the CLI).
     pub shared_dir: Option<PathBuf>,
+    /// Waits and session facts of the service ([`crate::nofap::Tuning::default`] in
+    /// production; tests shorten the waits).
+    pub tuning: crate::nofap::Tuning,
 }
 
 impl NofapPorts {
@@ -225,6 +228,7 @@ impl NofapPorts {
             sink: Arc::new(NullNofapSink),
             repo: Arc::new(MemoryNofapRepo::default()),
             shared_dir: None,
+            tuning: crate::nofap::Tuning::default(),
         }
     }
 }

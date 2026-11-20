@@ -124,7 +124,7 @@ pub fn budget_allows(state: &EngineState) -> CoreResult<bool> {
         clear_budget_pause(state);
         return Ok(true);
     }
-    let totals = state.deps.repos.usage.totals(month_range(state.now()))?;
+    let totals = productivity_totals(state)?;
     let ratio = totals.cost_usd / settings.ai_monthly_budget_usd;
     let lang = settings.ui_language();
     if ratio >= 1.0 {
@@ -144,6 +144,29 @@ pub fn budget_allows(state: &EngineState) -> CoreResult<bool> {
         }
     }
     Ok(true)
+}
+
+/// The month's spend the productivity budget counts: every kind of call except the
+/// `nofap` module's screen checks, which have their own cap. A month of checks can
+/// therefore never pause classification (and a spent productivity budget does not stop the
+/// checks: the module reads only its own kind).
+fn productivity_totals(state: &EngineState) -> CoreResult<AiUsageTotals> {
+    let range = month_range(state.now());
+    let mut totals = state.deps.repos.usage.totals(range)?;
+    let checks = state
+        .deps
+        .repos
+        .usage
+        .totals_by_kind(range)?
+        .into_iter()
+        .find(|(kind, _)| *kind == AiUsageKind::NofapVision);
+    if let Some((_, checks)) = checks {
+        totals.calls = totals.calls.saturating_sub(checks.calls);
+        totals.input_tokens = totals.input_tokens.saturating_sub(checks.input_tokens);
+        totals.output_tokens = totals.output_tokens.saturating_sub(checks.output_tokens);
+        totals.cost_usd = (totals.cost_usd - checks.cost_usd).max(0.0);
+    }
+    Ok(totals)
 }
 
 /// `AiHealth::Paused` reason once the monthly budget is spent.

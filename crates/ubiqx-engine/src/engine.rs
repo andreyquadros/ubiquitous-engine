@@ -112,6 +112,28 @@ impl Engine {
             cfg.license_initial_delay,
             cfg.license_every,
         ));
+        // The `nofap` module: its guard and its verify pass. Both return before any
+        // platform call while the module is off. A hit (by the lists or by the AI check)
+        // makes the tracker forget the block it had open.
+        let scrub = {
+            let state = state.clone();
+            Arc::new(move || {
+                if let Err(e) = tracker::scrub_open_block(&state) {
+                    tracing::debug!(error = %e, "could not scrub the open block");
+                }
+            })
+        };
+        tokio::spawn(crate::nofap::run_guard_loop(
+            state.nofap.clone(),
+            cfg.nofap_every,
+            cancel.clone(),
+            scrub,
+        ));
+        tokio::spawn(crate::nofap::run_verify_loop(
+            state.nofap.clone(),
+            cfg.nofap_verify_every,
+            cancel.clone(),
+        ));
 
         state.refresh_tracker_state();
         state.deps.sink.emit(EngineEvent::AiHealth {

@@ -5,7 +5,9 @@ use std::sync::Arc;
 use chrono::Duration;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+use ubiqx_core::normalize::normalize_title;
 use ubiqx_core::ports::*;
+use ubiqx_core::segmenter::PRIVATE_TITLE;
 use ubiqx_core::*;
 
 use crate::screenshots;
@@ -44,6 +46,7 @@ pub async fn run(
 
 /// Feeds one sample through the segmenter and persists the outcome. Runs on a blocking thread.
 pub fn handle_sample(state: &Arc<EngineState>, sample: ActivitySample) -> CoreResult<()> {
+    let mut sample = sample;
     let settings = state.settings();
     let interval = Duration::seconds(settings.sample_interval_secs.max(1) as i64);
     let repos = &state.deps.repos;
@@ -71,6 +74,15 @@ pub fn handle_sample(state: &Arc<EngineState>, sample: ActivitySample) -> CoreRe
                 permission: "screen_recording".into(),
             });
         }
+    }
+
+    // The `nofap` module: a sample of a blocked page, or of a window that had a hit in the
+    // last ten minutes, is recorded the way private browsing is. The time stays; the
+    // title, the address and the window do not.
+    if state.nofap.redacts(&sample) {
+        sample.window_title = PRIVATE_TITLE.into();
+        sample.url = None;
+        sample.window_id = None;
     }
 
     let outcome = state.segmenter.lock().feed(&sample, interval);
@@ -136,6 +148,53 @@ pub fn handle_sample(state: &Arc<EngineState>, sample: ActivitySample) -> CoreRe
                 }
             }
         }
+    }
+    Ok(())
+}
+
+/// After a hit of the `nofap` module: the block the tracker had open is closed and made
+/// private, so nothing of the page stays in the productivity data. Its title becomes
+/// [`PRIVATE_TITLE`], its address, description and the text sent to the AI go, its
+/// category becomes the private one, and its screenshots are deleted, rows and files.
+/// A block too short to be kept is dropped altogether. Runs on a blocking thread.
+pub fn scrub_open_block(state: &Arc<EngineState>) -> CoreResult<()> {
+    let now = state.now();
+    let (closed, significant) = {
+        let mut segmenter = state.segmenter.lock();
+        let Some(closed) = segmenter.close(now) else {
+            return Ok(());
+        };
+        let significant = segmenter.is_significant(&closed);
+        (closed, significant)
+    };
+    let repos = &state.deps.repos;
+    state.last_capture.lock().remove(&closed.id);
+    let mut block = closed;
+    block.is_open = false;
+    block.title = PRIVATE_TITLE.into();
+    block.title_key = normalize_title(PRIVATE_TITLE, &block.app_name);
+    block.url = None;
+    block.domain = None;
+    block.description = None;
+    block.ai_payload = None;
+    block.ai_sent_at = None;
+    block.category_id = Some(system_categories::PRIVATE.to_string());
+    block.confidence = 1.0;
+    block.source = Some(ClassificationSource::Rule);
+    block.needs_review = false;
+    // The pointer goes with the row, before the screenshots do: a later write of a block
+    // that still carried it would put it back.
+    block.screenshot_id = None;
+    if significant {
+        repos.blocks.update(&block)?;
+    } else {
+        repos.blocks.delete(&block.id)?;
+    }
+    for shot in repos.screenshots.delete_for_block(&block.id)? {
+        screenshots::unlink(&shot);
+    }
+    if significant {
+        state.deps.sink.emit(EngineEvent::BlockClosed { block });
     }
     Ok(())
 }

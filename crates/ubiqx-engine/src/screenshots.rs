@@ -37,6 +37,16 @@ pub fn should_capture(state: &EngineState, block: &ActivityBlock, now: DateTime<
     if (now - block.started_at).num_seconds() < FIRST_CAPTURE_AFTER_SECS {
         return false;
     }
+    drop(s);
+    // The `nofap` module vetoes a window whose page is blocked or mixed, or that had a
+    // signal or a hit in the last ten minutes: nothing of it reaches the productivity data.
+    if state
+        .nofap
+        .capture_veto(&block.app_id, block.domain.as_deref(), &block.title)
+    {
+        return false;
+    }
+    let s = state.settings.read();
     let last = state.last_capture.lock().get(&block.id).copied();
     match last {
         None => true,

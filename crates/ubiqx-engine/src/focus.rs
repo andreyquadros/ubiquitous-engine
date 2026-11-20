@@ -24,6 +24,13 @@ const KNOWN_DOMAINS_DAYS: i64 = 30;
 /// Application ids (executable stems) the guard never enforces on Windows: the shell that
 /// hosts the taskbar and the file manager, Settings, the Task Manager and the lock screen.
 pub const EXEMPT_APP_IDS_WINDOWS: &[&str] = &[
+    // Both products built from this workspace (`ubiqx_core::product`), by executable
+    // stem: neither ever acts on the other's windows.
+    "ubiqx",
+    "ubiqx-desktop",
+    "ubiqx_desktop",
+    "ubiqx-shield",
+    "ubiqx_shield",
     "explorer",
     "systemsettings",
     "taskmgr",
@@ -40,6 +47,12 @@ pub const EXEMPT_APP_IDS_WINDOWS: &[&str] = &[
 /// Application ids (executable stems) the guard never enforces on Linux: the desktop
 /// shells, their file managers and settings.
 pub const EXEMPT_APP_IDS_LINUX: &[&str] = &[
+    // Both products built from this workspace, as on Windows.
+    "ubiqx",
+    "ubiqx-desktop",
+    "ubiqx_desktop",
+    "ubiqx-shield",
+    "ubiqx_shield",
     "gnome-shell",
     "plasmashell",
     "nautilus",

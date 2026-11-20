@@ -9,7 +9,9 @@
 //!   corrections (the learning entry point), manual entries, report generation, settings,
 //!   update checks ([`update`]), the focus guard ([`focus`]: blocked targets, sessions,
 //!   interventions), the license ([`license`]: the stored key's verdict, the managed plan's
-//!   usage and what it gates) and read models for the UI ([`service`]).
+//!   usage and what it gates), the `nofap` module ([`nofap`]: its service, built from ports
+//!   only so the standalone app hosts it without an engine) and read models for the UI
+//!   ([`service`]).
 //!
 //! The engine never talks to an OS API, a database driver or an HTTP client directly — only to
 //! the traits in `ubiqx_core::ports`.
@@ -21,6 +23,7 @@ pub mod focus;
 pub mod handle;
 pub mod learning;
 pub mod license;
+pub mod nofap;
 pub mod nudges;
 pub mod reports;
 pub mod sampler;
@@ -37,6 +40,7 @@ pub use deps::{
 };
 pub use engine::{Engine, LoopConfig};
 pub use handle::{EngineHandle, PrivateModeDuration, ReclassifyScope};
+pub use nofap::{NofapDeps, NofapHost, NofapService};
 pub use service::*;
 pub use state::EngineState;
 pub use update::UpdateChecker;

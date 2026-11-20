@@ -23,6 +23,8 @@ pub struct UpdateChecker {
     notifier: Arc<dyn Notifier>,
     sink: Arc<dyn EventSink>,
     clock: Arc<dyn Clock>,
+    /// The `product` a feed must name to be this product's (`ProductIdentity::feed_product`).
+    product: String,
     status: Mutex<UpdateStatus>,
     /// The build epoch of the last `UpdateAvailable` event, so automatic checks announce a
     /// build only once per process.
@@ -80,9 +82,19 @@ impl UpdateChecker {
             notifier,
             sink,
             clock,
+            product: update::LEGACY_FEED_PRODUCT.to_string(),
             reported_epoch: Mutex::new(None),
             running: tokio::sync::Mutex::new(()),
         }
+    }
+
+    /// The checker of the product whose feed is named `product`
+    /// (`ProductIdentity::feed_product`). A feed that names another product is ignored, so
+    /// one product is never offered the other's installer, whatever URL it was pointed at.
+    /// Without this call the checker is ubiqX's.
+    pub fn for_product(mut self, product: &str) -> Self {
+        self.product = product.to_string();
+        self
     }
 
     pub fn status(&self) -> UpdateStatus {
@@ -121,6 +133,16 @@ impl UpdateChecker {
                 return Ok(st.clone());
             }
         };
+
+        if !update::feed_matches_product(&feed, &self.product) {
+            tracing::warn!(url = %self.feed_url, "update check ignored a feed of another product");
+            let mut st = self.status.lock();
+            st.checking = false;
+            st.last_check = Some(now);
+            st.last_error = Some("the update feed belongs to another product".into());
+            st.available = None;
+            return Ok(st.clone());
+        }
 
         let current = self.status.lock().current.clone();
         let release = if feed.is_update_for(&current) {

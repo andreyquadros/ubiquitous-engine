@@ -11,6 +11,8 @@ use ubiqx_core::*;
 
 use crate::deps::EngineDeps;
 use crate::focus::FocusRuntime;
+use crate::nofap::env::EngineEnv;
+use crate::nofap::{NofapDeps, NofapHost, NofapService};
 use crate::update::UpdateChecker;
 
 pub struct EngineState {
@@ -40,6 +42,9 @@ pub struct EngineState {
     /// The focus guard's in-memory state: the active session, per-key cooldowns and the
     /// message rotation.
     pub focus: Mutex<FocusRuntime>,
+    /// The `nofap` module. Built from ports only; it reads this state through
+    /// [`EngineEnv`] and never the other way round.
+    pub nofap: Arc<NofapService>,
 }
 
 impl EngineState {
@@ -68,8 +73,27 @@ impl EngineState {
             deps.platform.notifier.clone(),
             deps.sink.clone(),
             deps.clock.clone(),
-        );
-        Arc::new(Self {
+        )
+        .for_product(deps.identity.feed_product);
+        // The module's service is a field of the state it reads the settings from: its
+        // environment is created first and pointed at the state once that exists.
+        let env = Arc::new(EngineEnv::new());
+        let nofap = NofapService::new(NofapDeps::assemble(
+            deps.nofap.clone(),
+            NofapHost {
+                env: env.clone(),
+                activity: deps.platform.activity.clone(),
+                urls: deps.platform.urls.clone(),
+                enforcer: deps.platform.enforcer.clone(),
+                permissions: deps.platform.permissions.clone(),
+                notifier: deps.platform.notifier.clone(),
+                usage: deps.repos.usage.clone(),
+                clock: deps.clock.clone(),
+                identity: deps.identity,
+                export_dir: deps.data_dir.join("exports"),
+            },
+        ));
+        let state = Arc::new(Self {
             deps,
             settings: RwLock::new(settings),
             segmenter: Mutex::new(Segmenter::new(cfg).with_open_block(open_block)),
@@ -84,7 +108,10 @@ impl EngineState {
             tracker_stopped_cv: Condvar::new(),
             update,
             focus: Mutex::new(focus),
-        })
+            nofap,
+        });
+        env.bind(Arc::downgrade(&state));
+        state
     }
 
     pub fn now(&self) -> DateTime<Utc> {
