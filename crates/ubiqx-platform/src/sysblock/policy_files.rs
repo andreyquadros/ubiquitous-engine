@@ -180,7 +180,11 @@ pub(crate) fn observe(fs: &dyn Fs) -> Vec<PolicyObservation> {
     observed
 }
 
-fn write_new(fs: &dyn Fs, file: &Path, text: &str) -> Result<(), String> {
+/// Writes a file of ours, unless it already holds exactly `text`.
+fn write_own(fs: &dyn Fs, file: &Path, text: &str) -> Result<(), String> {
+    if read_text(fs, file).is_ok_and(|found| found == text) {
+        return Ok(());
+    }
     let failed = |_| reason::FAILED.to_owned();
     if let Some(dir) = parent(Os::Linux, file) {
         create_dirs(fs, &dir).map_err(failed)?;
@@ -206,12 +210,12 @@ pub(crate) fn apply(
         if family == BrowserFamily::Firefox {
             // Created only when absent; an equal file is already ours.
             if !fs.exists(Path::new(FIREFOX_POLICIES)) {
-                write_new(fs, Path::new(FIREFOX_POLICIES), &policies::firefox_json())?;
+                write_own(fs, Path::new(FIREFOX_POLICIES), &policies::firefox_json())?;
             }
         } else if let Some(paths) = CHROMIUM_FAMILY.iter().find(|paths| paths.browser == family) {
             let text = policies::chromium_json(family);
             for dir in paths.managed {
-                write_new(fs, &own_file(dir), &text)?;
+                write_own(fs, &own_file(dir), &text)?;
             }
         }
         for key in keys_of(family) {

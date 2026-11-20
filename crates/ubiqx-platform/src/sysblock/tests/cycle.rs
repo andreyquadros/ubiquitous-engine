@@ -66,16 +66,33 @@ fn apply_then_observe_is_applied_and_remove_restores_every_byte() {
         assert!(state.report.iter().all(|report| report.ok));
         assert_eq!(state.applied_at, 1_795_100_000_000);
 
-        // A second apply of the same plan changes nothing on disk but the state file.
+        // A second apply of the same plan changes nothing but the state file, and runs
+        // no command that changes the system.
         rig.fs.clear_log();
+        rig.clear_calls();
         assert_eq!(rig.apply(&plan), EXIT_APPLIED);
         let rewritten: Vec<String> = rig
             .fs
             .mutations()
             .into_iter()
-            .filter(|change| !change.ends_with("state.json") && !change.ends_with(".json"))
+            .filter(|change| !change.ends_with("state.json"))
             .collect();
         assert_eq!(rewritten, Vec::<String>::new(), "{os:?}");
+        for call in rig.calls() {
+            let line = call.line();
+            let reads = [
+                "-listallnetworkservices",
+                "-getdnsservers",
+                " read ",
+                " query ",
+                "is-active",
+            ];
+            let full_read = line.ends_with(crate::sysblock::windows::FULL_READ_SCRIPT);
+            assert!(
+                full_read || reads.iter().any(|read| line.contains(read)),
+                "{os:?}: {line}"
+            );
+        }
 
         assert_eq!(rig.remove("ubiqx", "all"), EXIT_APPLIED, "{os:?}");
         assert_eq!(rig.fs.files(), files_before, "{os:?}");
@@ -273,5 +290,64 @@ fn the_canary_is_judged_from_the_lookup_the_observation_was_asked_for() {
         .assess(&plan)
         .issues
         .contains(&Issue::HostsNotHonoured));
-    let _ = CF;
+}
+
+#[test]
+fn a_run_writes_only_the_tiers_its_own_gate_opens() {
+    for os in Os::ALL {
+        let rig = Rig::new(os);
+        // ubiqX applied all three tiers with a tester's override.
+        let ubiqx = plan_of(ProductId::Ubiqx, &["first.example"]);
+        rig.apply(&ubiqx);
+        // The user takes the resolver off by hand afterwards.
+        match os {
+            Os::Linux => rig
+                .fs
+                .file(ubiqx_nofap::resolvers::RESOLVED_DROPIN_PATH, b"[Resolve]\n"),
+            Os::Macos => rig
+                .mac
+                .services
+                .lock()
+                .iter_mut()
+                .for_each(|s| s.servers.clear()),
+            Os::Windows => rig
+                .win
+                .adapters
+                .lock()
+                .iter_mut()
+                .for_each(|a| a.fixed.clear()),
+        }
+        // The standalone app then applies policies only, and its run opens nothing else.
+        let mut shield = plan_of(ProductId::Shield, &[]);
+        shield.hosts = false;
+        shield.resolver = None;
+        let encoded = ubiqx_nofap::plan::encode_plan(&shield);
+        rig.clear_calls();
+        let (exit, _, err) =
+            rig.helper(&["apply", "--plan-b64", &encoded, "--unverified", "policies"]);
+        assert_eq!(exit, EXIT_APPLIED, "{os:?}: {err}");
+        // The resolver ubiqX still wants is not put back by a run whose gate is closed
+        // for it; the hosts block that was there is kept, with ubiqX's names.
+        for call in rig.calls() {
+            let line = call.line();
+            assert!(
+                !line.contains("-setdnsservers")
+                    && !line.contains("Set-DnsClient")
+                    && !line.contains("restart"),
+                "{os:?}: {line}"
+            );
+        }
+        let names = hosts::block_names(rig.hosts_text().as_bytes());
+        assert!(names.contains(&"first.example".to_owned()), "{os:?}");
+        let state = rig.observe().state.unwrap();
+        assert_eq!(state.owners.len(), 2);
+        assert_eq!(
+            state.owners[&ProductId::Ubiqx].resolver,
+            Some(CF),
+            "the other owner's wants are kept"
+        );
+        // A tier nobody wants any more comes off whatever the gate says.
+        assert_eq!(rig.remove("all", "all"), EXIT_APPLIED);
+        assert!(!rig.hosts_text().contains(hosts::BEGIN_PREFIX), "{os:?}");
+    }
 }

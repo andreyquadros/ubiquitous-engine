@@ -6,7 +6,7 @@ use ubiqx_core::nofap::Os;
 use ubiqx_core::ProductId;
 use ubiqx_nofap::plan::{self, EXIT_APPLIED, EXIT_FAILED};
 
-use crate::sysblock::testing::{b64, plan_of, Call, Node, Rig, ALL_TIERS, PROGRAM_FILES, SYSTEM32};
+use crate::sysblock::testing::{plan_of, Call, Node, Rig, ALL_TIERS, PROGRAM_FILES, SYSTEM32};
 use crate::sysblock::windows;
 
 fn lines(calls: &[Call]) -> Vec<String> {
@@ -170,30 +170,56 @@ fn windows_env() -> Vec<(String, String)> {
     ])
 }
 
+/// What a hostile same-user process could set before the UAC prompt: an elevated process
+/// started through UAC receives the user's variables.
+const HOSTILE_DIR: &str = "C:\\Users\\Public\\evil";
+const HOSTILE_VARIABLES: [&str; 6] = [
+    "SystemRoot",
+    "windir",
+    "ProgramData",
+    "PSModulePath",
+    "ProgramFiles",
+    "PATH",
+];
+const INNER_TEST: &str = "sysblock::tests::hardening::windows_cycle_inside_a_hostile_environment";
+
 #[test]
 fn windows_takes_no_path_from_the_environment() {
-    let (clean_applied, clean_removed) = cycle(&Rig::new(Os::Windows));
-    // The helper's own environment as a hostile same-user process could set it before
-    // the UAC prompt. No other test reads these variables.
-    let hostile = "C:\\Users\\Public\\evil";
-    let names = [
-        "SystemRoot",
-        "windir",
-        "ProgramData",
-        "PSModulePath",
-        "ProgramFiles",
-        "PATH_TO_REG",
-    ];
-    for name in names {
-        std::env::set_var(name, hostile);
+    // The variables are set for a child process only (this test binary, running the one
+    // test below), so no other test ever sees them. On a Windows host a process cannot be
+    // expected to start with a false `SystemRoot`; the back-end is the same code there.
+    if std::env::consts::OS == "windows" {
+        return;
+    }
+    let this_binary = std::env::current_exe().expect("the test binary");
+    let mut child = std::process::Command::new(this_binary);
+    child.args(["--exact", INNER_TEST, "--ignored"]);
+    for name in HOSTILE_VARIABLES {
+        child.env(name, HOSTILE_DIR);
+    }
+    let output = child.output().expect("the child test run");
+    let printed = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "{printed}");
+    assert!(
+        printed.contains("1 passed"),
+        "the inner test did not run: {printed}"
+    );
+}
+
+#[test]
+#[ignore = "run by windows_takes_no_path_from_the_environment, in a child process with a hostile environment"]
+fn windows_cycle_inside_a_hostile_environment() {
+    for name in HOSTILE_VARIABLES {
+        assert_eq!(
+            std::env::var(name).as_deref(),
+            Ok(HOSTILE_DIR),
+            "{name} is not set"
+        );
     }
     let rig = Rig::new(Os::Windows);
     let (applied, removed) = cycle(&rig);
-    for name in names {
-        std::env::remove_var(name);
-    }
-    assert_eq!(applied, clean_applied);
-    assert_eq!(removed, clean_removed);
+    assert_eq!(applied.len(), 12);
+    assert_eq!(removed.len(), 12);
     for call in applied.iter().chain(&removed) {
         assert!(
             call.program.starts_with("C:\\Windows\\System32\\"),
@@ -205,14 +231,11 @@ fn windows_takes_no_path_from_the_environment() {
     }
     // Nothing was created anywhere but under the two directories Windows itself named.
     for path in rig.fs.snapshot().keys() {
-        assert!(
-            path.starts_with(SYSTEM32)
-                || path.starts_with(PROGRAM_FILES)
-                || path == "C:"
-                || path == "C:\\Windows",
-            "{path}"
-        );
-        assert!(!path.contains("evil"), "{path}");
+        let known = path.starts_with(SYSTEM32)
+            || path.starts_with(PROGRAM_FILES)
+            || path == "C:"
+            || path == "C:\\Windows";
+        assert!(known && !path.contains("evil"), "{path}");
     }
 }
 
@@ -464,5 +487,4 @@ fn a_state_file_that_cannot_be_read_is_no_state() {
         let state = rig.observe().state.expect("a fresh state");
         assert_eq!(state.owners.len(), 1, "{junk}");
     }
-    let _ = b64("");
 }

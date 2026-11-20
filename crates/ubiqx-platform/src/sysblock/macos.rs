@@ -246,13 +246,18 @@ impl OsBackend for MacosBackend {
             return Ok(created);
         };
         let domain = self.firefox_domain(runner).ok_or(reason::FAILED)?;
+        let mut list = |key: &str| {
+            if !created.contains(&made(key)) {
+                created.push(made(key));
+            }
+        };
         if !domain.iter().any(|(key, _)| key == FIREFOX_SWITCH) {
             self.must(
                 runner,
                 DEFAULTS,
                 &["write", FIREFOX_DOMAIN, FIREFOX_SWITCH, "-bool", "TRUE"],
             )?;
-            created.push(made(FIREFOX_SWITCH));
+            list(FIREFOX_SWITCH);
         }
         for (key, pref, value) in FIREFOX_PREFS {
             if firefox.values.iter().any(|found| found.key == key) {
@@ -263,9 +268,8 @@ impl OsBackend for MacosBackend {
                 DEFAULTS,
                 &["write", FIREFOX_DOMAIN, pref, "-bool", value],
             )?;
-            created.push(made(key));
+            list(key);
         }
-        created.dedup();
         Ok(created)
     }
 

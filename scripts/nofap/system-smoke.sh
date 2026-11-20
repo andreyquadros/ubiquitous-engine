@@ -654,9 +654,9 @@ def cmd_applied(args):
         # A name of the list itself, taken from the file: the first one after the canary that
         # has two labels.
         listed = next((name for name in names[1:] if name.count(".") == 1), None)
-        if listed is None:
+        if listed is None and block is not None:
             report.fail("hosts: the block holds no name of the list after the canary")
-        else:
+        elif listed is not None:
             facts["listed"] = listed
             found = eventually(lambda: resolve(listed), is_blocked, 10)
             report.check(is_blocked(found), "a name of the list (%s) resolves to the null address" % listed, sorted(found))

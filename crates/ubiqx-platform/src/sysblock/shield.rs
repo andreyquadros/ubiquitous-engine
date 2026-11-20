@@ -17,7 +17,7 @@ use ubiqx_nofap::plan::{self, EXIT_APPLIED, EXIT_GATED, EXIT_INVALID_PLAN, EXIT_
 use ubiqx_nofap::resolvers::PROBE_NAME;
 
 use super::elevate::RunnerElevator;
-use super::{helper, native_backend, observe, sys};
+use super::{helper, native_backend, observe, state, sys};
 use super::{ElevatedExit, Elevator, Fs, NameLookup, OsBackend, Runner};
 
 /// Set by the AppImage runtime; root cannot read the user's mount, so the helper cannot
@@ -119,7 +119,7 @@ impl NativeSystemShield {
             ElevatedExit::Exited(EXIT_APPLIED) => Ok(ApplyOutcome::Applied),
             ElevatedExit::Exited(EXIT_PARTIAL) => {
                 // The per-tier report is in the state file.
-                let state = observe::observe(&*self.os, &*self.runner, &*self.fs, false).state;
+                let (state, _) = state::read(&*self.os, &*self.fs);
                 let failed = state
                     .map(|state| state.report)
                     .unwrap_or_default()
