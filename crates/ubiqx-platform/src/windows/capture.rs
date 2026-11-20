@@ -3,6 +3,8 @@
 //! A window capture by id is tried first; when xcap cannot see the window (a different
 //! desktop, a UWP host) the display under the window is captured and cropped to its DWM
 //! extended frame, so other applications' windows only leak in where they overlap it.
+//! [`WindowsWindowCapturer`] has no such fallback: it is what the `nofap` frame source
+//! uses, whose picture leaves the computer.
 
 use ubiqx_core::ports::{CaptureTarget, EncodedImage, ScreenCapturer};
 use ubiqx_core::{CoreError, CoreResult};
@@ -80,6 +82,21 @@ fn capture_window(id: u32) -> CoreResult<image::RgbaImage> {
     crop_to(&img, origin, rect).ok_or_else(|| CoreError::Platform("window is off screen".into()))
 }
 
+/// Window `id` as xcap captures the window itself, or nothing: the display under it,
+/// where another application's window may be, is never cropped in its place.
+fn capture_window_only(id: u32) -> CoreResult<image::RgbaImage> {
+    let window = xcap::Window::all()
+        .map_err(xcap_err)?
+        .into_iter()
+        .find(|w| w.id().ok() == Some(id))
+        .ok_or_else(|| CoreError::Platform(format!("window {id} not found")))?;
+    let img = window.capture_image().map_err(xcap_err)?;
+    if img.width() == 0 || img.height() == 0 {
+        return Err(CoreError::Platform("window has no size".into()));
+    }
+    Ok(img)
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct WindowsScreenCapturer;
 
@@ -113,5 +130,48 @@ impl ScreenCapturer for WindowsScreenCapturer {
         out.sort();
         out.dedup();
         Ok(out)
+    }
+}
+
+/// Captures one window and nothing else, for the `nofap` frame source
+/// ([`crate::frame`]): the picture goes to an AI provider, so it must never show the
+/// screen in place of the window. A display target is refused, and a window xcap cannot
+/// capture is an error instead of a crop of the display under it.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct WindowsWindowCapturer;
+
+impl ScreenCapturer for WindowsWindowCapturer {
+    fn capture(&self, target: CaptureTarget, max_edge: u32) -> CoreResult<EncodedImage> {
+        let CaptureTarget::Window(id) = target else {
+            return Err(CoreError::Platform(crate::frame::WINDOW_ONLY.into()));
+        };
+        let img = capture_window_only(id)?;
+        if is_uniform(&img) {
+            return Err(CoreError::Platform("capture is blank".into()));
+        }
+        downscale_and_encode(img, max_edge)
+    }
+
+    fn visible_apps(&self) -> CoreResult<Vec<String>> {
+        WindowsScreenCapturer.visible_apps()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_window_only_capturer_refuses_a_display() {
+        for target in [
+            CaptureTarget::PrimaryDisplay,
+            CaptureTarget::DisplayAt { x: 10, y: 10 },
+        ] {
+            let err = WindowsWindowCapturer.capture(target, 800).unwrap_err();
+            assert!(
+                matches!(&err, CoreError::Platform(why) if why == crate::frame::WINDOW_ONLY),
+                "{err:?}"
+            );
+        }
     }
 }

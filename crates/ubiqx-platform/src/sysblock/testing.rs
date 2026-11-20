@@ -353,6 +353,42 @@ fn exit(status: i32, stderr: &str) -> io::Result<Output> {
     })
 }
 
+/// Failures a test plants in a pretend machine, by a piece of the command line
+/// ([`Call::line`]).
+#[derive(Default)]
+pub(crate) struct Faults {
+    /// A command whose line contains one of these exits 1 and changes nothing.
+    pub failing: Mutex<Vec<String>>,
+    /// A command whose line contains this ends the helper there, the way a kill or a power
+    /// cut would: the run unwinds and nothing after that command happens.
+    pub dying: Mutex<Option<String>>,
+}
+
+impl Faults {
+    pub(crate) fn fail(&self, piece: &str) {
+        self.failing.lock().push(piece.to_owned());
+    }
+
+    pub(crate) fn die_at(&self, piece: &str) {
+        *self.dying.lock() = Some(piece.to_owned());
+    }
+
+    pub(crate) fn clear(&self) {
+        self.failing.lock().clear();
+        *self.dying.lock() = None;
+    }
+
+    /// Whether `call` is one a test made fail. Panics for one it made fatal.
+    fn trips(&self, call: &Call) -> bool {
+        let line = call.line();
+        let dying = self.dying.lock().clone();
+        if dying.is_some_and(|piece| line.contains(&piece)) {
+            panic!("the helper was killed at: {line}");
+        }
+        self.failing.lock().iter().any(|piece| line.contains(piece))
+    }
+}
+
 /// A network service of the pretend Mac.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Service {
@@ -370,16 +406,18 @@ pub(crate) struct MacMachine {
     pub firefox: Mutex<BTreeMap<String, String>>,
     /// Programs whose every run fails.
     pub broken: Mutex<HashSet<String>>,
+    pub faults: Faults,
 }
 
 impl Runner for MacMachine {
     fn run(&self, program: &str, args: &[String], env: &[(String, String)]) -> io::Result<Output> {
-        self.calls.lock().push(Call {
+        let call = Call {
             program: program.to_owned(),
             args: args.to_vec(),
             env: env.to_vec(),
-        });
-        if self.broken.lock().contains(program) {
+        };
+        self.calls.lock().push(call.clone());
+        if self.broken.lock().contains(program) || self.faults.trips(&call) {
             return exit(1, "broken");
         }
         let words: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -479,6 +517,7 @@ pub(crate) struct WinMachine {
     /// Registry values: `(key, name)` to `(type, data)`.
     pub registry: Mutex<BTreeMap<(String, String), (String, String)>>,
     pub broken: Mutex<HashSet<String>>,
+    pub faults: Faults,
 }
 
 fn between<'a>(text: &'a str, open: &str, close: &str) -> &'a str {
@@ -605,12 +644,13 @@ impl WinMachine {
 
 impl Runner for WinMachine {
     fn run(&self, program: &str, args: &[String], env: &[(String, String)]) -> io::Result<Output> {
-        self.calls.lock().push(Call {
+        let call = Call {
             program: program.to_owned(),
             args: args.to_vec(),
             env: env.to_vec(),
-        });
-        if self.broken.lock().contains(program) {
+        };
+        self.calls.lock().push(call.clone());
+        if self.broken.lock().contains(program) || self.faults.trips(&call) {
             return exit(1, "broken");
         }
         let words: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -637,6 +677,7 @@ pub(crate) struct LinuxMachine {
     /// Programs that are not installed.
     pub missing: Mutex<HashSet<String>>,
     pub broken: Mutex<HashSet<String>>,
+    pub faults: Faults,
 }
 
 impl Default for LinuxMachine {
@@ -647,21 +688,23 @@ impl Default for LinuxMachine {
             restarts: Mutex::new(0),
             missing: Mutex::new(HashSet::new()),
             broken: Mutex::new(HashSet::new()),
+            faults: Faults::default(),
         }
     }
 }
 
 impl Runner for LinuxMachine {
     fn run(&self, program: &str, args: &[String], env: &[(String, String)]) -> io::Result<Output> {
-        self.calls.lock().push(Call {
+        let call = Call {
             program: program.to_owned(),
             args: args.to_vec(),
             env: env.to_vec(),
-        });
+        };
+        self.calls.lock().push(call.clone());
         if self.missing.lock().contains(program) {
             return Err(not_found());
         }
-        if self.broken.lock().contains(program) {
+        if self.broken.lock().contains(program) || self.faults.trips(&call) {
             return exit(1, "broken");
         }
         let words: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -862,6 +905,15 @@ impl Rig {
         self.mac.calls.lock().clear();
         self.win.calls.lock().clear();
         self.linux.calls.lock().clear();
+    }
+
+    /// The failures planted in this machine's tools.
+    pub(crate) fn faults(&self) -> &Faults {
+        match self.os {
+            Os::Macos => &self.mac.faults,
+            Os::Windows => &self.win.faults,
+            Os::Linux => &self.linux.faults,
+        }
     }
 
     pub(crate) fn hosts_path(&self) -> String {

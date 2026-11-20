@@ -15,7 +15,7 @@ use ubiqx_nofap::policies::{self, FIREFOX_ENABLED, FIREFOX_LOCKED};
 use ubiqx_nofap::resolvers::{self, RESOLVERS};
 use ubiqx_nofap::{plan, state_dir};
 
-use super::{parse, Fs, OsBackend, Runner};
+use super::{parse, Fs, NoteCreated, OsBackend, Runner};
 
 pub const NETWORKSETUP: &str = "/usr/sbin/networksetup";
 pub const DEFAULTS: &str = "/usr/bin/defaults";
@@ -233,6 +233,7 @@ impl OsBackend for MacosBackend {
         created: &[PolicyCreated],
         runner: &dyn Runner,
         _fs: &dyn Fs,
+        note: &mut NoteCreated<'_>,
     ) -> Result<Vec<PolicyCreated>, String> {
         let mut created = created.to_vec();
         let conflicts = policies::conflicts(observed, &created);
@@ -246,29 +247,41 @@ impl OsBackend for MacosBackend {
             return Ok(created);
         };
         let domain = self.firefox_domain(runner).ok_or(reason::FAILED)?;
+        // (preference, value) of every `defaults write` of this run: what is missing, and
+        // a preference of ours that somebody changed.
+        let mut writes: Vec<(&str, &str)> = Vec::new();
         let mut list = |key: &str| {
             if !created.contains(&made(key)) {
                 created.push(made(key));
             }
         };
         if !domain.iter().any(|(key, _)| key == FIREFOX_SWITCH) {
-            self.must(
-                runner,
-                DEFAULTS,
-                &["write", FIREFOX_DOMAIN, FIREFOX_SWITCH, "-bool", "TRUE"],
-            )?;
+            writes.push((FIREFOX_SWITCH, "TRUE"));
             list(FIREFOX_SWITCH);
         }
+        let wanted = policies::desired(BrowserFamily::Firefox);
         for (key, pref, value) in FIREFOX_PREFS {
-            if firefox.values.iter().any(|found| found.key == key) {
-                continue;
+            let in_place = firefox.values.iter().any(|found| {
+                found.key == key
+                    && wanted.iter().any(|want| {
+                        want.key == key && policies::same_value(&want.value, &found.value)
+                    })
+            });
+            if !in_place {
+                writes.push((pref, value));
+                list(key);
             }
+        }
+        if writes.is_empty() {
+            return Ok(created);
+        }
+        note(&created)?;
+        for (pref, value) in writes {
             self.must(
                 runner,
                 DEFAULTS,
                 &["write", FIREFOX_DOMAIN, pref, "-bool", value],
             )?;
-            list(key);
         }
         Ok(created)
     }

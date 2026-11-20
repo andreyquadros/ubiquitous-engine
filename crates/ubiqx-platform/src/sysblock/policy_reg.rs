@@ -10,7 +10,7 @@ use ubiqx_core::nofap::{reason, BrowserFamily, PolicyCreated, PolicyObservation,
 use ubiqx_nofap::policies::{self, FIREFOX_POLICY};
 
 use super::windows::WindowsBackend;
-use super::{parse, Fs, OsBackend, Runner};
+use super::{parse, Fs, NoteCreated, OsBackend, Runner};
 
 /// The policy key of each browser family.
 pub const POLICY_KEYS: [(BrowserFamily, &str); 5] = [
@@ -147,39 +147,37 @@ fn reg(backend: &WindowsBackend, runner: &dyn Runner, list: &[&str]) -> Result<(
     }
 }
 
-/// Adds the values that are missing for the browsers that are present, readable and hold
-/// nobody else's choice. A value is listed as created only when this run wrote it.
+/// Writes the values that are missing, and the values of ours that somebody changed, for
+/// the browsers that are present, readable and hold nobody else's choice. A value is
+/// listed as created only when this helper wrote it: one that was there before with our
+/// content is left alone and never listed. The list is handed to `note` before the first
+/// `reg.exe add`, so a run that fails or dies between two values leaves none that undo
+/// does not know about.
 pub(crate) fn apply(
     backend: &WindowsBackend,
     runner: &dyn Runner,
     observed: &[PolicyObservation],
     created: &[PolicyCreated],
+    note: &mut NoteCreated<'_>,
 ) -> Result<Vec<PolicyCreated>, String> {
     let mut created = created.to_vec();
     let conflicts = policies::conflicts(observed, &created);
+    // (policy key, value name, type, data) of every `reg.exe add` of this run.
+    let mut writes: Vec<(&'static str, String, &'static str, String)> = Vec::new();
     for browser in observed {
         let family = browser.browser;
         if !browser.present || browser.error.is_some() || conflicts.contains(&family) {
             continue;
         }
         for want in policies::desired(family) {
-            if browser.values.iter().any(|found| found.key == want.key) {
+            let in_place = browser.values.iter().any(|found| {
+                found.key == want.key && policies::same_value(&found.value, &want.value)
+            });
+            if in_place {
                 continue;
             }
             let (kind, data) = reg_data(&want.value).ok_or(reason::FAILED)?;
-            let name = value_name(&want.key);
-            let list = [
-                "add",
-                key_of(family),
-                "/v",
-                name,
-                "/t",
-                kind,
-                "/d",
-                &data,
-                "/f",
-            ];
-            reg(backend, runner, &list)?;
+            writes.push((key_of(family), value_name(&want.key).to_owned(), kind, data));
             let made = PolicyCreated {
                 browser: family,
                 key: want.key,
@@ -188,6 +186,14 @@ pub(crate) fn apply(
                 created.push(made);
             }
         }
+    }
+    if writes.is_empty() {
+        return Ok(created);
+    }
+    note(&created)?;
+    for (key, name, kind, data) in &writes {
+        let list = ["add", key, "/v", name, "/t", kind, "/d", data, "/f"];
+        reg(backend, runner, &list)?;
     }
     Ok(created)
 }

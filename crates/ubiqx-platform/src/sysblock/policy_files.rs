@@ -14,7 +14,7 @@ use ubiqx_core::nofap::{reason, BrowserFamily, Os, PolicyCreated, PolicyObservat
 use ubiqx_nofap::policies::{self, OWN_FILE_NAME};
 
 use super::linux::{create_dirs, FILE_MODE};
-use super::{join, parent, parse, Fs};
+use super::{join, parent, parse, Fs, NoteCreated};
 
 /// Where one browser family is installed and where it reads policies.
 pub struct BrowserPaths {
@@ -180,11 +180,8 @@ pub(crate) fn observe(fs: &dyn Fs) -> Vec<PolicyObservation> {
     observed
 }
 
-/// Writes a file of ours, unless it already holds exactly `text`.
+/// Writes a file of ours.
 fn write_own(fs: &dyn Fs, file: &Path, text: &str) -> Result<(), String> {
-    if read_text(fs, file).is_ok_and(|found| found == text) {
-        return Ok(());
-    }
     let failed = |_| reason::FAILED.to_owned();
     if let Some(dir) = parent(Os::Linux, file) {
         create_dirs(fs, &dir).map_err(failed)?;
@@ -194,14 +191,23 @@ fn write_own(fs: &dyn Fs, file: &Path, text: &str) -> Result<(), String> {
 }
 
 /// Writes our files for the browsers that are present, can be managed and hold nobody
-/// else's choice. Everything in a file of ours is ours, so every key is listed as created.
+/// else's choice. Everything in a file of ours is ours, so every key is listed as created;
+/// the list is handed to `note` before the first file is written.
 pub(crate) fn apply(
     fs: &dyn Fs,
     observed: &[PolicyObservation],
     created: &[PolicyCreated],
+    note: &mut NoteCreated<'_>,
 ) -> Result<Vec<PolicyCreated>, String> {
     let mut created = created.to_vec();
     let conflicts = policies::conflicts(observed, &created);
+    // The files of this run that do not hold their text yet.
+    let mut writes: Vec<(PathBuf, String)> = Vec::new();
+    let mut want = |file: PathBuf, text: String| {
+        if !read_text(fs, &file).is_ok_and(|found| found == text) {
+            writes.push((file, text));
+        }
+    };
     for browser in observed {
         let family = browser.browser;
         if !browser.present || browser.error.is_some() || conflicts.contains(&family) {
@@ -210,12 +216,11 @@ pub(crate) fn apply(
         if family == BrowserFamily::Firefox {
             // Created only when absent; an equal file is already ours.
             if !fs.exists(Path::new(FIREFOX_POLICIES)) {
-                write_own(fs, Path::new(FIREFOX_POLICIES), &policies::firefox_json())?;
+                want(PathBuf::from(FIREFOX_POLICIES), policies::firefox_json());
             }
         } else if let Some(paths) = CHROMIUM_FAMILY.iter().find(|paths| paths.browser == family) {
-            let text = policies::chromium_json(family);
             for dir in paths.managed {
-                write_own(fs, &own_file(dir), &text)?;
+                want(own_file(dir), policies::chromium_json(family));
             }
         }
         for key in keys_of(family) {
@@ -227,6 +232,13 @@ pub(crate) fn apply(
                 created.push(made);
             }
         }
+    }
+    if writes.is_empty() {
+        return Ok(created);
+    }
+    note(&created)?;
+    for (file, text) in &writes {
+        write_own(fs, file, text)?;
     }
     Ok(created)
 }

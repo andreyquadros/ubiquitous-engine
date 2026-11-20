@@ -2,12 +2,23 @@
 //! in memory only.
 //!
 //! [`WindowFrameSource`] is the one portable implementation of
-//! `ubiqx_core::nofap::FrameSource`. It calls the existing
+//! `ubiqx_core::nofap::FrameSource`. It calls
 //! `ScreenCapturer::capture(CaptureTarget::Window(id), 1280)`, decodes, crops the top
 //! fraction asked for (a browser's tab strip and address bar), downscales to the edge asked
-//! for, computes a 64-bit difference hash and encodes JPEG. No per-OS code, no file, no
-//! `screenshots` row, no thumbnail; there is no display or region fallback, and a
-//! near-uniform capture is "no frame".
+//! for, computes a 64-bit difference hash and encodes JPEG. No file, no `screenshots` row,
+//! no thumbnail, and a near-uniform capture is "no frame".
+//!
+//! **A window or nothing.** The frame goes to an AI provider, so it must show the window
+//! that was judged a candidate and never whatever else is on the screen. The source asks
+//! for a window only, and the capturer it is given must not answer with a display or a
+//! region instead. The screenshot capturers of Windows and Linux do exactly that when a
+//! window cannot be read (they crop the screen under it, where a messaging or a bank
+//! window may be), so `PlatformServices::frames` is built over their window-only twins
+//! (`windows::capture::WindowsWindowCapturer`, `linux::capture::X11WindowCapturer`); the
+//! macOS capturer has no such fallback. A window that cannot be read is "no frame".
+//!
+//! Known limit: on an X11 session without a compositing manager, `GetImage` of a window
+//! returns the screen's pixels where another window covers it.
 
 use std::sync::Arc;
 
@@ -22,7 +33,11 @@ use crate::image_util::{crop_top, dhash, downscale_and_encode, is_uniform};
 /// crop works on more pixels than the result has.
 pub const CAPTURE_MAX_EDGE: u32 = 1280;
 
-/// Takes frames through the platform's screen capturer.
+/// Why a window-only capturer refuses a display or a region.
+pub const WINDOW_ONLY: &str = "only a window is captured";
+
+/// Takes frames through a screen capturer. Outside tests that capturer is a window-only
+/// one (see the module documentation): use `PlatformServices::frames`.
 pub struct WindowFrameSource {
     capturer: Arc<dyn ScreenCapturer>,
 }
@@ -253,6 +268,15 @@ mod tests {
                 .unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn the_platform_services_carry_the_frame_source() {
+        let (services, _) =
+            crate::PlatformServices::scripted(crate::mock::Scenario::new(Vec::new()));
+        let frame = services.frames.frame(3, BROWSER).unwrap().unwrap();
+        assert_eq!(frame.image.width, 640);
+        assert!(frame.image.bytes.starts_with(&[0xFF, 0xD8]));
     }
 
     #[test]

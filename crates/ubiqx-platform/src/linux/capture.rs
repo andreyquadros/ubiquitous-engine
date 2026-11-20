@@ -2,6 +2,8 @@
 //! so other applications' windows only leak in where they overlap it), else the screen.
 //! Under Wayland there is no X image to read: the error is a plain platform error, which
 //! the engine already tolerates (it keeps tracking without screenshots).
+//! [`X11WindowCapturer`] never reads the screen in place of a window: it is what the
+//! `nofap` frame source uses, whose picture leaves the computer.
 
 use ubiqx_core::ports::{CaptureTarget, EncodedImage, ScreenCapturer};
 use ubiqx_core::{CoreError, CoreResult};
@@ -14,7 +16,12 @@ fn no_display() -> CoreError {
     CoreError::Platform("capture: no X11 display (Wayland needs XWayland)".into())
 }
 
-fn capture_window(x: &X11, id: u32) -> CoreResult<image::RgbaImage> {
+/// A rectangle as `GetImage` takes it: x, y, width, height.
+type Rect = (i16, i16, u16, u16);
+
+/// The part of window `id` that is on the screen: its origin on the screen and the
+/// rectangle inside the window.
+fn visible_part(x: &X11, id: u32) -> CoreResult<((i16, i16), Rect)> {
     let (wx, wy, w, h) = x
         .window_rect(id)
         .ok_or_else(|| CoreError::Platform(format!("window {id} not found")))?;
@@ -33,11 +40,24 @@ fn capture_window(x: &X11, id: u32) -> CoreResult<image::RgbaImage> {
         (right - left) as u16,
         (bottom - top) as u16,
     );
+    Ok(((left as i16, top as i16), rect))
+}
+
+fn capture_window(x: &X11, id: u32) -> CoreResult<image::RgbaImage> {
+    let ((left, top), rect) = visible_part(x, id)?;
     x.image(id, rect)
         .or_else(|| {
             // An unmapped or redirected window: read the screen under it instead.
-            x.image(x.root(), (left as i16, top as i16, rect.2, rect.3))
+            x.image(x.root(), (left, top, rect.2, rect.3))
         })
+        .ok_or_else(|| CoreError::Platform(format!("window {id} could not be read")))
+}
+
+/// Window `id` read from the window itself, or nothing: the screen under it, where
+/// another application's window may be, is never read in its place.
+fn capture_window_only(x: &X11, id: u32) -> CoreResult<image::RgbaImage> {
+    let (_, rect) = visible_part(x, id)?;
+    x.image(id, rect)
         .ok_or_else(|| CoreError::Platform(format!("window {id} could not be read")))
 }
 
@@ -89,9 +109,66 @@ impl ScreenCapturer for X11ScreenCapturer {
     }
 }
 
+/// Captures one window and nothing else, for the `nofap` frame source
+/// ([`crate::frame`]): the picture goes to an AI provider, so it must never show the
+/// screen in place of the window. A display target is refused, and a window that cannot
+/// be read is an error instead of a crop of the screen under it.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct X11WindowCapturer;
+
+impl ScreenCapturer for X11WindowCapturer {
+    fn capture(&self, target: CaptureTarget, max_edge: u32) -> CoreResult<EncodedImage> {
+        let CaptureTarget::Window(id) = target else {
+            return Err(CoreError::Platform(crate::frame::WINDOW_ONLY.into()));
+        };
+        let x = X11::connect().ok_or_else(no_display)?;
+        let img = capture_window_only(&x, id)?;
+        if is_uniform(&img) {
+            return Err(CoreError::Platform("capture is blank".into()));
+        }
+        downscale_and_encode(img, max_edge)
+    }
+
+    fn visible_apps(&self) -> CoreResult<Vec<String>> {
+        X11ScreenCapturer.visible_apps()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_window_the_window_only_capturer_cannot_read_is_no_frame() {
+        use ubiqx_core::nofap::{FrameOpts, FrameSource};
+        // No display, or a display without such a window: nothing is read in its place.
+        let source = crate::frame::WindowFrameSource::new(std::sync::Arc::new(X11WindowCapturer));
+        let opts = FrameOpts {
+            max_edge: 640,
+            crop_top_frac: 0.12,
+        };
+        assert_eq!(source.frame(u32::MAX, opts).unwrap(), None);
+    }
+
+    #[test]
+    fn the_window_only_capturer_refuses_a_display_before_it_connects() {
+        for target in [
+            CaptureTarget::PrimaryDisplay,
+            CaptureTarget::DisplayAt { x: 10, y: 10 },
+        ] {
+            let err = X11WindowCapturer.capture(target, 800).unwrap_err();
+            assert!(
+                matches!(&err, CoreError::Platform(why) if why == crate::frame::WINDOW_ONLY),
+                "{err:?}"
+            );
+        }
+        if !super::super::x11::display_available() {
+            let err = X11WindowCapturer
+                .capture(CaptureTarget::Window(1), 800)
+                .unwrap_err();
+            assert!(matches!(err, CoreError::Platform(_)));
+        }
+    }
 
     #[test]
     fn without_a_display_capture_is_a_platform_error() {

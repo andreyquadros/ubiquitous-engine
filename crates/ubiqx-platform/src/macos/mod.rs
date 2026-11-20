@@ -38,5 +38,10 @@ pub fn services(keyring_service: &str) -> PlatformServices {
         update_feed: Arc::new(crate::update_feed::HttpUpdateFeed::new()),
         apps: Arc::new(apps::MacAppCatalog::default()),
         enforcer: Arc::new(enforce::MacEnforcer),
+        // The macOS capturer reads a window through its own id and has no fallback to
+        // the screen.
+        frames: Arc::new(crate::frame::WindowFrameSource::new(Arc::new(
+            capture::CgScreenCapturer,
+        ))),
     }
 }

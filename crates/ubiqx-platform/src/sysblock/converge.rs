@@ -10,8 +10,8 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use ubiqx_core::nofap::{
-    reason, Os, OwnerWants, ResolverId, ResolverObservation, SystemState, Tier, TierReport,
-    CONFIG_VERSION,
+    reason, Os, OwnerWants, PolicyCreated, ResolverId, ResolverObservation, SystemState, Tier,
+    TierReport, CONFIG_VERSION,
 };
 use ubiqx_core::ProductId;
 use ubiqx_nofap::gate::Gate;
@@ -78,17 +78,48 @@ impl Ports<'_> {
     /// Sets the resolver without leaving the machine without names: when the probe
     /// resolved before the change and does not after it, the change is undone in this
     /// same run and the tier is reported `unreachable`.
-    fn set_resolver(&self, id: ResolverId, observed: &ResolverObservation) -> Result<(), String> {
+    ///
+    /// `first_time`: no owner had the resolver before this run. A change that then fails
+    /// half-way (one network service refuses it, the service does not restart) is undone
+    /// too, so a tier reported as failed leaves no DNS setting behind that nobody has
+    /// recorded. Where an owner already had it, what is in place stays.
+    fn set_resolver(
+        &self,
+        id: ResolverId,
+        observed: &ResolverObservation,
+        first_time: bool,
+    ) -> Result<(), String> {
         let worked_before = self.probe();
-        self.backend
-            .apply_resolver(id, observed, self.runner, self.fs)?;
+        if let Err(code) = self
+            .backend
+            .apply_resolver(id, observed, self.runner, self.fs)
+        {
+            if first_time {
+                self.undo_resolver(Some((id, observed)));
+            }
+            return Err(code);
+        }
         if !worked_before || self.probe_recovers() {
             return Ok(());
         }
-        let fresh = observe(self.backend, self.runner, self.fs, true);
+        self.undo_resolver(None);
+        Err(reason::UNREACHABLE.to_owned())
+    }
+
+    /// Takes the resolver off again inside the run that set it. `kept`: the resolver and
+    /// the look taken before the change; an interface that already had exactly that set
+    /// then was not set by this run and keeps it.
+    fn undo_resolver(&self, kept: Option<(ResolverId, &ResolverObservation)>) {
+        let mut fresh = observe(self.backend, self.runner, self.fs, true);
+        if let Some((id, before)) = kept {
+            fresh.resolver.interfaces.retain(|interface| {
+                !before.interfaces.iter().any(|earlier| {
+                    earlier.id == interface.id && resolvers::is_exactly(id, &earlier.servers)
+                })
+            });
+        }
         // Whatever the undo says, the tier is not applied.
         let _ = self.backend.remove_resolver(&fresh, self.runner, self.fs);
-        Err(reason::UNREACHABLE.to_owned())
     }
 
     /// Writes the state as it stands; a failure is the helper's `EXIT_FAILED`.
@@ -171,9 +202,10 @@ pub(crate) fn converge(
         Some(id) if gate.open(Tier::Resolver) => {
             if !resolver_in_place(&observed.resolver, id, os) {
                 // DNS that could not be read is not changed blindly.
+                let first_time = before.owners.values().all(|wants| wants.resolver.is_none());
                 let set = match &observed.resolver.error {
                     Some(code) => Err(code.clone()),
-                    None => ports.set_resolver(id, &observed.resolver),
+                    None => ports.set_resolver(id, &observed.resolver, first_time),
                 };
                 flush = true;
                 if let Err(code) = &set {
@@ -203,8 +235,19 @@ pub(crate) fn converge(
 
     // L4: browser policies.
     if wanted.policies && gate.open(Tier::Policies) {
-        let applied =
-            backend.apply_policies(&observed.policies, &before.policies_created, runner, fs);
+        // The values about to be created are recorded before the first one is written: a
+        // run that fails or is killed between two of them leaves none `remove` cannot find.
+        let mut note = |created: &[PolicyCreated]| {
+            state.policies_created = created.to_vec();
+            ports.record(&state).map_err(|_| reason::FAILED.to_owned())
+        };
+        let applied = backend.apply_policies(
+            &observed.policies,
+            &before.policies_created,
+            runner,
+            fs,
+            &mut note,
+        );
         if let Ok(created) = &applied {
             state.policies_created.clone_from(created);
         } else if !had.policies {

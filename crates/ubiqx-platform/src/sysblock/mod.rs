@@ -125,6 +125,10 @@ pub trait NameLookup: Send + Sync {
     fn lookup(&self, name: &str) -> Vec<String>;
 }
 
+/// Records the policy values a back-end is about to create (see
+/// [`OsBackend::apply_policies`]). An `Err` is a code of `ubiqx_core::nofap::reason`.
+pub type NoteCreated<'a> = dyn FnMut(&[PolicyCreated]) -> Result<(), String> + 'a;
+
 /// One operating system's way of doing each tier: paths, argv builders, the fixed scripts
 /// and the parsers of what the tools print. Implementations hold no `cfg`: all three
 /// compile on every OS. The hosts file and the state file are handled by shared code
@@ -157,7 +161,8 @@ pub trait OsBackend: Send + Sync {
     ) -> Result<(), String>;
     /// Resets to automatic the interfaces whose servers are still exactly a provider's
     /// set, and removes the drop-in (privileged). No recorded value is ever written back.
-    /// `Ok(true)` when something was undone.
+    /// `Ok(true)` when something was undone. A service that is not running is never
+    /// started for it.
     fn remove_resolver(
         &self,
         observed: &SystemObservation,
@@ -165,14 +170,18 @@ pub trait OsBackend: Send + Sync {
         fs: &dyn Fs,
     ) -> Result<bool, String>;
     /// Writes the policy values of the browsers that are present, can be managed and hold
-    /// nobody else's choice (privileged). `created` is what the state file lists as ours;
-    /// the answer is the list after this run.
+    /// nobody else's choice (privileged): a value that is missing, and a value of ours
+    /// that somebody changed. `created` is what the state file lists as ours; the answer
+    /// is the list after this run. Before the first write the back-end hands that list to
+    /// `note`, which records it: a run that fails or dies half-way then leaves no value
+    /// the state file does not know about. When `note` fails nothing is written.
     fn apply_policies(
         &self,
         observed: &[PolicyObservation],
         created: &[PolicyCreated],
         runner: &dyn Runner,
         fs: &dyn Fs,
+        note: &mut NoteCreated<'_>,
     ) -> Result<Vec<PolicyCreated>, String>;
     /// Deletes our own policy files, and the values `created` lists that still equal ours
     /// (privileged). `Ok(true)` when something was deleted.

@@ -13,7 +13,7 @@ use ubiqx_core::nofap::{
 use ubiqx_nofap::resolvers::{self, RESOLVED_DROPIN_PATH};
 use ubiqx_nofap::state_dir;
 
-use super::{parent, parse, policy_files, Fs, OsBackend, Runner};
+use super::{parent, parse, policy_files, Fs, NoteCreated, OsBackend, Runner};
 
 pub const SYSTEMCTL: &str = "/usr/bin/systemctl";
 pub const RESOLVECTL: &str = "/usr/bin/resolvectl";
@@ -156,7 +156,7 @@ impl OsBackend for LinuxBackend {
 
     fn remove_resolver(
         &self,
-        _observed: &SystemObservation,
+        observed: &SystemObservation,
         runner: &dyn Runner,
         fs: &dyn Fs,
     ) -> Result<bool, String> {
@@ -165,6 +165,11 @@ impl OsBackend for LinuxBackend {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
             Err(_) => return Err(reason::FAILED.to_owned()),
+        }
+        // Only a running service has the file loaded. `systemctl restart` starts a unit
+        // that is stopped, and a resolver the user switched off is not ours to switch on.
+        if observed.resolver.resolved_active != Some(true) {
+            return Ok(true);
         }
         self.restart_resolved(runner).map(|()| true)
     }
@@ -175,8 +180,9 @@ impl OsBackend for LinuxBackend {
         created: &[PolicyCreated],
         _runner: &dyn Runner,
         fs: &dyn Fs,
+        note: &mut NoteCreated<'_>,
     ) -> Result<Vec<PolicyCreated>, String> {
-        policy_files::apply(fs, observed, created)
+        policy_files::apply(fs, observed, created, note)
     }
 
     fn remove_policies(

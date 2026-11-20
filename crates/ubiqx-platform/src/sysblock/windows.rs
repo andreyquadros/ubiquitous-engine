@@ -20,7 +20,7 @@ use ubiqx_nofap::resolvers::{self, RESOLVERS};
 use ubiqx_nofap::{plan, state_dir};
 
 use super::parse::{self, Adapter};
-use super::{policy_reg, Fs, OsBackend, Output, Runner};
+use super::{policy_reg, Fs, NoteCreated, OsBackend, Output, Runner};
 
 /// Lists every adapter that is up with its DNS servers of both address families, as JSON.
 pub const FULL_READ_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; $rows = @(NetAdapter\\Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { [pscustomobject]@{ index = [int]$_.ifIndex; guid = [string]$_.InterfaceGuid; name = [string]$_.Name; servers = @(DnsClient\\Get-DnsClientServerAddress -InterfaceIndex $_.ifIndex | ForEach-Object { $_.ServerAddresses }) } }); ConvertTo-Json -InputObject $rows -Depth 3 -Compress";
@@ -257,8 +257,9 @@ impl OsBackend for WindowsBackend {
         created: &[PolicyCreated],
         runner: &dyn Runner,
         _fs: &dyn Fs,
+        note: &mut NoteCreated<'_>,
     ) -> Result<Vec<PolicyCreated>, String> {
-        policy_reg::apply(self, runner, observed, created)
+        policy_reg::apply(self, runner, observed, created, note)
     }
 
     fn remove_policies(

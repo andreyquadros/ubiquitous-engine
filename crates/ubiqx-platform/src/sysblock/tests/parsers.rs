@@ -103,6 +103,24 @@ fn powershell_json_with_one_and_several_adapters_and_no_ipv6() {
 }
 
 #[test]
+fn powershell_json_with_arrays_written_as_value_and_count() {
+    // Windows PowerShell 5.1 can write an array as an object with `value` and `Count`.
+    let wrapped = r#"{"value":[{"index":12,"guid":"{11111111-2222-3333-4444-555555555555}","name":"Wi-Fi","servers":{"value":["1.1.1.3","1.0.0.3","2606:4700:4700::1113","2606:4700:4700::1003"],"Count":4}},{"index":7,"guid":"{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}","name":"Ethernet","servers":{"value":[],"Count":0}}],"Count":2}"#;
+    let adapters = adapters_json(wrapped).unwrap();
+    assert_eq!(adapters.len(), 2);
+    assert_eq!(adapters[0].servers, cf_servers());
+    assert!(ubiqx_nofap::resolvers::is_exactly(CF, &adapters[0].servers));
+    assert_eq!(adapters[1].index, 7);
+    assert!(adapters[1].servers.is_empty());
+    // An object that only looks a little like it is not unwrapped: a server list that is
+    // not a list of addresses never reads as the provider's set.
+    let odd = r#"[{"index":3,"servers":{"value":["1.1.1.3"],"Count":1,"Length":1}}]"#;
+    let adapters = adapters_json(odd).unwrap();
+    assert_eq!(adapters[0].servers.len(), 1);
+    assert!(adapters[0].servers[0].starts_with('{'));
+}
+
+#[test]
 fn reg_query_output_values_types_and_keys() {
     let values = reg_values(include_str!("../fixtures/reg-policy-chrome.txt"));
     let names: Vec<&str> = values.iter().map(|value| value.name.as_str()).collect();

@@ -72,6 +72,10 @@ pub struct PlatformServices {
     pub apps: Arc<dyn AppCatalog>,
     /// What the focus guard may do to a distraction.
     pub enforcer: Arc<dyn Enforcer>,
+    /// The frame source of the `nofap` module: one reduced picture of one window, taken
+    /// by a capturer that never answers with the screen in place of the window
+    /// ([`frame`]).
+    pub frames: Arc<dyn ubiqx_core::nofap::FrameSource>,
 }
 
 impl PlatformServices {
@@ -131,6 +135,9 @@ impl PlatformServices {
             update_feed: Arc::new(mock::StaticUpdateFeed::new(None)),
             apps: Arc::new(mock::MockAppCatalog),
             enforcer: Arc::new(mock::MockEnforcer::default()),
+            frames: Arc::new(frame::WindowFrameSource::new(Arc::new(
+                mock::SyntheticCapturer,
+            ))),
         };
         (services, scripted)
     }

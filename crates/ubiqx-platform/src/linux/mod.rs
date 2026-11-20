@@ -49,5 +49,8 @@ pub fn services(data_dir: Option<&Path>, keyring_service: &str) -> PlatformServi
         update_feed: Arc::new(crate::update_feed::HttpUpdateFeed::new()),
         apps,
         enforcer: Arc::new(enforce::LinuxEnforcer),
+        frames: Arc::new(crate::frame::WindowFrameSource::new(Arc::new(
+            capture::X11WindowCapturer,
+        ))),
     }
 }

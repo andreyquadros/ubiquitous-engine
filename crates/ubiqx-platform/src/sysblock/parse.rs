@@ -138,15 +138,32 @@ struct RawAdapter {
     servers: Value,
 }
 
+/// An array as Windows PowerShell 5.1 sometimes writes one: `ConvertTo-Json` there turns
+/// an array that carries PowerShell's own wrapper into `{"value": [...], "Count": n}`.
+/// Anything else is handed back as it is.
+fn unwrapped_array(value: Value) -> Value {
+    match value {
+        Value::Object(mut members)
+            if members.len() == 2
+                && members.contains_key("Count")
+                && members.get("value").is_some_and(Value::is_array) =>
+        {
+            members.remove("value").unwrap_or(Value::Null)
+        }
+        other => other,
+    }
+}
+
 /// The adapters in the JSON the full-read script prints. `ConvertTo-Json` writes a single
-/// item as an object and several as an array, and a single server as a string, so both
-/// shapes are read. `None` when the text is not that JSON.
+/// item as an object and several as an array, a single server as a string, and on Windows
+/// PowerShell 5.1 sometimes an array as a `value`/`Count` object, so every one of these
+/// shapes is read. `None` when the text is not that JSON.
 pub fn adapters_json(text: &str) -> Option<Vec<Adapter>> {
     let text = text.trim().trim_start_matches('\u{feff}');
     if text.is_empty() {
         return Some(Vec::new());
     }
-    let rows = match serde_json::from_str::<Value>(text).ok()? {
+    let rows = match unwrapped_array(serde_json::from_str::<Value>(text).ok()?) {
         Value::Array(rows) => rows,
         Value::Null => Vec::new(),
         row @ Value::Object(_) => vec![row],
@@ -155,7 +172,7 @@ pub fn adapters_json(text: &str) -> Option<Vec<Adapter>> {
     let mut adapters = Vec::new();
     for row in rows {
         let raw: RawAdapter = serde_json::from_value(row).ok()?;
-        let servers = match raw.servers {
+        let servers = match unwrapped_array(raw.servers) {
             Value::Array(items) => items,
             Value::Null => Vec::new(),
             single => vec![single],

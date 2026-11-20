@@ -7,6 +7,7 @@ mod hardening;
 mod helper_args;
 mod hosts_write;
 mod parsers;
+mod partial;
 mod policies;
 mod resolver;
 mod shield;
