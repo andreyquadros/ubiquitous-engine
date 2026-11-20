@@ -260,7 +260,7 @@ impl NofapService {
 
         let (day, _) = self.day_hour(now);
         let in_hosts_block = host.is_some_and(|host| matcher.in_hosts_tier(host));
-        let (step, discreet, rotation, bypass) = {
+        let (step, which, discreet, rotation, bypass) = {
             let mut rt = self.rt.lock();
             let step = rt.episodes.observe(now);
             sampling::record(&mut rt.sampler, key, SampleEvent::Heightened, &day, now);
@@ -273,10 +273,19 @@ impl NofapService {
             if bypass {
                 rt.bypass_at = Some(now);
             }
-            if step.card.is_some() {
+            if step.hit == 1 {
+                rt.repeat_owed = false;
+            }
+            // The third hit of an episode asks for the "repeat" card. When it comes
+            // inside the minute the first card holds, the card is owed and shown at the
+            // first later hit of the episode that may show one.
+            let which = step
+                .card
+                .or_else(|| rt.repeat_owed.then_some(EpisodeCard::Repeat));
+            if which.is_some() {
                 rt.rotation = rt.rotation.wrapping_add(1);
             }
-            (step, rt.config.ui.discreet, rt.rotation, news)
+            (step, which, rt.config.ui.discreet, rt.rotation, news)
         };
         if step.count {
             self.bump(match source {
@@ -290,7 +299,7 @@ impl NofapService {
             status: bypass,
             ..Outbox::default()
         };
-        if let Some(which) = step.card {
+        if let Some(which) = which {
             // A correction names the host; a page without one (a reader view) gets none.
             let extra = host.and_then(|_| self.correction_button(source));
             let repeat = which == EpisodeCard::Repeat;
@@ -312,7 +321,9 @@ impl NofapService {
                 ..CardContext::default()
             };
             let mut rt = self.rt.lock();
-            if rt.cards.may_show(now) {
+            let shown = rt.cards.may_show(now);
+            rt.repeat_owed = repeat && !shown;
+            if shown {
                 rt.cards.keep(card.clone(), context, now);
                 // The operating system keeps notifications, with their times: the
                 // stand-in is sent for the first card of an episode only.
@@ -446,7 +457,7 @@ impl NofapService {
                 local_signal: ctx.local_signal(),
                 recheck,
                 model: env.vision_model,
-                in_flight,
+                _in_flight: in_flight,
             }),
         })
     }

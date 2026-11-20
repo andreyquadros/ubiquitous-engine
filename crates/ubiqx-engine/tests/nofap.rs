@@ -850,6 +850,27 @@ async fn s04_five_hits_in_one_episode_five_enforcements_one_count_two_cards() {
     assert!(h.pass().hit);
     assert_eq!(h.counter(DayKind::BlockList), 2);
     assert_eq!(h.cards().len(), 3);
+
+    // Hits two seconds apart, as the loop makes them: the third comes inside the minute
+    // the first card holds, so the "repeat" card is shown once that minute is over.
+    for _ in 0..25 {
+        h.advance(2);
+        assert!(h.pass().hit);
+    }
+    assert_eq!(h.cards().len(), 3, "at most one card a minute");
+    for _ in 0..10 {
+        h.advance(2);
+        assert!(h.pass().hit);
+    }
+    let kinds: Vec<CardKind> = h.cards().iter().map(|card| card.kind).collect();
+    assert_eq!(kinds.len(), 4, "{kinds:?}");
+    assert_eq!(kinds[3], CardKind::BlockedRepeat);
+    for _ in 0..40 {
+        h.advance(2);
+        assert!(h.pass().hit);
+    }
+    assert_eq!(h.cards().len(), 4, "once per episode");
+    assert_eq!(h.counter(DayKind::BlockList), 2);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1855,8 +1876,13 @@ async fn s19_turning_it_off_waits_the_delay_and_real_running_time_then_a_confirm
     assert!(h.service.confirm_pending(&waiting.id).is_err());
     assert!(h.service.enabled());
 
+    // Nine minutes of running time are still not ten.
+    h.observe_running(480);
+    assert!(!h.service.view().unwrap().status.pending[0].ready);
+    assert!(h.cards_of(CardKind::PendingReady).is_empty());
+
     // Ten minutes of running time: ready, and the card asks (it does not apply).
-    h.observe_running(540);
+    h.observe_running(60);
     let view = h.service.view().unwrap();
     assert!(view.status.pending[0].ready);
     let card = h.cards_of(CardKind::PendingReady).pop().expect("the card");
@@ -2102,7 +2128,37 @@ async fn s22_the_tracker_forgets_a_hit() {
         Some(system_categories::PRIVATE)
     );
 
-    // An ordinary window is tracked as usual: a block with its title, and a screenshot.
+    // A page nobody knows is tracked as usual, with its title and address, until the AI
+    // check answers positive for it: then the block the tracker had open is scrubbed.
+    let tab = window(
+        "Google Chrome",
+        CHROME,
+        "Outro título que não deve ficar",
+        Some(7),
+    );
+    for _ in 0..4 {
+        h.advance(30);
+        let sample = sample_of(&h, &tab, Some(url_of(UNKNOWN)));
+        ubiqx_engine::tracker::handle_sample(&state, sample).unwrap();
+    }
+    let open = BlockRepo::open_block(h.store.as_ref()).unwrap().unwrap();
+    assert_eq!(open.url, Some(url_of(UNKNOWN)));
+    assert_eq!(open.domain.as_deref(), Some(UNKNOWN));
+    h.foreground.set(tab.clone(), Some(&url_of(UNKNOWN)));
+    h.detector.push(Ok(explicit(Confidence::High)));
+    assert_eq!(h.check_within(30).await, Some(true));
+    ubiqx_engine::tracker::scrub_open_block(&state).unwrap();
+    let block = BlockRepo::get(h.store.as_ref(), &open.id).unwrap().unwrap();
+    assert!(!block.is_open);
+    assert_eq!(block.title, PRIVATE_TITLE);
+    assert_eq!((block.url.clone(), block.domain.clone()), (None, None));
+    assert_eq!(
+        block.category_id.as_deref(),
+        Some(system_categories::PRIVATE)
+    );
+
+    // Another application, tracked with a screenshot.
+    h.advance(200);
     let player = window("VLC", VLC, "ferias.mp4", Some(9));
     for _ in 0..4 {
         h.advance(30);
@@ -2297,6 +2353,9 @@ async fn s24_privacy_sweep_twenty_checks_three_hits_leave_no_trace() {
         .with_writer(lines.clone())
         .finish();
     let scoped = tracing::subscriber::set_default(subscriber);
+    // The capture works: a line written now is seen.
+    tracing::info!("marker before the checks");
+    assert_eq!(lines.0.lock().len(), 1);
     let mut after_five = 0;
     for (index, host) in hosts.iter().enumerate() {
         h.browse(host);

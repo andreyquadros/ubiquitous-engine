@@ -244,6 +244,8 @@ pub(crate) struct Runtime {
     pub cards: CardStore,
     /// Position in the rotation of support messages.
     pub rotation: usize,
+    /// The "repeat" card of the running episode could not be shown yet.
+    pub repeat_owed: bool,
     /// Context keys that had a hit, and when (the tracker forgets those windows).
     pub hits: HashMap<u64, DateTime<Utc>>,
     /// Context keys that carried a local signal, and when.
@@ -330,6 +332,7 @@ impl NofapService {
             recheck: HashSet::new(),
             cards: CardStore::default(),
             rotation: 0,
+            repeat_owed: false,
             hits: HashMap::new(),
             signals: HashMap::new(),
             last_candidate: None,

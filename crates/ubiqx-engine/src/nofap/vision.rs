@@ -48,8 +48,8 @@ pub struct VisionJob {
     /// This is the independent look "Não era isso" bought.
     pub(crate) recheck: bool,
     pub(crate) model: String,
-    #[allow(dead_code)]
-    pub(crate) in_flight: InFlight,
+    /// Held, never read: dropping it is what lets the next check start.
+    pub(crate) _in_flight: InFlight,
 }
 
 /// What one check did.
