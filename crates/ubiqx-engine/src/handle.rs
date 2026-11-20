@@ -172,6 +172,10 @@ impl EngineHandle {
                 }
             }
         }
+        // The `nofap` module's AI check reads the key's presence on its own (never the
+        // health above): it learns of the change now, not at its next look.
+        self.state.nofap_env.forget_key();
+        self.state.nofap.ai_settings_changed();
         Ok(())
     }
 

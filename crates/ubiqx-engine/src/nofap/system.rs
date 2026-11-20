@@ -540,30 +540,40 @@ impl NofapService {
             || (config.system.policies && drifted(&found.policies));
         if !drift {
             rt.system.in_drift = false;
-        } else if !rt.system.in_drift {
-            rt.system.in_drift = true;
-            let quiet = !due(
-                rt.config.internal.last_drift_card_at,
-                DRIFT_CARD_EVERY_SECS,
-                now,
-            );
-            if !quiet && rt.cards.may_show(now) {
-                let card = cards::card(
-                    CardKind::Drift,
-                    "drift.card",
-                    false,
-                    vec![CardAction::Restore, CardAction::Later],
-                    None,
+            rt.system.drift_carded = false;
+        } else {
+            if !rt.system.in_drift {
+                rt.system.in_drift = true;
+                drop(rt);
+                self.bump(DayKind::Drift);
+                rt = self.rt.lock();
+            }
+            if !rt.system.drift_carded {
+                let quiet = !due(
+                    rt.config.internal.last_drift_card_at,
+                    DRIFT_CARD_EVERY_SECS,
                     now,
                 );
-                rt.cards.keep(card.clone(), CardContext::default(), now);
-                outbox.cards.push((card, Some(Notice::Drift)));
-                rt.config.internal.last_drift_card_at = Some(now);
-                self.save_config(&mut rt)?;
+                if quiet {
+                    rt.system.drift_carded = true;
+                } else if rt.cards.may_show(now) {
+                    // A card that cannot be shown now (another one is up) is tried
+                    // again in the next pass.
+                    rt.system.drift_carded = true;
+                    let card = cards::card(
+                        CardKind::Drift,
+                        "drift.card",
+                        false,
+                        vec![CardAction::Restore, CardAction::Later],
+                        None,
+                        now,
+                    );
+                    rt.cards.keep(card.clone(), CardContext::default(), now);
+                    outbox.cards.push((card, Some(Notice::Drift)));
+                    rt.config.internal.last_drift_card_at = Some(now);
+                    self.save_config(&mut rt)?;
+                }
             }
-            drop(rt);
-            self.bump(DayKind::Drift);
-            rt = self.rt.lock();
         }
 
         let unreachable = found.issues.contains(&Issue::ResolverUnreachable);
@@ -830,8 +840,18 @@ impl NofapService {
     }
 
     /// Whether at least one system tier is in place: which of the two quit sentences is
-    /// true (`quit.confirm_system` or `quit.confirm_none`).
+    /// true (`quit.confirm_system` or `quit.confirm_none`). When the machine was not
+    /// looked at yet in this run (a quit right after the start), it is looked at now.
     pub fn system_applied(&self) -> bool {
+        let unknown = {
+            let rt = self.rt.lock();
+            (rt.config.enabled || rt.config.enabled_at.is_some())
+                && !rt.config_error
+                && rt.system.observation.is_none()
+        };
+        if unknown && self.read_system(false, false).is_ok() {
+            self.refresh_status();
+        }
         let rt = self.rt.lock();
         let status = &rt.status;
         in_place(&status.hosts) || in_place(&status.resolver) || in_place(&status.policies)
@@ -848,6 +868,9 @@ impl NofapService {
         let Some(dir) = &self.deps.shared_dir else {
             return Role::Primary;
         };
+        // One decision at a time: a role decided from a lock read before the other
+        // loop's write must not overwrite the newer one.
+        let _deciding = self.role_lock.lock();
         let holding = {
             let rt = self.rt.lock();
             if !due(rt.heartbeat_at, HEARTBEAT_EVERY_SECS, now) {
@@ -898,6 +921,7 @@ impl NofapService {
         let Some(dir) = &self.deps.shared_dir else {
             return;
         };
+        let _deciding = self.role_lock.lock();
         {
             let mut rt = self.rt.lock();
             rt.heartbeat_at = None;

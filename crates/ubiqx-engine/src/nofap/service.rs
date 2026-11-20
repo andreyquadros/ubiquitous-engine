@@ -11,7 +11,7 @@ use base64::Engine as _;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use ubiqx_core::nofap::{
     CardAction, CardKind, DayCount, DayKind, NofapCard, NofapChange, NofapConfig, NofapEvent,
-    NofapSite, SiteList, SiteOrigin, VisionConsent, DISPLAY_NAME,
+    NofapSite, ObserveOpts, SiteList, SiteOrigin, VisionConsent, DISPLAY_NAME,
 };
 use ubiqx_core::nofap_ipc::{
     ChangeOutcome, ConfigView, ConsentArgs, CostLine, EnableOptions, ExportResult, Mood, NofapView,
@@ -98,11 +98,12 @@ impl NofapService {
             sum.saturating_add(progress::total_on(&counts, &day, kind))
         });
         let (month_usd, month_checks) = self.month_spend(now);
+        let capabilities = self.deps.system.capabilities();
         let rt = self.rt.lock();
         Ok(NofapView {
             status,
             config: ConfigView::from(&rt.config),
-            capabilities: self.deps.system.capabilities(),
+            capabilities,
             today: TodayCounts {
                 blocks,
                 checks: progress::total_on(&counts, &day, DayKind::VisionCheck),
@@ -353,14 +354,26 @@ impl NofapService {
             tracing::info!("nofap: disabled");
             self.release_primary();
             self.clear_memory();
-            let listed = self
+            // What the state file lists for this product comes off; when the machine was
+            // never looked at in this run, it is looked at now.
+            let known = self
                 .rt
                 .lock()
                 .system
                 .observation
                 .as_ref()
-                .and_then(|seen| seen.state.as_ref())
-                .is_some_and(|state| state.owners.contains_key(&self.deps.identity.id));
+                .map(|seen| seen.state.clone());
+            let state = match known {
+                Some(state) => state,
+                None => self
+                    .deps
+                    .system
+                    .observe(ObserveOpts::QUICK)
+                    .ok()
+                    .and_then(|seen| seen.state),
+            };
+            let listed =
+                state.is_some_and(|state| state.owners.contains_key(&self.deps.identity.id));
             if listed {
                 self.remove_all()?;
             }

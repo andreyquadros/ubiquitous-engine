@@ -22,7 +22,7 @@ use ubiqx_nofap::sampling::{
 };
 
 use super::cards::{self, CardContext, Outbox};
-use super::vision::VisionJob;
+use super::vision::{VisionJob, NOT_READY_FOR_SECS};
 use super::{context_key, forget_old, DisplaySession, InFlight, NofapService};
 
 /// What one pass did.
@@ -388,7 +388,16 @@ impl NofapService {
         let (Decision::Capture { .. }, Some(window_id)) = (decision, window.window_id) else {
             return Ok(GuardOutcome::default());
         };
+        let asked_lately = self
+            .rt
+            .lock()
+            .not_ready_at
+            .is_some_and(|at| (0..NOT_READY_FOR_SECS).contains(&(now - at).num_seconds()));
+        if asked_lately {
+            return Ok(GuardOutcome::default());
+        }
         if self.vision_ready_in(&env).is_err() {
+            self.rt.lock().not_ready_at = Some(now);
             return Ok(GuardOutcome::default());
         }
         let Some(in_flight) = InFlight::begin(&self.in_flight) else {

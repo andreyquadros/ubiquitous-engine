@@ -215,8 +215,10 @@ pub(crate) struct SystemMemory {
     pub full_at: Option<DateTime<Utc>>,
     /// Consecutive looks in which the probe name did not resolve.
     pub probe_fail_streak: u32,
-    /// A chosen tier is changed or missing, and the card for it was already decided.
+    /// A chosen tier is changed or missing (the drift was counted).
     pub in_drift: bool,
+    /// The card of the present drift was shown, or the six quiet hours spared it.
+    pub drift_carded: bool,
     /// The "names are not resolving" card was shown for the present outage.
     pub unreachable_carded: bool,
     /// When the system was last read for `view` (at most once every 60 seconds).
@@ -262,6 +264,11 @@ pub(crate) struct Runtime {
     pub provider_seen: Option<(ubiqx_core::AiProvider, ubiqx_core::nofap::AiReadiness)>,
     /// The local day the counters were last pruned on.
     pub pruned_on: Option<String>,
+    /// When the provider was first seen rejecting the key (it is tried again later).
+    pub rejected_at: Option<DateTime<Utc>>,
+    /// When the AI check was last found not ready by the guard (asked again a little
+    /// later, not in every pass).
+    pub not_ready_at: Option<DateTime<Utc>>,
 }
 
 /// The module's runtime. See the module documentation for the rules it keeps.
@@ -275,6 +282,9 @@ pub struct NofapService {
     pub(crate) reading: AtomicBool,
     /// When the verify pass last ran, on the monotonic clock.
     pub(crate) verified: Mutex<Instant>,
+    /// Serialises the reading and writing of the primary lock (the guard loop and the
+    /// verify loop both ask for the role). Never taken while the runtime lock is held.
+    pub(crate) role_lock: Mutex<()>,
     pub(crate) matcher_data: MatcherData,
 }
 
@@ -332,6 +342,8 @@ impl NofapService {
             status: NofapStatus::off(),
             provider_seen: None,
             pruned_on: None,
+            rejected_at: None,
+            not_ready_at: None,
         };
         let service = Arc::new_cyclic(|me| Self {
             deps,
@@ -340,6 +352,7 @@ impl NofapService {
             in_flight: Arc::new(AtomicBool::new(false)),
             reading: AtomicBool::new(false),
             verified: Mutex::new(Instant::now()),
+            role_lock: Mutex::new(()),
             matcher_data,
         });
         service.seed_day_count();
@@ -466,7 +479,7 @@ impl NofapService {
         let status = self.compute_status();
         let changed = {
             let mut rt = self.rt.lock();
-            let changed = rt.status != status;
+            let changed = !same_status(&rt.status, &status);
             rt.status = status.clone();
             changed
         };
@@ -477,6 +490,19 @@ impl NofapService {
         }
         status
     }
+}
+
+/// Whether two statuses say the same thing. The seconds a waiting request still has left
+/// run down by themselves (the page counts them locally): they are not news.
+fn same_status(before: &NofapStatus, after: &NofapStatus) -> bool {
+    let settled = |status: &NofapStatus| {
+        let mut status = status.clone();
+        for waiting in &mut status.pending {
+            waiting.remaining_secs = 0;
+        }
+        status
+    };
+    settled(before) == settled(after)
 }
 
 /// The salt learned and snoozed sites are hashed with; zeros before the first enable
@@ -614,7 +640,8 @@ pub async fn run_guard_loop(
 }
 
 /// The verify loop: every `every` one [`NofapService::verify_pass`] on the blocking pool
-/// (the first tick is skipped; the page asks for a read of its own when it opens).
+/// (the first tick is skipped, like the engine's other loops; the page asks for a read of
+/// its own when it opens, and so does the quit dialog).
 pub async fn run_verify_loop(
     service: Arc<NofapService>,
     every: Duration,

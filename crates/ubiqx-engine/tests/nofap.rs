@@ -3520,3 +3520,138 @@ async fn the_engine_loop_enforces_spawns_the_check_and_scrubs_the_open_block() {
         .contains(&EnforcerCall::HideOthers("ai.ubiqx.app".into())));
     handle.shutdown();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_rejected_key_switches_the_check_off_until_the_key_changes_or_a_while_passed() {
+    let h = harness_with(Setup {
+        needs_key: true,
+        ..Setup::default()
+    })
+    .await;
+    h.enable(true);
+    let health = h.state().ai_health();
+    for host in [UNKNOWN, UNKNOWN_2, "terceiro-sitio.example"] {
+        h.browse(host);
+        h.detector
+            .push(Err(CoreError::AiRejected("no credit".into())));
+        assert_eq!(h.check_within(30).await, Some(false));
+    }
+    assert_eq!(h.service.vision_ready(), Err(VisionOff::NoKey));
+    let status = h.service.view().unwrap().status;
+    assert!(
+        status.issues.contains(&Issue::VisionNoProvider),
+        "the calm note on the page"
+    );
+    assert_eq!(
+        h.state().ai_health(),
+        health,
+        "the productivity AI is not told"
+    );
+    h.browse("quarto-sitio.example");
+    assert!(h.job_within(60).is_none());
+    assert!(h.cards().is_empty() && h.enforcer.calls().is_empty());
+
+    // A new key through ubiqX's settings: ready again at once.
+    h.handle
+        .set_api_key(AiProvider::Anthropic, Some("sk-test-1111"))
+        .unwrap();
+    assert_eq!(h.service.vision_ready(), Ok(()));
+
+    // Without a new key (the user fixed it at the provider's): tried again after a while.
+    for host in [
+        "quinto-sitio.example",
+        "sexto-sitio.example",
+        "setimo-sitio.example",
+    ] {
+        h.browse(host);
+        h.detector
+            .push(Err(CoreError::AiRejected("no credit".into())));
+        assert_eq!(h.check_within(30).await, Some(false));
+    }
+    assert_eq!(h.service.vision_ready(), Err(VisionOff::NoKey));
+    h.browse("oitavo-sitio.example");
+    assert!(h.job_within(600).is_none());
+    h.advance(400);
+    h.detector.push(Ok(clean()));
+    assert_eq!(h.check_within(60).await, Some(false), "tried again");
+    assert_eq!(h.service.vision_ready(), Ok(()));
+
+    // Removing the key stops the check at once.
+    h.handle.set_api_key(AiProvider::Anthropic, None).unwrap();
+    assert_eq!(h.service.vision_ready(), Err(VisionOff::NoKey));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn after_a_restart_everything_that_was_stored_is_back() {
+    let h = harness_with(Setup {
+        os: Os::Linux,
+        ..Setup::default()
+    })
+    .await;
+    h.service.enable(with_hosts(true)).unwrap();
+    h.service
+        .request(NofapChange::AddBlock {
+            host: UNKNOWN_2.into(),
+        })
+        .unwrap();
+    positive_on_unknown(&h).await;
+    let ChangeOutcome::Pending(waiting) = h.service.request(NofapChange::Disable).unwrap() else {
+        panic!("pending");
+    };
+
+    // A second service over the same database and the same machine: the next start.
+    let enforcer = Arc::new(MockEnforcer::default());
+    let ports = NofapPorts {
+        system: h.shield.clone(),
+        frames: h.frames.clone(),
+        detector: Some(h.detector.clone()),
+        presenter: h.presenter.clone(),
+        sink: h.sink.clone(),
+        repo: h.store.clone(),
+        shared_dir: None,
+        tuning: Tuning {
+            confirm_after: Duration::from_millis(5),
+            check_timeout: Duration::from_secs(5),
+            background: Background::Inline,
+            display: DisplaySession::Full,
+        },
+    };
+    let host = NofapHost {
+        env: Arc::new(StaticEnv),
+        activity: h.foreground.clone(),
+        urls: h.foreground.clone(),
+        enforcer: enforcer.clone(),
+        permissions: h.foreground.clone(),
+        notifier: h.notifier.clone(),
+        usage: h.store.clone(),
+        clock: Arc::new(h.clock.clone()),
+        identity: &ubiqx_core::product::UBIQX,
+        export_dir: h.tmp.path().join("exports"),
+    };
+    let restarted = NofapService::new(NofapDeps::assemble(ports, host));
+    assert!(restarted.enabled());
+    // The quit dialog knows what is applied before any pass ran.
+    h.shield.clear_calls();
+    assert!(restarted.system_applied());
+    assert!(h
+        .shield
+        .calls()
+        .iter()
+        .all(|call| matches!(call, SystemCall::Observe(_))));
+    // The lists: embedded, the user's and the learned one.
+    for host in [listed(), UNKNOWN_2, UNKNOWN] {
+        h.browse(host);
+        restarted.guard_pass().unwrap();
+        assert!(restarted.guard_pass().unwrap().hit, "{host}");
+    }
+    assert_eq!(enforcer.calls().len(), 3);
+    // The waiting request and the day's checks.
+    let view = restarted.view().unwrap();
+    assert_eq!(view.status.pending.len(), 1);
+    assert_eq!(view.status.pending[0].id, waiting.id);
+    assert_eq!(view.status.overall, Overall::PendingOff);
+    assert_eq!(view.today.checks, 1);
+    assert_eq!(restarted.sites().learned_count, 1);
+    // The running time a request needs is counted again from what was stored.
+    assert!(restarted.confirm_pending(&waiting.id).is_err());
+}

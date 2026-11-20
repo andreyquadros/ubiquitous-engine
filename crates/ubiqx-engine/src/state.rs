@@ -45,6 +45,8 @@ pub struct EngineState {
     /// The `nofap` module. Built from ports only; it reads this state through
     /// [`EngineEnv`] and never the other way round.
     pub nofap: Arc<NofapService>,
+    /// The service's view of this state (kept so a stored or removed key is seen at once).
+    pub(crate) nofap_env: Arc<EngineEnv>,
 }
 
 impl EngineState {
@@ -109,6 +111,7 @@ impl EngineState {
             update,
             focus: Mutex::new(focus),
             nofap,
+            nofap_env: env.clone(),
         });
         env.bind(Arc::downgrade(&state));
         state

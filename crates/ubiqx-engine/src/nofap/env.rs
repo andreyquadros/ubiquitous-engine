@@ -37,6 +37,11 @@ impl EngineEnv {
         let _ = self.state.set(state);
     }
 
+    /// A key was stored or removed: the secret store is asked again at once.
+    pub fn forget_key(&self) {
+        *self.key.lock() = None;
+    }
+
     fn has_key(&self, state: &EngineState, provider: AiProvider) -> bool {
         let now = state.now();
         let mut cached = self.key.lock();

@@ -24,6 +24,13 @@ use ubiqx_nofap::sampling::{self, CheckError, Outcome, SampleEvent, Stage, Windo
 use super::cards::{self, CardContext, Outbox, ASK_CLOSE_SECS};
 use super::{error_class, forget_old, salt_of, DisplaySession, InFlight, NofapService};
 
+/// A key the provider rejected three times switches the check off; it is tried again
+/// after this long.
+pub const KEY_RETRY_SECS: i64 = 900;
+/// A check that was found not ready is asked about again after this long, not in every
+/// pass (readiness reads the ledger and the permission).
+pub const NOT_READY_FOR_SECS: i64 = 10;
+
 /// One check the guard asked for. It holds the "one check at a time" mark: dropping the
 /// job, run or not, lets the next check start.
 pub struct VisionJob {
@@ -130,19 +137,52 @@ impl NofapService {
     /// Another provider, or another answer to "is it usable", since the sampler last ran:
     /// what it remembers (rejected keys, backoff) belonged to the old one.
     pub(crate) fn note_provider(&self, env: &NofapEnvSnapshot) {
+        let now = self.now();
         let seen = (env.provider, env.ai);
         let changed = {
             let mut rt = self.rt.lock();
-            let changed = rt.provider_seen.is_some_and(|before| before != seen);
+            let mut changed = rt.provider_seen.is_some_and(|before| before != seen);
             rt.provider_seen = Some(seen);
+            // A key the provider rejected is tried again after a while: the user may
+            // have put it right at the provider's (credit, a re-enabled key), and nothing
+            // here would learn of it otherwise.
+            if rt.sampler.key_rejected() {
+                match rt.rejected_at {
+                    None => rt.rejected_at = Some(now),
+                    Some(at) => {
+                        changed |= !(0..KEY_RETRY_SECS).contains(&(now - at).num_seconds());
+                    }
+                }
+            }
             if changed {
                 rt.sampler.clear();
                 rt.recheck.clear();
+                rt.rejected_at = None;
+                rt.not_ready_at = None;
             }
             changed
         };
         if changed {
             self.seed_day_count();
+            self.refresh_status();
+        }
+    }
+
+    /// The host changed its AI settings (a key was stored or removed, another provider
+    /// selected): what the sampler remembers about the old one is forgotten at once,
+    /// instead of when the guard next notices.
+    pub fn ai_settings_changed(&self) {
+        {
+            let mut rt = self.rt.lock();
+            rt.sampler.clear();
+            rt.recheck.clear();
+            rt.rejected_at = None;
+            rt.not_ready_at = None;
+            rt.provider_seen = None;
+        }
+        self.seed_day_count();
+        if self.enabled() {
+            self.refresh_status();
         }
     }
 
