@@ -35,6 +35,8 @@ pub const NOT_READY_FOR_SECS: i64 = 10;
 /// job, run or not, lets the next check start.
 pub struct VisionJob {
     pub(crate) key: u64,
+    /// The key the tracker knows the window by when it has no host.
+    pub(crate) window_key: u64,
     pub(crate) kind: WindowKind,
     pub(crate) window_id: u32,
     pub(crate) app_id: String,
@@ -298,6 +300,7 @@ impl NofapService {
                         // An answer other than `none` is a signal for that window: the
                         // tracker takes no productivity screenshot of it for ten minutes.
                         rt.signals.insert(job.key, now);
+                        rt.signals.insert(job.window_key, now);
                         forget_old(&mut rt.signals, now);
                     }
                     was
@@ -398,6 +401,7 @@ impl NofapService {
                 );
             }
             rt.hits.insert(job.key, now);
+            rt.hits.insert(job.window_key, now);
             forget_old(&mut rt.hits, now);
             rt.sampler.exception_only(job.key, &day)
         };

@@ -43,9 +43,23 @@ struct Front {
     has_url: bool,
     /// The address could not be read because the permission is missing.
     denied: bool,
+    /// The host of the page, when the address is an ordinary one ([`page_of`]).
     host: Option<String>,
+    /// What two reads of the address are compared by: the host, or the address itself.
+    page: Option<String>,
     verdict: Option<Verdict>,
     path_signal: bool,
+}
+
+/// What a read address is about: the host of the page, and an identity to compare two
+/// reads by. A reader view or a source view shows a page under the browser's own scheme
+/// (`about:reader?url=…`, `view-source:…`): the matcher judges the page it shows, but the
+/// text that stands where a host would is not one, so no card or request may name it.
+/// The host is taken only when judging it alone gives the verdict of the whole address.
+pub(crate) fn page_of(matcher: &Matcher, url: &str, verdict: Verdict) -> (Option<String>, String) {
+    let host = normalize_host(url).filter(|host| matcher.verdict(host) == verdict);
+    let page = host.clone().unwrap_or_else(|| url.trim().to_owned());
+    (host, page)
 }
 
 impl Front {
@@ -60,7 +74,7 @@ impl Front {
 
     fn key(&self) -> u64 {
         context_key(
-            self.host.as_deref(),
+            self.page.as_deref(),
             &self.window.app_id,
             &self.window.window_title,
         )
@@ -143,8 +157,16 @@ impl NofapService {
             }
             None => (None, false),
         };
+        let (host, page) = match (url.as_deref(), verdict) {
+            (Some(url), Some(verdict)) => {
+                let (host, page) = page_of(matcher, url, verdict);
+                (host, Some(page))
+            }
+            _ => (None, None),
+        };
         Front {
-            host: url.as_deref().and_then(normalize_host),
+            host,
+            page,
             has_url: url.is_some(),
             window,
             supported,
@@ -200,9 +222,10 @@ impl NofapService {
         source: BlockSource,
         now: DateTime<Utc>,
     ) -> CoreResult<GuardOutcome> {
-        let Some(host) = front.host.as_deref() else {
+        let Some(page) = front.page.as_deref() else {
             return Ok(GuardOutcome::default());
         };
+        let host = front.host.as_deref();
         let window = &front.window;
         let key = front.key();
         if !self.rt.lock().confirmer.observe(&window.app_id, key) {
@@ -212,19 +235,18 @@ impl NofapService {
 
         // Read again, immediately before acting: on Windows the action is a keystroke into
         // whatever is active, and the first read may have come from the resolver's cache.
-        let fresh_host = self
+        let fresh_page = self
             .deps
             .urls
             .resolve_fresh(window)
             .ok()
             .flatten()
-            .as_deref()
-            .and_then(normalize_host);
+            .map(|url| page_of(matcher, &url, matcher.verdict_for_url(&url).0).1);
         let still_front = self.deps.activity.peek_foreground()?.is_some_and(|again| {
             again.app_id == window.app_id
                 && (window.window_id.is_none() || again.window_id == window.window_id)
         });
-        if !still_front || fresh_host.as_deref() != Some(host) {
+        if !still_front || fresh_page.as_deref() != Some(page) {
             self.rt.lock().confirmer.clear();
             return Ok(GuardOutcome::default());
         }
@@ -237,7 +259,7 @@ impl NofapService {
         }
 
         let (day, _) = self.day_hour(now);
-        let in_hosts_block = matcher.in_hosts_tier(host);
+        let in_hosts_block = host.is_some_and(|host| matcher.in_hosts_tier(host));
         let (step, discreet, rotation, bypass) = {
             let mut rt = self.rt.lock();
             let step = rt.episodes.observe(now);
@@ -269,7 +291,8 @@ impl NofapService {
             ..Outbox::default()
         };
         if let Some(which) = step.card {
-            let extra = self.correction_button(source);
+            // A correction names the host; a page without one (a reader view) gets none.
+            let extra = host.and_then(|_| self.correction_button(source));
             let repeat = which == EpisodeCard::Repeat;
             let card = cards::blocked(
                 repeat,
@@ -282,7 +305,7 @@ impl NofapService {
             let context = CardContext {
                 key: Some(key),
                 app_id: Some(window.app_id.clone()),
-                host: Some(host.to_owned()),
+                host: host.map(str::to_owned),
                 window_id: window.window_id,
                 browser: true,
                 source: Some(source),
@@ -342,6 +365,8 @@ impl NofapService {
         let window = &front.window;
         let kind = front.kind();
         let key = front.key();
+        // The tracker knows a window without a host by its application and title.
+        let window_key = context_key(None, &window.app_id, &window.window_title);
         let (prefs, seen, enabled_at, delay_secs) = {
             let mut rt = self.rt.lock();
             rt.confirmer.clear();
@@ -372,6 +397,7 @@ impl NofapService {
             sampling::record(&mut rt.sampler, key, SampleEvent::Front, &day, now);
             if ctx.local_signal() {
                 rt.signals.insert(key, now);
+                rt.signals.insert(window_key, now);
                 forget_old(&mut rt.signals, now);
             }
             let decision = sampling::decide(&ctx, &rt.sampler, &day, now);
@@ -408,6 +434,7 @@ impl NofapService {
             hit: false,
             job: Some(VisionJob {
                 key,
+                window_key,
                 kind,
                 window_id,
                 app_id: window.app_id.clone(),

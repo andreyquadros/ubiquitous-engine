@@ -27,6 +27,7 @@ use ubiqx_nofap::sampling::{self, NotItEffect, SampleEvent, SNOOZE_SECS};
 use ubiqx_nofap::{help, messages};
 
 use super::cards::{self, CardContext, Outbox, AWAY_FLOW_SECS, SURF_FLOW_SECS};
+use super::guard::page_of;
 use super::{
     context_key, ensure_salt, error_class, recent, salt_of, unreadable_config, NofapService,
     Runtime, SystemMemory,
@@ -857,13 +858,21 @@ impl NofapService {
         if !rt.config.enabled {
             return false;
         }
-        let host = sample.url.as_deref().and_then(normalize_host);
-        let blocked = match (&rt.matcher, sample.url.as_deref()) {
-            (Some(matcher), Some(url)) => matcher.verdict_for_url(url).0.is_blocked(),
-            _ => false,
+        // The same reading of the address as the guard's, so both name the window alike.
+        let judged = match (&rt.matcher, sample.url.as_deref()) {
+            (Some(matcher), Some(url)) => {
+                let verdict = matcher.verdict_for_url(url).0;
+                Some((verdict, page_of(matcher, url, verdict).1))
+            }
+            _ => None,
         };
-        let key = context_key(host.as_deref(), &sample.app_id, &sample.window_title);
-        blocked || recent(rt.hits.get(&key), now)
+        let blocked = judged
+            .as_ref()
+            .is_some_and(|(verdict, _)| verdict.is_blocked());
+        let page = judged.as_ref().map(|(_, page)| page.as_str());
+        let key = context_key(page, &sample.app_id, &sample.window_title);
+        let window_key = context_key(None, &sample.app_id, &sample.window_title);
+        blocked || recent(rt.hits.get(&key), now) || recent(rt.hits.get(&window_key), now)
     }
 
     /// Whether the tracker must not take a productivity screenshot of this window: its
@@ -884,11 +893,15 @@ impl NofapService {
             ),
             _ => false,
         };
-        let key = context_key(host.as_deref(), app_id, title);
+        let keys = [
+            context_key(host.as_deref(), app_id, title),
+            context_key(None, app_id, title),
+        ];
         by_host
             || heuristics::title_signal(title)
-            || recent(rt.hits.get(&key), now)
-            || recent(rt.signals.get(&key), now)
+            || keys
+                .iter()
+                .any(|key| recent(rt.hits.get(key), now) || recent(rt.signals.get(key), now))
     }
 
     /// The language of the host, for the tray labels (`ubiqx_nofap::messages`).

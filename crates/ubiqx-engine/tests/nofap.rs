@@ -3655,3 +3655,66 @@ async fn after_a_restart_everything_that_was_stored_is_back() {
     // The running time a request needs is counted again from what was stored.
     assert!(restarted.confirm_pending(&waiting.id).is_err());
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_reader_or_source_view_of_a_blocked_page_is_closed_and_names_no_host() {
+    let h = harness().await;
+    h.enable(false);
+    let views = [
+        format!("view-source:https://{}/pagina", listed()),
+        format!("chrome-distiller://abc123/?url=https://{}/pagina", listed()),
+        // The address bar shows it without a scheme, with another address in its query.
+        format!("{}/entrar?next=https://{UNKNOWN}/", listed()),
+        format!("view-source:https://{KEYWORD}/"),
+    ];
+    for (index, url) in views.iter().enumerate() {
+        h.advance(200);
+        h.foreground.set(
+            window("Google Chrome", CHROME, TAB_TITLE, Some(7)),
+            Some(url),
+        );
+        assert!(h.two_passes(), "{url}");
+        assert_eq!(h.closes(), index + 1, "{url}");
+    }
+    // The card of the keyword block in a source view has no correction button: the text
+    // that stands where a host would is not one, and no request may name it.
+    let card = h.cards().pop().unwrap();
+    assert_eq!(card.actions, vec![CardAction::Support, CardAction::Ok]);
+    // The tracker records such a sample as private, like any blocked page.
+    let sample = ActivitySample {
+        at: h.clock.now(),
+        app_name: "Google Chrome".into(),
+        app_id: CHROME.into(),
+        window_title: TAB_TITLE.into(),
+        url: Some(views[0].clone()),
+        idle_secs: Some(0.0),
+        window_id: Some(7),
+    };
+    assert!(h.service.redacts(&sample));
+
+    // A stale fresh read protects these too: the view moved on, nothing is closed.
+    h.advance(200);
+    h.foreground.set(
+        window("Google Chrome", CHROME, TAB_TITLE, Some(7)),
+        Some(&views[0]),
+    );
+    *h.foreground.fresh.lock() = Some(Some(format!("view-source:https://{UNKNOWN}/")));
+    let closes = h.closes();
+    assert!(!h.two_passes());
+    assert_eq!(h.closes(), closes);
+
+    // Browser-internal pages are not sites.
+    *h.foreground.fresh.lock() = None;
+    for url in [
+        "about:blank",
+        "chrome://settings/",
+        "file:///home/ana/notas.html",
+    ] {
+        h.foreground.set(
+            window("Google Chrome", CHROME, TAB_TITLE, Some(7)),
+            Some(url),
+        );
+        assert!(!h.two_passes(), "{url}");
+    }
+    assert_eq!(h.closes(), closes);
+}
