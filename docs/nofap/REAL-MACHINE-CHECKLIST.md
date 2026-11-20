@@ -35,7 +35,7 @@ the gate as it stands; the list `OPEN` in the tests of `gate.rs` names the same 
 | macOS | resolver | **yes** | "feat(nofap): the gate opens (macOS, hosts) and (macOS, resolver)" | section 3, run 1, `macos-latest` (green) |
 | macOS | policies | no | | item 9 |
 | Windows | hosts | **yes** | "feat(nofap): the gate opens (Windows, hosts)" | section 3, run 6, `windows-latest` (green); runs 2 to 5 for what had to be fixed first |
-| Windows | resolver | no | | Windows run of section 3; item 6 (execution policy) |
+| Windows | resolver | **yes** | "feat(nofap): the gate opens (Windows, resolver)" | section 3, run 6, `windows-latest` (green). Not shown by a runner: a machine whose PowerShell execution policy is the default of Windows Home (item 6, person); if the modules do not load there, the tier reads "unreadable" and nothing is changed |
 | Windows | policies | no | | item 9 |
 
 Testers can open tiers on their own machine without a new build:
