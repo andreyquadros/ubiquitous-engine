@@ -388,6 +388,12 @@ pub struct Internal {
 pub struct ExclusionSeen {
     pub key: String,
     pub first_seen_at: DateTime<Utc>,
+    /// Seconds the app was observed running since the first sighting (grows by at most
+    /// 150 s per verify pass and stops at 900, whatever the clock says), so that setting
+    /// the clock forward does not end the wait of a new entry (see
+    /// `ubiqx_nofap::exclusions`). Absent in data stored before the field existed: zero.
+    #[serde(default)]
+    pub observed_secs: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1762,6 +1768,7 @@ mod tests {
                 exclusions_seen: vec![ExclusionSeen {
                     key: "app:com.example.bank".into(),
                     first_seen_at: at(9),
+                    observed_secs: 450,
                 }],
                 last_help_at: Some(at(9)),
                 last_reminder_at: None,
@@ -1774,6 +1781,36 @@ mod tests {
         };
         let text = serde_json::to_string(&config).unwrap();
         assert_eq!(serde_json::from_str::<NofapConfig>(&text).unwrap(), config);
+    }
+
+    #[test]
+    fn an_exclusion_stored_before_the_observed_time_existed_still_reads() {
+        // What a build before the field wrote: no `observed_secs`.
+        let config: NofapConfig = serde_json::from_value(json!({
+            "enabled": true,
+            "internal": {
+                "exclusions_seen": [
+                    { "key": "app:com.example.bank", "first_seen_at": "2026-09-17T15:00:00Z" },
+                    {
+                        "key": "domain:intranet.example.com",
+                        "first_seen_at": "2026-09-17T15:10:00Z",
+                        "observed_secs": 300
+                    }
+                ]
+            }
+        }))
+        .unwrap();
+        let seen = &config.internal.exclusions_seen;
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0].key, "app:com.example.bank");
+        assert_eq!(seen[0].observed_secs, 0, "an absent field is zero");
+        assert_eq!(seen[1].observed_secs, 300);
+        // The field is written back, so the next read does not depend on the default.
+        let written = serde_json::to_value(&config).unwrap();
+        assert_eq!(
+            written["internal"]["exclusions_seen"][0]["observed_secs"],
+            json!(0)
+        );
     }
 
     #[test]
