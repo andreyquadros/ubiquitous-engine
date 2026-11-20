@@ -48,6 +48,16 @@ fn drifted(state: &TierState) -> bool {
     matches!(state, TierState::Changed | TierState::Missing)
 }
 
+/// Whether a tier the user chose was last read as changed or missing.
+fn in_drift(rt: &Runtime) -> bool {
+    let chosen = &rt.config.system;
+    rt.system.assessment.as_ref().is_some_and(|found| {
+        (chosen.hosts && drifted(&found.hosts))
+            || (chosen.resolver.is_some() && drifted(&found.resolver))
+            || (chosen.policies && drifted(&found.policies))
+    })
+}
+
 /// What a tier the user chose shows when this machine cannot have it at all.
 fn overlay(found: TierState, chosen: bool, capability: &TierCapability) -> TierState {
     match capability {
@@ -531,14 +541,10 @@ impl NofapService {
     /// tampering, nothing is counted against the user and no timer starts.
     fn drift_and_outage(&self, now: DateTime<Utc>, outbox: &mut Outbox) -> CoreResult<()> {
         let mut rt = self.rt.lock();
-        let Some(found) = rt.system.assessment.clone() else {
+        if rt.system.assessment.is_none() {
             return Ok(());
-        };
-        let config = &rt.config;
-        let drift = (config.system.hosts && drifted(&found.hosts))
-            || (config.system.resolver.is_some() && drifted(&found.resolver))
-            || (config.system.policies && drifted(&found.policies));
-        if !drift {
+        }
+        if !in_drift(&rt) {
             rt.system.in_drift = false;
             rt.system.drift_carded = false;
         } else {
@@ -576,7 +582,11 @@ impl NofapService {
             }
         }
 
-        let unreachable = found.issues.contains(&Issue::ResolverUnreachable);
+        let unreachable = rt
+            .system
+            .assessment
+            .as_ref()
+            .is_some_and(|found| found.issues.contains(&Issue::ResolverUnreachable));
         if !unreachable {
             rt.system.unreachable_carded = false;
         } else if !rt.system.unreachable_carded && rt.cards.may_show(now) {
@@ -770,8 +780,19 @@ impl NofapService {
             }
         }
         self.read_system(true, true)?;
+        self.end_repaired_drift();
         self.refresh_status();
         Ok(outcome)
+    }
+
+    /// A drift ends when the machine is read without one, also right after "Restaurar":
+    /// what is taken out again before the next verify pass is a drift of its own.
+    fn end_repaired_drift(&self) {
+        let mut rt = self.rt.lock();
+        if !in_drift(&rt) {
+            rt.system.in_drift = false;
+            rt.system.drift_carded = false;
+        }
     }
 
     /// Records the DNS every interface had before the resolver tier is applied, also the

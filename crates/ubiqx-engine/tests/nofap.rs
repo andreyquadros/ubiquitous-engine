@@ -1370,7 +1370,20 @@ async fn s13_what_is_never_captured() {
         chrome("Fotos", Some(7)),
         Some(&format!("https://{POPULAR}/wiki/Pornography")),
     );
-    assert!(h.job_within(30).is_some());
+    let job = h.job_within(30).expect("a signal in the address");
+    let closed_before = h.closes();
+
+    // A positive there closes the tab and teaches nothing: a well-known site is never
+    // put on the list by one picture.
+    h.detector.push(Ok(explicit(Confidence::High)));
+    assert!(h.service.vision_check(job).await.unwrap().hit);
+    assert_eq!(h.closes(), closed_before + 1);
+    assert_eq!(h.learned(), 0);
+    let card = h.cards_of(CardKind::VisionClosed).pop().expect("the card");
+    assert_eq!(card.note_key, None, "nothing was added");
+    h.browse(POPULAR);
+    assert!(!h.two_passes());
+    assert_eq!(h.closes(), closed_before + 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2062,6 +2075,38 @@ async fn s21_drift_is_said_once_and_restoring_the_network_removes_only_the_resol
     assert_eq!(h.service.status().hosts, TierState::Applied);
     assert_eq!(h.service.status().overall, Overall::Protected);
 
+    // The block is taken out again within the six hours two such cards keep between
+    // them: counted, shown on the page, no card.
+    h.advance(3600);
+    h.shield
+        .edit_observation(|machine| machine.hosts.text = Some("127.0.0.1 localhost\n".into()));
+    h.service
+        .verify_pass_after(Duration::from_secs(120))
+        .unwrap();
+    assert_eq!(h.service.status().hosts, TierState::Missing);
+    assert_eq!(h.counter(DayKind::Drift), 2);
+    assert_eq!(h.cards_of(CardKind::Drift).len(), 1);
+    assert_eq!(h.service.system_apply().unwrap(), ApplyOutcome::Applied);
+
+    // A later drift has its card, and the card is once per drift: the same drift does
+    // not say it again when the six hours have passed.
+    h.advance(7 * 3600);
+    h.shield
+        .edit_observation(|machine| machine.hosts.text = Some("127.0.0.1 localhost\n".into()));
+    h.service
+        .verify_pass_after(Duration::from_secs(120))
+        .unwrap();
+    assert_eq!(h.cards_of(CardKind::Drift).len(), 2);
+    h.advance(7 * 3600);
+    h.service
+        .verify_pass_after(Duration::from_secs(120))
+        .unwrap();
+    assert_eq!(h.service.status().hosts, TierState::Missing);
+    assert_eq!(h.cards_of(CardKind::Drift).len(), 2);
+    assert_eq!(h.counter(DayKind::Drift), 3);
+    assert_eq!(h.service.system_apply().unwrap(), ApplyOutcome::Applied);
+    assert_eq!(h.service.status().overall, Overall::Protected);
+
     // "Restaurar minha rede": the resolver goes, the hosts block stays, nothing waits.
     h.shield.clear_calls();
     assert_eq!(h.service.restore_network().unwrap(), ApplyOutcome::Applied);
@@ -2504,14 +2549,29 @@ async fn a_password_prompt_that_stays_open_does_not_stop_the_guard() {
         std::thread::sleep(Duration::from_millis(5));
     }
 
-    // Meanwhile a listed tab is still closed and the page still gets its answer.
+    // Meanwhile a listed tab is still closed and the page still gets its answer. The
+    // passes run on their own thread: a guard that waited for the prompt would otherwise
+    // hang the suite instead of failing it.
     h.browse(listed());
-    assert!(h.two_passes());
-    assert_eq!(h.closes(), 1);
-    assert!(h.service.view().unwrap().config.enabled);
-    assert!(!applying.is_finished());
-
+    let (answered, answer) = std::sync::mpsc::channel();
+    let service = h.service.clone();
+    std::thread::spawn(move || {
+        service.guard_pass().unwrap();
+        let hit = service.guard_pass().unwrap().hit;
+        let enabled = service.view().unwrap().config.enabled;
+        let _ = answered.send((hit, enabled));
+    });
+    let meanwhile = answer.recv_timeout(Duration::from_secs(20));
+    let still_open = !applying.is_finished();
     release.send(()).unwrap();
+    assert_eq!(
+        meanwhile,
+        Ok((true, true)),
+        "the guard and the page waited for the prompt"
+    );
+    assert_eq!(h.closes(), 1);
+    assert!(still_open);
+
     assert_eq!(applying.join().unwrap().unwrap(), ApplyOutcome::Applied);
     assert_eq!(h.service.status().hosts, TierState::Applied);
 }
@@ -2564,28 +2624,53 @@ async fn a_declined_prompt_leaves_the_module_on_and_the_tier_not_applied() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_gated_tier_is_shown_as_such_and_never_sent() {
+    // A pair the gate table of this build still keeps closed (the table changes as the
+    // systems' checks pass; when nothing is closed any more there is nothing gated to show).
+    let closed = ubiqx_nofap::gate::TIER_GATE
+        .iter()
+        .find(|(_, _, open)| !open)
+        .map(|(os, tier, _)| (*os, *tier));
+    let Some((os, tier)) = closed else {
+        return;
+    };
     let h = harness_with(Setup {
-        os: Os::Linux,
+        os,
         ..Setup::default()
     })
     .await;
-    // What a build with the gate closed reports for every tier.
+    // What the real system layer reports for a closed tier: gated, and not overridden.
+    let capability = |of: Tier| {
+        if of == tier {
+            TierCapability::Gated
+        } else {
+            TierCapability::Available
+        }
+    };
     h.shield.set_capabilities(SystemCapabilities {
-        os: Some(Os::Linux),
-        hosts: TierCapability::Gated,
-        resolver: TierCapability::Gated,
-        policies: TierCapability::Gated,
-        unverified: Vec::new(),
+        os: Some(os),
+        hosts: capability(Tier::Hosts),
+        resolver: capability(Tier::Resolver),
+        policies: capability(Tier::Policies),
+        unverified: Tier::ALL
+            .into_iter()
+            .filter(|other| *other != tier)
+            .collect(),
     });
-    if Tier::ALL
-        .iter()
-        .any(|tier| ubiqx_nofap::gate::tier_enabled(Os::Linux, *tier))
-    {
-        // A build whose table opens a Linux tier has nothing gated to show here.
-        return;
-    }
-    let view = h.service.enable(with_hosts(false)).unwrap();
-    assert_eq!(view.status.hosts, TierState::Gated);
+    let view = h
+        .service
+        .enable(EnableOptions {
+            hosts: tier == Tier::Hosts,
+            resolver: (tier == Tier::Resolver).then_some(ResolverId::CloudflareFamily),
+            policies: tier == Tier::Policies,
+            ..options(false)
+        })
+        .unwrap();
+    let state = match tier {
+        Tier::Hosts => view.status.hosts.clone(),
+        Tier::Resolver => view.status.resolver.clone(),
+        Tier::Policies => view.status.policies.clone(),
+    };
+    assert_eq!(state, TierState::Gated, "{os:?} {tier:?}");
     assert_eq!(
         view.status.overall,
         Overall::Protected,
@@ -2600,6 +2685,13 @@ async fn a_gated_tier_is_shown_as_such_and_never_sent() {
         h.service.system_apply().unwrap(),
         ApplyOutcome::Unavailable(reason::GATED.into())
     );
+    assert!(h.service.system_preview().unwrap().is_empty());
+    assert!(!h
+        .shield
+        .calls()
+        .iter()
+        .any(|call| matches!(call, SystemCall::Apply(_) | SystemCall::Remove(..))));
+    assert!(!h.service.system_applied());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
