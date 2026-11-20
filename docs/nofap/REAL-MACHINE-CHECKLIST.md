@@ -20,14 +20,15 @@ Rules for filling it in:
 
 ## 1. Which system tiers are open
 
-The gate (`ubiqx_nofap::gate::TIER_GATE`, design 1.8) lands with all nine entries closed.
+The gate (`ubiqx_nofap::gate::TIER_GATE`, design 1.8) landed with all nine entries closed.
 **A build in which every entry is closed blocks nothing at DNS level**: only the in-app guard
 and the AI check work. An entry is opened in its own small commit, which touches only
-`gate.rs`, its test and this table, after the evidence named here exists.
+`gate.rs`, its test and this file, after the evidence named here exists. The table below is
+the gate as it stands; the list `OPEN` in the tests of `gate.rs` names the same entries.
 
-| OS | Tier | Open? | Opened by (commit) | Evidence |
+| OS | Tier | Open? | Opened by (commit subject) | Evidence |
 |---|---|---|---|---|
-| Linux | hosts | no | | section 2, or the Ubuntu run of section 3 |
+| Linux | hosts | **yes** | "feat(nofap): the gate opens (Linux, hosts)" | section 2 (the sandbox run, green); section 3, run 1, `ubuntu-latest` (green) |
 | Linux | resolver | no | | Ubuntu run of section 3 |
 | Linux | policies | no | | item 9 |
 | macOS | hosts | no | | macOS run of section 3 |
@@ -57,32 +58,98 @@ and the exit code is 0. The script saves the hosts file first and puts it back i
 anything goes wrong; it refuses to start on a machine that already carries a block, a state
 directory or a resolver drop-in of the product.
 
-- [ ] Run done
-  - Date:
-  - Commit:
-  - Exit code:
-  - Output (paste all of it, from `system-smoke: os=linux` to the `GREEN` or `RED` line):
+- [x] Run done
+  - Date: 2026-11-20, 01:48 UTC
+  - Commit: `af28c33` (the helper built from it: `cargo build -p ubiqx-platform --bin
+    ubiqx-shield-helper`, debug profile; its SHA-256 is in the last line of the output)
+  - Machine: the build sandbox, Linux, root, `/etc/hosts` a regular file (81 bytes, `0:0`,
+    mode 644), `hosts: files dns` in `/etc/nsswitch.conf`, no systemd-resolved, no DNS
+  - Command: `UBIQX_SHIELD_SMOKE=1 scripts/nofap/system-smoke.sh --tiers hosts`
+  - Exit code: 0
+  - Checked outside the script: `sha256sum /etc/hosts` before and after the run is
+    `d343af6b2bafa7b0d5bce950b58eb3cede0ebbfd7aa6619a0b184b8535abd2b5`, and `cmp` with a copy
+    taken before the run reports no difference; owner, group and mode are unchanged;
+    `/etc/resolv.conf` has the same SHA-256 as before; `/var/lib/ubiqx-shield` does not
+    exist; `find /etc /var/lib -newer <stamp>` lists only `/etc`, `/etc/hosts` and
+    `/var/lib` (the hosts file was replaced twice, the state directory created and deleted)
+  - What this run cannot show: `example.com` does not resolve in the sandbox, so "another
+    name still resolves" was skipped with a note; the Ubuntu run of section 3 covers it
+  - Output (all of it):
 
 ```text
-(paste here)
+system-smoke: os=linux tiers=hosts helper=/home/user/ubiquitous-engine/target/debug/ubiqx-shield-helper (flag form)
+system-smoke: saved: /etc/hosts (81 bytes), the DNS configuration and the status
+system-smoke: apply
+system-smoke: checking what was applied
+  ok    status: the state file is readable
+  ok    state: no tier is reported as failed
+  ok    the state directory exists and is a directory, not a link
+  ok    the state directory is root's and nobody else can write to it
+  ok    the state file is readable by every account
+  ok    hosts: every byte of the saved file is still in front, unchanged
+  ok    hosts: the block uses the line ending of the file (LF)
+  ok    hosts: the block starts right after the saved bytes, on a line of its own
+  ok    hosts: the END line closes the file, ended as the saved file was
+  note  hosts: the block declares sha256=03d06771ab2c01c4ff19645e8f532e8fc9e7fadfee6e8fa2db044a8be68439b4 names=20000
+  ok    hosts: the declared hash is the hash of the lines between the markers
+  ok    hosts: the declared count is the number of names (20000)
+  ok    hosts: between 2 and 20000 names
+  ok    hosts: the canary is the first name
+  ok    state: records the hash and the count of the block
+  ok    status: the unprivileged read sees the block
+  ok    status: no hosts error
+  ok    state: the owner 'shield' wants the hosts tier
+  ok    the canary resolves to the null address through the operating system
+  ok    a name of the list (xhamster.com) resolves to the null address
+  note  example.com did not resolve on this machine before the run, so it is not asked for with the tiers applied
+system-smoke: remove --owner all --scope all
+system-smoke: checking the restore
+  ok    hosts: byte for byte the saved file (81 bytes)
+  ok    hosts: owner, group and mode are what they were
+  ok    the state directory is gone
+  ok    status: no state file
+  ok    status: the unprivileged read sees no block
+  ok    DNS: the configuration is what it was before the run
+  ok    the canary no longer resolves
+  ok    the listed name (xhamster.com) is no longer pinned to the null address
+  note  example.com did not resolve on this machine before the run, so it is not asked for after the removal
+system-smoke: GREEN os=linux tiers=hosts commit=af28c33 helper_sha256=f0fbb8205d1429c1788f0d3b14e40e5eb4baf0661d937ec9238adf26a53780dd
 ```
 
 ## 3. The CI smoke runs
 
-One run per operating system of the job `nofap-system-smoke`, on a commit of this branch.
-The job is `continue-on-error` until its first green run, so a red run does not fail the
-workflow: read the job's own result, not the workflow's.
+The workflow `.github/workflows/nofap-smoke.yml` (job `nofap-system-smoke`, one per
+operating system) runs on every push to the branch that changes the platform crate, the
+`ubiqx-nofap` crate, `scripts/nofap/` or the workflow. It builds the helper binary and runs
+the smoke script as administrator, tiers hosts and resolver. It is a workflow of its own,
+with its own concurrency group, so it blocks nothing else and is not cancelled with the main
+CI; a red job is a red job (there is no `continue-on-error`). After the script, a step of
+the job itself compares the hosts file with a copy it took before, whatever the script said.
 
 Neither script had run against a real helper when it was written, and the Windows one had
-never been parsed by PowerShell (only by a grammar outside PowerShell). A first run that
-stops with a PowerShell or Python error naming a line of the script is a defect of the
-script, not evidence about the helper: fix the script and run again before filling the table.
+never been parsed by PowerShell (only by a grammar outside PowerShell). A run that stops
+with a PowerShell or Python error naming a line of the script is a defect of the script, not
+evidence about the helper: it is logged below as red, fixed, and run again.
 
-| Runner | Tiers | Result | Run URL | Commit | `GREEN` line of the log |
+**The latest run per system** (run URLs are
+`https://github.com/andreyquadros/ubiquitous-engine/actions/runs/<run id>`, a job's log is at
+`.../runs/<run id>/job/<job id>`):
+
+| Runner | Tiers | Result | Run, job | Commit | `GREEN` line of the log |
 |---|---|---|---|---|---|
-| `ubuntu-latest` | hosts, resolver | | | | |
-| `macos-latest` | hosts, resolver | | | | |
-| `windows-latest` | hosts, resolver | | | | |
+| `ubuntu-latest` (Ubuntu 26.04.1, systemd-resolved active, `/etc/resolv.conf` the stub) | hosts, resolver | **green** | run 1: `44656118455`, job `136022634937` | `af28c33` | `system-smoke: GREEN os=linux tiers=hosts,resolver commit=af28c33 helper_sha256=e4246d87b31de0b5c107a2deb05ea9b74a764a586887d7b2142dbcc4851fe747` |
+| `macos-latest` (macOS 26.7.2, arm64, one network service, "Ethernet") | hosts, resolver | **green** | run 1: `44656118455`, job `136022634893` | `af28c33` | `system-smoke: GREEN os=macos tiers=hosts,resolver commit=af28c33 helper_sha256=21469f2b2d48e1f3108e191a3c48b5347bc035ecbaa699b4c8044e0608498c91` |
+| `windows-latest` (Windows Server 2025 Datacenter, PowerShell 7.6.9, execution policy `RemoteSigned` for the machine) | hosts, resolver | **red** | run 1: `44656118455`, job `136022634535` | `af28c33` | none: see the log of runs |
+
+### Log of every run
+
+One row per run and system, oldest first. "Changed afterwards" is what the result led to.
+
+| Run | Commit | System | Outcome | What the log shows | Changed afterwards |
+|---|---|---|---|---|---|
+| 1, `44656118455` | `af28c33` | `ubuntu-latest` | green | Every check `ok`, both tiers. Applied: the block of 20,000 names with the declared hash and count, the canary and `xhamster.com` resolve to the null address, the drop-in holds the four lines, systemd-resolved's global servers are the resolver's four addresses, `1.1.1.3` and `1.0.0.3` answer for `example.com` and refuse `xhamster.com`, the operating system resolves through the family resolver (`nudity.testcategory.com` is refused), `example.com` still resolves. Removed: the hosts file byte for byte the saved one (273 bytes) with its owner and mode, no state directory, DNS as before, the canary no longer resolves. One note: `/etc/systemd/resolved.conf.d` did not exist before and stays, empty. The job's own comparison of the hosts file: identical. | nothing |
+| 1, `44656118455` | `af28c33` | `macos-latest` | green | Every check `ok`, both tiers; the same list as on Ubuntu, with "'Ethernet' uses exactly the resolver's four addresses" and "every active interface reads as the resolver's set" for DNS. The hosts file (358 bytes) is byte for byte the saved one afterwards, owner and mode as before, DNS as before. The job's own comparison: identical. | nothing |
+| 1, `44656118455` | `af28c33` | `windows-latest` | red | The script stopped in its first step, before anything was changed: `Get-DnsClientServerAddress -InterfaceIndex 9 -AddressFamily IPv4` found no object. The runner has three adapters that are up, and one of them ("Ethernet 4", a Mellanox ConnectX-4 Lx virtual adapter, the accelerated-networking twin of "Ethernet 3") has no DNS client configuration at all. The helper's own scripts ask the same question per adapter with errors made terminating, so its full read would have failed (`unreadable`) and its set script would have stopped at that adapter. A real machine has such adapters too (a network card bound to a Hyper-V switch). The job's own comparison of the hosts file: identical; SDDL of the hosts file before: `O:SYG:SYD:AI(A;ID;FA;;;SY)(A;ID;FA;;;BA)(A;ID;0x1200a9;;;BU)(A;ID;0x1200a9;;;AC)(A;ID;0x1200a9;;;S-1-15-2-2)`. | The helper reads and sets DNS only on adapters that are up **and** have a DNS client configuration (`windows.rs`, with tests); the script does the same and names the adapters it leaves out. |
 
 Numbers the Windows run reports, and the constants they decide (design 2.1, 2.2):
 

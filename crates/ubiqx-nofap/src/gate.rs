@@ -2,11 +2,14 @@
 //! system until that system's checks have passed. A closed tier is shown as `Gated` and the
 //! helper refuses that section of a plan.
 //!
-//! Every entry lands `false`. An entry for `hosts` or `resolver` is flipped in the commit
-//! that follows a green run of the CI job `nofap-system-smoke` on that OS (or, for
-//! `(Linux, hosts)`, a green run of `scripts/nofap/system-smoke.sh --tiers hosts` in the
-//! build sandbox), with the evidence recorded in `docs/nofap/REAL-MACHINE-CHECKLIST.md`.
-//! An entry for `policies` is flipped only after the manual browser checks.
+//! An entry for `hosts` or `resolver` is opened in its own commit after a green run of the
+//! smoke job on that OS (`.github/workflows/nofap-smoke.yml`, which runs
+//! `scripts/nofap/system-smoke.sh` or `system-smoke.ps1` with the real helper as
+//! administrator); `(Linux, hosts)` also has a green run of the same script in the build
+//! sandbox. An entry for `policies` is opened only after the manual browser checks. The
+//! evidence of every open entry (the run, its commit, its output) is recorded in section 1
+//! of `docs/nofap/REAL-MACHINE-CHECKLIST.md`, and the test `OPEN` list below names the same
+//! entries: a flip changes the table, that list and the checklist together.
 
 use ubiqx_core::nofap::{Os, Tier};
 
@@ -18,7 +21,7 @@ pub const TIER_GATE: [(Os, Tier, bool); 9] = [
     (Os::Windows, Tier::Hosts, false),
     (Os::Windows, Tier::Resolver, false),
     (Os::Windows, Tier::Policies, false),
-    (Os::Linux, Tier::Hosts, false),
+    (Os::Linux, Tier::Hosts, true),
     (Os::Linux, Tier::Resolver, false),
     (Os::Linux, Tier::Policies, false),
 ];
@@ -96,6 +99,11 @@ impl Gate {
 mod tests {
     use super::*;
 
+    /// The entries that are open, each with its evidence in section 1 of
+    /// `docs/nofap/REAL-MACHINE-CHECKLIST.md`. Opening an entry means adding it here in
+    /// the commit that changes the table and records the run.
+    const OPEN: [(Os, Tier); 1] = [(Os::Linux, Tier::Hosts)];
+
     #[test]
     fn the_table_lists_every_pair_once() {
         for os in Os::ALL {
@@ -110,14 +118,23 @@ mod tests {
         assert_eq!(TIER_GATE.len(), Os::ALL.len() * Tier::ALL.len());
     }
 
-    /// The code lands with every entry closed. An entry is opened in the commit that
-    /// follows that system's checks (see the module documentation), and that commit
-    /// changes the expectation below for the entry it opens.
     #[test]
-    fn every_tier_gate_entry_is_false() {
+    fn the_open_entries_are_exactly_the_ones_with_recorded_evidence() {
         for (os, tier, open) in TIER_GATE {
-            assert!(!open, "{os:?} {tier:?} is open");
-            assert!(!tier_enabled(os, tier));
+            assert_eq!(open, OPEN.contains(&(os, tier)), "{os:?} {tier:?}");
+            assert_eq!(tier_enabled(os, tier), open, "{os:?} {tier:?}");
+        }
+        for (index, entry) in OPEN.iter().enumerate() {
+            assert!(!OPEN[..index].contains(entry), "{entry:?} is listed twice");
+        }
+    }
+
+    /// The policies tier needs a person in front of each browser (the "managed" banner,
+    /// `chrome://policy`, `about:policies`): no smoke run opens it.
+    #[test]
+    fn the_policies_tier_is_closed_on_every_system() {
+        for os in Os::ALL {
+            assert!(!tier_enabled(os, Tier::Policies), "{os:?}");
         }
     }
 
@@ -140,31 +157,70 @@ mod tests {
     }
 
     #[test]
-    fn a_gate_is_the_table_plus_the_override() {
-        let closed = Gate::new(Os::Linux, vec![]);
-        for tier in Tier::ALL {
-            assert!(!closed.open(tier));
-            assert!(!closed.is_unverified(tier));
+    fn a_gate_without_an_override_is_the_table() {
+        for os in Os::ALL {
+            let gate = Gate::new(os, vec![]);
+            assert_eq!(gate.unverified, vec![], "{os:?}");
+            assert_eq!(gate.unverified_arg(), None, "{os:?}");
+            for tier in Tier::ALL {
+                assert_eq!(gate.open(tier), tier_enabled(os, tier), "{os:?} {tier:?}");
+                assert!(!gate.is_unverified(tier), "{os:?} {tier:?}");
+            }
         }
-        assert_eq!(closed.unverified_arg(), None);
+    }
 
-        let gate = Gate::new(
-            Os::Windows,
-            vec![Tier::Resolver, Tier::Hosts, Tier::Resolver],
-        );
-        assert_eq!(gate.unverified, vec![Tier::Hosts, Tier::Resolver]);
-        assert!(gate.open(Tier::Hosts) && gate.open(Tier::Resolver));
-        assert!(!gate.open(Tier::Policies));
-        assert!(gate.is_unverified(Tier::Hosts));
-        assert!(!gate.is_unverified(Tier::Policies));
-        assert_eq!(gate.unverified_arg().as_deref(), Some("hosts,resolver"));
-        // The argument round-trips through the parser the helper uses.
+    #[test]
+    fn an_override_opens_what_the_table_keeps_closed_and_labels_only_that() {
+        for os in Os::ALL {
+            let closed: Vec<Tier> = Tier::ALL
+                .into_iter()
+                .filter(|tier| !tier_enabled(os, *tier))
+                .collect();
+            // Out of order and with a repeat: the gate keeps the order of `Tier::ALL`.
+            let gate = Gate::new(
+                os,
+                vec![Tier::Policies, Tier::Resolver, Tier::Hosts, Tier::Resolver],
+            );
+            assert_eq!(gate.unverified, closed, "{os:?}");
+            for tier in Tier::ALL {
+                assert!(gate.open(tier), "{os:?} {tier:?}");
+                assert_eq!(
+                    gate.is_unverified(tier),
+                    !tier_enabled(os, tier),
+                    "{os:?} {tier:?}"
+                );
+            }
+            let names: Vec<&str> = closed.iter().map(|tier| tier.as_str()).collect();
+            assert_eq!(gate.unverified_arg(), Some(names.join(",")), "{os:?}");
+            // The argument round-trips through the parser the helper uses.
+            assert_eq!(
+                Gate::new(os, parse_override(gate.unverified_arg().as_deref())),
+                gate
+            );
+        }
+        // One tier named: only that one opens, the others stay as the table has them.
+        let gate = Gate::new(Os::Windows, vec![Tier::Policies]);
+        assert_eq!(gate.unverified, vec![Tier::Policies]);
+        assert!(gate.open(Tier::Policies) && gate.is_unverified(Tier::Policies));
         assert_eq!(
-            Gate::new(
-                Os::Windows,
-                parse_override(gate.unverified_arg().as_deref())
-            ),
-            gate
+            gate.open(Tier::Hosts),
+            tier_enabled(Os::Windows, Tier::Hosts)
         );
+        assert!(!gate.is_unverified(Tier::Hosts));
+        assert_eq!(gate.unverified_arg().as_deref(), Some("policies"));
+    }
+
+    /// A tier the table opens is verified: an override that names it changes nothing, so
+    /// the page never labels it "em teste" and the helper is not handed `--unverified`.
+    #[test]
+    fn an_override_cannot_relabel_a_tier_the_table_opens() {
+        assert!(!OPEN.is_empty());
+        for (os, tier) in OPEN {
+            let gate = Gate::new(os, vec![tier]);
+            assert_eq!(gate, Gate::new(os, vec![]), "{os:?} {tier:?}");
+            assert!(gate.open(tier), "{os:?} {tier:?}");
+            assert!(!gate.is_unverified(tier), "{os:?} {tier:?}");
+            assert_eq!(gate.unverified_arg(), None, "{os:?} {tier:?}");
+        }
     }
 }
