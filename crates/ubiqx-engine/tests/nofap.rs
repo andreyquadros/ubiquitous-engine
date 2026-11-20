@@ -53,6 +53,8 @@ const SLACK: &str = "com.tinyspeck.slackmacgap";
 /// On no list and under no rule: an unknown site.
 const UNKNOWN: &str = "sitio-desconhecido.example";
 const UNKNOWN_2: &str = "outro-sitio.example";
+/// Unknown as well; the scenarios put it on ubiqX's privacy list.
+const EXCLUDED: &str = "banco-de-exemplo.example";
 /// Unknown, with a signal-grade word in its name.
 const SIGNAL: &str = "sexy-portal.example";
 const POPULAR: &str = "wikipedia.org";
@@ -677,6 +679,11 @@ fn the_names_mean_what_the_scenarios_assume() {
     let plain = Verdict::Unknown(HostClass::Plain { signal: false });
     assert_eq!(matcher.verdict(UNKNOWN), plain);
     assert_eq!(matcher.verdict(UNKNOWN_2), plain);
+    assert_eq!(matcher.verdict(EXCLUDED), plain);
+    assert_eq!(
+        ubiqx_nofap::sampling::window_kind(VLC, "VLC", false, false),
+        ubiqx_nofap::sampling::WindowKind::Media
+    );
     assert_eq!(
         matcher.verdict(SIGNAL),
         Verdict::Unknown(HostClass::Plain { signal: true })
@@ -1290,8 +1297,13 @@ async fn s12_another_app_is_hidden_and_quit_only_on_the_button() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn s13_what_is_never_captured() {
     let h = harness().await;
-    // On ubiqX's privacy list when the module is enabled: honoured at once.
-    h.settings_mut(|settings| settings.blocked_apps.push("Bloco de Notas".into()));
+    // On ubiqX's privacy lists when the module is enabled: honoured at once. A player and
+    // an unknown site would both be looked at if they were not on them.
+    h.settings_mut(|settings| {
+        settings.blocked_apps.push("Bloco de Notas".into());
+        settings.blocked_apps.push("VLC".into());
+        settings.blocked_domains.push(EXCLUDED.into());
+    });
     h.service
         .request(NofapChange::AddAllow {
             host: UNKNOWN_2.into(),
@@ -1341,6 +1353,21 @@ async fn s13_what_is_never_captured() {
             "excluded app",
             window("Bloco de Notas", "com.example.notas", "lista", Some(9)),
             None,
+        ),
+        (
+            "excluded player",
+            window("VLC", VLC, "ferias.mp4", Some(9)),
+            None,
+        ),
+        (
+            "excluded domain",
+            chrome("Extrato", Some(7)),
+            Some(url_of(EXCLUDED)),
+        ),
+        (
+            "a page under an excluded domain",
+            chrome("Extrato", Some(7)),
+            Some(format!("https://conta.{EXCLUDED}/extrato")),
         ),
         (
             "any other app",
@@ -4902,6 +4929,15 @@ async fn the_clock_jumps_while_a_check_waits_for_its_answer() {
     );
     assert_eq!(r.service.sites().learned_count, 1);
     assert_eq!(r.counter(DayKind::VisionCheck), 1);
+    // The service itself hands the repository a hash and no name (the database drops a
+    // learned name too; a repository that keeps what it is given shows which of the two
+    // did it).
+    let learned = r.repo.inner.list_sites().unwrap();
+    assert_eq!(learned.len(), 1);
+    assert_eq!(
+        (learned[0].origin, learned[0].host.clone()),
+        (SiteOrigin::Learned, None)
+    );
     // The guard goes on by the clock as it is now: the learned page is closed again...
     r.pass();
     assert!(r.pass().hit);
