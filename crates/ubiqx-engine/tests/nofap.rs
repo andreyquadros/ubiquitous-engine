@@ -2436,6 +2436,14 @@ async fn s24_privacy_sweep_twenty_checks_three_hits_leave_no_trace() {
         "the log grew with the number of checks: {logged:?}"
     );
 
+    // A while later one of the learned pages is opened again. This block has its card
+    // (the earlier ones came within the minute of the card of the check), and that card
+    // is part of everything looked through below.
+    h.advance(700);
+    h.browse(&hosts[3]);
+    assert!(h.two_passes());
+    assert_eq!(h.cards_of(CardKind::Blocked).len(), 1);
+
     assert_eq!(h.counter(DayKind::VisionCheck), 20);
     assert_eq!(h.counter(DayKind::VisionHit), 3);
     assert_eq!(h.learned(), 3);
