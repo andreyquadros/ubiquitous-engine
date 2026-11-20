@@ -10,7 +10,7 @@ use ubiqx_nofap::plan::{self, ARG_BUDGET_WINDOWS, EXIT_APPLIED, EXIT_GATED, EXIT
 use ubiqx_nofap::{hosts, matcher};
 
 use crate::sysblock::elevate;
-use crate::sysblock::helper::{apply_args, parse, remove_args, Verb};
+use crate::sysblock::helper::{after_flag, apply_args, parse, remove_args, Verb};
 use crate::sysblock::testing::{all_open, b64, plan_of, Rig, ALL_TIERS, CF, EXE};
 
 /// Runs the helper and asserts that it refused with `code` before touching anything.
@@ -257,6 +257,43 @@ fn the_parser_reads_exactly_the_documented_forms() {
     assert!(remove_args(ProductId::Ubiqx, RemoveScope::Resolver)
         .iter()
         .all(|arg| elevate::is_helper_arg(arg)));
+}
+
+#[test]
+fn the_small_binary_takes_the_verb_with_or_without_the_flag() {
+    let line = |words: &[&str]| -> Vec<String> { words.iter().map(|w| (*w).to_owned()).collect() };
+    let bare = line(&["remove", "--owner", "all", "--scope", "all"]);
+    let flagged = line(&[
+        "--shield-helper",
+        "remove",
+        "--owner",
+        "all",
+        "--scope",
+        "all",
+    ]);
+    assert_eq!(after_flag(&bare), &bare[..]);
+    assert_eq!(after_flag(&flagged), &bare[..]);
+    assert_eq!(after_flag(&[]), &[] as &[String]);
+    // Only one leading flag is skipped, and only in front.
+    let twice = line(&["--shield-helper", "--shield-helper", "status"]);
+    assert_eq!(parse(after_flag(&twice)), None);
+    assert_eq!(
+        parse(after_flag(&line(&["status", "--shield-helper"]))),
+        None
+    );
+    // What `elevate-argv` prints for a plan ends in arguments this binary accepts.
+    let rig = Rig::new(Os::Linux);
+    let encoded = plan::encode_plan(&plan_of(ProductId::Ubiqx, &[]));
+    let (_, out, _) = rig.helper(&["elevate-argv", "--plan-b64", &encoded]);
+    let printed: Vec<String> = serde_json::from_str(&out).unwrap();
+    // pkexec, the executable, then what the executable is given.
+    assert_eq!(
+        parse(after_flag(&printed[2..])),
+        Some(Verb::Apply {
+            plan: encoded,
+            unverified: None
+        })
+    );
 }
 
 fn user_site(n: usize) -> NofapSite {

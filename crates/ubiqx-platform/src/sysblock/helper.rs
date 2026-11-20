@@ -60,6 +60,17 @@ pub fn main_if_requested(args: impl IntoIterator<Item = String>) {
     std::process::exit(run(&args[2..]));
 }
 
+/// The arguments of a helper run without the program name and without a leading
+/// [`HELPER_FLAG`]. The small helper binary is started both ways: with the verb directly
+/// (by hand, by an uninstall hook) and, by the elevation command `elevate-argv` prints,
+/// with the flag in front like the apps.
+pub fn after_flag(args: &[String]) -> &[String] {
+    match args.split_first() {
+        Some((first, rest)) if first == HELPER_FLAG => rest,
+        _ => args,
+    }
+}
+
 /// Runs one verb with the real system ports. `args` starts at the verb. Returns the exit
 /// code.
 pub fn run(args: &[String]) -> i32 {

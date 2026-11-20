@@ -41,14 +41,27 @@ impl Runner for SystemRunner {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SystemFs;
 
+/// Sets the permission bits of `path` exactly: creation alone is subject to the umask of
+/// whoever started the helper, and the state file must stay readable by the app.
+fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
+    }
+    #[cfg(not(unix))]
+    let _ = (path, mode);
+    Ok(())
+}
+
 /// Creates `path` anew (never through an existing file or link) and fills it.
-fn create_filled(path: &Path, bytes: &[u8], mode: Option<u32>) -> io::Result<()> {
+fn create_filled(path: &Path, bytes: &[u8], mode: u32) -> io::Result<()> {
     let mut options = fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.mode(mode.unwrap_or(0o644));
+        options.mode(mode);
     }
     #[cfg(not(unix))]
     let _ = mode;
@@ -57,17 +70,18 @@ fn create_filled(path: &Path, bytes: &[u8], mode: Option<u32>) -> io::Result<()>
     file.sync_all()
 }
 
-/// Gives `temp` the owner and mode of the file at `path`, when there is one.
-fn keep_owner_and_mode(temp: &Path, path: &Path) -> io::Result<()> {
+/// Gives `temp` the owner and mode of the file at `path`; the mode `new` when there is
+/// no such file yet.
+fn keep_owner_and_mode(temp: &Path, path: &Path, new: u32) -> io::Result<()> {
     #[cfg(unix)]
     if let Ok(existing) = fs::metadata(path) {
         use std::os::unix::fs::MetadataExt;
         std::os::unix::fs::chown(temp, Some(existing.uid()), Some(existing.gid()))?;
-        fs::set_permissions(temp, existing.permissions())?;
+        return fs::set_permissions(temp, existing.permissions());
     }
     #[cfg(not(unix))]
-    let _ = (temp, path);
-    Ok(())
+    let _ = path;
+    set_mode(temp, new)
 }
 
 impl Fs for SystemFs {
@@ -81,8 +95,9 @@ impl Fs for SystemFs {
         let temp = path.with_file_name(name);
         // A temporary file left by a run that was killed is ours to replace.
         let _ = fs::remove_file(&temp);
+        let mode = mode.unwrap_or(0o644);
         let written = create_filled(&temp, bytes, mode)
-            .and_then(|()| keep_owner_and_mode(&temp, path))
+            .and_then(|()| keep_owner_and_mode(&temp, path, mode))
             .and_then(|()| fs::rename(&temp, path));
         if written.is_err() {
             let _ = fs::remove_file(&temp);
@@ -108,18 +123,8 @@ impl Fs for SystemFs {
     }
 
     fn create_dir(&self, path: &Path, mode: Option<u32>) -> io::Result<()> {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            fs::DirBuilder::new()
-                .mode(mode.unwrap_or(0o755))
-                .create(path)
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = mode;
-            fs::create_dir(path)
-        }
+        fs::create_dir(path)?;
+        set_mode(path, mode.unwrap_or(0o755))
     }
 
     fn dir_meta(&self, path: &Path) -> io::Result<DirMeta> {
