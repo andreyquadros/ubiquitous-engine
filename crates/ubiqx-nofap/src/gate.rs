@@ -15,8 +15,8 @@ use ubiqx_core::nofap::{Os, Tier};
 
 /// Which tier is open on which system.
 pub const TIER_GATE: [(Os, Tier, bool); 9] = [
-    (Os::Macos, Tier::Hosts, false),
-    (Os::Macos, Tier::Resolver, false),
+    (Os::Macos, Tier::Hosts, true),
+    (Os::Macos, Tier::Resolver, true),
     (Os::Macos, Tier::Policies, false),
     (Os::Windows, Tier::Hosts, false),
     (Os::Windows, Tier::Resolver, false),
@@ -102,7 +102,12 @@ mod tests {
     /// The entries that are open, each with its evidence in section 1 of
     /// `docs/nofap/REAL-MACHINE-CHECKLIST.md`. Opening an entry means adding it here in
     /// the commit that changes the table and records the run.
-    const OPEN: [(Os, Tier); 2] = [(Os::Linux, Tier::Hosts), (Os::Linux, Tier::Resolver)];
+    const OPEN: [(Os, Tier); 4] = [
+        (Os::Linux, Tier::Hosts),
+        (Os::Linux, Tier::Resolver),
+        (Os::Macos, Tier::Hosts),
+        (Os::Macos, Tier::Resolver),
+    ];
 
     #[test]
     fn the_table_lists_every_pair_once() {

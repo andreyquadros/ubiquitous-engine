@@ -31,8 +31,8 @@ the gate as it stands; the list `OPEN` in the tests of `gate.rs` names the same 
 | Linux | hosts | **yes** | "feat(nofap): the gate opens (Linux, hosts)" | section 2 (the sandbox run, green); section 3, run 1, `ubuntu-latest` (green) |
 | Linux | resolver | **yes** | "feat(nofap): the gate opens (Linux, resolver)" | section 3, run 1, `ubuntu-latest` (green) |
 | Linux | policies | no | | item 9 |
-| macOS | hosts | no | | macOS run of section 3 |
-| macOS | resolver | no | | macOS run of section 3 |
+| macOS | hosts | **yes** | "feat(nofap): the gate opens (macOS, hosts) and (macOS, resolver)" | section 3, run 1, `macos-latest` (green) |
+| macOS | resolver | **yes** | "feat(nofap): the gate opens (macOS, hosts) and (macOS, resolver)" | section 3, run 1, `macos-latest` (green) |
 | macOS | policies | no | | item 9 |
 | Windows | hosts | no | | Windows run of section 3 |
 | Windows | resolver | no | | Windows run of section 3; item 6 (execution policy) |
