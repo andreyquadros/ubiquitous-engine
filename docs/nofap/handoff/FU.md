@@ -243,7 +243,22 @@ updated.
 
 ## 6. Commands run on the final state
 
-See the report of this unit; the table there lists each command with its result.
+| Command | Result |
+|---|---|
+| `cargo test -p ubiqx-core nofap` | 33 passed |
+| `UBIQX_BLESS=1 cargo test -p ubiqx-core nofap_ipc_golden` | passed; the fixtures did not change |
+| `cargo test -p ubiqx-nofap` | 295 + 22 + 12 passed |
+| `cargo test -p ubiqx-storage` | 14 + 23 + 29 + 1 passed |
+| `cargo test -p ubiqx-platform` (because of `reset_targets`) | 169 passed, 1 ignored |
+| `cargo clippy -p ubiqx-core -p ubiqx-nofap -p ubiqx-storage --all-targets -- -D warnings` | clean |
+| `cargo fmt --all -- --check` | the only difference is in `crates/ubiqx-engine/tests/zz_probe.rs`, an untracked throwaway file of the engine unit; `rustfmt --check` on this unit's six Rust files is clean |
+| `cargo check --workspace --all-targets` | passes, with the engine unit's work in the tree |
+| `pnpm typecheck` (apps/desktop) | clean |
+| `pnpm test -- --run` (apps/desktop), twice | 33 files, 435 tests passed, both times |
+| `pnpm build` (apps/desktop) | built |
+
+Not run: `cargo clippy --workspace`, `cargo test --workspace`, the engine crate's tests, and no
+CI run was read.
 
 ## 7. Open points
 
