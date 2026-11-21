@@ -233,11 +233,16 @@ impl Notifier for RecordingNotifier {
 struct RecordingPresenter {
     shows: AtomicBool,
     seen: Mutex<Vec<NofapCard>>,
+    /// Runs inside every `show`, after the card was recorded.
+    on_show: Mutex<Option<Box<dyn Fn() + Send>>>,
 }
 
 impl NofapPresenter for RecordingPresenter {
     fn show(&self, card: &NofapCard) -> CoreResult<bool> {
         self.seen.lock().push(card.clone());
+        if let Some(on_show) = self.on_show.lock().as_ref() {
+            on_show();
+        }
         Ok(self.shows.load(Ordering::SeqCst))
     }
 }
@@ -397,6 +402,7 @@ async fn harness_with(setup: Setup) -> Harness {
     let presenter = Arc::new(RecordingPresenter {
         shows: AtomicBool::new(setup.presenter_shows),
         seen: Mutex::new(Vec::new()),
+        on_show: Mutex::new(None),
     });
     let sink = Arc::new(RecordingSink::default());
     let notifier = Arc::new(RecordingNotifier::default());
@@ -4214,6 +4220,7 @@ fn rig(setup: RigSetup) -> Rig {
     let presenter = Arc::new(RecordingPresenter {
         shows: AtomicBool::new(true),
         seen: Mutex::new(Vec::new()),
+        on_show: Mutex::new(None),
     });
     let sink = Arc::new(RecordingSink::default());
     let env = Arc::new(SwitchEnv {
@@ -5334,4 +5341,184 @@ async fn d10_the_ways_out_of_an_unreadable_configuration() {
     assert!(r.service.enable(standalone_options()).is_err());
     assert_eq!(r.service.status().overall, Overall::Reduced);
     assert!(!r.service.enabled());
+}
+
+// ---------------------------------------------------------------------------------------------
+// The second review
+// ---------------------------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_pending_ready_card_held_back_by_another_card_is_shown_at_a_later_pass() {
+    let h = harness().await;
+    h.enable(false);
+    let ChangeOutcome::Pending(waiting) = h.service.request(NofapChange::Disable).unwrap() else {
+        panic!("turning it off waits");
+    };
+    h.advance(600);
+    h.observe_running(540);
+    // Another card is up when the request becomes ready: the one-a-minute rule holds the
+    // "pending ready" card back.
+    h.service.test_card();
+    h.observe_running(60);
+    assert!(h.service.view().unwrap().status.pending[0].ready);
+    assert!(h.cards_of(CardKind::PendingReady).is_empty());
+
+    // The next pass that may show a card shows it, once.
+    h.advance(61);
+    h.service.verify_pass_after(Duration::from_secs(1)).unwrap();
+    let cards = h.cards_of(CardKind::PendingReady);
+    assert_eq!(cards.len(), 1, "the card is owed, not dropped");
+    h.advance(61);
+    h.service.verify_pass_after(Duration::from_secs(1)).unwrap();
+    assert_eq!(
+        h.cards_of(CardKind::PendingReady).len(),
+        1,
+        "once per request"
+    );
+
+    // Its button still does what it says.
+    h.service
+        .card_action(&cards[0].id, CardAction::TurnOff)
+        .unwrap();
+    assert!(!h.service.enabled());
+    assert!(!h.pending_ids().contains(&waiting.id));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_soft_card_is_shown_only_while_its_window_is_in_front() {
+    let h = harness().await;
+    h.enable(true);
+
+    // An unsure answer arrives after the user went on to another application.
+    h.open_app("VLC", VLC, "ferias.mp4");
+    let job = h.job_within(30).expect("a check of the player");
+    h.detector.push(Ok(explicit(Confidence::Low)));
+    h.open_app("Slack", SLACK, "Geral");
+    *h.foreground.window.lock() = Some(window("Slack", SLACK, "Geral", Some(11)));
+    assert!(!h.service.vision_check(job).await.unwrap().hit);
+    assert_eq!(h.detector.calls(), 1);
+    assert!(
+        h.cards_of(CardKind::VisionAsk).is_empty(),
+        "a card about a window that is no longer on screen"
+    );
+
+    // Back in front, the next unsure answer asks.
+    h.advance(120);
+    h.open_app("VLC", VLC, "ferias.mp4");
+    let job = h.job_within(200).expect("another check");
+    h.detector.push(Ok(explicit(Confidence::Low)));
+    assert!(!h.service.vision_check(job).await.unwrap().hit);
+    let card = h
+        .cards_of(CardKind::VisionAsk)
+        .pop()
+        .expect("the soft card");
+    h.service
+        .card_action(&card.id, CardAction::CloseWindow)
+        .unwrap();
+    assert_eq!(
+        h.enforcer.calls(),
+        vec![EnforcerCall::QuitApp(VLC.into())],
+        "only the window the card is about"
+    );
+}
+
+/// The card window blocks in `show` until a task of the same runtime answers. On a
+/// runtime with one thread that task can only run when `show` is called off the async
+/// thread: an answer handled on the async thread would wait for itself.
+#[tokio::test(flavor = "current_thread")]
+async fn what_an_answer_does_runs_off_the_async_threads() {
+    let h = harness().await;
+    h.enable(true);
+    let (answered, answer) = std::sync::mpsc::channel::<()>();
+    let waited = Arc::new(Mutex::new(Vec::new()));
+    {
+        let waited = waited.clone();
+        let answer = Mutex::new(answer);
+        *h.presenter.on_show.lock() = Some(Box::new(move || {
+            let ok = answer.lock().recv_timeout(Duration::from_secs(5)).is_ok();
+            waited.lock().push(ok);
+        }));
+    }
+    let answering = tokio::spawn(async move {
+        for _ in 0..2 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let _ = answered.send(());
+        }
+    });
+
+    // An unsure answer (the soft card) and a positive one (the closed card).
+    h.browse(UNKNOWN);
+    h.detector.push(Ok(explicit(Confidence::Low)));
+    assert_eq!(h.check_within(30).await, Some(false));
+    h.advance(120);
+    h.browse(UNKNOWN_2);
+    h.detector.push(Ok(explicit(Confidence::High)));
+    assert_eq!(h.check_within(200).await, Some(true));
+    answering.await.unwrap();
+    assert_eq!(h.cards_of(CardKind::VisionAsk).len(), 1);
+    assert_eq!(h.cards_of(CardKind::VisionClosed).len(), 1);
+    assert_eq!(
+        *waited.lock(),
+        vec![true, true],
+        "a card was shown from the async thread"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_second_click_while_the_password_prompt_is_open_raises_no_second_prompt() {
+    let h = harness_with(Setup {
+        os: Os::Linux,
+        ..Setup::default()
+    })
+    .await;
+    h.enable(false);
+    h.service
+        .request(NofapChange::SetHosts { on: true })
+        .unwrap();
+    h.service
+        .request(NofapChange::SetResolver {
+            resolver: Some(ResolverId::CloudflareFamily),
+        })
+        .unwrap();
+    let release = h.shield.hold_apply();
+    let service = h.service.clone();
+    let applying = std::thread::spawn(move || service.system_apply());
+    let started = std::time::Instant::now();
+    while !h
+        .shield
+        .calls()
+        .iter()
+        .any(|call| matches!(call, SystemCall::Apply(_)))
+    {
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "apply never started"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    // "Restaurar" on a card, "Aplicar" again, "Restaurar minha rede": refused, and the
+    // operating system is not asked again.
+    assert!(matches!(
+        h.service.system_apply(),
+        Err(CoreError::Invalid(_))
+    ));
+    assert!(matches!(
+        h.service.restore_network(),
+        Err(CoreError::Invalid(_))
+    ));
+    let prompts = |h: &Harness| {
+        h.shield
+            .calls()
+            .iter()
+            .filter(|call| matches!(call, SystemCall::Apply(_) | SystemCall::Remove(..)))
+            .count()
+    };
+    assert_eq!(prompts(&h), 1);
+    release.send(()).unwrap();
+    assert_eq!(applying.join().unwrap().unwrap(), ApplyOutcome::Applied);
+
+    // Once the prompt is answered, the next one may come.
+    assert!(h.service.restore_network().is_ok());
+    assert_eq!(prompts(&h), 2);
 }

@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use ubiqx_core::nofap::{
-    AiReadiness, CardAction, CardKind, DayKind, Frame, NofapEnvSnapshot, NofapEvent, NofapSite,
-    SiteList, SiteOrigin, VisionOff, VisionPrefs, VisionState,
+    AiReadiness, CardAction, CardKind, DayKind, ExplicitCheck, NofapEnvSnapshot, NofapEvent,
+    NofapSite, SiteList, SiteOrigin, VisionOff, VisionPrefs, VisionState,
 };
 use ubiqx_core::ports::{AiUsageKind, PermissionState};
 use ubiqx_core::scheduler::month_range;
@@ -225,6 +225,20 @@ impl NofapService {
         if !self.enabled() {
             return Ok(VisionOutcome::default());
         }
+        let due = match outcome {
+            Outcome::Unsure => true,
+            Outcome::Watch => {
+                refused
+                    && sampling::refusal_card_due(
+                        &self.rt.lock().sampler,
+                        job.key,
+                        job.local_signal,
+                    )
+            }
+            Outcome::Positive | Outcome::Clean | Outcome::Confirm => false,
+        };
+        // What an answer does reads the foreground, writes counters and shows a card: on
+        // the blocking pool, never on the async threads.
         let hit = match outcome {
             Outcome::Positive => {
                 let me = me.clone();
@@ -232,23 +246,12 @@ impl NofapService {
                     .await
                     .unwrap_or(false)
             }
-            Outcome::Unsure => {
-                self.ask(&job);
+            _ if due => {
+                let me = me.clone();
+                let _ = tokio::task::spawn_blocking(move || me.ask(&job)).await;
                 false
             }
-            Outcome::Watch => {
-                let due = refused
-                    && sampling::refusal_card_due(
-                        &self.rt.lock().sampler,
-                        job.key,
-                        job.local_signal,
-                    );
-                if due {
-                    self.ask(&job);
-                }
-                false
-            }
-            Outcome::Clean | Outcome::Confirm => false,
+            Outcome::Unsure | Outcome::Watch | Outcome::Clean | Outcome::Confirm => false,
         };
         Ok(VisionOutcome { hit })
     }
@@ -260,33 +263,30 @@ impl NofapService {
         let (window_id, opts) = (job.window_id, sampling::frame_opts(job.kind));
         let frames = self.deps.frames.clone();
         let me = self.clone();
+        let key = job.key;
         let frame = tokio::task::spawn_blocking(move || {
             // Asked again here, off the async threads (it reads the host's settings and
             // the permission): what was withdrawn since the guard asked for this check,
             // or since its first frame, stops it before anything is captured.
-            if me.vision_allowed_in(&me.deps.env.snapshot()).is_err() {
-                return Ok(None);
+            let taken = if me.vision_allowed_in(&me.deps.env.snapshot()).is_err() {
+                Ok(None)
+            } else {
+                frames.frame(window_id, opts)
+            };
+            match taken {
+                Ok(Some(frame)) => Some(frame),
+                other => {
+                    me.no_frame(key, matches!(other, Err(CoreError::Permission(_))));
+                    None
+                }
             }
-            frames.frame(window_id, opts)
         })
         .await;
+        let Ok(Some(frame)) = frame else {
+            return None;
+        };
         let now = self.now();
         let (day, _) = self.day_hour(now);
-        let frame: Frame = match frame {
-            Ok(Ok(Some(frame))) => frame,
-            other => {
-                // No usable frame (the window is gone, the capture was refused): nothing
-                // is sent, and the interval starts again so the next pass does not retry.
-                let denied = matches!(other, Ok(Err(CoreError::Permission(_))));
-                let mut rt = self.rt.lock();
-                sampling::record(&mut rt.sampler, job.key, SampleEvent::Unchanged, &day, now);
-                drop(rt);
-                if denied {
-                    self.refresh_status();
-                }
-                return None;
-            }
-        };
         {
             let mut rt = self.rt.lock();
             let same = stage == Stage::First
@@ -308,6 +308,42 @@ impl NofapService {
         // The image is dropped here: no file, no row, no hash of it is kept.
         let dhash = frame.dhash;
         drop(frame);
+        let me = self.clone();
+        let (key, window_key) = (job.key, job.window_key);
+        tokio::task::spawn_blocking(move || me.take_answer(key, window_key, stage, answer, dhash))
+            .await
+            .ok()
+            .flatten()
+    }
+
+    /// No usable frame (the window is gone, the capture was refused or withdrawn): nothing
+    /// is sent, and the interval starts again so the next pass does not retry.
+    fn no_frame(&self, key: u64, denied: bool) {
+        let now = self.now();
+        let (day, _) = self.day_hour(now);
+        sampling::record(
+            &mut self.rt.lock().sampler,
+            key,
+            SampleEvent::Unchanged,
+            &day,
+            now,
+        );
+        if denied {
+            self.refresh_status();
+        }
+    }
+
+    /// What the detector answered, told to the sampler: the outcome and whether the model
+    /// refused, or `None` when the call failed. Runs on the blocking pool (a counter is
+    /// written, the status may be computed again).
+    fn take_answer(
+        &self,
+        key: u64,
+        window_key: u64,
+        stage: Stage,
+        answer: Result<CoreResult<ExplicitCheck>, tokio::time::error::Elapsed>,
+        dhash: u64,
+    ) -> Option<(Outcome, bool)> {
         let now = self.now();
         let (day, _) = self.day_hour(now);
         match answer {
@@ -322,12 +358,12 @@ impl NofapService {
                         refused: check.refused,
                         dhash,
                     };
-                    sampling::record(&mut rt.sampler, job.key, event, &day, now);
+                    sampling::record(&mut rt.sampler, key, event, &day, now);
                     if outcome != Outcome::Clean {
                         // An answer other than `none` is a signal for that window: the
                         // tracker takes no productivity screenshot of it for ten minutes.
-                        rt.signals.insert(job.key, now);
-                        rt.signals.insert(job.window_key, now);
+                        rt.signals.insert(key, now);
+                        rt.signals.insert(window_key, now);
                         forget_old(&mut rt.signals, now);
                     }
                     was
@@ -352,13 +388,7 @@ impl NofapService {
                         rt.sampler.degraded_until(now).is_some(),
                         rt.sampler.key_rejected(),
                     );
-                    sampling::record(
-                        &mut rt.sampler,
-                        job.key,
-                        SampleEvent::Failed(error),
-                        &day,
-                        now,
-                    );
+                    sampling::record(&mut rt.sampler, key, SampleEvent::Failed(error), &day, now);
                     let after = (
                         rt.sampler.degraded_until(now).is_some(),
                         rt.sampler.key_rejected(),
@@ -499,8 +529,18 @@ impl NofapService {
     }
 
     /// The soft card ("Posso estar enganado…"), at most once per window in thirty
-    /// minutes. Nothing is done to the window.
+    /// minutes, and only while that window is still in front: an answer comes up to
+    /// fourteen seconds after its frame, and a card about a window the user has left
+    /// would be about nothing on screen (and its "Fechar a janela" would quit an
+    /// application in the background). Nothing is done to the window.
     fn ask(&self, job: &VisionJob) {
+        let still_front = matches!(
+            self.deps.activity.peek_foreground(),
+            Ok(Some(window)) if window.window_id == Some(job.window_id) && window.app_id == job.app_id
+        );
+        if !still_front || !self.enabled() {
+            return;
+        }
         let now = self.now();
         let (day, _) = self.day_hour(now);
         let mut outbox = Outbox::default();

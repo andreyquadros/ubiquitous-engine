@@ -115,6 +115,15 @@ fn asks_nothing(plan: &SystemPlan) -> bool {
 }
 
 impl NofapService {
+    /// The right to raise the operating system's prompt: one at a time. A second "Aplicar",
+    /// "Restaurar" or "Remover" while a prompt is open is refused (the card's button and
+    /// the page's can overlap), so nobody is asked for the password twice in a row.
+    fn one_prompt(&self) -> CoreResult<parking_lot::MutexGuard<'_, ()>> {
+        self.elevating.try_lock().ok_or_else(|| {
+            CoreError::Invalid("the operating system is already asking for the password".into())
+        })
+    }
+
     // -----------------------------------------------------------------------------------------
     // Status
     // -----------------------------------------------------------------------------------------
@@ -376,12 +385,25 @@ impl NofapService {
             outbox.events.push(NofapEvent::PendingChanged);
         }
         // Only "turn it off" is asked about in a card; other requests wait on the page.
-        let off_ready = ready.iter().find(|ready| {
-            rt.config.pending.iter().any(|waiting| {
-                waiting.id == ready.id && waiting.change.kind() == ChangeKind::Disable
+        // The card is owed while the request is ready and unconfirmed: when another card
+        // was up at the moment it became ready (or the other product ran the passes), it
+        // is shown at the first later pass that may show one. Once per request in a run.
+        let Runtime {
+            config,
+            ready_carded,
+            ..
+        } = &mut *rt;
+        ready_carded.retain(|id| config.pending.iter().any(|waiting| &waiting.id == id));
+        let owed = config
+            .pending
+            .iter()
+            .find(|waiting| {
+                waiting.change.kind() == ChangeKind::Disable
+                    && !ready_carded.contains(&waiting.id)
+                    && commitment::pending_view(waiting, now).ready
             })
-        });
-        if let (true, Some(ready)) = (primary, off_ready) {
+            .map(|waiting| waiting.id.clone());
+        if let (true, Some(id)) = (primary, owed) {
             if rt.cards.may_show(now) {
                 let card = cards::card(
                     CardKind::PendingReady,
@@ -392,10 +414,11 @@ impl NofapService {
                     now,
                 );
                 let context = CardContext {
-                    pending_id: Some(ready.id.clone()),
+                    pending_id: Some(id.clone()),
                     ..CardContext::default()
                 };
                 rt.cards.keep(card.clone(), context, now);
+                rt.ready_carded.insert(id);
                 outbox.cards.push((card, Some(Notice::Drift)));
             }
         }
@@ -784,6 +807,7 @@ impl NofapService {
                 return Err(CoreError::Invalid("only while the module is on".into()));
             }
         }
+        let _prompt = self.one_prompt()?;
         let owner = self.deps.identity.id;
         let Some((wanted, sent)) = self.plan_to_send() else {
             return Ok(ApplyOutcome::Unavailable(reason::UNSUPPORTED_OS.into()));
@@ -868,6 +892,7 @@ impl NofapService {
     }
 
     pub(crate) fn remove_all(&self) -> CoreResult<ApplyOutcome> {
+        let _prompt = self.one_prompt()?;
         let outcome = self
             .deps
             .system
@@ -887,6 +912,7 @@ impl NofapService {
         if self.rt.lock().config_error {
             return Err(unreadable_config());
         }
+        let _prompt = self.one_prompt()?;
         let outcome = self
             .deps
             .system

@@ -295,6 +295,8 @@ pub(crate) struct Runtime {
     /// When the AI check was last found not ready by the guard (asked again a little
     /// later, not in every pass).
     pub not_ready_at: Option<DateTime<Utc>>,
+    /// Waiting "turn it off" requests whose "pending ready" card was shown in this run.
+    pub ready_carded: HashSet<ubiqx_core::Id>,
 }
 
 /// The module's runtime. See the module documentation for the rules it keeps.
@@ -316,6 +318,10 @@ pub struct NofapService {
     /// (every change is followed by its own refresh). Never taken while the runtime lock
     /// is held.
     pub(crate) status_gate: Mutex<()>,
+    /// Held while the operating system's prompt is open (apply, remove, restore the
+    /// network): a second click is refused instead of raising a second prompt behind the
+    /// first. Never taken while the runtime lock is held.
+    pub(crate) elevating: Mutex<()>,
     pub(crate) matcher_data: MatcherData,
 }
 
@@ -387,6 +393,7 @@ impl NofapService {
             pruned_on: None,
             rejected_at: None,
             not_ready_at: None,
+            ready_carded: HashSet::new(),
         };
         let service = Arc::new_cyclic(|me| Self {
             deps,
@@ -397,6 +404,7 @@ impl NofapService {
             verified: Mutex::new(Instant::now()),
             role_lock: Mutex::new(()),
             status_gate: Mutex::new(()),
+            elevating: Mutex::new(()),
             matcher_data,
         });
         service.seed_day_count();
@@ -535,6 +543,9 @@ impl NofapService {
             rt.episodes = EpisodeTracker::default();
             rt.confirmer.clear();
             rt.last_candidate = None;
+            // The cards are gone, and with them what their buttons needed: a waiting
+            // request that is ready gets a card of its own again.
+            rt.ready_carded.clear();
         }
         self.seed_day_count();
     }
