@@ -119,12 +119,16 @@ system-smoke: GREEN os=linux tiers=hosts commit=af28c33 helper_sha256=f0fbb8205d
 ## 3. The CI smoke runs
 
 The workflow `.github/workflows/nofap-smoke.yml` (job `nofap-system-smoke`, one per
-operating system) runs on every push to the branch that changes the platform crate, the
-`ubiqx-nofap` crate, `scripts/nofap/` or the workflow. It builds the helper binary and runs
+operating system) runs on every push to the branch that changes what the helper is built
+from (the platform crate, the `ubiqx-nofap` crate, `ubiqx-core`, the workspace manifest or
+the lock file), `scripts/nofap/` or the workflow. It builds the helper binary and runs
 the smoke script as administrator, tiers hosts and resolver. It is a workflow of its own,
 with its own concurrency group, so it blocks nothing else and is not cancelled with the main
 CI; a red job is a red job (there is no `continue-on-error`). After the script, a step of
 the job itself compares the hosts file with a copy it took before, whatever the script said.
+It runs on pushes to this one branch only, with a read-only token that the checkout does not
+keep, no secret and nothing uploaded. **Once the branch is merged it no longer runs**: whoever
+wants a run on another branch changes `branches` in the workflow.
 
 Neither script had run against a real helper when it was written, and the Windows one had
 never been parsed by PowerShell (only by a grammar outside PowerShell). A run that stops
@@ -137,13 +141,13 @@ evidence about the helper: it is logged below as red, fixed, and run again.
 
 | Runner | Tiers | Result | Run, job | Commit | `GREEN` line of the log |
 |---|---|---|---|---|---|
-| `ubuntu-latest` (Ubuntu 26.04.1, systemd-resolved active, `/etc/resolv.conf` the stub) | hosts, resolver | **green** | run 9: `44665723586`, job `136055224331` | `6a80312` | `system-smoke: GREEN os=linux tiers=hosts,resolver commit=6a80312 helper_sha256=d126eec8acd3e72b86e6a1dfd41c1902a81d8f2e15efa1a2d098f2690cb5c563` |
-| `macos-latest` (macOS 26.7.2, arm64, one network service, "Ethernet") | hosts, resolver | **green** | run 9: `44665723586`, job `136055224489` | `6a80312` | `system-smoke: GREEN os=macos tiers=hosts,resolver commit=6a80312 helper_sha256=f3dbd41d472b0fee9c81ff5c031f8d21f101a3b1e005559fb851a9e7da4f7c38` |
-| `windows-latest` (Windows Server 2025 Datacenter, PowerShell 7.6.10, execution policy `RemoteSigned` for the machine; UAC: `EnableLUA=1 ConsentPromptBehaviorAdmin=0`, the shell at high integrity) | hosts, resolver | **green** | run 9: `44665723586`, job `136055224452` | `6a80312` | `system-smoke: GREEN os=windows tiers=hosts,resolver commit=6a80312 helper_sha256=160b3c8693eac31eba8eecea82858e4d5703144c4d41d583f5df012b86c93d53 names=8000 block_sha256=6ebc3afbd82d9548e808039c95a59a50dd0f7e5630846257f9397b793bd05354 first_lookup_s=0.1 longest_plan=24000` |
+| `ubuntu-latest` (Ubuntu 26.04.1, systemd-resolved active, `/etc/resolv.conf` the stub) | hosts, resolver | **green** | run 11: `44668395648`, job `136064609991` | `d55a785` | `system-smoke: GREEN os=linux tiers=hosts,resolver commit=d55a785 helper_sha256=a90dce99727d1c36a12106886e45c7f646f39d173496f4f581071c94d079788d` |
+| `macos-latest` (macOS 26.7.2, arm64, one network service, "Ethernet") | hosts, resolver | **green** | run 11: `44668395648`, job `136064609868` | `d55a785` | `system-smoke: GREEN os=macos tiers=hosts,resolver commit=d55a785 helper_sha256=556b88aa04c661e9afb3d55e0e2fbb5e1f06970aa46794e54c6ba34c57d35967` |
+| `windows-latest` (Windows Server 2025 Datacenter, PowerShell 7.6.10, execution policy `RemoteSigned` for the machine; UAC: `EnableLUA=1 ConsentPromptBehaviorAdmin=0`, the shell at high integrity) | hosts, resolver | **green** | run 11: `44668395648`, job `136064610095` | `d55a785` | `system-smoke: GREEN os=windows tiers=hosts,resolver commit=d55a785 helper_sha256=43080fb8c2b6d738ce516d1306dccb361cfab3923eeac7ae13e306f9e7470bd8 names=8000 block_sha256=6ebc3afbd82d9548e808039c95a59a50dd0f7e5630846257f9397b793bd05354 first_lookup_s=0.1 longest_plan=24000` |
 
-Run 9 is on the last commit that changes anything the workflow watches (`6a80312`, a
-snapshot commit that carries this unit's last changes to the workflow and to the comment of
-the budget); the commits after it change documents and other units' files.
+Run 11 is on the last commit that changes anything the workflow watches (`d55a785`, the
+last of the three commits of the unit's review); the commits after it change documents and
+other units' files.
 
 ### Log of every run
 
@@ -173,7 +177,9 @@ One row per run and system, oldest first. "Changed afterwards" is what the resul
 | 7, `44664769823` | `38b7d01` | `macos-latest` | green | As run 4; 103 tests passed. | nothing |
 | 7, `44664769823` | `38b7d01` | `windows-latest` | **green**: 321 checks `ok`, none failed | As run 6, on the build with the gate open; "a plan of the budget the app uses today (24000 characters) reaches the helper" is `ok`. The job printed `EnableLUA: 1`: **UAC is on on the runner**, and its shell is already elevated, so the elevation command started without a consent prompt. Again no adapter with a borrowed index (item 29). 103 tests passed. | The checklist and the comment of `ARG_BUDGET_WINDOWS` say what the runner is; the job prints the other UAC settings and the integrity level of its shell; the script also asks `ping.exe` for `localhost` in the hostile environment. |
 | 8, `44665208311` | `0d61acf` | all three | green (Windows: 321 checks) | As run 7. New in the Windows log: under the hostile variables `ping.exe` cannot find `localhost` either ("Ping request could not find host localhost"), so the name the system layer's test looks up after pinning the environment is one that does fail without it. 103 tests passed on each system. | nothing |
-| 9, `44665723586` | `6a80312` | all three | green (Windows: 321 checks) | As run 8. The job printed `UAC: EnableLUA=1 ConsentPromptBehaviorAdmin=0 PromptOnSecureDesktop=1` and `Mandatory Label\High Mandatory Level` for its shell: UAC is on, set to elevate administrators without asking, and the shell is already elevated. "Ethernet 4" had an index of its own again (item 29 still open). 103 tests passed on each system. | nothing |
+| 9, `44665723586` | `6a80312` | all three | green (Windows: 321 checks) | As run 8. The job printed `UAC: EnableLUA=1 ConsentPromptBehaviorAdmin=0 PromptOnSecureDesktop=1` and `Mandatory Label\High Mandatory Level` for its shell: UAC is on, set to elevate administrators without asking, and the shell is already elevated. "Ethernet 4" had an index of its own again (item 29 still open). 103 tests passed on each system. | The unit's review: the hosts file is put back after an in-place write that stopped half-way (`hostsfile.rs`, with a test); the checkout keeps no token and the workflow also watches `ubiqx-core` and the lock file. |
+| 10, `44668139950` | `162a513` | all three | green (Ubuntu 42 checks, macOS 41, Windows 321) | The first run after the review's change to the hosts write. As run 9 on each system: applied, checked, removed, the restore checked; the job's own comparison of the hosts file: identical on each. The log shows `persist-credentials: false` for the checkout. The Windows runner had "Ethernet 4" (a Mellanox ConnectX-4 Lx virtual adapter, index 9) up without a DNS client configuration, left out. The system layer's own tests: 104 passed on each system, the new one among them. | The Windows script also checks that the elevation command hands the helper's exit code back. |
+| 11, `44668395648` | `d55a785` | all three | green (Ubuntu 42 checks, macOS 41, Windows 312) | Ubuntu and macOS as run 10. **Windows, new:** the app's elevation command, run with a plan argument the helper refuses, ended with the helper's exit code 2, and the hosts file and the state directory were untouched (three new checks, all `ok`); until this run only exit 0 together with a written block had been seen, which a lost exit code would also give. This runner had two adapters that are up: "Ethernet 3" with a DNS client configuration and "Ethernet 4" (a "Microsoft Azure Network Adapter", index 10, an index of its own) without one, so one adapter was set and reset instead of two, which is why there are fewer checks than in run 10. Seven cycles, the four plan lengths up to 24,000 characters arrived, the first lookup 0.0 to 0.1 s after the helper returned and 0.3 to 1.3 s after the write (runs 10 and 11). 104 tests passed on each system. | nothing |
 
 Numbers the Windows run reports, and the constants they decide (design 2.1, 2.2):
 
@@ -213,6 +219,7 @@ What the scripts check, so that a green run can be read against the items below:
 | `ARG_BUDGET evidence: the longest --plan-b64 value that reached the helper intact has … characters` (Windows) | 18 |
 | `nothing was created in the scratch directory the variables pointed at` (Windows, hostile environment) | design 2.5, 9.3 step 6 |
 | `the elevation command works at all with the shortest plan` (Windows; the command runs in the app's four-variable environment) | 20, 27 |
+| `the elevation command passes the helper's exit code on (a plan the helper refuses: exit 2)`, `a refused plan changes nothing` (Windows, since run 11) | 27 |
 | `hosts: owner and access list are unchanged with the block in place`, `hosts: owner and access list are what they were` (Windows) | 26 |
 
 ## 4. The items of design 11.4
@@ -641,6 +648,11 @@ the Windows script runs the command in exactly that environment. **CI** for Wind
   helper's exit code 0, five times. The helper's own tools (`powershell.exe` with the
   `DnsClient` and `NetAdapter` modules, `reg.exe`, `ipconfig.exe`) work in the same
   environment: the `status` printed before each run lists the adapters.
+- Evidence (Windows, CI, the exit code): run 11 (`44668395648`), job `136064610095`: the same
+  command with a plan argument the helper refuses ended with exit code 2, the helper's own,
+  and nothing was changed. The app reads nothing of an elevated run but this exit code
+  (hand-off U4 had left open whether `exit $p.ExitCode` hands it back). Like the argument
+  budget, this was seen without a consent prompt (item 18).
 - Evidence (macOS, Linux): item 5, person.
 
 ### [ ] 28. Windows 10 and 11: how a blocked name looks to a program (smoke unit)

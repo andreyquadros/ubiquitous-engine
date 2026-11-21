@@ -39,10 +39,13 @@ Workflow `.github/workflows/nofap-smoke.yml`, job `nofap-system-smoke` on `ubunt
 | 7, `44664769823` | `38b7d01` | green | green | **green**, 321 checks (the build with the six entries open and the new budget) |
 | 8, `44665208311` | `0d61acf` | green | green | **green**, 321 checks |
 | 9, `44665723586` | `6a80312` | green | green | **green**, 321 checks |
+| 10, `44668139950` | `162a513` (review) | green | green | **green**, 321 checks |
+| 11, `44668395648` | `d55a785` (review) | green | green | **green**, 312 checks (one adapter with a DNS configuration instead of two; three new checks) |
 
-Run 9 is the latest run of each system, on the last commit that changes anything the
-workflow watches (`6a80312` is a snapshot commit of the hook; it carries this unit's last
-changes to the workflow and to the comment of the budget). Jobs: Ubuntu `136055224331`,
+Run 11 is the latest run of each system, on the last commit that changes anything the
+workflow watches (`d55a785`, the last commit of the review below). Jobs: Ubuntu
+`136064609991`, macOS `136064609868`, Windows `136064610095`. Run 9 (`6a80312`, a snapshot
+commit of the hook) was the latest when the engineer finished: Ubuntu `136055224331`,
 macOS `136055224489`, Windows `136055224452`.
 
 The sandbox run (hosts tier only, the one real-system run allowed here): green on `af28c33`,
@@ -54,7 +57,7 @@ checklist.
 
 | File | Content |
 |---|---|
-| `.github/workflows/nofap-smoke.yml` | the workflow: on push to the branch when `crates/ubiqx-platform/**`, `crates/ubiqx-nofap/**`, `scripts/nofap/**` or the workflow change; its own concurrency group, a run that started always finishes; builds the helper; prints the machine and the helper's `status`; runs the smoke script as administrator with both tiers; on a red run prints what the script saved; compares the hosts file with a copy of its own afterwards; runs the system layer's tests on that system. No secret, nothing published |
+| `.github/workflows/nofap-smoke.yml` | the workflow: on push to the branch when `crates/ubiqx-platform/**`, `crates/ubiqx-nofap/**`, `crates/ubiqx-core/**`, `Cargo.toml`, `Cargo.lock`, `scripts/nofap/**` or the workflow change; its own concurrency group, a run that started always finishes; builds the helper; prints the machine and the helper's `status`; runs the smoke script as administrator with both tiers; on a red run prints what the script saved; compares the hosts file with a copy of its own afterwards; runs the system layer's tests on that system. No secret, nothing published |
 | `.github/workflows/ci.yml` | job `rust-linux`: two steps, `python3 scripts/nofap/build_blocklist.py --check` and `cargo test -p ubiqx-nofap --test naming` (both seen green in CI) |
 | `scripts/nofap/system-smoke.sh`, `system-smoke.ps1` | changed where the runs showed a defect or a missing check (below) |
 | `crates/ubiqx-nofap/src/gate.rs` | the table with six entries open; the tests list the open entries (`OPEN`) and no longer expect a closed table |
@@ -176,8 +179,8 @@ The scripts:
 - **Tests of `sysblock`**: `WinAdapter` has a new field `configured`; `FakeLookup` records
   `asked_as_blocked`; the fake PowerShell accepts only the exact three scripts and fails a
   set or reset of an adapter that is not `configured`.
-- **A change under `crates/ubiqx-platform`, `crates/ubiqx-nofap` or `scripts/nofap` starts a
-  smoke run** (about 6 minutes on Ubuntu and macOS, 12 to 15 on Windows). The Windows job
+- **A change under `crates/ubiqx-platform`, `crates/ubiqx-nofap`, `crates/ubiqx-core` or
+  `scripts/nofap`, or to `Cargo.toml` or `Cargo.lock`, starts a smoke run** (about 6 minutes on Ubuntu and macOS, 12 to 15 on Windows). The Windows job
   is the one to read: its runner differs from run to run (three kinds of third adapter so
   far).
 
@@ -236,3 +239,101 @@ environment pinning, "no data") cannot be mutated here; the Windows job is what 
 
 **Not run:** the frontend's tests (nothing of it was touched); anything on a Windows or
 macOS machine other than the CI runners; the smoke script in the sandbox a second time.
+
+## Review
+
+Independent review of the unit, 2026-11-20. Three commits (`84d82c6`, `162a513`,
+`d55a785`) and this section with the checklist entries of runs 10 and 11. **The gate is
+unchanged: six entries open, `policies` closed everywhere. No entry had to be closed.**
+
+### What was checked, and what it showed
+
+| Check | Result |
+|---|---|
+| `cargo test -p ubiqx-nofap -p ubiqx-platform` | before the review: 301 + 22 + 12 and 175 passed, 2 ignored; after it: 176 passed, 2 ignored (`ubiqx-platform`) |
+| `cargo clippy -p ubiqx-nofap -p ubiqx-platform --all-targets -- -D warnings`, and `-p ubiqx-platform` for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin` | clean, before and after |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --workspace --exclude ubiqx-desktop --exclude ubiqx-nofap-desktop --all-targets -- -D warnings`, `cargo test --workspace --exclude …`, `cargo check --workspace --all-targets` | clean, every test binary passes, passes (with another unit's uncommitted file in the tree) |
+| `python3 scripts/nofap/build_blocklist.py --check`, `cargo test -p ubiqx-nofap --test naming`, `bash -n scripts/nofap/system-smoke.sh` | pass; the two offline steps are also green in the job "Rust (portable crates, Linux)" of the main CI on `eb95751` |
+| `scripts/nofap/system-smoke.sh --tiers hosts` without `CI=true` or `UBIQX_SHIELD_SMOKE=1`, and with `CI=false` | refuses, exit 2, nothing touched |
+| `/etc/hosts` of the sandbox | SHA-256 `d343af6b…abd2b5`, 81 bytes, `0:0`, mode 644, no `ubiqx-shield` line; no `/var/lib/ubiqx-shield`. Its creation time (01:47:53 UTC) is 50 s after the commit the sandbox run names, which fits a file renamed over twice by that run |
+| Run 9, the three job logs read in full | each system applied, checked, removed and checked the restore: 42 `ok` lines on Ubuntu, 41 on macOS, 321 on Windows, no `FAIL`; the only skipped steps are the other systems' steps and the one for a red run; the job's own comparison of the hosts file passed; the machine descriptions in the checklist match the logs |
+| The workflow | starts on a push to this one branch only (no `pull_request`, no `workflow_dispatch`), `permissions: contents: read`, no secret, no upload, no release step. A pull request from a fork cannot start it |
+| The five platform fixes, read for the other two systems | Unix behaviour is unchanged by the hosts change (the rename stays; in place only for a mount point), `lookup_blocked` and the environment pinning do nothing off Windows, the DNS scripts are Windows only. Ubuntu and macOS were green in every run after each fix |
+
+The sandbox run of the smoke script was **not repeated** (it is the one real-system run of
+the project); its record was checked against the file's metadata only.
+
+### What was changed
+
+1. **A hosts write in place that stops half-way is undone** (`84d82c6`, `hostsfile.rs`).
+   The fix that made Windows write the hosts file in place gave up the atomic rename there,
+   and `write` returned at once when the write failed: a write that had started and then
+   failed (a full disk, a lock taken by security software) left the start of a block behind
+   the user's lines, against the function's own promise that the old bytes are there on an
+   error. Unix had the same hole where the file is a mount point. Now the bytes read at the
+   start are put back whenever a write did not land and the file no longer holds them.
+   `MemFs::stall_next_in_place` makes an in-place write stop half-way; the test
+   `an_in_place_write_that_stops_half_way_is_undone_and_reported` fails without the fix on
+   every system.
+2. **The workflow** (`162a513`): `persist-credentials: false` on the checkout (the job runs
+   the repository's scripts as administrator); the path filter also names
+   `crates/ubiqx-core/**`, `Cargo.toml` and `Cargo.lock`, which the helper is built from
+   too, so the latest green run stays evidence for the code in the branch.
+3. **The Windows script checks the exit code of the elevation command** (`d55a785`). The
+   runs had only shown exit 0 together with a written block, which a lost exit code would
+   also give (hand-off U4 left open whether `exit $p.ExitCode` hands the code back). The
+   printed command is now also run with a plan argument the helper refuses before it
+   touches anything: run 11 shows the helper's exit code 2 coming back, with the hosts file
+   and the state directory untouched.
+
+Runs 10 and 11 are in the checklist (section 3). Run 11's Windows runner was a fourth kind:
+two adapters up, one of them an "Azure Network Adapter" without a DNS configuration and
+with an index of its own.
+
+### For the units that come after
+
+- **With `hosts` and `resolver` open, a real `NativeSystemShield` applies for real.**
+  `NativeSystemShield::native` carries the real elevator, and in a sandbox that runs as
+  root `pkexec` needs no prompt: a test that hands such a shield a hosts or resolver plan
+  writes `/etc/hosts` and the resolver drop-in of the machine it runs on. Until the flips
+  such a plan was refused as gated. Today one test builds a native shield
+  (`the_native_shield_of_this_machine_follows_the_gate_table`), and it applies only a plan
+  for a tier that is gated. Tests of the shells and of the composition (U7, U8) must go
+  through the scripted platform or the fakes, never through `PlatformServices::native_*`
+  with a system plan.
+- **The smoke workflow runs on this branch only.** After a merge nothing starts it; a
+  change to the system layer on another branch needs `branches` changed first.
+- A push that touches `ubiqx-core`, `Cargo.toml` or `Cargo.lock` now starts a smoke run too.
+
+### Still open after the review
+
+- Everything in the engineer's list of open points stands. Of those, the ones a user can
+  meet: the Windows argument budget and the exit code were measured **without a consent
+  prompt** (item 18); no Windows 10 or 11 client has run any of this (item 28); the adapter
+  with a borrowed index has still not been seen green (item 29; runs 10 and 11 had none).
+- **The Windows full read silences every error of the DNS client per adapter**
+  (`-ErrorAction SilentlyContinue` in `FULL_READ_SCRIPT`), not only "no such object". If
+  the DNS client failed for every adapter while `Get-NetAdapter` still worked, the read
+  would list no adapter, the apply would set nothing and exit 0, and `plan::assess` reads
+  "no active interface" as applied. Before the first Windows fix that case read
+  `unreadable`. Telling the two errors apart needs a change to a script that only a
+  Windows run can test; I left it. The modules not loading at all (item 6) still reads
+  `unreadable`: that error stops the script.
+- **Branches for a closed `hosts` or `resolver` tier are no longer exercised**, in
+  `plan::assess` and in `converge`, because no table keeps them closed. The tests that
+  cover them ask the table and now skip that part (for example the loop over
+  `resolver_closed` in `cycle.rs`, `a_run_writes_only_the_tiers_its_own_gate_opens`, which
+  asserts nothing today). The same branches are unreachable in the product for the same
+  reason; they come back, with their tests, if an entry is closed again. A gate that
+  carries its table as data is a change to a public type (`mock_nofap.rs` builds the
+  struct by its fields), so it is the integrator's.
+- The header comments of both smoke scripts still say `--unverified` is passed "because
+  the gate is closed until a run like this one is green". The scripts pass it either way
+  and the helper ignores it for a tier the table opens, so the runs are unaffected.
+- `system-smoke.ps1` has still only been parsed by a grammar outside PowerShell here; its
+  test is the Windows job (run 11 for the new lines).
+- **Not run by the reviewer:** the frontend's tests (nothing of it was touched); the
+  mutation runs the engineer describes (the tree is shared, and a mutation in it could be
+  committed by the snapshot hook); the smoke script in the sandbox.
+

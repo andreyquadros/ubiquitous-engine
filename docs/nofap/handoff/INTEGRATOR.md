@@ -124,3 +124,20 @@ own `docs/nofap/handoff/<unit>.md` when it finishes (deviations, contract notes,
 27. **Not decided here, for the owner:** the help resources are unverified (the release-mode test
     fails until a person fills `verified_on` and `verified_by`); nobody has read the top-10k review
     list or `extra-ptbr.txt`; providers' and Cloudflare's terms are unread.
+
+## During wave C
+
+28. **A real native shield now applies for real.** With `hosts` and `resolver` open on the three
+    systems, `NativeSystemShield::native` (and `PlatformServices::native_*`) carries the real
+    elevator, and this sandbox runs as root, so `pkexec` needs no prompt: a test or a manual run
+    that hands such a shield a hosts or resolver plan writes `/etc/hosts` and the resolver
+    drop-in of the machine it runs on (hand-off SMOKE, review). Tests of the composition and of
+    the shells (U7, U8) go through the scripted platform or the fakes. A manual start of an app
+    in this sandbox must not enable the module or apply a tier; if it ever happens, compare
+    `/etc/hosts` with a copy taken before and restore it.
+29. **The status race of the engine** (`bc5e225`, integrator): a pass that read "enabled" just
+    before the module was switched off could store "protected" over the "off". One status at a
+    time is now computed, stored and announced (`status_gate`), and the second lock re-checks the
+    switch. The reviewer of U5 checks this fix like the rest of the unit.
+30. **The workflow agents' commits carry the attribution of the model now serving**:
+    `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` and the same `Claude-Session` line.
