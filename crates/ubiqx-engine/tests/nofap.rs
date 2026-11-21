@@ -948,6 +948,19 @@ async fn s06_another_app_in_front_between_detection_and_action_closes_nothing() 
     assert!(!h.pass().hit);
     assert!(h.enforcer.calls().is_empty());
     assert!(h.cards().is_empty());
+
+    // A window the platform gives no id (it happens on Linux): the application alone
+    // tells the two reads apart, and another one in front closes nothing.
+    let no_id = window("Google Chrome", CHROME, TAB_TITLE, None);
+    h.foreground.set(no_id.clone(), Some(&url_of(listed())));
+    h.pass();
+    h.foreground.peeks.lock().extend([
+        Some(no_id),
+        Some(window("Planilhas", "com.example.planilhas", "Custos", None)),
+    ]);
+    assert!(!h.pass().hit);
+    assert!(h.enforcer.calls().is_empty());
+    assert!(h.cards().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -5422,29 +5435,39 @@ async fn a_soft_card_is_shown_only_while_its_window_is_in_front() {
     );
 }
 
-/// The card window blocks in `show` until a task of the same runtime answers. On a
-/// runtime with one thread that task can only run when `show` is called off the async
-/// thread: an answer handled on the async thread would wait for itself.
+/// The card window blocks in `show` until a task of the same runtime answers, and that
+/// task answers only once `show` was entered. On a runtime with one thread it can only
+/// run when `show` is called off the async thread: an answer handled on the async thread
+/// would wait for itself (and give up after five seconds).
 #[tokio::test(flavor = "current_thread")]
 async fn what_an_answer_does_runs_off_the_async_threads() {
     let h = harness().await;
     h.enable(true);
     let (answered, answer) = std::sync::mpsc::channel::<()>();
+    let entered = Arc::new(AtomicUsize::new(0));
     let waited = Arc::new(Mutex::new(Vec::new()));
     {
-        let waited = waited.clone();
+        let (entered, waited) = (entered.clone(), waited.clone());
         let answer = Mutex::new(answer);
         *h.presenter.on_show.lock() = Some(Box::new(move || {
+            entered.fetch_add(1, Ordering::SeqCst);
             let ok = answer.lock().recv_timeout(Duration::from_secs(5)).is_ok();
             waited.lock().push(ok);
         }));
     }
-    let answering = tokio::spawn(async move {
-        for _ in 0..2 {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-            let _ = answered.send(());
-        }
-    });
+    let answering = {
+        let entered = entered.clone();
+        tokio::spawn(async move {
+            let mut sent = 0;
+            while sent < 2 {
+                if entered.load(Ordering::SeqCst) > sent {
+                    let _ = answered.send(());
+                    sent += 1;
+                }
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+        })
+    };
 
     // An unsure answer (the soft card) and a positive one (the closed card).
     h.browse(UNKNOWN);
@@ -5454,7 +5477,10 @@ async fn what_an_answer_does_runs_off_the_async_threads() {
     h.browse(UNKNOWN_2);
     h.detector.push(Ok(explicit(Confidence::High)));
     assert_eq!(h.check_within(200).await, Some(true));
-    answering.await.unwrap();
+    tokio::time::timeout(Duration::from_secs(20), answering)
+        .await
+        .expect("both cards were shown")
+        .unwrap();
     assert_eq!(h.cards_of(CardKind::VisionAsk).len(), 1);
     assert_eq!(h.cards_of(CardKind::VisionClosed).len(), 1);
     assert_eq!(
