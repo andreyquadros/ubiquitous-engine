@@ -67,7 +67,8 @@
           "English"
         ],
         "displayLanguageSelector": true,
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "installerHooks": "packaging/nsis-hooks.nsh"
       }
     },
     "linux": {
@@ -77,7 +78,8 @@
           "libgtk-3-0",
           "libayatana-appindicator3-1 | libappindicator3-1",
           "librsvg2-2"
-        ]
+        ],
+        "preRemoveScript": "packaging/deb-prerm.sh"
       },
       "appimage": {
         "bundleMediaFramework": false

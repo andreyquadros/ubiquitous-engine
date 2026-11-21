@@ -48,6 +48,7 @@ use ubiqx_storage::{Db, SqliteStore};
 pub use ubiqx_ai;
 pub use ubiqx_core;
 pub use ubiqx_engine;
+pub use ubiqx_nofap;
 pub use ubiqx_platform;
 pub use ubiqx_storage;
 

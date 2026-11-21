@@ -2,6 +2,8 @@
 //! always-on-top window UBI uses when the focus guard holds a distraction.
 
 mod commands;
+mod nofap;
+mod nofap_tray;
 
 use std::sync::Arc;
 
@@ -14,6 +16,7 @@ use tauri::{
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_notification::NotificationExt;
 use ubiqx_app::{App, AppConfig};
+use ubiqx_core::nofap::{NofapPresenter, NofapSink};
 use ubiqx_core::ports::{EventSink, InterventionPresenter, Notifier};
 use ubiqx_core::{
     BuildInfo, CoreError, CoreResult, EngineEvent, Intervention, ReleaseInfo, UiLanguage,
@@ -104,6 +107,8 @@ pub struct Menus {
     report_today: MenuItem<tauri::Wry>,
     quit: MenuItem<tauri::Wry>,
     hide_window: MenuItem<tauri::Wry>,
+    /// The tray's menu, which the `nofap` module adds its items to while it is on.
+    tray_menu: Menu<tauri::Wry>,
 }
 
 impl Menus {
@@ -139,6 +144,19 @@ fn update_label(t: &MenuText, lang: UiLanguage, available: Option<&ReleaseInfo>)
     }
 }
 
+/// The label of ubiqX's own quit item in `lang` (also the title of the `nofap` module's
+/// quit confirmation).
+pub fn quit_label(lang: UiLanguage) -> &'static str {
+    MenuText::for_language(lang).quit
+}
+
+/// Refreshes the `nofap` module's tray items on a blocking thread of its own (the quit
+/// sentence may look at the system once).
+fn sync_nofap_tray(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || nofap_tray::sync(&app));
+}
+
 /// Relabels the tray and application menus after a settings write (called by the
 /// `update_settings` command) or once a newer build is known; a no-op before the menus
 /// exist.
@@ -146,6 +164,7 @@ pub fn relabel_menus(app: &AppHandle, lang: UiLanguage) {
     let Some(menus) = app.try_state::<Menus>() else {
         return;
     };
+    sync_nofap_tray(app);
     let available = app
         .try_state::<AppState>()
         .and_then(|s| s.app.engine.update_status().available);
@@ -236,6 +255,31 @@ pub fn show_main_window(app: &AppHandle) {
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+}
+
+/// Shows the dashboard at a hash route of the page (`#/nofap?tab=support`).
+fn show_main_route(app: &AppHandle, route: &str) {
+    if let Some(w) = app.get_webview_window("main") {
+        if let Ok(hash) = serde_json::to_string(route) {
+            let _ = w.eval(format!("window.location.hash = {hash}"));
+        }
+    }
+    show_main_window(app);
+}
+
+/// Quits for good: the `nofap` module counts a quit while it is on and gives up the
+/// primary lock (a database write, so off the main thread), then the engine stops and the
+/// process ends.
+fn quit_app(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Some(state) = app.try_state::<AppState>() {
+            let nofap = state.app.engine.nofap().clone();
+            let _ = tauri::async_runtime::spawn_blocking(move || nofap.on_quit()).await;
+            state.app.engine.shutdown();
+        }
+        app.exit(0);
+    });
 }
 
 // ------------------------------------------------------------------------------------------
@@ -467,10 +511,10 @@ fn build_tray(
                         }
                     });
                 }
-                "quit" => {
-                    engine.shutdown();
-                    app.exit(0);
-                }
+                // While the `nofap` module is on, "Sair" is a submenu whose last item is
+                // the confirmed quit; "Manter aberto" only closes the menu.
+                "quit" | nofap_tray::QUIT_CONFIRMED_ID => quit_app(app),
+                nofap_tray::BREATHER_ID => show_main_route(app, nofap_tray::BREATHER_ROUTE),
                 _ => {}
             }
         })
@@ -490,6 +534,7 @@ fn build_tray(
         report_today: report,
         quit,
         hide_window,
+        tray_menu: menu,
     })
 }
 
@@ -503,6 +548,10 @@ fn log_err(r: CoreResult<()>) {
 pub fn run() {
     let minimized = std::env::args().any(|a| a == "--minimized");
     tauri::Builder::default()
+        // First, so a second launch only brings the running app to the front.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app)
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
@@ -512,6 +561,13 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
+                // The HTTP stack writes a line per request at debug and trace, naming the
+                // provider: with the `nofap` module's screen check that is a line per
+                // check, so these stay at warn whatever the level (hand-off U3).
+                .level_for("hyper_util", log::LevelFilter::Warn)
+                .level_for("hyper", log::LevelFilter::Warn)
+                .level_for("reqwest", log::LevelFilter::Warn)
+                .level_for("rustls", log::LevelFilter::Warn)
                 .build(),
         )
         // In-app update: the plugin downloads and installs the signed artifact listed by the
@@ -540,6 +596,9 @@ pub fn run() {
             let notifier: Arc<dyn Notifier> = Arc::new(TauriNotifier(handle.clone()));
             let presenter: Arc<dyn InterventionPresenter> =
                 Arc::new(TauriPresenter(handle.clone()));
+            let nofap_presenter: Arc<dyn NofapPresenter> =
+                Arc::new(nofap::TauriNofapPresenter(handle.clone()));
+            let nofap_sink: Arc<dyn NofapSink> = Arc::new(nofap::TauriNofapSink(handle.clone()));
             let scripted = if std::env::var("UBIQX_SCRIPTED").is_ok() {
                 Some(ubiqx_app::ubiqx_platform::mock::Scenario::demo_day().looping())
             } else {
@@ -579,7 +638,11 @@ pub fn run() {
                 update_feed_url: Some(env!("UBIQX_UPDATE_FEED_URL").to_string()),
                 ubi_api_base: ubi_api_base(),
                 license_pubkey_hex: None,
-                ..AppConfig::default()
+                nofap_presenter: Some(nofap_presenter),
+                nofap_sink: Some(nofap_sink),
+                // `main` hands `--shield-helper` runs to the helper before Tauri starts, so
+                // this executable can be the elevated one.
+                nofap_system: true,
             };
             let ubiqx = tauri::async_runtime::block_on(async { App::start(config, sink) })
                 .map_err(|e| format!("engine start: {e}"))?;
@@ -619,7 +682,11 @@ pub fn run() {
             #[cfg(not(target_os = "macos"))]
             drop(app_menu);
             let menus = build_tray(app, lang, hide_window)?;
+            let nofap_items =
+                nofap_tray::NofapTray::new(&handle, menus.tray_menu.clone(), menus.quit.clone())?;
             app.manage(menus);
+            app.manage(nofap_items);
+            sync_nofap_tray(&handle);
 
             if !minimized || !onboarding_done {
                 show_main_window(&handle);

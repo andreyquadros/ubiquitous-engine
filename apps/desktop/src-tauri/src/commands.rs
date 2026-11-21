@@ -989,5 +989,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         start_focus_session,
         stop_focus_session,
         test_intervention,
+        crate::nofap::nofap,
     ]
 }
