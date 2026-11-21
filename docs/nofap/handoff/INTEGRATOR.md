@@ -141,3 +141,10 @@ own `docs/nofap/handoff/<unit>.md` when it finishes (deviations, contract notes,
     switch. The reviewer of U5 checks this fix like the rest of the unit.
 30. **The workflow agents' commits carry the attribution of the model now serving**:
     `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` and the same `Claude-Session` line.
+31. **A timing test of the composition failed once under load** (U7 and its reviewer):
+    `crates/ubiqx-app/tests/nofap_app.rs`, `the_loops_start_and_stop_with_the_app`, panicked at
+    line 705 (`a guard pass acted after shutdown`) in one full run of `cargo test -p ubiqx-app`
+    while other builds ran, then passed twice alone. A test that waits on wall-clock time with
+    fixed margins fails on a busy CI runner. Make it wait on events (a pass counter, a shutdown
+    acknowledgement) rather than on sleeps, and prove it by running the whole crate's tests
+    several times in a row while another build runs.
