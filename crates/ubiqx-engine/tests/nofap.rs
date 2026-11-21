@@ -94,6 +94,9 @@ struct Foreground {
     /// Runs once inside the next `resolve_fresh`: something that happens while a pass is
     /// between its first read and its action.
     during_fresh: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    /// Runs once inside the next permission read: something that happens while the
+    /// status is being computed.
+    during_permissions: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     calls: AtomicUsize,
     idle_secs: Mutex<f64>,
     permissions: Mutex<PermissionStatus>,
@@ -107,6 +110,7 @@ impl Default for Foreground {
             fresh: Mutex::new(None),
             peeks: Mutex::new(VecDeque::new()),
             during_fresh: Mutex::new(None),
+            during_permissions: Mutex::new(None),
             calls: AtomicUsize::new(0),
             idle_secs: Mutex::new(0.0),
             permissions: Mutex::new(PermissionStatus {
@@ -192,6 +196,10 @@ impl IdleDetector for Foreground {
 impl PermissionChecker for Foreground {
     fn status(&self) -> PermissionStatus {
         self.count();
+        let meanwhile = self.during_permissions.lock().take();
+        if let Some(meanwhile) = meanwhile {
+            meanwhile();
+        }
         self.permissions.lock().clone()
     }
 
@@ -846,6 +854,15 @@ async fn s03_close_refused_blanks_and_both_refused_leaves_the_card() {
         notes[0],
         ("UBI".to_string(), "Página bloqueada pelo UBI.".to_string())
     );
+
+    // The "repeat" card of the same episode has no stand-in: the operating system keeps
+    // its notifications, with their times.
+    for _ in 0..3 {
+        h.advance(35);
+        assert!(h.pass().hit);
+    }
+    assert_eq!(h.cards_of(CardKind::BlockedRepeat).len(), 1);
+    assert_eq!(h.notifier.0.lock().len(), 2, "once per episode");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1234,11 +1251,16 @@ async fn s11_medium_then_none_asks_a_refusal_shows_nothing_two_refusals_with_a_s
     );
     assert_eq!(asks[0].auto_close_secs, Some(60));
 
-    // A refusal alone: nothing shown.
+    // A refusal alone: nothing shown. Nor two in a row on a window without a signal of
+    // its own.
     h.advance(120);
     h.browse(UNKNOWN_2);
     h.detector.push(Ok(FakeExplicitDetector::refusal()));
+    h.detector.push(Ok(FakeExplicitDetector::refusal()));
     assert_eq!(h.check_within(30).await, Some(false));
+    assert_eq!(h.cards().len(), 1);
+    assert_eq!(h.check_within(200).await, Some(false));
+    assert_eq!(h.detector.calls(), 4, "the second refusal was asked for");
     assert_eq!(h.cards().len(), 1);
 
     // Two refusals in a row on a window that carries a signal of its own: the soft card.
@@ -2347,6 +2369,14 @@ async fn s22_the_tracker_forgets_a_hit() {
     mixed.domain = Some(MIXED.into());
     assert!(!ubiqx_engine::screenshots::should_capture(
         &state, &mixed, later
+    ));
+
+    // Nor a window whose title carries a block-grade word, before anything looked at it.
+    let mut titled = other.clone();
+    titled.title = "galeria porn".into();
+    assert!(ubiqx_nofap::heuristics::title_signal(&titled.title));
+    assert!(!ubiqx_engine::screenshots::should_capture(
+        &state, &titled, later
     ));
 }
 
@@ -4192,6 +4222,8 @@ struct RigSetup {
     failing_remove: bool,
     /// A directory for the primary lock.
     shared: bool,
+    /// What the desktop session lets the guard read (a full one by default).
+    display: DisplaySession,
 }
 
 /// The service built from ports alone, with every port a review test scripts or reads.
@@ -4253,7 +4285,7 @@ fn rig(setup: RigSetup) -> Rig {
             confirm_after: Duration::from_millis(5),
             check_timeout: Duration::from_secs(60),
             background: Background::Inline,
-            display: DisplaySession::Full,
+            display: setup.display,
         },
     };
     let host = NofapHost {
@@ -5547,4 +5579,130 @@ async fn a_second_click_while_the_password_prompt_is_open_raises_no_second_promp
     // Once the prompt is answered, the next one may come.
     assert!(h.service.restore_network().is_ok());
     assert_eq!(prompts(&h), 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_x11_session_is_limited_to_titles_whatever_the_guard_just_did() {
+    let r = rig(RigSetup {
+        display: DisplaySession::TitleOnly,
+        ..RigSetup::default()
+    });
+    r.service
+        .enable(EnableOptions {
+            vision: false,
+            vision_consent: None,
+            ..standalone_options()
+        })
+        .unwrap();
+    let limited = GuardState::Limited {
+        reason: GuardLimit::TitleOnly,
+    };
+    r.browse(UNKNOWN);
+    r.pass();
+    let status = r.service.status();
+    assert_eq!(status.guard, limited);
+    assert_eq!(
+        status.overall,
+        Overall::Reduced,
+        "nothing else protects this window"
+    );
+
+    // A listed page whose address the title printed is closed; the session is still one
+    // that reads titles only, and the status does not say otherwise for a moment.
+    let statuses = |r: &Rig| {
+        r.sink
+            .0
+            .lock()
+            .iter()
+            .filter(|event| matches!(event, NofapEvent::Status { .. }))
+            .count()
+    };
+    let before = statuses(&r);
+    r.browse(listed());
+    r.pass();
+    assert!(r.pass().hit);
+    assert_eq!(r.service.status().guard, limited);
+    r.browse(UNKNOWN);
+    r.pass();
+    assert_eq!(r.service.status().guard, limited);
+    assert_eq!(statuses(&r), before, "the status flipped with a hit");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_wayland_session_is_said_and_nothing_is_captured() {
+    let r = rig(RigSetup {
+        display: DisplaySession::Wayland,
+        ..RigSetup::default()
+    });
+    r.service.enable(standalone_options()).unwrap();
+    // Wayland answers no window in front.
+    *r.foreground.window.lock() = None;
+    for _ in 0..20 {
+        assert!(r.pass().job.is_none());
+        r.clock.advance(ChronoDuration::seconds(5));
+    }
+    let status = r.service.status();
+    assert_eq!(
+        status.guard,
+        GuardState::Limited {
+            reason: GuardLimit::Wayland
+        }
+    );
+    assert_eq!(
+        status.vision,
+        VisionState::Off {
+            reason: VisionOff::Wayland
+        }
+    );
+    assert_eq!(status.overall, Overall::Reduced, "nothing protects it");
+    assert!(r.frames.calls().is_empty());
+    assert_eq!(r.detector.calls(), 0);
+}
+
+/// Integrator decision 29, staged: "turn it off" is confirmed on another thread while a
+/// status is being computed (between its first look at the configuration and its
+/// second). Whatever the order the two then finish in, the status stored and the last one
+/// sent are "off".
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_status_computed_while_the_module_goes_off_is_never_the_last_word() {
+    let r = rig(RigSetup::default());
+    r.service
+        .enable(EnableOptions {
+            vision: false,
+            vision_consent: None,
+            ..no_delay()
+        })
+        .unwrap();
+    let ChangeOutcome::Pending(waiting) = r.service.request(NofapChange::Disable).unwrap() else {
+        panic!("turning it off is a request");
+    };
+    assert!(waiting.ready);
+    let switch = Arc::new(Mutex::new(None));
+    {
+        let (service, switch) = (r.service.clone(), switch.clone());
+        *r.foreground.during_permissions.lock() = Some(Box::new(move || {
+            let off = service.clone();
+            let id = waiting.id.clone();
+            *switch.lock() = Some(std::thread::spawn(move || off.confirm_pending(&id)));
+            // The switch lands now; its own status may have to wait for this one.
+            let started = std::time::Instant::now();
+            while service.enabled() && started.elapsed() < Duration::from_secs(5) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }));
+    }
+    let service = r.service.clone();
+    std::thread::spawn(move || service.view().unwrap())
+        .join()
+        .unwrap();
+    let off = switch.lock().take().expect("the switch was staged");
+    let view = off.join().unwrap().unwrap();
+    assert!(!view.config.enabled);
+    assert_eq!(r.service.status().overall, Overall::Off);
+    let last = r.sink.0.lock().iter().rev().find_map(|event| match event {
+        NofapEvent::Status { status } => Some(status.overall),
+        _ => None,
+    });
+    assert_eq!(last, Some(Overall::Off));
 }

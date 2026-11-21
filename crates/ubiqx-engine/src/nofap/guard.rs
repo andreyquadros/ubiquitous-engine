@@ -233,7 +233,9 @@ impl NofapService {
         if !self.rt.lock().confirmer.observe(&window.app_id, key) {
             return Ok(GuardOutcome::default());
         }
-        self.note_limit(None);
+        // The address was read; what still limits the guard is the session (an X11 one
+        // reads it from the title only), as for any other page in a browser.
+        self.note_limit(self.limit_of(front));
 
         // Read again, immediately before acting: on Windows the action is a keystroke into
         // whatever is active, and the first read may have come from the resolver's cache.
