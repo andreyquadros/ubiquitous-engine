@@ -663,13 +663,15 @@ async fn the_loops_start_and_stop_with_the_app() {
             })
             .unwrap()
     };
+    // Waits for a pass to act. The deadline only bounds a broken loop: on a busy machine
+    // the wait simply lasts longer, and an ordinary run returns at the first pass.
     let wait_for_more_than = |before: i64| {
-        let deadline = std::time::Instant::now() + GUARD_EVERY * 5;
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
         async move {
             while counted() <= before {
                 assert!(
                     std::time::Instant::now() < deadline,
-                    "no guard pass acted within five intervals"
+                    "no guard pass acted within a minute"
                 );
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
@@ -677,12 +679,9 @@ async fn the_loops_start_and_stop_with_the_app() {
     };
     let sites = ubiqx_nofap::list::canary_block();
 
-    // Off by default: the loop's passes act on nothing.
+    // On: the loop's passes close a listed site, and then the next one. (That a module
+    // that is off acts on nothing is the engine's test.)
     open(sites[0]);
-    tokio::time::sleep(GUARD_EVERY + Duration::from_millis(700)).await;
-    assert_eq!(counted(), 0, "a module that is off acted");
-
-    // On: the loop's passes close the listed site, and then the next one.
     app.service
         .enable(EnableOptions {
             vision: false,
@@ -695,12 +694,19 @@ async fn the_loops_start_and_stop_with_the_app() {
     open(sites[1]);
     wait_for_more_than(before).await;
 
-    // Stopped: the module is still on, and no pass acts on a third listed site.
-    app.shutdown();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Stopped: every loop ends (the acknowledgement this waits on, bounded only against a
+    // loop that never stops), the module is still on, and no pass acts on a third listed
+    // site in the next interval.
+    tokio::time::timeout(Duration::from_secs(60), app.stop_loops())
+        .await
+        .expect("the loops end once stopped");
     let stopped_at = counted();
     open(sites[2]);
-    tokio::time::sleep(GUARD_EVERY * 2 + Duration::from_millis(500)).await;
+    tokio::time::sleep(GUARD_EVERY + Duration::from_millis(500)).await;
     assert!(app.service.enabled());
-    assert_eq!(counted(), stopped_at, "a guard pass acted after shutdown");
+    assert_eq!(
+        counted(),
+        stopped_at,
+        "a guard pass acted after the loops ended"
+    );
 }

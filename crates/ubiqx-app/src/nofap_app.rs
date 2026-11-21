@@ -321,6 +321,8 @@ pub struct NofapApp {
     pub build: BuildInfo,
     env: Arc<StandaloneEnv>,
     stop: watch::Sender<bool>,
+    /// The loops' tasks, so [`NofapApp::stop_loops`] can wait for them to end.
+    loops: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 
 impl std::fmt::Debug for NofapApp {
@@ -438,16 +440,25 @@ impl NofapApp {
         );
 
         let (stop, _) = watch::channel(false);
+        let mut loops = Vec::new();
         if config.loops {
-            tokio::spawn(guard_loop(service.clone(), GUARD_EVERY, stop.subscribe()));
-            tokio::spawn(verify_loop(service.clone(), VERIFY_EVERY, stop.subscribe()));
-            tokio::spawn(update_loop(
+            loops.push(tokio::spawn(guard_loop(
+                service.clone(),
+                GUARD_EVERY,
+                stop.subscribe(),
+            )));
+            loops.push(tokio::spawn(verify_loop(
+                service.clone(),
+                VERIFY_EVERY,
+                stop.subscribe(),
+            )));
+            loops.push(tokio::spawn(update_loop(
                 updates.clone(),
                 store.clone(),
                 UPDATE_FIRST_AFTER,
                 UPDATE_EVERY,
                 stop.subscribe(),
-            ));
+            )));
         }
 
         Ok(NofapApp {
@@ -461,6 +472,7 @@ impl NofapApp {
             build: config.build,
             env,
             stop,
+            loops: Mutex::new(loops),
         })
     }
 
@@ -551,9 +563,20 @@ impl NofapApp {
         self.updates.status()
     }
 
-    /// Stops the loops. The guard loop gives up the primary lock as it ends.
+    /// Stops the loops without waiting for them. A pass that is running finishes; no pass
+    /// starts afterwards. The guard loop gives up the primary lock as it ends.
     pub fn shutdown(&self) {
         let _ = self.stop.send(true);
+    }
+
+    /// [`shutdown`](Self::shutdown), then waits until every loop has ended (and the guard
+    /// loop has given up the primary lock). Once this returns no pass of this app runs.
+    pub async fn stop_loops(&self) {
+        self.shutdown();
+        let loops = std::mem::take(&mut *self.loops.lock());
+        for task in loops {
+            let _ = task.await;
+        }
     }
 
     fn permissions(&self) -> PermissionStatus {
@@ -635,6 +658,8 @@ async fn guard_loop(service: Arc<NofapService>, every: Duration, mut stop: watch
     tick.tick().await;
     loop {
         tokio::select! {
+            // A stop already signalled wins over a tick that is due at the same moment.
+            biased;
             _ = stop.changed() => break,
             _ = tick.tick() => {}
         }
@@ -665,6 +690,8 @@ async fn verify_loop(service: Arc<NofapService>, every: Duration, mut stop: watc
     tick.tick().await;
     loop {
         tokio::select! {
+            // A stop already signalled wins over a tick that is due at the same moment.
+            biased;
             _ = stop.changed() => break,
             _ = tick.tick() => {}
         }
@@ -689,6 +716,8 @@ async fn update_loop(
     let mut wait = first;
     loop {
         tokio::select! {
+            // A stop already signalled wins over a tick that is due at the same moment.
+            biased;
             _ = stop.changed() => break,
             _ = tokio::time::sleep(wait) => {}
         }
