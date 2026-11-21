@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "dev:nofap": "vite --mode nofap",
+    "build:nofap": "tsc --noEmit -p tsconfig.json && vite build --mode nofap",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest",
