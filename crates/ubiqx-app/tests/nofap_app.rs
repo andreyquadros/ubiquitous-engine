@@ -2,22 +2,32 @@
 //! with blocks, an AI check that acts and every command of the page leaves no row in a
 //! productivity table; the host commands round-trip; the standalone identity is its own.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{Duration as ChronoDuration, TimeZone, Utc};
+use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 use ubiqx_ai::fake::FakeExplicitDetector;
 use ubiqx_app::nofap_app::{
     HostAbout, HostSettings, HostSettingsPatch, NofapApp, NofapAppConfig, NofapHostCommand,
 };
-use ubiqx_app::AiBackend;
+use ubiqx_app::{AiBackend, App, AppConfig};
 use ubiqx_core::clock::FixedClock;
-use ubiqx_core::nofap::{Confidence, ExplicitVerdict, NofapEvent, NofapSink, Overall, TierState};
-use ubiqx_core::nofap_ipc::{ConsentArgs, EnableOptions, NofapCommand, NofapView, VisionScope};
+use ubiqx_core::nofap::{
+    ApplyOutcome, Confidence, ExplicitVerdict, NofapCard, NofapEvent, NofapSink, Overall,
+    PlannedChange, TierState,
+};
+use ubiqx_core::nofap_ipc::{
+    ChangeOutcome, ConsentArgs, EnableOptions, ExportResult, NofapCommand, NofapView, SampleFrame,
+    SitesView, SupportView, VisionScope,
+};
+use ubiqx_core::ports::EventSink;
 use ubiqx_core::ports::{PermissionKind, PermissionState, PermissionStatus};
 use ubiqx_core::product::{ProductId, SHIELD, UBIQX};
+use ubiqx_core::EngineEvent;
 use ubiqx_core::{AiProvider, UiLanguage, UpdateStatus};
 use ubiqx_engine::nofap::{Background, DisplaySession, Tuning};
 use ubiqx_platform::mock::{Scenario, ScriptedFrameSource, Step};
@@ -40,6 +50,12 @@ const PRODUCTIVITY_TABLES: [&str; 9] = [
 
 /// The module's own tables.
 const NOFAP_TABLES: [&str; 3] = ["nofap_state", "nofap_sites", "nofap_day"];
+
+/// Tables the standalone product may write besides the module's own: its settings row,
+/// the update checker's state, and the cost ledger of the AI check. Every other table of
+/// the schema, including one added later, must stay empty (`categories` keeps the rows its
+/// migration seeds).
+const STANDALONE_WRITES: [&str; 3] = ["settings", "kv", "ai_usage"];
 
 fn listed() -> &'static str {
     ubiqx_nofap::list::canary_block()[0]
@@ -135,6 +151,63 @@ fn count(app: &NofapApp, table: &str) -> i64 {
         .unwrap()
 }
 
+/// Every table of the database and its row count.
+fn table_rows(app: &NofapApp) -> BTreeMap<String, i64> {
+    let names: Vec<String> = app
+        .store
+        .db()
+        .with(|conn| {
+            let mut statement = conn.prepare(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+            )?;
+            let names = statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(names)
+        })
+        .unwrap();
+    names
+        .into_iter()
+        .map(|name| {
+            let rows = count(app, &name);
+            (name, rows)
+        })
+        .collect()
+}
+
+/// Reads a reply as the type its command documents (design 7.8), or says which it is not.
+fn reply_as<T: DeserializeOwned>(cmd: &str, reply: &Value) -> Result<(), String> {
+    serde_json::from_value::<T>(reply.clone())
+        .map(|_| ())
+        .map_err(|error| format!("the reply to {cmd} is not the documented type: {error}"))
+}
+
+/// Checks the reply of one request of `commands.json` against the type its command
+/// documents.
+fn check_reply(request: &Value, reply: &Value) -> Result<(), String> {
+    let cmd = request["cmd"].as_str().unwrap_or_default();
+    match cmd {
+        "view" | "enable" | "consent_vision" | "confirm_pending" | "cancel_pending" => {
+            reply_as::<NofapView>(cmd, reply)
+        }
+        "request" => reply_as::<ChangeOutcome>(cmd, reply),
+        "system_preview" => reply_as::<Vec<PlannedChange>>(cmd, reply),
+        "system_apply" | "system_remove" | "restore_network" => {
+            reply_as::<ApplyOutcome>(cmd, reply)
+        }
+        "sites" => reply_as::<SitesView>(cmd, reply),
+        "support" => reply_as::<SupportView>(cmd, reply),
+        "card" => reply_as::<NofapCard>(cmd, reply),
+        "sample_frame" => reply_as::<Option<SampleFrame>>(cmd, reply),
+        "export" => reply_as::<ExportResult>(cmd, reply),
+        "record" | "card_action" | "erase_history" | "reset" | "test_card" => reply
+            .is_null()
+            .then_some(())
+            .ok_or_else(|| format!("the reply to {cmd} is not null: {reply}")),
+        other => Err(format!("no documented reply for {other}")),
+    }
+}
+
 fn commands_fixture() -> Vec<Value> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../apps/desktop/src/nofap/fixtures/commands.json");
@@ -155,6 +228,7 @@ async fn a_whole_session_leaves_no_row_in_a_productivity_table() {
     for table in PRODUCTIVITY_TABLES.iter().chain(NOFAP_TABLES.iter()) {
         assert_eq!(count(app, table), 0, "{table} before the session");
     }
+    let seeded_categories = count(app, "categories");
     // The AI check needs the onboarding of this product and a provider of its own.
     host(
         app,
@@ -196,14 +270,41 @@ async fn a_whole_session_leaves_no_row_in_a_productivity_table() {
     assert_eq!(s.detector.calls(), 1);
     assert!(count(app, "nofap_day") > 0, "the hits were counted");
 
-    // Every request the page and the card window can send.
+    // Every request the page and the card window can send, through the app's own
+    // handler: each answer has the type its command documents, and the only refusals are
+    // the ones this state calls for.
+    let mut refused = Vec::new();
     for request in commands_fixture() {
         let command: NofapCommand = serde_json::from_value(request.clone())
             .unwrap_or_else(|error| panic!("{request}: {error}"));
-        // Some are refused in this state (an unknown id, `reset` while on); what matters
-        // here is what they write.
-        let _ = app.handle(command);
+        match app.handle(command) {
+            Ok(reply) => check_reply(&request, &reply).unwrap_or_else(|error| panic!("{error}")),
+            Err(error) => refused.push(format!("{}: {error}", request["cmd"])),
+        }
     }
+    let refused_cmds: Vec<&str> = refused
+        .iter()
+        .map(|line| line.split(':').next().unwrap().trim_matches('"'))
+        .collect();
+    assert_eq!(
+        refused_cmds,
+        [
+            // The module was switched on above; later changes go through requests.
+            "enable",
+            // The fixture consents for "IA do Ubi", which this product does not offer.
+            "consent_vision",
+            // `site-1` and `site-2` (remove_block, remove_allow) are nobody's ids.
+            "request",
+            "request",
+            // So is `pending-1`.
+            "confirm_pending",
+            "cancel_pending",
+            // Only while the module is off.
+            "system_remove",
+            "reset",
+        ],
+        "{refused:#?}"
+    );
     let card = s
         .sink
         .0
@@ -228,9 +329,85 @@ async fn a_whole_session_leaves_no_row_in_a_productivity_table() {
     for table in PRODUCTIVITY_TABLES {
         assert_eq!(count(app, table), 0, "{table} after the session");
     }
+    // Nothing else either: every table outside the module's own and the few the product
+    // keeps is empty, and the seeded categories are as the migration left them.
+    for (table, rows) in table_rows(app) {
+        if table == "categories" {
+            assert_eq!(rows, seeded_categories, "categories after the session");
+        } else if !NOFAP_TABLES.contains(&table.as_str())
+            && !STANDALONE_WRITES.contains(&table.as_str())
+        {
+            assert_eq!(rows, 0, "{table} after the session");
+        }
+    }
+    let other_usage = app
+        .store
+        .db()
+        .with(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM ai_usage WHERE kind <> 'nofap_vision'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(Into::into)
+        })
+        .unwrap();
+    assert_eq!(other_usage, 0, "only the AI check's cost is recorded");
     // The module itself did write: its configuration (the fixture's `erase_history`
     // cleared the counters again).
     assert_eq!(count(app, "nofap_state"), 1);
+}
+
+struct NoEvents;
+
+impl EventSink for NoEvents {
+    fn emit(&self, _event: EngineEvent) {}
+}
+
+/// The zero-rows test above means something only if the standalone database is ubiqX's
+/// schema: the same tables at the same version, from the same migration list.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_standalone_database_has_the_schema_of_ubiqx() {
+    let s = session(AiBackend::None);
+    let ubiqx_dir = tempfile::tempdir().unwrap();
+    let ubiqx = App::start(
+        AppConfig {
+            data_dir: Some(ubiqx_dir.path().to_path_buf()),
+            scripted_platform: Some(Scenario::new(vec![])),
+            ai: AiBackend::None,
+            ..AppConfig::default()
+        },
+        Arc::new(NoEvents),
+    )
+    .unwrap();
+    let schema = |db: &ubiqx_storage::Db| -> (i64, Vec<String>) {
+        db.with(|conn| {
+            let version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+            let mut statement = conn.prepare(
+                "SELECT type || ' ' || name || ': ' || IFNULL(sql, '') FROM sqlite_master \
+                 WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
+            )?;
+            let objects = statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((version, objects))
+        })
+        .unwrap()
+    };
+    let standalone = schema(s.app.store.db());
+    assert!(s.dir.path().join(SHIELD.db_file).is_file());
+    assert!(standalone.0 >= 3, "the module's migration ran");
+    assert_eq!(standalone, schema(ubiqx.store.db()));
+    for table in PRODUCTIVITY_TABLES.iter().chain(NOFAP_TABLES.iter()) {
+        assert!(
+            standalone
+                .1
+                .iter()
+                .any(|o| o.starts_with(&format!("table {table}:"))),
+            "{table} is in the schema"
+        );
+    }
+    ubiqx.engine.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -380,6 +557,45 @@ async fn the_key_permissions_and_updates_go_through_the_host_command() {
         serde_json::from_value(host(app, json!({ "cmd": "update_check" })).await).unwrap();
     assert_eq!(status.available, None);
     assert_eq!(status.feed_url, SHIELD.feed_url);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_managed_provider_cannot_be_consented_to() {
+    let s = session(AiBackend::Fake);
+    let app = &s.app;
+    let managed = ConsentArgs {
+        provider: AiProvider::Ubi,
+        managed: true,
+    };
+    let enable = EnableOptions {
+        vision_consent: Some(managed),
+        ..options()
+    };
+    assert!(app.handle(NofapCommand::Enable(enable)).is_err());
+    assert!(!app.service.enabled(), "a refused set-up changes nothing");
+
+    let view: NofapView =
+        serde_json::from_value(app.handle(NofapCommand::Enable(options())).unwrap()).unwrap();
+    let consent = view.config.vision.consent.clone();
+    assert_eq!(
+        consent.as_ref().map(|c| c.provider),
+        Some(AiProvider::OpenAi)
+    );
+    assert!(app.handle(NofapCommand::ConsentVision(managed)).is_err());
+    let after: NofapView = serde_json::from_value(app.handle(NofapCommand::View).unwrap()).unwrap();
+    assert_eq!(after.config.vision.consent, consent);
+    // A vendor of this product is consented to as before.
+    let anthropic = ConsentArgs {
+        provider: AiProvider::Anthropic,
+        managed: false,
+    };
+    let view: NofapView =
+        serde_json::from_value(app.handle(NofapCommand::ConsentVision(anthropic)).unwrap())
+            .unwrap();
+    assert_eq!(
+        view.config.vision.consent.map(|c| c.provider),
+        Some(AiProvider::Anthropic)
+    );
 }
 
 #[test]

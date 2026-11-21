@@ -466,7 +466,20 @@ impl NofapApp {
 
     /// The `nofap` command, the same handler as ubiqX's. Blocks (the database, and for the
     /// system commands the password prompt): a shell calls it on the blocking pool.
+    ///
+    /// A consent to the AI check for the managed provider is refused here: "IA do Ubi" is
+    /// not offered in this product (design 8.5), and the service itself does not know which
+    /// providers its host offers.
     pub fn handle(&self, command: NofapCommand) -> CoreResult<Value> {
+        match &command {
+            NofapCommand::ConsentVision(consent) => own_provider(consent.provider)?,
+            NofapCommand::Enable(options) => {
+                if let Some(consent) = &options.vision_consent {
+                    own_provider(consent.provider)?;
+                }
+            }
+            _ => {}
+        }
         ubiqx_engine::nofap::ipc::handle(&self.service, command)
     }
 

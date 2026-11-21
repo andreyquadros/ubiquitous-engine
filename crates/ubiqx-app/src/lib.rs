@@ -540,8 +540,6 @@ impl App {
     }
 }
 
-/// The engine's AI ports, the vendor clients (remote backend only) and the `nofap` module's
-/// screen check over the same routing client.
 /// Validates a candidate API key of `provider` against that vendor without storing it. For
 /// OpenAI and xAI the billing probe uses `current_model` when it belongs to `provider`,
 /// otherwise the vendor's recommended classification model. The managed provider has no
@@ -579,6 +577,8 @@ pub async fn validate_api_key(
     }
 }
 
+/// The engine's AI ports, the vendor clients (remote backend only) and the `nofap` module's
+/// screen check over the same routing client.
 fn build_ai(
     backend: AiBackend,
     platform: &PlatformServices,

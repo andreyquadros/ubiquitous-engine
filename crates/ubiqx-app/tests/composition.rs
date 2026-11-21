@@ -140,3 +140,60 @@ fn the_system_layer_is_opt_in() {
         SystemCapabilities::none(NO_SYSTEM_LAYER)
     );
 }
+
+fn capability(name: &str) -> serde_json::Value {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../apps/desktop/src-tauri/capabilities")
+        .join(name);
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    serde_json::from_str(&text).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+}
+
+fn strings(value: &serde_json::Value) -> Vec<&str> {
+    value
+        .as_array()
+        .expect("an array")
+        .iter()
+        .map(|v| v.as_str().expect("a string"))
+        .collect()
+}
+
+/// The card window may close itself, ask for its height and be dragged: what its page
+/// calls, nothing more. It never takes focus (design 5.3), so it has no set-focus; and the
+/// main window's and the intervention window's capabilities name only their own window.
+#[test]
+fn the_card_window_is_granted_only_what_its_page_calls() {
+    let card = capability("shield-card.json");
+    assert_eq!(strings(&card["windows"]), ["shield-card"]);
+    assert_eq!(
+        strings(&card["permissions"]),
+        [
+            "core:default",
+            "core:window:allow-close",
+            "core:window:allow-set-size",
+            "core:window:allow-start-dragging",
+        ]
+    );
+    assert_eq!(strings(&capability("default.json")["windows"]), ["main"]);
+    assert_eq!(
+        strings(&capability("intervention.json")["windows"]),
+        ["intervention"]
+    );
+
+    // What the card page asks of its window, read from its source.
+    let page = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../apps/desktop/src/nofap/NofapCard.tsx"),
+    )
+    .unwrap();
+    assert!(page.contains("getCurrentWindow().close()"));
+    assert!(page.contains("getCurrentWindow().setSize("));
+    assert!(page.contains("data-tauri-drag-region"));
+    for refused in ["setFocus(", ".hide()", ".show()", "setAlwaysOnTop("] {
+        assert!(
+            !page.contains(refused),
+            "the card page calls {refused}: its capability does not allow it"
+        );
+    }
+}
