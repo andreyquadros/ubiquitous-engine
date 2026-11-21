@@ -579,6 +579,7 @@ pub fn run() {
                 update_feed_url: Some(env!("UBIQX_UPDATE_FEED_URL").to_string()),
                 ubi_api_base: ubi_api_base(),
                 license_pubkey_hex: None,
+                ..AppConfig::default()
             };
             let ubiqx = tauri::async_runtime::block_on(async { App::start(config, sink) })
                 .map_err(|e| format!("engine start: {e}"))?;

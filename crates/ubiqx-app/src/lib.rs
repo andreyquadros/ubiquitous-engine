@@ -7,6 +7,14 @@
 //! and the port implementations talk to a [`RoutingLlmClient`] that forwards each call to the
 //! provider selected in settings, so the user can switch providers without restarting. The
 //! proxy's license endpoint is wired as the engine's [`LicenseServer`].
+//!
+//! The `nofap` module gets its ports here too ([`nofap_ports`]): the store as its
+//! repository, the platform's window-only frame source, the screen check over the same
+//! routing client, and the machine's system layer only for a shell that hands
+//! `--shield-helper` runs to the helper. The standalone product is composed in
+//! [`nofap_app`], from the same pieces and without an engine.
+
+pub mod nofap_app;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -19,14 +27,21 @@ use ubiqx_ai::openai::{OpenAiCompatClient, OpenAiCompatConfig};
 use ubiqx_ai::router::{ProviderSource, RoutingLlmClient};
 use ubiqx_ai::ubi::UbiLicenseClient;
 use ubiqx_core::license::UBIQX_API_BASE_DEFAULT;
+use ubiqx_core::nofap::{
+    Confidence, ExplicitDetector, ExplicitVerdict, NofapPresenter, NofapSink, SystemShield,
+};
 use ubiqx_core::ports::{EventSink, InterventionPresenter, SecretStore, SettingsRepo};
 use ubiqx_core::{
-    AiModels, AiProvider, BuildInfo, CoreError, CoreResult, ManagedUsage, SystemClock, UiLanguage,
+    AiModels, AiProvider, BuildInfo, CoreError, CoreResult, ManagedUsage, ProductIdentity,
+    SystemClock, UiLanguage,
 };
+use ubiqx_engine::nofap::Tuning;
 use ubiqx_engine::{
     AiPorts, Engine, EngineDeps, EngineHandle, LicenseDeps, LicenseServer,
-    LogInterventionPresenter, PlatformPorts, Repos,
+    LogInterventionPresenter, LogNofapPresenter, NoSystemShield, NofapPorts, NullNofapSink,
+    PlatformPorts, Repos,
 };
+use ubiqx_platform::sysblock::NativeSystemShield;
 use ubiqx_platform::PlatformServices;
 use ubiqx_storage::{Db, SqliteStore};
 
@@ -98,6 +113,19 @@ pub struct AppConfig {
     /// Hex Ed25519 public key license keys are verified against; `None` = the key embedded
     /// in `ubiqx_core::license` (tests inject their own pair).
     pub license_pubkey_hex: Option<String>,
+    /// Shows the `nofap` module's card window (the desktop shell). Defaults to logging, in
+    /// which case a card falls back to the neutral notification.
+    pub nofap_presenter: Option<Arc<dyn NofapPresenter>>,
+    /// Receives the `nofap` module's events (the desktop shell forwards them to the
+    /// webview). Defaults to dropping them.
+    pub nofap_sink: Option<Arc<dyn NofapSink>>,
+    /// Whether the `nofap` module gets this machine's system layer (the hosts block, the
+    /// family resolver, the browser policies) and the primary lock it shares with the
+    /// standalone product. The system layer elevates the **running executable** with
+    /// `--shield-helper`, so only a shell whose `main` hands those runs to
+    /// `ubiqx_platform::sysblock::helper::main_if_requested` may set it. Ignored with a
+    /// scripted platform. Default `false`: the CLI and tests never touch the system.
+    pub nofap_system: bool,
 }
 
 impl Default for AppConfig {
@@ -113,6 +141,9 @@ impl Default for AppConfig {
             update_feed_url: None,
             ubi_api_base: None,
             license_pubkey_hex: None,
+            nofap_presenter: None,
+            nofap_sink: None,
+            nofap_system: false,
         }
     }
 }
@@ -143,6 +174,56 @@ pub fn default_data_dir() -> PathBuf {
     directories::ProjectDirs::from("ai", "ubiqx", "ubiqX")
         .map(|d| d.data_dir().to_path_buf())
         .unwrap_or_else(|| PathBuf::from(".ubiqx"))
+}
+
+/// The directory both products share for the `nofap` module's primary lock
+/// (`<local data>/ubiqx-shield`); `None` when the system names no local data directory.
+pub fn nofap_shared_dir() -> Option<PathBuf> {
+    directories::BaseDirs::new()
+        .map(|dirs| dirs.data_local_dir().join(ubiqx_nofap::primary::SHARED_DIR))
+}
+
+/// The `nofap` module's system layer for `identity`: the machine's own when `wanted` and
+/// this system has one, otherwise the inert layer that reports every tier unsupported.
+pub fn nofap_system_layer(identity: &ProductIdentity, wanted: bool) -> Arc<dyn SystemShield> {
+    if wanted {
+        if let Some(shield) = NativeSystemShield::native(identity.id) {
+            return Arc::new(shield);
+        }
+    }
+    Arc::new(NoSystemShield)
+}
+
+/// Everything the `nofap` module needs besides what its host already has.
+pub struct NofapWiring {
+    pub system: Arc<dyn SystemShield>,
+    pub detector: Option<Arc<dyn ExplicitDetector>>,
+    pub presenter: Option<Arc<dyn NofapPresenter>>,
+    pub sink: Option<Arc<dyn NofapSink>>,
+    /// `None`: no primary lock (tests, the CLI, a scripted platform).
+    pub shared_dir: Option<PathBuf>,
+}
+
+/// The `nofap` module's ports: the store as its repository and the platform's window-only
+/// frame source (`PlatformServices::frames`, never a capturer that can answer with the
+/// screen), plus what `wiring` chose.
+pub fn nofap_ports(
+    platform: &PlatformServices,
+    store: Arc<SqliteStore>,
+    wiring: NofapWiring,
+) -> NofapPorts {
+    NofapPorts {
+        system: wiring.system,
+        frames: platform.frames.clone(),
+        detector: wiring.detector,
+        presenter: wiring
+            .presenter
+            .unwrap_or_else(|| Arc::new(LogNofapPresenter)),
+        sink: wiring.sink.unwrap_or_else(|| Arc::new(NullNofapSink)),
+        repo: store,
+        shared_dir: wiring.shared_dir,
+        tuning: Tuning::default(),
+    }
 }
 
 /// Bridges the engine's secret store to one vendor's client so a key pasted at runtime is
@@ -227,7 +308,7 @@ pub struct RemoteClients {
 }
 
 impl RemoteClients {
-    fn build(
+    pub fn build(
         secrets: &Arc<dyn SecretStore>,
         store: Arc<SqliteStore>,
         ubi_api_base: &str,
@@ -282,6 +363,19 @@ impl RemoteClients {
         }
     }
 
+    /// One client over all four that forwards each call to the provider selected in the
+    /// settings row of `store` at the moment of the call.
+    pub fn routing(&self, store: Arc<SqliteStore>) -> Arc<dyn LlmClient> {
+        let source: Arc<dyn ProviderSource> = Arc::new(StoredProvider::new(store));
+        Arc::new(RoutingLlmClient::new(
+            AiProvider::ALL
+                .into_iter()
+                .map(|p| (p, self.llm(p)))
+                .collect(),
+            source,
+        ))
+    }
+
     /// Chat-capable model ids the stored key of `provider` can use (for Ubi: the proxy's two
     /// aliases, without a request).
     pub async fn list_models(&self, provider: AiProvider) -> CoreResult<Vec<String>> {
@@ -329,7 +423,7 @@ impl App {
         };
         let store = Arc::new(SqliteStore::new(db));
 
-        let (mut platform, scripted) = match config.scripted_platform {
+        let (mut platform, scripted) = match config.scripted_platform.clone() {
             Some(scenario) => {
                 let (p, s) = PlatformServices::scripted(scenario);
                 (p, Some(s))
@@ -342,7 +436,19 @@ impl App {
             platform.notifier = n;
         }
 
-        let (ai, remote) = build_ai(config.ai, &platform, store.clone(), &ubi_api_base);
+        let (ai, remote, detector) = build_ai(config.ai, &platform, store.clone(), &ubi_api_base);
+        let system = config.nofap_system && config.scripted_platform.is_none();
+        let nofap = nofap_ports(
+            &platform,
+            store.clone(),
+            NofapWiring {
+                system: nofap_system_layer(&ubiqx_core::product::UBIQX, system),
+                detector,
+                presenter: config.nofap_presenter,
+                sink: config.nofap_sink,
+                shared_dir: if system { nofap_shared_dir() } else { None },
+            },
+        );
         let presenter: Arc<dyn InterventionPresenter> = config
             .presenter
             .unwrap_or_else(|| Arc::new(LogInterventionPresenter));
@@ -382,7 +488,7 @@ impl App {
                 .filter(|u| !u.trim().is_empty())
                 .unwrap_or_else(|| ubiqx_core::update::DEFAULT_FEED_URL.to_string()),
             license,
-            nofap: ubiqx_engine::NofapPorts::inert(),
+            nofap,
             identity: &ubiqx_core::product::UBIQX,
         };
         let engine = Engine::start(deps)?;
@@ -403,35 +509,15 @@ impl App {
     /// that will actually be billed. The managed provider has no API key
     /// ([`CoreError::Invalid`]): its license goes through `EngineHandle::set_license_key`.
     pub async fn validate_api_key(&self, provider: AiProvider, key: &str) -> CoreResult<()> {
-        let source: Arc<dyn ApiKeySource> = Arc::new(StaticApiKey(key.trim().to_string()));
-        let language: Arc<dyn LanguageSource> = Arc::new(self.engine.settings().ui_language());
-        match provider {
-            AiProvider::Ubi => Err(CoreError::Invalid(
-                "the managed provider is validated through the license key".into(),
-            )),
-            AiProvider::Anthropic => {
-                AnthropicClient::new(AnthropicConfig::default(), source, self.store.clone())?
-                    .with_language_source(language)
-                    .validate_key()
-                    .await
-            }
-            AiProvider::OpenAi | AiProvider::Xai => {
-                let current = self.engine.settings().models.classify;
-                let probe = if provider.owns_model(&current) {
-                    current
-                } else {
-                    AiModels::for_provider(provider).classify
-                };
-                OpenAiCompatClient::new(
-                    OpenAiCompatConfig::for_provider(provider),
-                    source,
-                    self.store.clone(),
-                )?
-                .with_language_source(language)
-                .validate_key(&probe)
-                .await
-            }
-        }
+        let settings = self.engine.settings();
+        validate_api_key(
+            self.store.clone(),
+            provider,
+            key,
+            settings.ui_language(),
+            &settings.models.classify,
+        )
+        .await
     }
 
     /// Chat-capable model ids the stored key of `provider` can use, sorted. Works with any
@@ -453,14 +539,57 @@ impl App {
     }
 }
 
+/// The engine's AI ports, the vendor clients (remote backend only) and the `nofap` module's
+/// screen check over the same routing client.
+/// Validates a candidate API key of `provider` against that vendor without storing it. For
+/// OpenAI and xAI the billing probe uses `current_model` when it belongs to `provider`,
+/// otherwise the vendor's recommended classification model. The managed provider has no
+/// API key ([`CoreError::Invalid`]).
+pub async fn validate_api_key(
+    store: Arc<SqliteStore>,
+    provider: AiProvider,
+    key: &str,
+    language: UiLanguage,
+    current_model: &str,
+) -> CoreResult<()> {
+    let source: Arc<dyn ApiKeySource> = Arc::new(StaticApiKey(key.trim().to_string()));
+    let language: Arc<dyn LanguageSource> = Arc::new(language);
+    match provider {
+        AiProvider::Ubi => Err(CoreError::Invalid(
+            "the managed provider is validated through the license key".into(),
+        )),
+        AiProvider::Anthropic => {
+            AnthropicClient::new(AnthropicConfig::default(), source, store)?
+                .with_language_source(language)
+                .validate_key()
+                .await
+        }
+        AiProvider::OpenAi | AiProvider::Xai => {
+            let probe = if provider.owns_model(current_model) {
+                current_model.to_string()
+            } else {
+                AiModels::for_provider(provider).classify
+            };
+            OpenAiCompatClient::new(OpenAiCompatConfig::for_provider(provider), source, store)?
+                .with_language_source(language)
+                .validate_key(&probe)
+                .await
+        }
+    }
+}
+
 fn build_ai(
     backend: AiBackend,
     platform: &PlatformServices,
     store: Arc<SqliteStore>,
     ubi_api_base: &str,
-) -> (AiPorts, Option<RemoteClients>) {
+) -> (
+    AiPorts,
+    Option<RemoteClients>,
+    Option<Arc<dyn ExplicitDetector>>,
+) {
     match backend {
-        AiBackend::None => (AiPorts::default(), None),
+        AiBackend::None => (AiPorts::default(), None, None),
         AiBackend::Fake => (
             AiPorts {
                 remote: Some(Arc::new(demo_fake_classifier())),
@@ -473,6 +602,7 @@ fn build_ai(
                 requires_api_key: false,
             },
             None,
+            Some(demo_fake_detector()),
         ),
         AiBackend::Remote => {
             let remote = match RemoteClients::build(&platform.secrets, store.clone(), ubi_api_base)
@@ -480,17 +610,10 @@ fn build_ai(
                 Ok(r) => r,
                 Err(e) => {
                     tracing::error!(error = %e, "could not build the AI clients; running without remote AI");
-                    return (AiPorts::default(), None);
+                    return (AiPorts::default(), None, None);
                 }
             };
-            let source: Arc<dyn ProviderSource> = Arc::new(StoredProvider::new(store));
-            let llm: Arc<dyn LlmClient> = Arc::new(RoutingLlmClient::new(
-                AiProvider::ALL
-                    .into_iter()
-                    .map(|p| (p, remote.llm(p)))
-                    .collect(),
-                source,
-            ));
+            let llm = remote.routing(store);
             (
                 AiPorts {
                     remote: Some(Arc::new(ubiqx_ai::classifier::LlmTextClassifier::new(
@@ -502,13 +625,22 @@ fn build_ai(
                     report_writer: Some(Arc::new(ubiqx_ai::report::LlmReportWriter::new(
                         llm.clone(),
                     ))),
-                    advisor: Some(Arc::new(ubiqx_ai::advisor::LlmAdvisor::new(llm))),
+                    advisor: Some(Arc::new(ubiqx_ai::advisor::LlmAdvisor::new(llm.clone()))),
                     requires_api_key: true,
                 },
                 Some(remote),
+                Some(Arc::new(ubiqx_ai::explicit::LlmExplicitDetector::new(llm))),
             )
         }
     }
+}
+
+/// The screen check of the fake backend: it never sees anything explicit, so a demo never
+/// closes a window on its own.
+fn demo_fake_detector() -> Arc<dyn ExplicitDetector> {
+    Arc::new(ubiqx_ai::fake::FakeExplicitDetector::always(
+        ubiqx_ai::fake::FakeExplicitDetector::verdict(ExplicitVerdict::None, Confidence::High),
+    ))
 }
 
 /// Fake classifier keyed to the demo categories and the demo scenario's apps/domains.
