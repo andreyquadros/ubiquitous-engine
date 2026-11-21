@@ -11,7 +11,7 @@
 import { __nofapMock, handle as handleNofap } from '../nofap/mock';
 import type { AiProvider, AiReadiness, NofapCommand } from '../nofap/types';
 import { initialLocale } from '../i18n/locale';
-import type { BuildInfo, HostAbout, HostCommand, HostSettings, PermissionStatus, UpdateStatus } from './types';
+import { wireLanguage, type BuildInfo, type HostAbout, type HostCommand, type HostSettings, type PermissionStatus, type UpdateStatus } from './types';
 
 /** Model ids the mock offers per provider; the first is the default (`AiModels::for_provider`). */
 export const MOCK_MODELS: Record<AiProvider, string[]> = {
@@ -39,7 +39,7 @@ export const MOCK_BAD_KEY = 'sk-invalid';
 
 function fresh(onboarded: boolean): HostState {
   return {
-    settings: { ui_language: initialLocale(), ai_provider: 'anthropic', vision_model: MOCK_MODELS.anthropic[0]!, check_updates: true, onboarding_done: onboarded },
+    settings: { ui_language: wireLanguage(initialLocale()), ai_provider: 'anthropic', vision_model: MOCK_MODELS.anthropic[0]!, check_updates: true, onboarding_done: onboarded },
     keys: new Set(onboarded ? (['anthropic'] as AiProvider[]) : []),
     permissions: { screen_recording: 'not_applicable', automation: 'not_applicable', accessibility: 'not_applicable' },
     autostart: false,
@@ -82,7 +82,11 @@ export async function handleHost(command: HostCommand): Promise<unknown> {
     case 'settings_set': {
       const patch = command.args;
       const next = { ...H.settings };
-      if (patch.ui_language) next.ui_language = patch.ui_language;
+      if (patch.ui_language !== undefined) {
+        // serde's kebab-case: `pt-br` and `en`, never the page's `pt-BR`.
+        if (patch.ui_language !== 'pt-br' && patch.ui_language !== 'en') throw new Error(`invalid args \`command\`: unknown variant \`${String(patch.ui_language)}\`, expected \`pt-br\` or \`en\``);
+        next.ui_language = patch.ui_language;
+      }
       if (patch.ai_provider && patch.ai_provider !== next.ai_provider) {
         refuseManaged(patch.ai_provider);
         next.ai_provider = patch.ai_provider;

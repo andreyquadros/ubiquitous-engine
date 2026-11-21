@@ -79,13 +79,17 @@ function ModulePage() {
   return <NofapPage host={host} />;
 }
 
-/** The floating card window: outside the gate and the frame. It follows the app's language. */
+/**
+ * The floating card window: outside the gate and the frame. It follows the app's language, read again for every
+ * card: the window stays alive between cards (the shell only changes its address), and the language may have
+ * changed in the main window meanwhile.
+ */
 function StandaloneCard() {
-  const settings = useHostStore((s) => s.settings);
   const load = useHostStore((s) => s.load);
+  const { search } = useLocation();
   useEffect(() => {
-    if (!settings) void load();
-  }, [settings, load]);
+    void load();
+  }, [search, load]);
   return <NofapCardPage />;
 }
 

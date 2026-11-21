@@ -5,9 +5,9 @@
   "version": "0.1.0",
   "identifier": "ai.ubiqx.shield",
   "build": {
-    "beforeDevCommand": "pnpm --dir ../../desktop dev:nofap",
+    "beforeDevCommand": "pnpm --dir ../desktop dev:nofap",
     "devUrl": "http://localhost:1430",
-    "beforeBuildCommand": "pnpm --dir ../../desktop build:nofap",
+    "beforeBuildCommand": "pnpm --dir ../desktop build:nofap",
     "frontendDist": "../../desktop/dist-nofap"
   },
   "app": {

@@ -4,7 +4,7 @@
 
 import { isTauri } from '../lib/ipc';
 import type { AiProvider } from '../nofap/types';
-import type { HostAbout, HostCommand, HostSettings, HostSettingsPatch, PermissionKind, PermissionStatus, UpdateStatus } from './types';
+import { wireLanguage, type HostAbout, type HostCommand, type HostSettings, type PermissionKind, type PermissionStatus, type SettingsPatch, type UpdateStatus } from './types';
 
 /** Name of the Tauri command (`apps/nofap/src-tauri/src/app.rs`). */
 export const HOST_COMMAND = 'nofap_host';
@@ -25,7 +25,7 @@ async function send<T>(command: HostCommand): Promise<T> {
 export const hostIpc = {
   settings: () => send<HostSettings>({ cmd: 'settings_get' }),
   /** Only the fields given change; another provider brings its own default model. Returns the settings after the write. */
-  saveSettings: (patch: HostSettingsPatch) => send<HostSettings>({ cmd: 'settings_set', args: patch }),
+  saveSettings: ({ ui_language, ...rest }: SettingsPatch) => send<HostSettings>({ cmd: 'settings_set', args: { ...rest, ...(ui_language ? { ui_language: wireLanguage(ui_language) } : {}) } }),
   /** Checked with the vendor first; the key goes to the system's keychain, never into the settings. */
   setKey: (provider: AiProvider, key: string) => send<null>({ cmd: 'api_key_set', args: { provider, key } }),
   /** Stops the AI check at once (design 6.3). */

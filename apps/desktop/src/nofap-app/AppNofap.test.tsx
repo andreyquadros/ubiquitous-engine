@@ -6,7 +6,7 @@ import { __nofapMock } from '../nofap/mock';
 import { calls as nofapCalls, READS, resetNofap } from '../nofap/testing';
 import type { Scenario } from '../nofap/mock';
 import { AppRoutes } from './AppNofap';
-import { __hostMock, MOCK_BAD_KEY } from './hostMock';
+import { __hostMock, handleHost, MOCK_BAD_KEY } from './hostMock';
 import { useHostStore } from './hostStore';
 
 interface Start {
@@ -37,13 +37,13 @@ describe('the welcome (first start)', () => {
   it('opens on a first start and finishes with onboarding_done, straight into the module wizard', async () => {
     start({ onboarded: false });
     const welcome = await screen.findByTestId('welcome-step-1');
-    expect(welcome).toHaveTextContent('Este app não mede produtividade');
+    expect(welcome).toHaveTextContent('Ele não mede produtividade');
     fireEvent.click(screen.getByRole('button', { name: 'Continuar' }));
     await screen.findByTestId('welcome-step-2');
     fireEvent.click(screen.getByTestId('welcome-finish'));
 
     await screen.findByTestId('wizard-step-1');
-    expect(hostCalls('settings_set').at(-1)).toEqual({ cmd: 'settings_set', args: { ui_language: 'pt-BR', onboarding_done: true } });
+    expect(hostCalls('settings_set').at(-1)).toEqual({ cmd: 'settings_set', args: { ui_language: 'pt-br', onboarding_done: true } });
     expect(__hostMock.state().settings.onboarding_done).toBe(true);
     // Nothing of the protection was switched on: that is the wizard's last button.
     expect(writes()).toEqual([]);
@@ -60,7 +60,7 @@ describe('the welcome (first start)', () => {
     start({ onboarded: false });
     await screen.findByTestId('welcome-step-1');
     fireEvent.click(screen.getByRole('radio', { name: 'English' }));
-    await screen.findByText(/This app does not measure productivity/);
+    await screen.findByText(/It does not measure productivity/);
     expect(getLocale()).toBe('en');
     await waitFor(() => expect(__hostMock.state().settings.ui_language).toBe('en'));
   });
@@ -120,6 +120,14 @@ describe('the frame', () => {
     fireEvent.click(within(step).getByRole('button', { name: 'Abrir configurações' }));
     await screen.findByTestId('page-settings');
     expect(screen.getByText('Nenhuma chave salva para a Anthropic.')).toBeInTheDocument();
+  });
+});
+
+describe('the card window', () => {
+  it('speaks the language of the app\'s settings', async () => {
+    start({ onboarded: true, scenario: 'on', entry: '/nofap-card?id=card-x', setup: () => void handleHost({ cmd: 'settings_set', args: { ui_language: 'en' } }) });
+    expect(await screen.findByText('Page blocked by UBI.')).toBeInTheDocument();
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
   });
 });
 

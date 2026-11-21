@@ -7,7 +7,7 @@ import { ipcErrorMessage } from '../lib/ipc';
 import { applyTheme, initialTheme, type Theme } from '../lib/theme';
 import { useNofapStore } from '../nofap/store';
 import { hostIpc } from './hostIpc';
-import type { HostSettings, HostSettingsPatch } from './types';
+import { localeOf, type HostSettings, type SettingsPatch } from './types';
 
 interface HostState {
   settings: HostSettings | null;
@@ -16,12 +16,12 @@ interface HostState {
   /** Reads the settings row and applies its language (an address with `?lang=` wins, for previews). */
   load: () => Promise<void>;
   /** Writes the fields given and applies the language. The module is read again: its AI readiness may have changed. */
-  save: (patch: HostSettingsPatch) => Promise<HostSettings>;
+  save: (patch: SettingsPatch) => Promise<HostSettings>;
   toggleTheme: () => void;
 }
 
 const applyLanguage = (settings: HostSettings): void => {
-  if (!hasUrlLocaleOverride()) setLocale(settings.ui_language);
+  if (!hasUrlLocaleOverride()) setLocale(localeOf(settings.ui_language));
 };
 
 export const useHostStore = create<HostState>((set, get) => ({
