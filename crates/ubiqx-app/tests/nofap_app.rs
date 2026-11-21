@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use ubiqx_ai::fake::FakeExplicitDetector;
 use ubiqx_app::nofap_app::{
     HostAbout, HostSettings, HostSettingsPatch, NofapApp, NofapAppConfig, NofapHostCommand,
+    GUARD_EVERY,
 };
 use ubiqx_app::{AiBackend, App, AppConfig};
 use ubiqx_core::clock::FixedClock;
@@ -623,12 +624,15 @@ fn host_commands_have_the_wire_form_of_the_module_command() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_loops_start_and_stop_with_the_app() {
     let dir = tempfile::tempdir().unwrap();
+    // The module's clock: each new site below starts an episode of its own, which counts.
+    let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 9, 17, 15, 0, 0).unwrap());
     let app = NofapApp::start(
         NofapAppConfig {
             data_dir: Some(PathBuf::from(dir.path())),
             in_memory_db: true,
             scripted_platform: Some(Scenario::new(vec![])),
             ai: AiBackend::None,
+            clock: Some(Arc::new(clock.clone())),
             ..NofapAppConfig::default()
         },
         Arc::new(RecordingSink::default()),
@@ -636,9 +640,67 @@ async fn the_loops_start_and_stop_with_the_app() {
     .unwrap();
     // In memory: no file is written.
     assert!(!dir.path().join(SHIELD.db_file).exists());
-    // Off by default: the loops run and touch nothing.
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    assert!(!app.service.enabled());
+    let scripted = app.scripted.clone().unwrap();
+    // A listed site in front: what the guard counts when its loop runs a pass.
+    let open = |host: &str| {
+        clock.advance(ChronoDuration::hours(2));
+        scripted.load(Scenario::new(vec![Step::browser(
+            "Google Chrome",
+            CHROME,
+            "Receitas da semana",
+            &format!("https://{host}/pagina"),
+            1,
+        )]))
+    };
+    let counted = || -> i64 {
+        app.store
+            .db()
+            .with(|conn| {
+                conn.query_row("SELECT IFNULL(SUM(n), 0) FROM nofap_day", [], |row| {
+                    row.get(0)
+                })
+                .map_err(Into::into)
+            })
+            .unwrap()
+    };
+    let wait_for_more_than = |before: i64| {
+        let deadline = std::time::Instant::now() + GUARD_EVERY * 5;
+        async move {
+            while counted() <= before {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "no guard pass acted within five intervals"
+                );
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+    };
+    let sites = ubiqx_nofap::list::canary_block();
+
+    // Off by default: the loop's passes act on nothing.
+    open(sites[0]);
+    tokio::time::sleep(GUARD_EVERY + Duration::from_millis(700)).await;
+    assert_eq!(counted(), 0, "a module that is off acted");
+
+    // On: the loop's passes close the listed site, and then the next one.
+    app.service
+        .enable(EnableOptions {
+            vision: false,
+            vision_consent: None,
+            ..options()
+        })
+        .unwrap();
+    wait_for_more_than(0).await;
+    let before = counted();
+    open(sites[1]);
+    wait_for_more_than(before).await;
+
+    // Stopped: the module is still on, and no pass acts on a third listed site.
     app.shutdown();
-    assert_eq!(count(&app, "nofap_state"), 0);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let stopped_at = counted();
+    open(sites[2]);
+    tokio::time::sleep(GUARD_EVERY * 2 + Duration::from_millis(500)).await;
+    assert!(app.service.enabled());
+    assert_eq!(counted(), stopped_at, "a guard pass acted after shutdown");
 }
