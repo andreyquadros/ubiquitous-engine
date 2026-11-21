@@ -85,14 +85,16 @@ impl NofapTray {
     }
 
     /// Puts the items in (module on, with the quit dialog of the moment) or takes them out.
+    /// `shown` is the guard of [`Self::shown`], held by the caller since before it read the
+    /// module.
     fn apply(
         &self,
+        shown: &mut bool,
         on: Option<QuitDialog>,
         lang: UiLanguage,
         quit_label: &str,
     ) -> tauri::Result<()> {
         let labels: TrayLabels = ubiqx_nofap::messages::tray_labels(lang);
-        let mut shown = self.shown.lock().unwrap_or_else(|e| e.into_inner());
         match on {
             Some(dialog) => {
                 self.status.set_text(&labels.status_on)?;
@@ -153,10 +155,16 @@ pub fn sync(app: &AppHandle) {
         return;
     };
     let nofap = state.app.engine.nofap();
+    // One refresh at a time, and the module is read under the same lock. Each status event
+    // starts a refresh of its own; read outside the lock, a refresh that read "on" just
+    // before the module was switched off could apply after the one that read "off" and
+    // leave the items (and the quit confirmation) of a module that is off. A status sent
+    // from inside `quit_dialog` only starts another refresh, which waits here.
+    let mut shown = tray.shown.lock().unwrap_or_else(|e| e.into_inner());
     let lang = nofap.language();
     let dialog = nofap.enabled().then(|| nofap.quit_dialog());
     let quit_label = crate::quit_label(lang);
-    if let Err(e) = tray.apply(dialog, lang, quit_label) {
+    if let Err(e) = tray.apply(&mut shown, dialog, lang, quit_label) {
         tracing::warn!(error = %e, "could not update the tray items of the nofap module");
     }
 }

@@ -53,7 +53,10 @@ fn card_height(card: &NofapCard) -> f64 {
         CardKind::Blocked | CardKind::BlockedRepeat => 560.0,
         CardKind::Reminder => 160.0,
         CardKind::VisionAsk | CardKind::Drift => 200.0,
-        _ => 220.0,
+        CardKind::VisionClosed
+        | CardKind::PendingReady
+        | CardKind::ResolverUnreachable
+        | CardKind::Help => 220.0,
     }
 }
 
@@ -88,6 +91,13 @@ fn platform(e: impl std::fmt::Display) -> CoreError {
 /// Shows `card` in the card window: built on first use (always on top, on every
 /// workspace, without taking focus), then pointed at the new id and shown again. The page
 /// closes the window itself.
+///
+/// The window is not built with `resizable(false)`: on Linux (GTK) a window that is not
+/// resizable keeps the size of its content's request, so neither `set_size` here nor the
+/// page's own request took effect, and every card stayed 420 x 200 (seen under a virtual
+/// display: the discreet card, and the support flow that needs 560, did not change size).
+/// The price is that a person can drag an edge of the card to resize it; the next card sets
+/// the size again.
 pub fn show_card_window(app: &AppHandle, card: &NofapCard) -> CoreResult<()> {
     let route = card_route(&card.id);
     let size = LogicalSize::new(CARD_WIDTH, card_height(card));
@@ -110,7 +120,6 @@ pub fn show_card_window(app: &AppHandle, card: &NofapCard) -> CoreResult<()> {
             .inner_size(size.width, size.height)
             .decorations(false)
             .shadow(true)
-            .resizable(false)
             .always_on_top(true)
             .visible_on_all_workspaces(true)
             .skip_taskbar(true)

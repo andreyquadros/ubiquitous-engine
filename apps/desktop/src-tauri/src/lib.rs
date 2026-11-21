@@ -568,6 +568,9 @@ pub fn run() {
                 .level_for("hyper", log::LevelFilter::Warn)
                 .level_for("reqwest", log::LevelFilter::Warn)
                 .level_for("rustls", log::LevelFilter::Warn)
+                // On Linux the single-instance plugin answers a second launch over D-Bus,
+                // and zbus logs every call it dispatches at info (seen in a run here).
+                .level_for("zbus", log::LevelFilter::Warn)
                 .build(),
         )
         // In-app update: the plugin downloads and installs the signed artifact listed by the
