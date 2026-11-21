@@ -5661,8 +5661,8 @@ async fn a_wayland_session_is_said_and_nothing_is_captured() {
 
 /// Integrator decision 29, staged: "turn it off" is confirmed on another thread while a
 /// status is being computed (between its first look at the configuration and its
-/// second). Whatever the order the two then finish in, the status stored and the last one
-/// sent are "off".
+/// second). Whatever the order the two then finish in, the status stored is "off" and
+/// nothing else is said after the request.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_status_computed_while_the_module_goes_off_is_never_the_last_word() {
     let r = rig(RigSetup::default());
@@ -5700,9 +5700,28 @@ async fn a_status_computed_while_the_module_goes_off_is_never_the_last_word() {
     let view = off.join().unwrap().unwrap();
     assert!(!view.config.enabled);
     assert_eq!(r.service.status().overall, Overall::Off);
-    let last = r.sink.0.lock().iter().rev().find_map(|event| match event {
-        NofapEvent::Status { status } => Some(status.overall),
-        _ => None,
-    });
-    assert_eq!(last, Some(Overall::Off));
+    // From the request to the end, the only status said is "off": a status computed
+    // before the switch and stored or sent after it would show the page a module that is
+    // on, if only for a moment.
+    let sent: Vec<Overall> = r
+        .sink
+        .0
+        .lock()
+        .iter()
+        .filter_map(|event| match event {
+            NofapEvent::Status { status } => Some(status.overall),
+            _ => None,
+        })
+        .collect();
+    let requested = sent
+        .iter()
+        .rposition(|overall| *overall == Overall::PendingOff)
+        .expect("the request was said");
+    assert!(!sent[requested + 1..].is_empty(), "off was never said");
+    assert!(
+        sent[requested + 1..]
+            .iter()
+            .all(|overall| *overall == Overall::Off),
+        "{sent:?}"
+    );
 }
