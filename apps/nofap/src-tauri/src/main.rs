@@ -2,6 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod card;
+mod tray;
 
 fn main() {
     // A `--shield-helper` run does its work and exits here, before Tauri, the window server
