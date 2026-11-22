@@ -153,6 +153,41 @@ fn deleting_all_data_leaves_no_row_in_the_file_or_the_log() {
     assert_eq!(BlockRepo::get(&store, "b1").unwrap(), None);
 }
 
+/// "Delete all data" while another process is in the middle of a read (the CLI): the
+/// rows are deleted and the call succeeds, so the engine goes on to delete the screenshot
+/// files; the log keeps the older versions only until the next fold.
+#[test]
+fn deleting_all_data_while_another_process_reads_still_succeeds() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ubiqx.db");
+    let store = SqliteStore::new(Db::open(&path).unwrap());
+    let mut row = block("b1");
+    row.is_open = false;
+    BlockRepo::insert(&store, &row).unwrap();
+    store.fold_log().unwrap();
+    row.sample_count += 1;
+    BlockRepo::update(&store, &row).unwrap();
+    store
+        .db()
+        .with(|conn| Ok(conn.execute_batch("PRAGMA busy_timeout = 0")?))
+        .unwrap();
+    let reader = rusqlite::Connection::open(&path).unwrap();
+    reader
+        .execute_batch("BEGIN; SELECT count(*) FROM blocks;")
+        .unwrap();
+    // The reader really blocks a fold: the wipe below meets the same.
+    assert!(store.fold_log().is_err());
+
+    store.wipe_user_data().unwrap();
+    assert_eq!(BlockRepo::get(&store, "b1").unwrap(), None);
+
+    reader.execute_batch("COMMIT").unwrap();
+    store.fold_log().unwrap();
+    assert_eq!(on_disk(&path, TITLE), (false, false));
+    assert_eq!(on_disk(&path, ADDRESS), (false, false));
+    assert_eq!(wal_len(&path), 0);
+}
+
 #[test]
 fn a_fold_that_cannot_finish_is_an_error() {
     let dir = tempfile::tempdir().unwrap();

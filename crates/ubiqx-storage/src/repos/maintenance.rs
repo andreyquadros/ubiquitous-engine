@@ -40,10 +40,21 @@ impl MaintenanceRepo for SqliteStore {
             }
             tx.execute(DELETE_LEARNED_RULES, [RuleOrigin::Learned.as_str()])?;
             tx.commit()?;
-            SqliteStore::fold_log_now(conn)?;
+            // The rows are gone once the transaction commits; the folds take their older
+            // versions out of the log. A fold that cannot finish (another process in the
+            // middle of a read, such as the CLI) leaves them there until the next
+            // checkpoint. It does not fail the deletion: the caller still has the
+            // screenshot files to delete once this returns.
+            let before = SqliteStore::fold_log_now(conn);
             conn.execute_batch(VACUUM)?;
-            SqliteStore::fold_log_now(conn)?;
-            tracing::info!("user data wiped");
+            let after = SqliteStore::fold_log_now(conn);
+            if before.is_ok() && after.is_ok() {
+                tracing::info!("user data wiped");
+            } else {
+                tracing::warn!(
+                    "user data wiped; the log is folded at the next checkpoint (database in use)"
+                );
+            }
             Ok(())
         })
     }

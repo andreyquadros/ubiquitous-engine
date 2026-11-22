@@ -3955,14 +3955,25 @@ async fn poll_once<F: std::future::Future + Unpin>(future: &mut F) -> bool {
 /// more pass. The loop is polled by hand: until it waits for its second tick, then not
 /// until that tick is due and the cancel is signalled, so both branches are ready when it
 /// next looks. Without `biased` each attempt starts a pass one time in two; 24 attempts of
-/// each loop in a row.
+/// each loop count.
+///
+/// An attempt counts only when the loop was seen waiting before its second tick was due:
+/// on a machine slow enough that the second tick fell due before that, the loop may have
+/// started a pass on the blocking pool that reads the clock after the count is taken, and
+/// that attempt proves nothing either way.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_cancel_with_a_tick_due_stops_both_loops_without_another_pass() {
-    let every = Duration::from_millis(10);
-    for attempt in 0..24 {
-        for guard in [true, false] {
+    let every = Duration::from_millis(25);
+    for guard in [true, false] {
+        let name = if guard { "guard" } else { "verify" };
+        let mut counted = 0;
+        for attempt in 0..200 {
+            if counted == 24 {
+                break;
+            }
             let (service, clock, _tmp) = counted_service();
             let cancel = tokio_util::sync::CancellationToken::new();
+            let started = std::time::Instant::now();
             let mut running: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> =
                 if guard {
                     Box::pin(ubiqx_engine::nofap::run_guard_loop(
@@ -3988,19 +3999,24 @@ async fn a_cancel_with_a_tick_due_stops_both_loops_without_another_pass() {
             tokio::time::sleep(Duration::from_millis(3)).await;
             assert!(poll_once(&mut running).await, "the loop waits for its tick");
             let before = clock.reads.load(Ordering::SeqCst);
+            let conclusive = started.elapsed() < every;
             // Well past the tick: the timer has fired by the time this sleep ends.
             tokio::time::sleep(every * 4).await;
             cancel.cancel();
             tokio::time::timeout(Duration::from_secs(20), running)
                 .await
                 .expect("the loop ends when cancelled");
+            if !conclusive {
+                continue;
+            }
+            counted += 1;
             assert_eq!(
                 clock.reads.load(Ordering::SeqCst),
                 before,
-                "attempt {attempt}: a {} pass ran after the cancel",
-                if guard { "guard" } else { "verify" }
+                "attempt {attempt}: a {name} pass ran after the cancel"
             );
         }
+        assert_eq!(counted, 24, "too few {name} attempts could be counted");
     }
 }
 

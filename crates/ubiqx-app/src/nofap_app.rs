@@ -855,12 +855,20 @@ mod tests {
     /// more pass. Each loop is polled by hand until it waits for its next tick, then not
     /// until that tick is due and the stop is signalled, so both branches are ready when it
     /// next looks. Without `biased` an attempt runs a pass one time in two; 24 attempts of
-    /// each loop in a row.
+    /// each loop count.
+    ///
+    /// An attempt counts only when the loop was seen waiting before its next tick was due:
+    /// on a machine slow enough that the tick fell due before that, a pass may have started
+    /// on the blocking pool and be counted after `before` is read, which proves nothing.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_stop_with_a_tick_due_ends_each_loop_without_another_pass() {
-        let every = Duration::from_millis(10);
-        for attempt in 0..24 {
-            for which in ["guard", "verify", "update"] {
+        let every = Duration::from_millis(25);
+        for which in ["guard", "verify", "update"] {
+            let mut counted = 0;
+            for attempt in 0..200 {
+                if counted == 24 {
+                    break;
+                }
                 let dir = tempfile::tempdir().unwrap();
                 let clock = Arc::new(CountingClock(AtomicUsize::new(0)));
                 let app = NofapApp::start(
@@ -882,6 +890,7 @@ mod tests {
                     _ => clock.0.load(Ordering::SeqCst),
                 };
                 let (stop, rx) = watch::channel(false);
+                let started = Instant::now();
                 let mut running: Running = match which {
                     "guard" => Box::pin(guard_loop(app.service.clone(), every, rx)),
                     "verify" => Box::pin(verify_loop(app.service.clone(), every, rx)),
@@ -900,18 +909,24 @@ mod tests {
                 tokio::time::sleep(Duration::from_millis(3)).await;
                 assert!(poll_once(&mut running).await, "{which} waits for its tick");
                 let before = passes();
+                let conclusive = started.elapsed() < every;
                 // Well past the tick: the timer has fired by the time this sleep ends.
                 tokio::time::sleep(every * 4).await;
                 stop.send(true).unwrap();
                 tokio::time::timeout(Duration::from_secs(20), running)
                     .await
                     .expect("the loop ends when stopped");
+                if !conclusive {
+                    continue;
+                }
+                counted += 1;
                 assert_eq!(
                     passes(),
                     before,
                     "attempt {attempt}: one more {which} pass ran after the stop"
                 );
             }
+            assert_eq!(counted, 24, "too few {which} attempts could be counted");
         }
     }
 
