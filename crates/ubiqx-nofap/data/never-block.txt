@@ -13,18 +13,23 @@
 #   example.com   NAME: two or more labels. Covers the name and every subdomain.
 #   gov           TLD: one label. Covers every name whose last label is it.
 #   gov.*         SECOND-LEVEL FORM: one label followed by ".*". Covers every
-#                 name that has that label immediately before its last label:
-#                 gov.br, x.gov.br, a.b.gov.uk, x.gov.wales. It does not cover
-#                 "gov" as a top-level domain (write "gov" for that), nor
-#                 xgov.br, nor gov.example.br.
+#                 name that has that label immediately before its last label,
+#                 when that last label is a country code (two letters) other
+#                 than "eu": gov.br, x.gov.br, a.b.gov.uk, my.gov.uz. It does
+#                 not cover "gov" as a top-level domain (write "gov" for that),
+#                 nor xgov.br, nor gov.example.br, nor a name under a generic
+#                 or brand top-level domain (gov.com, mil.win, gov.porn) or
+#                 under "eu" (edu.eu): anybody can register those. A public
+#                 sector under such a domain is a NAME rule (gov.wales).
 #
 # A TLD or SECOND-LEVEL rule decides at every depth. For a NAME rule the
 # matcher's longest match applies: a more specific listed subdomain (the list
 # keeps adult.contents.fc2.com while fc2.com is allowed) stays blocked.
 #
-# The SECOND-LEVEL form is matched by shape, without the Public Suffix List, so
-# "gov.*" also covers a private name such as gov.com. The build prints every
-# listed name such a rule removed (section 3 of
+# The SECOND-LEVEL form is matched by shape, without the Public Suffix List
+# (which leaves out gov.uz, gov.hu, gov.kr and many more), so "gov.*" also
+# covers a private name under a country code that sells its second level. The
+# build prints every listed name such a rule removed (section 3 of
 # docs/nofap/research/blocklist-top10k-review.txt) so that a person can see it.
 #
 # What belongs here: names whose blocking would break the computer, sign-in,
@@ -49,6 +54,13 @@ ac.*
 mil
 mil.*
 int
+# Public sectors under a generic or geographic top-level domain, where a
+# SECOND-LEVEL rule does not reach.
+gov.wales
+gov.scot
+gov.taipei
+gov.krd
+edu.krd
 jus.br
 leg.br
 mp.br
@@ -149,7 +161,10 @@ xboxlive.com
 visualstudio.com
 linkedin.com
 github.com
-githubusercontent.com
+# Release downloads (the products' own updates come from there). The rest of
+# githubusercontent.com is a public file host: it is on mixed.txt.
+objects.githubusercontent.com
+release-assets.githubusercontent.com
 githubassets.com
 # Google (accounts, updates, Android, Chrome; not the search pages)
 accounts.google.com
@@ -170,7 +185,15 @@ safebrowsing.google.com
 play.google.com
 pay.google.com
 payments.google.com
-googleapis.com
+# Sign-in, update and API hosts. The rest of googleapis.com holds public file
+# buckets (storage, firebasestorage): it is on mixed.txt.
+oauth2.googleapis.com
+openidconnect.googleapis.com
+securetoken.googleapis.com
+identitytoolkit.googleapis.com
+android.googleapis.com
+play.googleapis.com
+safebrowsing.googleapis.com
 gstatic.com
 gvt1.com
 gvt2.com
@@ -244,6 +267,7 @@ oaiusercontent.com
 x.ai
 gemini.google.com
 aistudio.google.com
+generativelanguage.googleapis.com
 mistral.ai
 perplexity.ai
 deepseek.com

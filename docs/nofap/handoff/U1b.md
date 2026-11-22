@@ -161,3 +161,88 @@ Commands on the final tree, all passing: the five cargo commands above, `python3
 - The engineer's open points stand, except "subdomain labels count" for `xxx.fandom.com`, which is now on `never-block.txt`.
 
 Files: `/home/user/ubiquitous-engine/crates/ubiqx-nofap/src/list.rs`, `matcher.rs`, `heuristics.rs`; `/home/user/ubiquitous-engine/crates/ubiqx-nofap/tests/embedded.rs`; `/home/user/ubiquitous-engine/crates/ubiqx-nofap/data/`; `/home/user/ubiquitous-engine/scripts/nofap/build_blocklist.py`; `/home/user/ubiquitous-engine/docs/nofap/research/blocklist-top10k-review.txt`.
+
+## Final review
+
+Six findings of the adversarial review, each reproduced first by a test that failed. The data
+was rebuilt once (list version 202611221200). `core.bin` and `hosts-tier.txt` keep the same
+names; `popular.bin` lost one name (94,088 keys). Rules: never-block 399, mixed 105,
+never-capture 277.
+
+- **A second-level rule reaches only under a country code** (`RuleSet::suffix_covers`,
+  `OPEN_COUNTRY_CODES`). `gov.*`, `edu.*`, `ac.*` and the rest covered any `label.tld`, so
+  `gov.com`, `mil.win`, `ac.cab` and `edu.eu` were protected private names, and `gov.porn`
+  or `videos.edu.xxx` beat the adult TLDs: `Allowed(BuiltIn)`, never looked at, never
+  learned. Now the last label must be two letters and not `eu`. The Public Suffix List was
+  not used: it leaves out `gov.uz`, `gov.hu`, `gov.kr`, `gov.np` and about 1,200 more public
+  hosts of the Chrome UX Report. The public sectors under other domains that the report
+  shows are name rules on both never-block and never-capture: `gov.wales`, `gov.scot`,
+  `gov.taipei`, `gov.krd`, `edu.krd`. The build script has the same test
+  (`is_public_sector_country_code`), and so does the helper's refusal list, which is the
+  same `RuleSet`. Tests: `a_second_level_rule_reaches_only_under_a_country_code`,
+  `second_level_rules_reach_only_under_a_country_code` (embedded), `rule_sets_read_the_three_forms`.
+- **Public file hosts are mixed, not built-in.** `googleapis.com` and
+  `githubusercontent.com` left never-block for mixed.txt, so `storage.googleapis.com`,
+  `firebasestorage.googleapis.com` and `raw.githubusercontent.com` are looked at at signal
+  cadence. These hosts stay on never-block: the sign-in, update and API hosts (`update`,
+  `oauth2`, `openidconnect`, `securetoken`, `identitytoolkit`, `android`, `play`,
+  `safebrowsing` and `generativelanguage.googleapis.com`) and the release downloads
+  (`objects` and `release-assets.githubusercontent.com`; both products update from GitHub
+  releases). OneDrive, SharePoint and iCloud were left alone: they are on never-capture on
+  purpose (PRIVACY.md). No public list names a host under the two domains, so the list is
+  unchanged. Test: `public_file_hosts_are_mixed_and_sign_in_and_update_hosts_are_allowed`.
+- **`normalize_host` drops a leading `*.` or `.`** and refuses a label with anything but
+  letters, digits, `-` and `_`. `*.adultsite-ana.example` was stored as typed and matched
+  nothing. `typed_host` in the engine and `Matcher::new` both go through `normalize_host`, so
+  the entry is stored, and an old row is read, as the bare name. Tests:
+  `a_wildcard_typed_by_the_user_means_the_name`, `hosts_are_normalised`,
+  `a_wildcard_in_the_user_list_blocks_the_name` (embedded).
+- **`blob:`, `filesystem:` and local media.** `shown_page` unwraps `blob:` and `filesystem:`
+  as it unwraps `view-source:`. A `file:` address whose last segment ends with one of
+  `MEDIA_EXTENSIONS` is now `Unknown(Plain { signal: false })`, with the path signal, so a
+  picture or video opened in a browser is sampled when "unknown sites" is on. Any other
+  `file:` address (a PDF, a page, a folder) stays `Unknown(Local)`. The URL resolvers of
+  macOS and Windows drop `blob:` and `filesystem:` today, so that half is defence in depth.
+  For a `file:` page `normalize_host` gives no host, so nothing is learned and no card
+  names a host. Test: `wrapped_addresses_and_local_media_are_judged`,
+  `local_media_in_a_browser_is_an_unknown_site` (embedded).
+- **Free text is read up to `MAX_TEXT` (8 KB)** (`readable_start`). When the cut falls inside
+  a word of at most `MAX_WORD` bytes, it moves back to before that word ("pornichet" never
+  reads as "porn"). A 2 MB path took 0.4 s in release and 2.6 s in debug; it is now under a
+  millisecond. Test: `only_the_start_of_a_very_long_text_is_read`.
+- **Block words that are also ordinary words.** `nudes` blocks when its tail is empty or
+  reads as site words (linking `do`, `da`, `dos`, `das`, `de`, and `ex` / `exy` for "nude sex
+  …"). `novinhas` blocks at the start of its token, after site words, or after `das`, `dos`,
+  `de`, `so` or `tem`. `bukkake` does not block beside `udon` or `soba`. A lone `xxx` beside
+  an edition word (`EDITION_WORDS`: congress, jornada, festival, superbowl, vol, …) does not
+  block. All four are a signal where they do not block. The old exceptions (`menudesign`,
+  `nudesign`, `nudestix`, `seminovinhas`) still carry nothing. New `Rule` fields
+  `innocent_tails` and `ordinary_beside`, and a new `Before::HeadWordsOrAfter`;
+  `After::NotBefore` had no user left and is gone. Measured with `host_rule` over the
+  998,744 Chrome UX Report hosts: 3 hosts stop being blocked and become a signal
+  (`nudesboys.com`, `nudesdosfamososnus.com`, `sendnudeselfie.com`). Over the 307,121 names
+  of the three cached public lists: 89 names stop being keyword blocks, all of them
+  "nude s…" names (`nudestars`, `nudescene`, `nudeselfie`). The list still blocks every one
+  of them. Nothing changed for `novinhas`, `bukkake` or `xxx` on either set. Test:
+  `block_words_that_are_also_ordinary_words_do_not_block`. `nudesexpics.example` in
+  `the_exceptions_for_ordinary_words_are_narrow` still blocks.
+
+Outside the files this unit owns: `docs/nofap/research/blocklist-top10k-review.txt` was
+rewritten by the build (only its version line changed).
+
+Commands on the final tree, all passing: `cargo test -p ubiqx-nofap` (309 unit, 26 embedded,
+12 naming), `cargo test -p ubiqx-engine -p ubiqx-platform`,
+`cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`,
+`python3 scripts/nofap/build_blocklist.py --offline` (all gates, second run byte-identical) and
+`--check`.
+
+Open points:
+- `OPEN_COUNTRY_CODES` holds only `eu`. Other country codes sold as generic names (`.tv`,
+  `.cc`, `.nu`, the old free ones) may have a private `gov.` or `edu.` name. The Chrome UX
+  Report shows none, and some of them have a real public sector under the label (`gov.tv`).
+- PRIVACY.md lists "um player de vídeo ou visualizador de imagens" among what is
+  photographed. A local picture or video opened in a browser now counts as that. The text is
+  still true, but it names apps only, and the integrator may want to say so.
+- `fonts.googleapis.com` and `ajax.googleapis.com` are now under mixed. They are never in
+  front, and a user who blocks `googleapis.com` whole in "modo estrito" breaks web fonts on
+  purpose.

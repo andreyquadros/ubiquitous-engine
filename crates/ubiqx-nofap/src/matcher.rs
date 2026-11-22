@@ -3,7 +3,8 @@
 //!
 //! Semantics (design section 3.4):
 //!
-//! 1. **Normalise:** lower-case; strip a trailing dot, port, user-info and `www.`. A single
+//! 1. **Normalise:** lower-case; strip a trailing dot, port, user-info, a leading `*.` or
+//!    `.` (how other blockers write "and its subdomains") and `www.`. A single
 //!    label, `localhost`, a loopback, private, link-local or unique-local IP literal, and a
 //!    name under `.local`, `.localhost`, `.internal`, `.lan`, `.home.arpa`, `.test` or
 //!    `.corp` is `Unknown(Local)`. A public IP literal is `Unknown(Plain { signal: false })`.
@@ -13,6 +14,8 @@
 //!    never-block, learned, list. A top-level or second-level rule of the never-block file
 //!    (`gov`, `gov.*`) is not a name of the walk: it protects everything under it from the
 //!    list and from learned entries at any depth, and only the user's own entries beat it.
+//!    A second-level rule reaches only under a country code ([`RuleSet`]): `gov.com` and
+//!    `edu.xxx` are names anybody can register.
 //! 4. **No match:** the class from never-capture and mixed (the longer rule wins, so a
 //!    private web app can sit under a mixed platform); then an unexpired snooze; then an
 //!    adult TLD and the keyword rules ([`crate::heuristics`]); then popular. A host under
@@ -96,7 +99,11 @@ pub enum HostClass {
 ///
 /// * `example.com` covers `example.com` and every subdomain;
 /// * `gov.*` covers any name that has the label `gov` immediately before its last label
-///   (`planalto.gov.br`), and `gov` itself as a top-level domain when written `gov`;
+///   when that last label is a country code (`planalto.gov.br`, `my.gov.uz`): a country's
+///   public sector. Under a generic or brand top-level domain (`gov.com`, `mil.win`,
+///   `gov.porn`) and under [`OPEN_COUNTRY_CODES`] (`edu.eu`) such a name is a private
+///   registration and the rule does not reach it; a public sector there is a name rule
+///   (`gov.wales`). `gov` itself as a top-level domain is written `gov`;
 /// * a single label (`mil`, `edu`) covers that top-level domain.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RuleSet {
@@ -147,9 +154,10 @@ impl RuleSet {
         let mut labels = host.rsplit('.');
         let last = labels.next().unwrap_or_default();
         self.exact.contains(last)
-            || labels
-                .next()
-                .is_some_and(|second| self.wildcard_labels.contains(second))
+            || (is_public_sector_country_code(last)
+                && labels
+                    .next()
+                    .is_some_and(|second| self.wildcard_labels.contains(second)))
     }
 
     /// Whether `name` itself is a name rule (no parent walk).
@@ -166,6 +174,19 @@ impl RuleSet {
             .find(|name| self.exact.contains(*name))
             .map(|name| Coverage::Name(name.split('.').count()))
     }
+}
+
+/// Country codes whose second level anybody may register and that have no public sector
+/// of their own under it: `edu.eu` is a private name. (The European institutions are
+/// `europa.eu`, a name rule.)
+pub const OPEN_COUNTRY_CODES: &[&str] = &["eu"];
+
+/// Whether a second-level rule reaches under the top-level domain `tld`: a country code
+/// (two letters) that is not one of [`OPEN_COUNTRY_CODES`].
+fn is_public_sector_country_code(tld: &str) -> bool {
+    tld.len() == 2
+        && tld.bytes().all(|b| b.is_ascii_lowercase())
+        && !OPEN_COUNTRY_CODES.contains(&tld)
 }
 
 /// The built-in never-block list (`data/never-block.txt`): operating-system vendors, update
@@ -374,7 +395,10 @@ impl Matcher {
     /// signal, never a block). A string that is not a URL with a host is `Unknown(Local)`.
     /// An address typed without its scheme (`example.com/page`) is read as `https`. The
     /// source view and the reader views of the browsers show a page under their own
-    /// scheme: the verdict is the one of the page they show.
+    /// scheme, and a `blob:` or `filesystem:` address carries the origin of the site that
+    /// made it: the verdict is the one of that page. A `file:` address of a picture or a
+    /// video ([`MEDIA_EXTENSIONS`]) is `Unknown(Plain)`; any other `file:` address is
+    /// `Unknown(Local)`.
     pub fn verdict_for_url(&self, url: &str) -> (Verdict, bool) {
         let url = url.trim();
         let shown = shown_page(url);
@@ -387,12 +411,26 @@ impl Matcher {
         let Ok(parsed) = parsed else {
             return (Verdict::Unknown(HostClass::Local), false);
         };
+        let signal = || {
+            heuristics::path_signal(parsed.path())
+                || parsed.query().is_some_and(heuristics::path_signal)
+        };
+        if parsed.scheme() == "file" {
+            // A picture or a video opened from the disk is shown as a player shows it, and
+            // is looked at like an unknown site. A document, a page or a folder is not.
+            return if is_media_file(parsed.path()) {
+                (
+                    Verdict::Unknown(HostClass::Plain { signal: false }),
+                    signal(),
+                )
+            } else {
+                (Verdict::Unknown(HostClass::Local), false)
+            };
+        }
         let Some(host) = parsed.host_str() else {
             return (Verdict::Unknown(HostClass::Local), false);
         };
-        let signal = heuristics::path_signal(parsed.path())
-            || parsed.query().is_some_and(heuristics::path_signal);
-        (self.verdict(host), signal)
+        (self.verdict(host), signal())
     }
 
     /// Whether the host, or a parent of it, is one of the names of the hosts tier (seen in
@@ -428,16 +466,19 @@ fn scheme_end(text: &str) -> Option<usize> {
 }
 
 /// The address of the page behind a browser's wrapper, when `url` is one: the source view
-/// (`view-source:https://…`) and the reader views of Firefox (`about:reader?url=…`), Edge
-/// (`read://…/?url=…`) and Chrome (`chrome-distiller://…/?url=…`), which show the text and
-/// the pictures of the page named in `url`.
+/// (`view-source:https://…`), a `blob:` or `filesystem:` address (`blob:https://…/<id>`,
+/// whose origin is the site that made it) and the reader views of Firefox
+/// (`about:reader?url=…`), Edge (`read://…/?url=…`) and Chrome
+/// (`chrome-distiller://…/?url=…`), which show the text and the pictures of the page named
+/// in `url`.
 fn shown_page(url: &str) -> Option<String> {
-    const SOURCE_VIEW: &str = "view-source:";
-    if url
-        .get(..SOURCE_VIEW.len())
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(SOURCE_VIEW))
-    {
-        return Some(url[SOURCE_VIEW.len()..].to_owned());
+    for wrapper in ["view-source:", "blob:", "filesystem:"] {
+        if url
+            .get(..wrapper.len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(wrapper))
+        {
+            return Some(url[wrapper.len()..].to_owned());
+        }
     }
     let parsed = url::Url::parse(url).ok()?;
     let reader = match parsed.scheme() {
@@ -452,6 +493,24 @@ fn shown_page(url: &str) -> Option<String> {
         .query_pairs()
         .find(|(key, _)| key == "url")
         .map(|(_, page)| page.into_owned())
+}
+
+/// The extensions of the pictures and videos a browser shows by itself.
+pub const MEDIA_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "jfif", "pjpeg", "png", "apng", "gif", "webp", "avif", "bmp", "ico", "tif",
+    "tiff", "heic", "heif", "jxl", "mp4", "m4v", "webm", "mkv", "mov", "ogv", "ogg", "avi", "wmv",
+    "flv", "mpg", "mpeg", "3gp", "3g2",
+];
+
+/// Whether the last segment of a `file:` path ends with one of [`MEDIA_EXTENSIONS`].
+fn is_media_file(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or_default();
+    name.rsplit_once('.').is_some_and(|(stem, extension)| {
+        !stem.is_empty()
+            && MEDIA_EXTENSIONS
+                .iter()
+                .any(|media| media.eq_ignore_ascii_case(extension))
+    })
 }
 
 /// Names that never leave the machine or the local network.
@@ -517,8 +576,9 @@ fn strip_www(name: &str) -> &str {
     }
 }
 
-/// Normalises a host as rule 1 says; `None` for an empty or unusable string, and for a
-/// name longer than the DNS carries (253 bytes, 63 a label). A leading scheme, a path, a
+/// Normalises a host as rule 1 says; `None` for an empty or unusable string, for a label
+/// with a character other than a letter, a digit, `-` or `_`, and for a name longer than
+/// the DNS carries (253 bytes, 63 a label). A leading `*.` or `.` is dropped. A leading scheme, a path, a
 /// query, user-info and a port are dropped, an internationalised name becomes punycode,
 /// and an IP literal comes back in its canonical form without brackets.
 pub fn normalize_host(host: &str) -> Option<String> {
@@ -547,6 +607,12 @@ pub fn normalize_host(host: &str) -> Option<String> {
         text = name;
     }
     let text = text.trim_end_matches('.');
+    // `*.example.com` and `.example.com` are how other blockers write "the name and its
+    // subdomains", which is what every entry means here.
+    let text = text
+        .strip_prefix("*.")
+        .or_else(|| text.strip_prefix('.'))
+        .unwrap_or(text);
     if text.is_empty() {
         return None;
     }
@@ -554,12 +620,18 @@ pub fn normalize_host(host: &str) -> Option<String> {
         url::Host::Domain(name) => {
             let name = name.trim_end_matches('.');
             // A name the DNS cannot carry is not a website (and a verdict hashes the
-            // name once per label, so its length is bounded here).
+            // name once per label, so its length is bounded here). A label is letters,
+            // digits, hyphens and underscores: anything else (`*`, `!`, `$`) would be
+            // stored and then never match a site.
             if name.is_empty()
                 || name.len() > MAX_NAME_LEN
-                || name
-                    .split('.')
-                    .any(|label| label.is_empty() || label.len() > MAX_LABEL_LEN)
+                || name.split('.').any(|label| {
+                    label.is_empty()
+                        || label.len() > MAX_LABEL_LEN
+                        || !label
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+                })
             {
                 return None;
             }
@@ -652,6 +724,8 @@ mod tests {
                 "gov.*",
                 "ac.*",
                 "edu",
+                "edu.*",
+                "mil.*",
                 "apple.com",
                 "fc2.com",
                 "banco.bradesco",
@@ -887,6 +961,117 @@ mod tests {
             m.verdict("other.gov.br"),
             Verdict::Allowed(AllowSource::BuiltIn)
         );
+    }
+
+    /// `gov.com`, `mil.win`, `ac.cab` and `edu.eu` are names anybody can register, and
+    /// `gov.porn` or `edu.xxx` would be too. A second-level rule means a country's public
+    /// sector, so it reaches only under a country code that has one.
+    #[test]
+    fn a_second_level_rule_reaches_only_under_a_country_code() {
+        let m = matcher(&[]);
+        for host in [
+            "videos.edu.xxx",
+            "free.ac.sex",
+            "gov.porn",
+            "pornhub.gov.adult",
+        ] {
+            assert_eq!(
+                m.verdict(host),
+                Verdict::Blocked(BlockSource::Tld),
+                "{host}"
+            );
+        }
+        for host in [
+            "hot.gov.com",
+            "gov.com",
+            "mil.win",
+            "a.ac.cab",
+            "campus.edu.eu",
+        ] {
+            let verdict = m.verdict(host);
+            assert!(
+                !matches!(verdict, Verdict::Allowed(_)),
+                "{host}: {verdict:?}"
+            );
+        }
+        assert_eq!(
+            m.verdict("pornhub.gov.lol"),
+            Verdict::Blocked(BlockSource::Keyword)
+        );
+        // A country's public sector is still protected, at every depth.
+        for host in ["a.b.gov.br", "porn.agency.gov.br", "x.ac.uk", "gov.uz"] {
+            assert_eq!(
+                m.verdict(host),
+                Verdict::Allowed(AllowSource::BuiltIn),
+                "{host}"
+            );
+        }
+    }
+
+    /// Rules copied from another blocker are often written `*.example.com` or
+    /// `.example.com`; an entry already covers its subdomains, so both mean the name.
+    #[test]
+    fn a_wildcard_typed_by_the_user_means_the_name() {
+        let m = matcher(&[
+            site(SiteList::Block, SiteOrigin::User, "*.adultsite-ana.example"),
+            site(SiteList::Block, SiteOrigin::User, ".otheradult.example"),
+            site(SiteList::Allow, SiteOrigin::User, "*.pornhub.com"),
+        ]);
+        for host in [
+            "videos.adultsite-ana.example",
+            "adultsite-ana.example",
+            "a.otheradult.example",
+        ] {
+            assert_eq!(
+                m.verdict(host),
+                Verdict::Blocked(BlockSource::User),
+                "{host}"
+            );
+        }
+        assert_eq!(
+            m.verdict("pt.pornhub.com"),
+            Verdict::Allowed(AllowSource::User)
+        );
+    }
+
+    /// A blob or filesystem address carries the origin of the site that made it; a local
+    /// picture or video opened in a browser is shown as a player would show it. Any other
+    /// local file (a document, a page, a folder) stays out of the check.
+    #[test]
+    fn wrapped_addresses_and_local_media_are_judged() {
+        let m = matcher(&[]);
+        for url in [
+            "blob:https://pornhub.com/0b1c",
+            "BLOB:https://pt.pornhub.com/0b1c",
+            "filesystem:https://pornhub.com/temporary/a.mp4",
+        ] {
+            assert_eq!(m.verdict_for_url(url), (LIST, false), "{url}");
+        }
+        assert_eq!(
+            m.verdict_for_url("blob:https://notlisted.example/0b1c"),
+            (PLAIN, false)
+        );
+        assert_eq!(m.verdict_for_url("blob:null/0b1c"), (LOCAL, false));
+        for url in [
+            "file:///home/ana/Downloads/clip.mp4",
+            "file:///home/ana/Pictures/IMG_0001.JPG",
+            "file:///C:/Users/Ana/Videos/clip.webm",
+            "file:///Users/ana/Movies/a%20b.mov",
+        ] {
+            assert_eq!(m.verdict_for_url(url), (PLAIN, false), "{url}");
+        }
+        assert_eq!(
+            m.verdict_for_url("file:///home/ana/porn/clip.mkv"),
+            (PLAIN, true)
+        );
+        for url in [
+            "file:///home/ana/extrato.pdf",
+            "file:///home/ana/notas.html",
+            "file:///home/ana/Pictures/",
+            "file:///home/ana/video.mp4.txt",
+        ] {
+            assert_eq!(m.verdict_for_url(url), (LOCAL, false), "{url}");
+        }
     }
 
     #[test]
@@ -1439,12 +1624,16 @@ mod tests {
             "gov.br",
             "planalto.gov.br",
             "a.b.gov.uk",
-            "x.gov.wales",
             "sussex.ac.uk",
         ] {
             assert!(rules.covers(host), "{host}");
         }
         for host in [
+            // Not under a country code: a name rule must say so (gov.wales).
+            "x.gov.wales",
+            "gov.com",
+            "edu.eu",
+            "x.ac.xxx",
             "example.org",
             "notexample.com",
             "com",
@@ -1492,6 +1681,11 @@ mod tests {
             ("[2001:DB8::1]", "2001:db8::1"),
             ("localhost", "localhost"),
             ("a_b.example.com", "a_b.example.com"),
+            ("*.example.com", "example.com"),
+            ("*.www.example.com", "example.com"),
+            (".example.com", "example.com"),
+            ("https://*.example.com/x", "example.com"),
+            ("*.example.com:443", "example.com"),
         ] {
             assert_eq!(normalize_host(raw).as_deref(), Some(expected), "{raw}");
         }
@@ -1507,6 +1701,15 @@ mod tests {
             "[nope]",
             "a:b:c",
             "x:port",
+            "*.",
+            "*",
+            "*.*.example.com",
+            "a.*.example.com",
+            "ex*ample.com",
+            "**.example.com",
+            "example!.com",
+            "exa$mple.com",
+            "(example).com",
         ] {
             assert_eq!(normalize_host(raw), None, "{raw:?}");
         }

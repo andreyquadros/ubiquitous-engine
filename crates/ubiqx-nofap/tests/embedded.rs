@@ -858,3 +858,128 @@ fn building_a_matcher_and_asking_it_are_cheap() {
         started.elapsed()
     );
 }
+
+// --- final review ------------------------------------------------------------------------
+
+/// Hosts where anybody can publish a file are a mixed platform, not the built-in
+/// allowlist: an `Allowed(BuiltIn)` host is never looked at. Sign-in, update and API hosts
+/// of the same companies stay on never-block.
+#[test]
+fn public_file_hosts_are_mixed_and_sign_in_and_update_hosts_are_allowed() {
+    let m = matcher(&[]);
+    for host in [
+        "storage.googleapis.com",
+        "some-bucket.storage.googleapis.com",
+        "firebasestorage.googleapis.com",
+        "raw.githubusercontent.com",
+        "user-images.githubusercontent.com",
+        "gist.githubusercontent.com",
+    ] {
+        assert_eq!(m.verdict(host), MIXED, "{host}");
+        assert!(!never_block().covers(host), "{host}");
+    }
+    let (verdict, signal) = m.verdict_for_url("https://storage.googleapis.com/b/porn-clip.mp4");
+    assert_eq!((verdict, signal), (MIXED, true));
+    for host in [
+        "update.googleapis.com",
+        "oauth2.googleapis.com",
+        "securetoken.googleapis.com",
+        "accounts.google.com",
+        "objects.githubusercontent.com",
+        "release-assets.githubusercontent.com",
+        "github.com",
+    ] {
+        assert_eq!(m.verdict(host), BUILT_IN, "{host}");
+        assert!(never_block().covers(host), "{host}");
+    }
+    // The personal stores stay out of the check, as the privacy page promises.
+    for host in [
+        "onedrive.live.com",
+        "ana-my.sharepoint.com",
+        "www.icloud.com",
+    ] {
+        let verdict = m.verdict(host);
+        assert!(
+            matches!(verdict, BUILT_IN | NEVER_CAPTURE),
+            "{host}: {verdict:?}"
+        );
+    }
+}
+
+/// A second-level rule (`gov.*`) means a country's public sector: it reaches under a
+/// country code only. A public sector under another top-level domain is a name rule.
+#[test]
+fn second_level_rules_reach_only_under_a_country_code() {
+    let m = matcher(&[]);
+    for host in ["videos.edu.xxx", "gov.porn", "free.ac.sex", "edu.adult"] {
+        assert_eq!(
+            m.verdict(host),
+            Verdict::Blocked(BlockSource::Tld),
+            "{host}"
+        );
+        assert!(!never_block().covers(host), "{host}");
+    }
+    for host in [
+        "hot.gov.com",
+        "gov.com",
+        "mil.win",
+        "tr.ac.cab",
+        "campus.euglobal.edu.eu",
+    ] {
+        assert_ne!(m.verdict(host), BUILT_IN, "{host}");
+        assert!(!never_block().covers(host), "{host}");
+    }
+    for host in [
+        "planalto.gov.br",
+        "my.gov.uz",
+        "idp.gov.hu",
+        "x.ac.uk",
+        "www.gob.mx",
+        "hwb.gov.wales",
+        "www.gov.scot",
+        "ebus.gov.taipei",
+        "runaki.gov.krd",
+        "lms.auis.edu.krd",
+    ] {
+        assert_eq!(m.verdict(host), BUILT_IN, "{host}");
+        assert!(never_block().covers(host), "{host}");
+        assert!(MatcherData::embedded().never_capture.covers(host), "{host}");
+    }
+}
+
+/// A rule copied from another blocker (`*.example.com`) blocks the name and its
+/// subdomains.
+#[test]
+fn a_wildcard_in_the_user_list_blocks_the_name() {
+    let m = matcher(&[site(
+        SiteList::Block,
+        SiteOrigin::User,
+        "*.adultsite-ana.example",
+    )]);
+    for host in ["videos.adultsite-ana.example", "adultsite-ana.example"] {
+        assert_eq!(
+            m.verdict(host),
+            Verdict::Blocked(BlockSource::User),
+            "{host}"
+        );
+    }
+}
+
+/// A local video or picture in a browser is looked at like one in a player; a local
+/// document is not.
+#[test]
+fn local_media_in_a_browser_is_an_unknown_site() {
+    let m = matcher(&[]);
+    assert_eq!(
+        m.verdict_for_url("file:///home/ana/Downloads/clip.mp4"),
+        (PLAIN, false)
+    );
+    assert_eq!(
+        m.verdict_for_url("file:///home/ana/extrato.pdf"),
+        (LOCAL, false)
+    );
+    assert_eq!(
+        m.verdict_for_url("blob:https://pornhub.com/0b1c"),
+        (LIST, false)
+    );
+}

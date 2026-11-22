@@ -93,6 +93,10 @@ pixeldrain.com
 mega.nz
 mediafire.com
 chomikuj.pl
+# Public file buckets and raw files of the developer platforms. Their sign-in,
+# update and release-download hosts are on never-block.txt.
+googleapis.com
+githubusercontent.com
 # Torrent indexes with an adult category; a public list names each of them whole.
 1337x.to
 rutor.info

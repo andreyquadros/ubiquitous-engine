@@ -504,6 +504,18 @@ class Psl:
 # ---------------------------------------------------------------------------
 
 
+# Country codes whose second level anybody may register and that have no public sector of
+# their own under it (`edu.eu` is a private name). Kept equal to `OPEN_COUNTRY_CODES` in
+# crates/ubiqx-nofap/src/matcher.rs.
+OPEN_COUNTRY_CODES = ("eu",)
+
+
+def is_public_sector_country_code(tld: str) -> bool:
+    """Whether a SECOND-LEVEL rule reaches under `tld`: two letters, not an open code."""
+    return len(tld) == 2 and tld.isascii() and tld.isalpha() and tld.islower() \
+        and tld not in OPEN_COUNTRY_CODES
+
+
 class Rules:
     """`never-block.txt`, `mixed.txt`, `never-capture.txt` (contract, rule 6)."""
 
@@ -541,11 +553,15 @@ class Rules:
             self.count += 1
 
     def suffix_rule(self, name: str) -> str | None:
-        """The TLD or SECOND-LEVEL rule that decides `name` at any depth, or None."""
+        """The TLD or SECOND-LEVEL rule that decides `name` at any depth, or None.
+
+        A SECOND-LEVEL rule reaches only under a country code that has a public sector
+        of its own (`is_public_sector_country_code`, the same test as the matcher's)."""
         labels = name.split(".")
         if labels[-1] in self.tlds:
             return labels[-1]
-        if len(labels) >= 2 and labels[-2] in self.second_level:
+        if len(labels) >= 2 and labels[-2] in self.second_level \
+                and is_public_sector_country_code(labels[-1]):
             return labels[-2] + ".*"
         return None
 
@@ -1554,7 +1570,9 @@ def selftest() -> None:
         assert rules.covers("essex.gov.uk") == "gov.*" and rules.covers("gov.br") == "gov.*"
         assert rules.covers("a.b.planalto.gov.br") == "gov.*"
         assert rules.covers("sussex.ac.uk") == "ac.*"
-        assert rules.covers("x.gov.wales") == "gov.*" and rules.covers("gov.com") == "gov.*"
+        assert rules.covers("x.gov.wales") is None and rules.covers("gov.com") is None
+        assert rules.covers("edu.eu") is None and rules.covers("videos.ac.xxx") is None
+        assert rules.covers("my.gov.uz") == "gov.*" and rules.covers("gov.porn") is None
         assert rules.covers("government.uk") is None and rules.covers("xgov.br") is None
         assert rules.covers("gov.example.br") is None and rules.covers("ac.example.com") is None
         assert rules.covers("tjsp.jus.br") == "jus.br" and rules.covers("jus.br") == "jus.br"

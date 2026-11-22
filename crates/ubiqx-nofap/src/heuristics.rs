@@ -190,6 +190,15 @@ const HEAD_LETTERS: &[u8] = b"adeikuvx";
 /// A head or a tail longer than this is never read as words.
 const MAX_AFFIX: usize = 40;
 
+/// Free text (a title, a path, a query) is read up to this many bytes. The longest word,
+/// head or tail the rules read is a few dozen letters; a page can push an address of
+/// megabytes, and reading all of it would take most of a second on every guard pass.
+const MAX_TEXT: usize = 8 * 1024;
+
+/// Longer than any word with its head and tail that the rules read ([`MAX_AFFIX`] on each
+/// side of a word of a few letters).
+const MAX_WORD: usize = 128;
+
 /// What must stand before a word.
 #[derive(Debug, Clone, Copy)]
 enum Before {
@@ -202,6 +211,8 @@ enum Before {
     LabelStart,
     /// The head is empty or made of [`HEAD_WORDS`].
     HeadWords,
+    /// The head is empty, made of [`HEAD_WORDS`], or ends with one of these words.
+    HeadWordsOrAfter(&'static [&'static str]),
     /// The head does not end with one of these: with them the letters spell an ordinary
     /// word or name a trade.
     NotAfter(&'static [&'static str]),
@@ -218,9 +229,6 @@ enum After {
     SiteWords(&'static [&'static str]),
     /// The word ends its label.
     LabelEnd,
-    /// The tail does not start with one of these: with them the letters spell an ordinary
-    /// word.
-    NotBefore(&'static [&'static str]),
 }
 
 /// A block-grade word or brand stem and the place where it counts.
@@ -235,6 +243,12 @@ struct Rule {
     innocent_tokens: &'static [&'static str],
     /// Token beginnings that are ordinary words.
     innocent_starts: &'static [&'static str],
+    /// Tails that make an ordinary word: the rule ignores such a match altogether.
+    innocent_tails: &'static [&'static str],
+    /// Words that, at the start of the tail or of the token before or after the word's
+    /// own (only digits and hyphens between), make the word an ordinary one: such a match
+    /// does not block (`bukkake-udon`, the thirtieth `congreso-xxx`).
+    ordinary_beside: &'static [&'static str],
     /// A match in a place that does not block is still a signal.
     weak_signal: bool,
     /// Also matched after look-alike folding (brand stems made of letters only).
@@ -250,6 +264,8 @@ impl Rule {
             exact_run: false,
             innocent_tokens: &[],
             innocent_starts: &[],
+            innocent_tails: &[],
+            ordinary_beside: &[],
             weak_signal: false,
             folded: false,
         }
@@ -286,8 +302,10 @@ const BLOCK_WORDS: &[Rule] = &[
         After::SiteWords(&["o", "os", "s", "er", "ers", "uha"]),
     )
     .weak_signal(),
+    // Roman numerals number editions: the thirtieth congress, Super Bowl XXX.
     Rule {
         exact_run: true,
+        ordinary_beside: EDITION_WORDS,
         ..Rule::placed("xxx", Before::HeadWords, After::SiteWords(&[]))
     }
     .weak_signal(),
@@ -301,7 +319,12 @@ const BLOCK_WORDS: &[Rule] = &[
     Rule::anywhere("gangbang"),
     Rule::anywhere("cumshot"),
     Rule::anywhere("handjob"),
-    Rule::anywhere("bukkake"),
+    // Bukkake udon and bukkake soba are noodle dishes.
+    Rule {
+        ordinary_beside: &["udon", "soba"],
+        ..Rule::anywhere("bukkake")
+    }
+    .weak_signal(),
     Rule::anywhere("deepthroat"),
     Rule::anywhere("camgirl"),
     Rule::anywhere("shemale"),
@@ -309,12 +332,21 @@ const BLOCK_WORDS: &[Rule] = &[
     Rule::anywhere("masturbat"),
     Rule::anywhere("bokep"),
     Rule::anywhere("phimsex"),
-    // "denudes" is an English verb; "menudesign" is a menu design and "nudestix" a
-    // make-up brand.
+    // "Nude" is a colour of shoes, skin and make-up and "menú de…" a Spanish menu
+    // (nudeshoes, nudeskin, menudescuentos): the word blocks when its tail reads as site
+    // words, and is a signal otherwise. "denudes" is an English verb; "menudesign" is a
+    // menu design and "nudestix" a make-up brand: those carry nothing. The "s" of the
+    // word also starts "sex" and "sexy" (nudesexpics is nude sex pics).
     Rule {
         innocent_starts: &["denudes"],
-        ..Rule::placed("nudes", Before::Any, After::NotBefore(&["ign", "tix"]))
-    },
+        innocent_tails: &["ign", "tix"],
+        ..Rule::placed(
+            "nudes",
+            Before::Any,
+            After::SiteWords(&["do", "da", "dos", "das", "de", "ex", "exy"]),
+        )
+    }
+    .weak_signal(),
     // "disputas", "computas", "imputas" and the Latvian "atputas" are ordinary words.
     Rule::placed(
         "putas",
@@ -343,11 +375,65 @@ const BLOCK_WORDS: &[Rule] = &[
     Rule::anywhere("brasileirinhas"),
     Rule::anywhere("pornozao"),
     Rule::anywhere("safadas"),
-    // "seminovinhas" are second-hand clothes.
-    Rule::placed("novinhas", Before::NotAfter(&["semi"]), After::Any),
+    // After a noun, "novinhas" means brand-new (roupasnovinhas, pecasnovinhas): the word
+    // blocks at the start of its token, after site words, or after "das", "de", "só" and
+    // "tem" (kabinedasnovinhas, sonovinhas), and is a signal otherwise. "seminovinhas"
+    // are second-hand clothes and carry nothing.
+    Rule {
+        innocent_starts: &["seminovinhas"],
+        ..Rule::placed(
+            "novinhas",
+            Before::HeadWordsOrAfter(&["das", "dos", "de", "so", "tem"]),
+            After::Any,
+        )
+    }
+    .weak_signal(),
     // "receitas gostosas" are tasty recipes: the adjective follows its noun.
     Rule::placed("gostosas", Before::LabelStart, After::Any).weak_signal(),
     Rule::anywhere("transando"),
+];
+
+/// Words beside a lone "xxx" that make it the roman numeral of an edition.
+const EDITION_WORDS: &[&str] = &[
+    "congres",
+    "jornada",
+    "encontro",
+    "encuentro",
+    "semana",
+    "festival",
+    "simposio",
+    "symposium",
+    "seminar",
+    "coloqui",
+    "colloqui",
+    "conferen",
+    "edicion",
+    "edicao",
+    "edition",
+    "olimpiad",
+    "olympiad",
+    "superbowl",
+    "vol",
+    "reuniao",
+    "reunion",
+    "aniversario",
+    "anniversary",
+    "feira",
+    "feria",
+    "salao",
+    "capitulo",
+    "chapter",
+    "assembl",
+    "asamblea",
+    "convenc",
+    "convention",
+    "torneio",
+    "torneo",
+    "campeonato",
+    "maraton",
+    "marathon",
+    "legislatura",
+    "concurso",
 ];
 
 /// What stands before "escorts" when it names a trade and not an adult service.
@@ -507,9 +593,9 @@ fn collapse_repeats(text: &str) -> String {
 /// place that does not prove it ("EarthPorn") counts in a piece made of letters; in a
 /// piece with digits it does not, because the identifiers and tokens a URL carries are
 /// random letters and digits that spell "xxx" now and then. A word in a proven place
-/// ("porno365") counts everywhere.
+/// ("porno365") counts everywhere. Only the first [`MAX_TEXT`] bytes are read.
 fn text_has_block_word(text: &str) -> bool {
-    let plain: String = text
+    let plain: String = readable_start(text)
         .chars()
         .flat_map(char::to_lowercase)
         .map(unaccent)
@@ -522,6 +608,29 @@ fn text_has_block_word(text: &str) -> bool {
             Grade::Signal => !piece.bytes().any(|b| b.is_ascii_digit()),
             Grade::None => false,
         })
+}
+
+/// The first [`MAX_TEXT`] bytes of `text`, cut back to the end of a word when the cut
+/// falls inside one: a word cut in two could read as a shorter one ("pornichet" as
+/// "porn").
+fn readable_start(text: &str) -> &str {
+    if text.len() <= MAX_TEXT {
+        return text;
+    }
+    let mut end = MAX_TEXT;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    let in_word = |c: char| c.is_alphanumeric() || c == '-';
+    let head = &text[..end];
+    if !text[end..].chars().next().is_some_and(in_word) {
+        return head;
+    }
+    // A piece longer than any word the rules read is not a word: it is kept as cut.
+    match head.rfind(|c: char| !in_word(c)) {
+        Some(at) if end - at <= MAX_WORD => &head[..at],
+        _ => head,
+    }
 }
 
 fn unaccent(c: char) -> char {
@@ -649,6 +758,25 @@ impl Rule {
             }
             let head = &label[token_from..at];
             let tail = &label[end..token_to];
+            if self
+                .innocent_tails
+                .iter()
+                .any(|word| tail.starts_with(word.as_bytes()))
+            {
+                continue;
+            }
+            let beside = !self.ordinary_beside.is_empty()
+                && [
+                    tail,
+                    previous_token(label, token_from),
+                    next_token(label, token_to),
+                ]
+                .iter()
+                .any(|text| {
+                    self.ordinary_beside
+                        .iter()
+                        .any(|word| text.starts_with(word.as_bytes()))
+                });
             let run_broken = self.exact_run
                 && (label[..at].ends_with(&needle[..1])
                     || label[end..].starts_with(&needle[needle.len() - 1..]));
@@ -660,6 +788,10 @@ impl Rule {
                 }
                 Before::LabelStart => at == 0,
                 Before::HeadWords => head_is_site_words(head),
+                Before::HeadWordsOrAfter(words) => {
+                    head_is_site_words(head)
+                        || words.iter().any(|word| head.ends_with(word.as_bytes()))
+                }
                 Before::NotAfter(words) => {
                     !words.iter().any(|word| head.ends_with(word.as_bytes()))
                 }
@@ -669,11 +801,8 @@ impl Rule {
                 After::TokenEnd => tail.is_empty(),
                 After::SiteWords(links) => tail_is_site_words(tail, links),
                 After::LabelEnd => end == label.len(),
-                After::NotBefore(words) => {
-                    !words.iter().any(|word| tail.starts_with(word.as_bytes()))
-                }
             };
-            if before && after && !run_broken {
+            if before && after && !run_broken && !beside {
                 return Grade::Block;
             }
             if self.weak_signal {
@@ -699,6 +828,26 @@ fn token_start(label: &[u8], at: usize) -> usize {
         start -= 1;
     }
     start
+}
+
+/// The run of letters before the one that starts at `start`, with only digits and hyphens
+/// between (empty when there is none).
+fn previous_token(label: &[u8], start: usize) -> &[u8] {
+    let mut end = start;
+    while end > 0 && !label[end - 1].is_ascii_lowercase() {
+        end -= 1;
+    }
+    &label[token_start(label, end)..end]
+}
+
+/// The run of letters after the one that ends at `end`, with only digits and hyphens
+/// between (empty when there is none).
+fn next_token(label: &[u8], end: usize) -> &[u8] {
+    let mut start = end;
+    while start < label.len() && !label[start].is_ascii_lowercase() {
+        start += 1;
+    }
+    &label[start..token_end(label, start)]
 }
 
 /// Where the run of letters that reaches `at` ends.
@@ -1341,6 +1490,99 @@ mod tests {
         assert!(!path_signal("/watch?v=aXXXb12cdEf&t=1"));
         assert!(!path_signal("/item/8f3exxxa91"));
         assert!(!title_signal("Order 8f3exxxa91 confirmed"));
+    }
+
+    /// A page can push an address of megabytes. Only its first [`MAX_TEXT`] bytes are
+    /// read: no word or chain of site words is anywhere near that long, and a guard pass
+    /// or a tracker sample must not spend most of a second on one address.
+    #[test]
+    fn only_the_start_of_a_very_long_text_is_read() {
+        let started = std::time::Instant::now();
+        let long_path = format!("/{}", "a".repeat(2_000_000));
+        assert!(!path_signal(&long_path));
+        let long_query = format!("q={}", "a1".repeat(1_000_000));
+        assert!(!path_signal(&long_query));
+        // A word past the limit is not read; one before it is.
+        let late = format!("/{}/porno-videos", "b".repeat(MAX_TEXT));
+        assert!(!path_signal(&late));
+        let early = format!("/porno-videos/{}", "b".repeat(2_000_000));
+        assert!(path_signal(&early));
+        // The cut never makes a word out of a longer one.
+        let cut = format!("/{}/pornichet", "b".repeat(MAX_TEXT - 6));
+        assert!(!path_signal(&cut));
+        let title = format!("{} – Café", "ã".repeat(MAX_TEXT));
+        assert!(!title_signal(&title));
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    /// Words of the block grade that are also ordinary words where they stand: "nude" is
+    /// a colour of shoes and make-up, "menú de…" a Spanish menu, "novinhas" also means
+    /// brand-new after a noun, bukkake udon is a dish and "XXX" numbers the thirtieth
+    /// congress. Where the letters do not tell, the word is a signal.
+    #[test]
+    fn block_words_that_are_also_ordinary_words_do_not_block() {
+        for host in [
+            "nudeshoes.com",
+            "nudeshop.com.br",
+            "nudeskin.com",
+            "nudestudio.com",
+            "nudestore.example",
+            "menudesayuno.es",
+            "menudescuentos.com",
+            "roupasnovinhas.com.br",
+            "pecasnovinhas.com.br",
+            "bukkakeudon.jp",
+            "bukkake-soba.example",
+            "congreso-xxx.org",
+            "jornadas-xxx.es",
+            "xxx-congresso.com.br",
+            "superbowl-xxx.com",
+            "vol-xxx.example.org",
+            "festival-xxx.example",
+        ] {
+            assert_eq!(host_rule(host), HostRule::Signal, "{host}");
+        }
+        // The same words still block where they name an adult site.
+        for host in [
+            "nudes.example",
+            "darknudes.com",
+            "sendmenudes.example",
+            "packsdenudes.example",
+            "nudesdozap.example",
+            "nudesarab.com",
+            "asiannudestube.com",
+            "dreamnudesai.com",
+            "gallery-of-nudes.com",
+            "novinhas.example",
+            "novinhasnuas.example",
+            "novinhaspelada.com",
+            "kabinedasnovinhas.com",
+            "ligadasnovinhas.com",
+            "sonovinhasbr.com",
+            "sotemnovinhas.com",
+            "xvideonovinhas.com",
+            "bukkake.example",
+            "premiumbukkake.com",
+            "japanese-bukkake.net",
+            "redwap-xxx.com",
+            "xxx-videos.example",
+            "0145xxx.com",
+        ] {
+            assert_eq!(host_rule(host), KEYWORD, "{host}");
+        }
+        // The narrow exceptions of before carry nothing at all.
+        for host in [
+            "menudesign.com",
+            "nudesign.com.br",
+            "nudestix.com",
+            "seminovinhas.com.br",
+        ] {
+            assert_eq!(host_rule(host), HostRule::None, "{host}");
+        }
     }
 
     /// A long run of letters in which a word matches at every step: the token around a
