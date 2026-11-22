@@ -148,3 +148,47 @@ own `docs/nofap/handoff/<unit>.md` when it finishes (deviations, contract notes,
     fixed margins fails on a busy CI runner. Make it wait on events (a pass counter, a shutdown
     acknowledgement) rather than on sleeps, and prove it by running the whole crate's tests
     several times in a row while another build runs.
+
+## After wave C (engine service, composition and ubiqX shell, standalone app)
+
+32. **Copy that names ubiqX or its local mode is never shown in the standalone app.** Three
+    strings of the module (hand-offs U8 and its review): `nofap.dns.disclosure` ("O ubiqX não
+    recebe nada"), `nofap.vision.consent` ("Pausar o ubiqX ou usar o modo privado não pausa esta
+    verificação"), `nofap.helptab.ai.body` ("o modo só local"). Where a product-neutral sentence
+    says the same truthfully ("Este app não recebe nada"), use it in both products; where the
+    sentence is only true in ubiqX (pausing, local mode), it becomes a ubiqX-only line the page
+    shows when `view.product` is ubiqX. Design 5.6 and `copy.test.ts` change with it, in both
+    languages; the forbidden-word, parity and naming tests stay green (unit FU2a).
+33. **An unreadable stored configuration gets its own issue and its own sentence.** Today it reads
+    `overall: reduced` with no explanation and every write fails. Add `Issue::ConfigUnreadable`
+    in `ubiqx-core` (fixtures blessed, the `ALL` test updated), set it in the service, and give
+    the page one calm sentence in both languages that says the settings could not be read, that
+    protection keeps the last settings it knew, and what to do ("Restaurar padrões" through
+    `reset`, which the service already allows) (FU2a).
+34. **The card window may call only what its page calls.** `apps/desktop/src-tauri/build.rs`
+    declares no app manifest, so every ubiqX command is callable from the `shield-card` window.
+    Both shells declare their commands in `tauri_build::Attributes::app_manifest` and give the
+    card window's capability only the `nofap` command (and the window permissions it already
+    has); the main window keeps every command it uses today. A composition test pins it (FU2b).
+35. **Each product has its own build-time feed variable**: ubiqX keeps `UBIQX_UPDATE_FEED_URL`;
+    the standalone reads `UBIQX_SHIELD_UPDATE_FEED_URL`. The core test that ties each shell's
+    default feed to its identity stays (FU2b; U9b uses the new name in CI).
+36. **A scrubbed block leaves no copy in the write-ahead log.** After the service scrubs a block
+    (and after "Apagar todos os dados"), the store folds the log (`PRAGMA wal_checkpoint(TRUNCATE)`
+    through a new default-no-op port method, overridden by `SqliteStore`), with a test that the
+    scrubbed title is found in neither the database file nor `-wal` afterwards (FU2b).
+37. **The two loops stop on cancel first**: `tokio::select!` with `biased;` and the cancel branch
+    first, in `run_guard_loop`, `run_verify_loop` and the standalone's loops (FU2b).
+38. **The card window does not take the keyboard on macOS and Windows.** Before each show the
+    window is made non-focusable and focusable again after (tao `set_focusable`), in both shells;
+    unverifiable here, so it is a named item of the real-machine checklist (FU2b).
+39. **ubiqX keeps its MSI package** (its published feed names it), and an MSI uninstall does not
+    remove applied tiers: REMOVAL.md says so and gives the command. The standalone ships NSIS only
+    on Windows (U9b).
+40. **CI and documents** (U9b): the three app jobs also build the standalone from
+    `apps/nofap/src-tauri` and rename its bundles `ubiqx-shield-<os>-<arch>.<ext>`; a
+    `publish-shield` job, gated on `vars.NOFAP_PUBLISH == 'true'` and on `main`, publishes them with
+    `--product shield`; the Windows job runs clippy and tests for `ubiqx-nofap-desktop`; the
+    frontend job runs `pnpm build:nofap`. README, ARCHITECTURE, WINDOWS-LINUX and LICENSING describe
+    the module and the second product; PRIVACY.md and REMOVAL.md are re-read against the landed
+    code (the open points of U5, U7, U8 and their reviews list what changed).
