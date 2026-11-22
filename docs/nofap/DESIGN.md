@@ -812,7 +812,7 @@ Table `nofap_sites` (7.1).
 |---|---|---|---|
 | block / user | "Adicionar site"; the ticks of "modo estrito" on mixed platforms; "Adicionar à minha lista" on a vision card | L1 at once; L2 at the next apply the user starts | plain text (the user reads and edits their own list), and in the world-readable hosts block. The add dialog says so and offers "guardar só neste app" (`hosts_user_sites = false`). |
 | block / learned | a vision Positive on a host of class `Plain` (never mixed, popular, never-capture or never-block) | L1 on every later visit, no capture | **salted hash only**, `host = NULL`. Never in the hosts file, never shown by name, never exported. The page shows the count and "Esquecer sites aprendidos". |
-| allow / user | "Nunca bloquear" on the page | beats list and heuristics for that name | plain text |
+| allow / user | "Nunca barrar" on the page | beats list and heuristics for that name | plain text |
 | allow / snooze | "Não era isso" (5.4) | short, expiring | salted hash, `expires_at` |
 
 Honest limit, in the privacy text: the salt is stored beside the hashes, so someone with
@@ -1383,7 +1383,7 @@ of its own state, not a lock.
 
 | Exit | Why |
 |---|---|
-| "Restaurar minha rede": `remove --scope resolver` for this owner; L1, L2, L4, L5 stay; shown with "Religar"; counter `network_restore`, not an override | a broken network is a safety problem |
+| "Restaurar minha rede": `remove --scope resolver` for every owner (DNS is one machine setting; the other product then offers its own "Religar"; final review, U4); L1, L2, L4, L5 stay; shown with "Religar"; counter `network_restore`, not an override | a broken network is a safety problem |
 | Removal with the administrator password; uninstalling | the machine belongs to the user |
 | "Apagar meu histórico do {name}" | erasing one's own data is a right and weakens no tier |
 | Cancelling a pending change | it only tightens |

@@ -380,7 +380,7 @@ const canonical = (change: NofapChange): string =>
 
 /** The engine's answer to a write while the stored configuration cannot be read. */
 function refuseUnreadable(): void {
-  if (S.unreadable) throw new Error('storage: the stored configuration of the module cannot be read; run the set-up again');
+  if (S.unreadable) throw new Error('storage: the stored configuration of the module cannot be read; restore the defaults to set it up again');
 }
 
 function request(change: NofapChange): ChangeOutcome {
