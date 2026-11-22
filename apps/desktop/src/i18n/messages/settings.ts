@@ -340,6 +340,9 @@ const messages = {
     'models.managed_hint': 'Escolhidos pelo servidor do Ubi: um rápido para classificar e ver imagens, um forte para relatórios. Não dá para editar.',
     'about.plan': 'Plano',
     'about.plan_none': 'Sem licença',
+    'about.notices': 'Avisos de terceiros',
+    'about.notices_show': 'Mostrar',
+    'about.notices_hide': 'Ocultar',
   },
   en: {
     // page
@@ -678,6 +681,9 @@ const messages = {
     'models.managed_hint': 'Picked by the Ubi server: a fast one to classify and read images, a strong one for reports. Not editable.',
     'about.plan': 'Plan',
     'about.plan_none': 'No license',
+    'about.notices': 'Third-party notices',
+    'about.notices_show': 'Show',
+    'about.notices_hide': 'Hide',
   },
 } satisfies NamespaceMessages;
 

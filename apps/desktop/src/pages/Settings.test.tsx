@@ -419,3 +419,41 @@ describe('Settings · Privacidade and the nofap module', () => {
     expect(screen.queryByTestId('nofap-exclusion-hint')).toBeNull();
   });
 });
+
+describe('Settings · Sobre: the third-party notices', () => {
+  beforeEach(async () => {
+    __mock.reset();
+    useAppStore.setState({ settingsView: null });
+    await useAppStore.getState().loadSettings();
+  });
+  afterEach(() => setLocale('pt-BR'));
+
+  // ubiqX embeds the same MIT and CC BY 4.0 blocklists as the standalone app, so it carries the same notices.
+  it('shows the repository notices behind a toggle in About, in both languages', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Sobre' });
+    const block = screen.getByTestId('about-notices');
+    expect(block.closest('[id="sec-sobre"]')).not.toBeNull();
+    expect(within(block).getByRole('heading', { name: 'Avisos de terceiros' })).toBeInTheDocument();
+    expect(within(block).queryByTestId('notices')).not.toBeInTheDocument();
+
+    const toggle = within(block).getByRole('button', { name: 'Mostrar' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    const text = within(block).getByTestId('notices');
+    expect(text).toHaveTextContent('THIRD-PARTY NOTICES');
+    expect(text).toHaveTextContent('StevenBlack/hosts');
+    expect(text).toHaveTextContent('MIT License');
+    expect(text).toHaveTextContent('Creative Commons Attribution 4.0');
+    expect(within(block).getByRole('button', { name: 'Ocultar' })).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(within(block).getByRole('button', { name: 'Ocultar' }));
+    expect(within(block).queryByTestId('notices')).not.toBeInTheDocument();
+
+    act(() => setLocale('en'));
+    await screen.findByRole('heading', { name: 'About' });
+    expect(within(block).getByRole('heading', { name: 'Third-party notices' })).toBeInTheDocument();
+    fireEvent.click(within(block).getByRole('button', { name: 'Show' }));
+    expect(within(block).getByTestId('notices')).toHaveTextContent('StevenBlack/hosts');
+    expect(within(block).getByRole('button', { name: 'Hide' })).toBeInTheDocument();
+  });
+});

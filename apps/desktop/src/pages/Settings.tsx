@@ -27,6 +27,9 @@ import { useAsync } from '../lib/useAsync';
 import { fmtDelay } from '../nofap/labels';
 import { useNofapStore } from '../nofap/store';
 import { getUbiStatus, subscribeUbiStatus, ubiStatusLabel } from '../components/ubi/status';
+// The notices the bundle must carry (the nofap blocklist's sources and their licences), loaded as the standalone
+// app's About box loads them: the repository file, shown as it is.
+import notices from '../../../../THIRD-PARTY-NOTICES?raw';
 
 export const REPO_URL = 'https://github.com/andreyquadros/ubiquitous-engine';
 
@@ -1303,6 +1306,7 @@ function PermissionsSection({ view }: { view: SettingsView }) {
 function AboutSection({ view }: { view: SettingsView }) {
   const t = useT();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showNotices, setShowNotices] = useState(false);
   const [busy, setBusy] = useState<'export' | 'delete' | null>(null);
   const bumpData = useAppStore((s) => s.bumpData);
   const toast = useToast();
@@ -1375,6 +1379,19 @@ function AboutSection({ view }: { view: SettingsView }) {
         <Button variant="danger" className="ml-auto" icon={<Trash2 className="size-4" strokeWidth={1.75} />} onClick={() => setConfirmDelete(true)}>
           {t('settings.about.delete_all')}
         </Button>
+      </div>
+      <div className="border-t border-line pt-4" data-testid="about-notices">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-medium text-ink">{t('settings.about.notices')}</h3>
+          <Button size="sm" variant="ghost" onClick={() => setShowNotices((v) => !v)} aria-expanded={showNotices} data-testid="notices-toggle">
+            {t(showNotices ? 'settings.about.notices_hide' : 'settings.about.notices_show')}
+          </Button>
+        </div>
+        {showNotices && (
+          <pre className="scroll-thin panel-raised mt-3 max-h-72 overflow-auto p-3 text-[11px] leading-4 whitespace-pre-wrap text-ink-2" data-testid="notices">
+            {notices}
+          </pre>
+        )}
       </div>
 
       <Dialog
