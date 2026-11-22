@@ -433,6 +433,11 @@ Nos navegadores, depois de reabrir: `chrome://policy`, `edge://policy`, `brave:/
   não foram executados em máquina real (itens 1, 3, 9 e 15 da lista de verificação).
 - O comando do arquivo `hosts` pode deixar uma quebra de linha a mais no fim do arquivo,
   quando o arquivo original não terminava com uma. Não tem efeito nenhum.
+- No Linux, depois de qualquer remoção (pelo app, pelo comando ou à mão), podem ficar pastas
+  vazias: `/etc/systemd/resolved.conf.d`, `/etc/firefox/policies` e as pastas
+  `policies/managed` dos navegadores. O auxiliar não as apaga porque não sabe se foi ele que as
+  criou; vazias, elas não mudam nada. Se tiver certeza de que estavam vazias antes, pode
+  apagá-las com `sudo rmdir`, que só apaga uma pasta vazia.
 - Os nomes dos executáveis da parte 2 vêm do que a CI monta: o `ubiqx-desktop` e o
   `ubiqx-shield` dentro de cada `.app`, o `MAINBINARYNAME` do instalador NSIS e o arquivo em
   `/usr/bin` de cada `.deb` (registro em `docs/nofap/handoff/U9b.md`). As pastas de instalação
