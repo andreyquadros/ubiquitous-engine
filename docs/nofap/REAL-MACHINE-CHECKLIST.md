@@ -691,6 +691,27 @@ a DNS configuration and goes on. **Person**: run it as written on such a machine
 
 - Evidence:
 
+### [ ] 31. The card window does not take the keyboard, macOS and Windows (decision 38)
+
+Before each show the shells make the card window non-focusable and focusable again after
+(`set_focusable`, both shells). On macOS `show` makes a window key unless it cannot become
+key at that moment; on Windows the first show of a window built unfocused does not activate
+it, and every later show would (tao's `ShowWindow(SW_SHOW)`, read in its source by the review
+of U7; whether `WS_EX_NOACTIVATE` stops that is what this item finds out). Linux under a
+virtual display: the card was shown three times and never had the focus, the main window
+kept it (FU2b). Item 13 has the same first row; this one is the fix's own check. **Person, macOS and Windows**: type
+in another app (a text editor) while ubiqX shows a card, then again while the standalone app
+shows one, and at least twice in a row for each (the second show is the one Windows
+activated); then click a button of the card.
+
+| What | Expected | macOS | Windows |
+|---|---|---|---|
+| Typing in the other app while the first card appears | every key lands in the other app | | |
+| The same at the second and third card | the same | | |
+| A click on "Ok" or "Abrir apoio" in the card | the button answers at the first click | | |
+
+- Evidence (date, OS version, product, one line per row):
+
 ## 6. Still open, and who decides
 
 Carried from the design's "Still open" list, for whoever reads this file first.
