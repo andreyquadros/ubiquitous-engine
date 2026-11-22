@@ -123,7 +123,7 @@ Each claim, and the code that makes it true (paths from the repository root).
 | The export's folder, name and content; ubiqX's export has nothing of the module | `crates/ubiqx-engine/src/nofap/service.rs:842-868`, `crates/ubiqx-engine/src/state.rs:95`, `crates/ubiqx-app/src/nofap_app.rs:419`, `crates/ubiqx-engine/src/handle.rs:341-363` |
 | 90 days of counters | `crates/ubiqx-nofap/src/progress.rs:11` |
 | "Apagar meu histórico" overwrites and folds the WAL | `crates/ubiqx-storage/src/repos/nofap.rs:74`, `312` |
-| "Apagar todos os dados": counters go, choices and lists stay, overwritten, `exports` deleted | `crates/ubiqx-storage/src/repos/maintenance.rs:15-50` (`WIPE`, folds around `VACUUM`), `crates/ubiqx-engine/src/handle.rs:463-492` |
+| "Apagar todos os dados": counters go, choices and lists stay, overwritten, `exports` deleted | `crates/ubiqx-storage/src/repos/maintenance.rs:15-61` (`WIPE`, best-effort folds around `VACUUM`), `crates/ubiqx-engine/src/handle.rs:463-492` |
 | "Apagar tudo do NoFap" only while off | `crates/ubiqx-engine/src/nofap/service.rs:820-821` |
 | Snoozes last up to 24 hours | `crates/ubiqx-nofap/src/sampling.rs:65` (`SNOOZE_SECS`) |
 | The prompts: `osascript`, UAC, `pkexec`; the AppImage cannot | `crates/ubiqx-platform/src/sysblock/elevate.rs:8-10`, `194` |
@@ -150,3 +150,44 @@ Each claim, and the code that makes it true (paths from the repository root).
 | ubiqX ships an MSI, the standalone app does not | `.github/workflows/ci.yml` (`--bundles msi,nsis` for ubiqX, `--bundles nsis` for the standalone app) |
 | Keychain services `ai.ubiqx`, `ai.ubiqx.shield` | `crates/ubiqx-core/src/product.rs:95`, `108`; `crates/ubiqx-platform/src/secrets_file.rs:22` |
 | Data and shared directories | `crates/ubiqx-app/src/lib.rs:182-185`; Tauri's `app_data_dir` |
+
+### Deviations from the design and the task
+
+- **The standalone app is built with `node ../../desktop/node_modules/@tauri-apps/cli/tauri.js
+  build`**, not `pnpm tauri build`: `apps/nofap` has no `package.json`, and the Tauri CLI must run
+  with the shell's directory as working directory (hand-off U8). Calling the CLI's JS entry
+  through `node` works the same on the three runners (no `.cmd` shim on Windows).
+- **The rename steps read `productName` from each `tauri.conf.json`** (`node -p`) instead of
+  hard-coding `ubiqX` and the display name, so a renamed display name keeps working and no
+  workflow line carries the source word.
+- **ubiqX is renamed before the standalone app is built.** Each product's globs name it
+  anyway, so the order is a second guard, not the only one.
+- **Diagnostics for the real-machine checklist** (item 25): each rename step prints the
+  bundle's executable (macOS), the NSIS script's `MAINBINARYNAME` (Windows) and the `.deb`'s
+  package name and `/usr/bin` entry (Linux). They only read; they cannot fail a job.
+- **`clippy --all-targets` for `ubiqx-nofap-desktop`** on Windows (design 9.2 says without
+  `--all-targets`): the shell's tests module (`src/tests.rs`) is linted there too. ubiqX's
+  existing Windows clippy step is unchanged.
+- **No `cargo test -p ubiqx-nofap-desktop` on Linux**: `rust-linux` has no webkit and the
+  `linux-app` job builds in release only. The shell's tests run on macOS (`cargo test
+  --workspace`) and Windows.
+- **The standalone `tauri.conf.json` still lists `msi` among its targets.** CI passes
+  `--bundles nsis` on Windows, so no MSI is built; a local `tauri build` without `--bundles`
+  would build one. The file is U8's; see open points.
+- **`PRIVACY.md` and `REMOVAL.md` stay PT-BR only**, as U9a left them.
+
+### Contract notes for the units that come after
+
+- **The integrator:** `vars.NOFAP_PUBLISH` does not exist yet; with it unset `publish-shield` is
+  skipped on `main` too. Setting it to `true` (Settings → Secrets and variables → Actions →
+  Variables) publishes the standalone app on the next push to `main`, under
+  `shield-continuous`, with the same signing key as ubiqX. The first publish creates the
+  release; `PRODUCTS.shield.latest = false` keeps ubiqX's release "Latest".
+- **Whoever changes a `productName`:** nothing in `ci.yml` needs to change; `REMOVAL.md` (part
+  2 and 4), `MACOS-TESTING.md` § 7 and `WINDOWS-LINUX.md` § 6 name the install folders after
+  it, and the `.deb` package name follows it (Tauri derives `no-fap` from `NoFap`).
+- **Never set `UBIQX_UPDATE_FEED_URL` or `UBIQX_SHIELD_UPDATE_FEED_URL` at workflow or job
+  level**; set it on the one build step of its product if a fork needs it.
+- **A new bundle kind** for either product needs a rename line in its product's step and a
+  path in its `upload-artifact`; `publish-release.mjs` infers platform and kind from the
+  stable name.

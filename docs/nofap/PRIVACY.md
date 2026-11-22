@@ -311,7 +311,9 @@ dele e ficam vazias.
   legíveis em nenhum dos dois. Se outro programa estiver com o banco aberto ao mesmo tempo (a
   linha de comando do ubiqX, por exemplo), parte disso só é consolidada quando ele fechar.
 - **"Apagar todos os dados" (ubiqX) também sobrescreve**: ele apaga as linhas, passa o
-  arquivo auxiliar para o principal antes e depois de reconstruir o arquivo do banco. Ele apaga também a pasta
+  arquivo auxiliar para o principal antes e depois de reconstruir o arquivo do banco. Se outro
+  programa estiver lendo o banco nessa hora, a exclusão acontece do mesmo jeito e a passagem do
+  arquivo auxiliar fica para a próxima vez. Ele apaga também a pasta
   `exports`, com as exportações do NoFap que estiverem lá.
 - **"Apagar tudo do NoFap"** (escolhas, listas e histórico) existe só com a proteção
   desligada.
