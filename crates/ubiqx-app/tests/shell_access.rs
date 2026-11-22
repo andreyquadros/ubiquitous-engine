@@ -302,6 +302,85 @@ fn the_standalone_windows_may_call_only_what_their_pages_call() {
     );
 }
 
+/// The `cmd`s the module's card page sends through `nofapIpc`: each `nofapIpc.<method>` in
+/// `NofapCard.tsx`, and in the module's components it imports, mapped to its `cmd` through
+/// `nofap/ipc.ts` (`method: (…) => send<…>({ cmd: '…'`).
+fn card_page_sends() -> BTreeSet<String> {
+    let ipc = read("apps/desktop/src/nofap/ipc.ts");
+    let mut sources = vec![read("apps/desktop/src/nofap/NofapCard.tsx")];
+    // The components the page imports, and the ones they import in turn.
+    let mut seen = BTreeSet::new();
+    let mut next = 0;
+    while next < sources.len() {
+        let imported: Vec<String> = sources[next]
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("import "))
+            .filter_map(|rest| {
+                let from = rest.split(" from '").nth(1)?.split('\'').next()?;
+                let name = from
+                    .strip_prefix("./components/")
+                    .or_else(|| (next > 0).then(|| from.strip_prefix("./")).flatten())?;
+                Some(name.to_string())
+            })
+            .collect();
+        for component in imported {
+            if seen.insert(component.clone()) {
+                sources.push(read(&format!(
+                    "apps/desktop/src/nofap/components/{component}.tsx"
+                )));
+            }
+        }
+        next += 1;
+    }
+    assert!(
+        seen.contains("PanicSheet") && seen.contains("SurfTimer"),
+        "the card page's components were not followed: {seen:?}"
+    );
+    let mut sent = BTreeSet::new();
+    for source in &sources {
+        let mut rest = source.as_str();
+        while let Some(at) = rest.find("nofapIpc") {
+            rest = &rest[at + "nofapIpc".len()..];
+            let Some(after_dot) = rest.trim_start().strip_prefix('.') else {
+                continue;
+            };
+            let method: String = after_dot
+                .trim_start()
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            let definition = ipc
+                .lines()
+                .find(|line| line.trim_start().starts_with(&format!("{method}: (")))
+                .unwrap_or_else(|| panic!("nofapIpc.{method} is not in nofap/ipc.ts"));
+            sent.insert(between(definition, "cmd: '", "'").to_string());
+        }
+    }
+    sent
+}
+
+/// The card window of both shells is answered only what its page sends of the module's
+/// command (`ubiqx_app::CARD_WINDOW_COMMANDS`); each shell's handler asks before it runs
+/// anything.
+#[test]
+fn the_card_window_is_answered_only_what_its_page_sends() {
+    let sent = card_page_sends();
+    assert!(sent.contains("card") && sent.contains("card_action"));
+    assert_eq!(sent, set(&ubiqx_app::CARD_WINDOW_COMMANDS));
+    for (file, label) in [
+        (format!("{DESKTOP}/src/nofap.rs"), "CARD_WINDOW"),
+        (format!("{STANDALONE}/src/app.rs"), "card::CARD_WINDOW"),
+    ] {
+        let shell = read(&file);
+        assert!(
+            shell.contains(&format!(
+                "window.label() == {label} && !ubiqx_app::card_window_may_send(&command)"
+            )),
+            "{file} does not filter what the card window sends"
+        );
+    }
+}
+
 /// Every permission a capability names is one the build script generates: Tauri refuses
 /// an unknown one when it builds, and this says which file and which name.
 #[test]

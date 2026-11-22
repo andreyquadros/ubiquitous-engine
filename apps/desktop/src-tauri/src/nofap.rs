@@ -5,7 +5,7 @@
 
 use serde_json::Value;
 use tauri::{
-    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WebviewUrl,
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
 use ubiqx_core::nofap::{CardKind, NofapCard, NofapEvent, NofapPresenter, NofapSink};
@@ -34,8 +34,22 @@ pub const EVENT: &str = "nofap";
 /// the blocking pool: it reads the database, and `enable`, `system_apply`,
 /// `system_remove`, `restore_network` and some card actions wait for the operating
 /// system's password prompt.
+///
+/// The card window may send only what its page sends
+/// ([`ubiqx_app::CARD_WINDOW_COMMANDS`]); anything else it sends is refused here, since a
+/// capability allows a whole command (integrator decision 34).
 #[tauri::command]
-pub async fn nofap(state: State<'_, AppState>, command: NofapCommand) -> Result<Value, IpcError> {
+pub async fn nofap(
+    state: State<'_, AppState>,
+    window: WebviewWindow,
+    command: NofapCommand,
+) -> Result<Value, IpcError> {
+    if window.label() == CARD_WINDOW && !ubiqx_app::card_window_may_send(&command) {
+        return Err(IpcError::from(CoreError::Permission(format!(
+            "{} is not answered to the card window",
+            command.name()
+        ))));
+    }
     let service = state.app.engine.nofap().clone();
     tauri::async_runtime::spawn_blocking(move || {
         ubiqx_engine::nofap::ipc::handle(&service, command)

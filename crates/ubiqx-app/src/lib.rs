@@ -45,6 +45,20 @@ use ubiqx_platform::sysblock::NativeSystemShield;
 use ubiqx_platform::PlatformServices;
 use ubiqx_storage::{Db, SqliteStore};
 
+/// The `cmd`s of the module's command that its card window sends: what `NofapCardPage`
+/// asks for (its card, the view, the support plans) and what its buttons send (the card's
+/// actions, the counters). A capability allows a whole command, so both shells refuse
+/// every other `cmd` when the card window sends it (integrator decision 34); the
+/// standalone shell does the same for its host command. `ubiqx-app`'s `shell_access` test
+/// keeps this list equal to what the card page calls.
+pub const CARD_WINDOW_COMMANDS: [&str; 5] = ["view", "card", "card_action", "support", "record"];
+
+/// Whether the shell answers `command` when the card window sends it
+/// ([`CARD_WINDOW_COMMANDS`]).
+pub fn card_window_may_send(command: &ubiqx_core::nofap_ipc::NofapCommand) -> bool {
+    CARD_WINDOW_COMMANDS.contains(&command.name())
+}
+
 pub use ubiqx_ai;
 pub use ubiqx_core;
 pub use ubiqx_engine;
@@ -55,6 +69,50 @@ pub use ubiqx_storage;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The card window is answered its card, the view, the support plans, its buttons and
+    /// the counters; never a command that changes the protection, deletes or exports.
+    #[test]
+    fn the_card_window_may_send_only_what_its_page_sends() {
+        use ubiqx_core::nofap_ipc::NofapCommand;
+        for name in CARD_WINDOW_COMMANDS {
+            assert!(NofapCommand::NAMES.contains(&name), "{name}");
+        }
+        let wire = [
+            (serde_json::json!({ "cmd": "view" }), true),
+            (serde_json::json!({ "cmd": "support" }), true),
+            (
+                serde_json::json!({ "cmd": "card", "args": { "id": "c1" } }),
+                true,
+            ),
+            (
+                serde_json::json!({ "cmd": "card_action", "args": { "id": "c1", "action": "ok" } }),
+                true,
+            ),
+            (
+                serde_json::json!({ "cmd": "record", "args": { "event": "panic" } }),
+                true,
+            ),
+            (serde_json::json!({ "cmd": "reset" }), false),
+            (serde_json::json!({ "cmd": "erase_history" }), false),
+            (serde_json::json!({ "cmd": "export" }), false),
+            (serde_json::json!({ "cmd": "system_apply" }), false),
+            (serde_json::json!({ "cmd": "system_remove" }), false),
+            (serde_json::json!({ "cmd": "restore_network" }), false),
+            (serde_json::json!({ "cmd": "sites" }), false),
+            (serde_json::json!({ "cmd": "sample_frame" }), false),
+            (serde_json::json!({ "cmd": "test_card" }), false),
+            (
+                serde_json::json!({ "cmd": "confirm_pending", "args": { "id": "p1" } }),
+                false,
+            ),
+        ];
+        for (value, allowed) in wire {
+            let command: NofapCommand = serde_json::from_value(value.clone())
+                .unwrap_or_else(|error| panic!("{value}: {error}"));
+            assert_eq!(card_window_may_send(&command), allowed, "{value}");
+        }
+    }
 
     #[test]
     fn ubi_api_base_defaults_and_trims() {

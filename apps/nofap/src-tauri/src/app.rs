@@ -67,8 +67,22 @@ fn join_error(e: impl std::fmt::Display) -> IpcError {
 /// The module's command: `{ cmd, args }` in, the reply of that command out. On the
 /// blocking pool: it reads the database, and some commands wait for the system's password
 /// prompt.
+///
+/// The card window may send only what its page sends
+/// ([`ubiqx_app::CARD_WINDOW_COMMANDS`]); anything else it sends is refused here, since a
+/// capability allows a whole command (integrator decision 34).
 #[tauri::command]
-async fn nofap(app: AppHandle, command: NofapCommand) -> Result<Value, IpcError> {
+async fn nofap(
+    app: AppHandle,
+    window: WebviewWindow,
+    command: NofapCommand,
+) -> Result<Value, IpcError> {
+    if window.label() == card::CARD_WINDOW && !ubiqx_app::card_window_may_send(&command) {
+        return Err(IpcError::from(CoreError::Permission(format!(
+            "{} is not answered to the card window",
+            command.name()
+        ))));
+    }
     tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().app.handle(command))
         .await
         .map_err(join_error)?
