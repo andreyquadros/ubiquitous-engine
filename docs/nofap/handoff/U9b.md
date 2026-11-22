@@ -191,3 +191,53 @@ Each claim, and the code that makes it true (paths from the repository root).
 - **A new bundle kind** for either product needs a rename line in its product's step and a
   path in its `upload-artifact`; `publish-release.mjs` infers platform and kind from the
   stable name.
+
+### CI runs
+
+Pushes of the other units of this wave cancelled most runs of this unit's commits part-way
+(every push cancels the branch's running CI). What finished, job by job:
+
+| Run (commit) | Job | Outcome and what it showed |
+|---|---|---|
+| `44966689890` (`d8ca704`, the CI commit) | Windows | clippy `-p ubiqx-nofap-desktop --all-targets` and `cargo test -p ubiqx-nofap-desktop` passed; cancelled in ubiqX's bundle step |
+| `44968640263` (`837389c`) | macOS app build | **success**: `ubiqX.app/Contents/MacOS/ubiqx-desktop`, `NoFap.app/Contents/MacOS/ubiqx-shield`; artefact `ubiqX-macos-app` (4 files: `.dmg`, `.app.zip`, `.app.tar.gz`, `.sig`) and `ubiqx-shield-macos-app` (4 files, same kinds) |
+| `44970964558` (`1b666de`) | Linux, macOS | **success** both; `ubiqX-linux-app` and `ubiqx-shield-linux-app` (4 files each: `.AppImage`, `.AppImage.tar.gz`, `.sig`, `.deb`); `.deb` packages `ubiq-x` and `no-fap` |
+| `44972849562` (`2fd83eb`) | Rust Linux, Frontend (with `pnpm build:nofap`), Linux, macOS | **success**; `usr/bin/ubiqx-desktop` and `usr/bin/ubiqx-shield` in the two `.deb`; Windows: ubiqX's MSI and NSIS built and uploaded under the old names, `MAINBINARYNAME "ubiqx-desktop"`, standalone clippy and tests passed, then cancelled during the standalone NSIS build by a snapshot push |
+
+The updater signing secrets are present: every job above built signed updater artefacts for
+both products (`UBIQX_UPDATER_SIGNED=1`). The publish jobs were never reached (`push` on a
+feature branch: both are skipped by their conditions). The run of this file's commit is the one
+the final report of this unit lists.
+
+### Open points
+
+- **ubiqX shows no third-party notices.** It embeds the same lists as the standalone app (MIT
+  and CC BY 4.0 inputs), but no screen of ubiqX shows `THIRD-PARTY-NOTICES`, and no installer
+  carries the file. `LICENSING.md` § 7 says so. A frontend change (About, or the module's help
+  tab), for the integrator.
+- **The standalone app's `.deb` package is `no-fap`**, which Tauri derives from the display
+  name. `dpkg -l` shows it to every account. It does not contain the source word literally, so
+  the naming test passes, but it is the display name in the machine ring; checklist item 15's
+  "installer names" row is where a person decides. Tauri 2 has no option for the package name
+  short of changing `productName`.
+- **The standalone `tauri.conf.json` lists `msi`** among its bundle targets (U8). CI builds
+  NSIS only, as decision 39 asks; a local `tauri build` without `--bundles` would still build
+  an MSI with no removal hook. Dropping `msi` from that file is a one-word change for its owner.
+- **The two `deb-prerm.sh` comments point at "docs/REMOVAL.md of the source tree"**; the file
+  is `docs/nofap/REMOVAL.md` (packaging files of U7 and U8).
+- **Installed names are read from the bundles, not from installed apps** (checklist item 25):
+  the MSI install folder (`%ProgramFiles%\ubiqX\`) and the NSIS one (`%LocalAppData%\<product
+  name>\`) are Tauri's defaults, not seen; the autostart entry names are unread.
+- **Not run:** any installer, uninstaller or hook on a real machine; any command of
+  `REMOVAL.md` (nothing here may touch the system); the publish jobs (they run only on `main`
+  with the variable set). `PRIVACY.md`'s log claims are traced to code, not to a log file after
+  a day of use (checklist item 19).
+
+### Commands run
+
+| Command | Result |
+|---|---|
+| `node --test scripts/publish-release.test.mjs` | 51 pass, 0 fail (before and after; the scripts did not change) |
+| `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"` | parses, seven jobs |
+| A scratch simulation of the new rename steps (the `run:` blocks extracted from `ci.yml`, run with bash against fake bundle trees holding both products' files, signed and unsigned) | each product's files renamed, the other's untouched, unsigned updater files removed |
+| `cargo fmt`, `cargo clippy`, frontend checks | not run by this unit: it changed no Rust or TypeScript file. CI ran them (table above) |
