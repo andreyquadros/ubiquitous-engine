@@ -15,7 +15,8 @@ interface Props {
   view: NofapView;
   support: SupportView | null;
   record: (event: UserEvent) => void;
-  onRequest: (change: NofapChange) => Promise<void>;
+  /** Answers whether the engine took the change. */
+  onRequest: (change: NofapChange) => Promise<boolean>;
   onOpen: (dialog: NofapDialog) => void;
 }
 

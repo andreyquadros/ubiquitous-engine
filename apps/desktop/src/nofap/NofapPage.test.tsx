@@ -796,3 +796,125 @@ describe('the two products (integrator decision 32)', () => {
     }
   });
 });
+
+describe('frontend final review', () => {
+  it('"Apagar tudo" says the system part stays, and the page keeps offering to remove it afterwards', async () => {
+    resetNofap('left');
+    renderPage();
+    const off = await screen.findByTestId('nofap-off');
+    fireEvent.click(within(off).getByRole('button', { name: 'Apagar tudo' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Apagar tudo' });
+    expect(dialog).toHaveTextContent('O que está aplicado no sistema fica como está.');
+    fireEvent.click(within(dialog).getByTestId('nofap-erase-confirm'));
+    await waitFor(() => expect(calls('reset')).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByTestId('nofap-off')).toHaveTextContent('A lista do sistema e o DNS continuam aplicados até você remover.');
+    expect(screen.getByTestId('nofap-remove-system')).toBeInTheDocument();
+  });
+
+  it('"Restaurar padrões" leaves the way to remove what stays on the system', async () => {
+    resetNofap('unreadable');
+    renderPage();
+    fireEvent.click(within(await screen.findByTestId('issue-config_unreadable')).getByRole('button', { name: 'Restaurar padrões' }));
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Restaurar padrões' })).getByTestId('nofap-restore-defaults-confirm'));
+    expect(await screen.findByTestId('wizard-step-1')).toBeInTheDocument();
+    expect(screen.getByTestId('nofap-remove-system')).toBeInTheDocument();
+  });
+
+  it('with settings that cannot be read, the exits stay, and the network can be restored', async () => {
+    resetNofap('unreadable');
+    renderPage();
+    await screen.findByTestId('nofap-unreadable');
+    const exits = screen.getByTestId('nofap-exits');
+    for (const exit of ['restore_network', 'info:remove', 'info:quit', 'info:ai']) expect(within(exits).getByTestId(`exit-${exit}`)).toBeInTheDocument();
+    fireEvent.click(within(exits).getByTestId('exit-restore_network'));
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Restaurar minha rede' })).getByTestId('nofap-restore-network-confirm'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(writes()).toEqual([{ cmd: 'restore_network' }]);
+    expect(__nofapMock.state().applied.resolver).toBe(false);
+    expect(__nofapMock.state().unreadable).toBe(true);
+  });
+
+  it('"Remover sem o app" says where each thing is on this system and gives the full address of the steps', async () => {
+    resetNofap('on');
+    renderPage();
+    fireEvent.click(await screen.findByTestId('exit-info:remove'));
+    const info = await screen.findByTestId('info-remove');
+    expect(info).toHaveTextContent('/etc/systemd/resolved.conf.d/90-ubiqx-shield.conf');
+    expect(info).toHaveTextContent('/etc/firefox/policies/policies.json');
+    expect(info).toHaveTextContent('https://github.com/andreyquadros/ubiquitous-engine/blob/main/docs/nofap/REMOVAL.md');
+    expect(info).not.toHaveTextContent('O arquivo REMOVAL.md da documentação');
+    // The Help tab says the same.
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Como remover sem o app' })).getByText('Fechar'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await openTab('Ajuda');
+    expect(screen.getByTestId('help-remove')).toHaveTextContent('https://github.com/andreyquadros/ubiquitous-engine/blob/main/docs/nofap/REMOVAL.md');
+  });
+
+  it('names the places of the current system only', async () => {
+    resetNofap('on');
+    __nofapMock.setCapabilities({ os: 'windows' });
+    renderPage();
+    fireEvent.click(await screen.findByTestId('exit-info:remove'));
+    const info = await screen.findByTestId('info-remove');
+    expect(info).toHaveTextContent('HKLM\\SOFTWARE\\Policies');
+    expect(info).not.toHaveTextContent('/etc/firefox');
+  });
+
+  it('offers "Restaurar minha rede" only while filtered DNS is in place, and says nothing of Cloudflare while it is off', async () => {
+    resetNofap('on');
+    __nofapMock.state().config.system.resolver = null;
+    __nofapMock.state().applied.resolver = false;
+    renderPage();
+    await screen.findByTestId('nofap-exits');
+    expect(screen.queryByTestId('exit-restore_network')).toBeNull();
+    const row = screen.getByTestId('tier-row-resolver');
+    expect(row).toHaveTextContent('Desligado');
+    expect(row).not.toHaveTextContent('aponta para a Cloudflare');
+    expect(screen.getByTestId('tier-row-hosts')).toHaveTextContent('barrados no arquivo hosts');
+  });
+
+  it('a site that could not be added stays in the field', async () => {
+    resetNofap('on');
+    renderPage();
+    await openTab('Listas');
+    const input = await screen.findByRole('textbox', { name: 'Site para barrar' });
+    fireEvent.change(input, { target: { value: 'example.org' } });
+    __nofapMock.state().unreadable = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Barrar site' }));
+    await waitFor(() => expect(calls('request')).toHaveLength(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Barrar site' })).not.toHaveAttribute('aria-busy', 'true'));
+    expect(input).toHaveValue('example.org');
+    // And once it can be stored, it goes and the field clears.
+    __nofapMock.state().unreadable = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Barrar site' }));
+    await waitFor(() => expect(input).toHaveValue(''));
+  });
+
+  it('a plan that could not be saved stays in its fields', async () => {
+    resetNofap('on');
+    renderPage();
+    await openTab('Apoio');
+    const when = await screen.findByLabelText('Se eu sentir vontade quando');
+    const then = screen.getByLabelText('então eu vou');
+    fireEvent.change(when, { target: { value: 'estiver sozinho à noite' } });
+    fireEvent.change(then, { target: { value: 'saio para caminhar' } });
+    __nofapMock.state().unreadable = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar plano' }));
+    await waitFor(() => expect(calls('request')).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(when).toHaveValue('estiver sozinho à noite');
+    expect(then).toHaveValue('saio para caminhar');
+  });
+
+  it('the consent names the list as the Lists tab does', async () => {
+    resetNofap('on');
+    renderPage();
+    await openTab('Listas');
+    const title = within(await screen.findByTestId('sites-allowed')).getByText(translate('pt-BR', 'nofap.lists.allowed.title'));
+    expect(translate('pt-BR', 'nofap.vision.consent')).toContain(`"${title.textContent!.toLowerCase()}"`);
+    expect(translate('pt-BR', 'nofap.vision.consent_ubi')).toContain(`"${title.textContent!.toLowerCase()}"`);
+    expect(translate('en', 'nofap.vision.consent')).toContain(`"${translate('en', 'nofap.lists.allowed.title').toLowerCase()}"`);
+    expect(translate('en', 'nofap.vision.consent_ubi')).toContain(`"${translate('en', 'nofap.lists.allowed.title').toLowerCase()}"`);
+  });
+});

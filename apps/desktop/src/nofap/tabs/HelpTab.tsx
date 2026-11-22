@@ -2,6 +2,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { useT } from '../../i18n';
 import { CrisisCard } from '../components/PanicSheet';
+import { RemovalHelp } from '../components/RemovalHelp';
 import { aiExitText } from '../labels';
 import type { NofapDialog } from '../NofapPage';
 import type { NofapHost } from '../NofapWizard';
@@ -35,10 +36,16 @@ export function HelpTab({ view, resources, host, onOpen, onExport, onTestCard }:
           {TOPICS.map((topic) => (
             <section key={topic} data-testid={`help-${topic}`}>
               <h2 className="text-sm font-semibold text-ink">{t(`nofap.helptab.${topic}.title`)}</h2>
-              <p className="mt-1 text-[13px] leading-5 text-ink-2">
-                {topic === 'limits' ? `${t('nofap.wizard.limits')} ` : ''}
-                {topic === 'ai' ? aiExitText(view.product, t) : t(`nofap.helptab.${topic}.body`)}
-              </p>
+              {topic === 'remove' ? (
+                <div className="mt-1">
+                  <RemovalHelp os={view.capabilities.os} />
+                </div>
+              ) : (
+                <p className="mt-1 text-[13px] leading-5 text-ink-2">
+                  {topic === 'limits' ? `${t('nofap.wizard.limits')} ` : ''}
+                  {topic === 'ai' ? aiExitText(view.product, t) : t(`nofap.helptab.${topic}.body`)}
+                </p>
+              )}
               {topic === 'ai' && host?.openSettings && (
                 <div className="mt-2">
                   <Button size="sm" onClick={host.openSettings}>

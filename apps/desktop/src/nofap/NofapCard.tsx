@@ -72,10 +72,14 @@ export function cardText(key: string | null, t: Translate, name: string | null, 
   return /\{\w+\}/.test(text) ? null : text;
 }
 
-/** What the card says after an exception was requested: when it applies, or what is still missing. */
+/**
+ * What the card says after an exception was requested: when it applies, or what is still missing. Never that the
+ * site is on a list: the engine offers the request only where no list decided (a keyword or TLD rule, a learned
+ * site, an unsure AI verdict), so `notit.request` would be false here.
+ */
 export function requestedText(t: Translate, delaySecs: number | null): string {
   if (delaySecs === null) return t('nofap.card.requested');
-  return delaySecs > 0 ? t('nofap.notit.request', { delay: fmtDelay(delaySecs, t) }) : t('nofap.card.request_now');
+  return delaySecs > 0 ? t('nofap.card.requested_delay', { delay: fmtDelay(delaySecs, t) }) : t('nofap.card.request_now');
 }
 
 /** Closes the card window in Tauri; in a browser only a popup opened by script can close itself. */

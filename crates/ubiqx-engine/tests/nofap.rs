@@ -6657,3 +6657,96 @@ async fn a_change_of_the_ai_settings_keeps_the_caps_and_the_corrections_of_the_d
         }
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Frontend final review: what the page and the quit sentence need from the engine
+// ---------------------------------------------------------------------------------------------
+
+/// The quit sentence that says the system tiers stay, in either language.
+fn says_what_stays(message: &str) -> bool {
+    message.contains("continua valendo") || message.contains("still holds")
+}
+
+/// The pretend machine of a module that was switched on with the hosts block and filtered
+/// DNS, and a repository whose stored configuration then cannot be read.
+fn applied_then_unreadable() -> (Arc<Flaky>, SystemObservation) {
+    let repo = Arc::new(Flaky::default());
+    let machine = {
+        let before = rig(RigSetup {
+            repo: repo.clone(),
+            ..RigSetup::default()
+        });
+        before
+            .service
+            .enable(EnableOptions {
+                hosts: true,
+                resolver: Some(ResolverId::CloudflareFamily),
+                ..standalone_options()
+            })
+            .unwrap();
+        assert_eq!(before.service.status().hosts, TierState::Applied);
+        assert_eq!(before.service.status().resolver, TierState::Applied);
+        before.shield.observation()
+    };
+    repo.unreadable.store(true, Ordering::SeqCst);
+    (repo, machine)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn with_an_unreadable_configuration_the_quit_sentence_is_true_and_the_network_comes_back() {
+    let (repo, machine) = applied_then_unreadable();
+    let r = rig(RigSetup {
+        repo: repo.clone(),
+        ..RigSetup::default()
+    });
+    r.shield.set_observation(machine.clone());
+    assert!(says_unreadable(&r.service.status()));
+    // A quit right after the start: the machine is looked at, and what stays is said.
+    assert!(r.service.system_applied());
+    assert!(says_what_stays(&r.service.quit_dialog().message));
+    // The page's view shows the tiers that are still on the machine, under the same issue.
+    let r = rig(RigSetup {
+        repo: repo.clone(),
+        ..RigSetup::default()
+    });
+    r.shield.set_observation(machine);
+    r.service.view().unwrap();
+    let status = r.service.status();
+    assert!(says_unreadable(&status), "{status:?}");
+    assert_eq!(status.hosts, TierState::Applied);
+    assert_eq!(status.resolver, TierState::Applied);
+
+    // "Restaurar minha rede" is never refused: DNS goes back to automatic, the rest stays,
+    // and nothing is written over the stored row.
+    let saves = repo.saves.load(Ordering::SeqCst);
+    assert_eq!(r.service.restore_network().unwrap(), ApplyOutcome::Applied);
+    let status = r.service.status();
+    assert_eq!(status.resolver, TierState::Off, "{status:?}");
+    assert_eq!(status.hosts, TierState::Applied);
+    assert!(says_unreadable(&status));
+    assert_eq!(repo.saves.load(Ordering::SeqCst), saves);
+    // The other writes are still refused.
+    assert!(matches!(
+        r.service.system_apply(),
+        Err(CoreError::Storage(_))
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tiers_the_other_product_keeps_on_the_machine_are_said_at_quit() {
+    // What the state file lists for ubiqX only: this product's tiers read "in use by the
+    // other app", and the block and DNS stay after this app quits.
+    let (repo, mut machine) = applied_then_unreadable();
+    let state = machine.state.as_mut().expect("a state file");
+    let mine = state.owners.remove(&ProductId::Shield).expect("listed");
+    state.owners.insert(ProductId::Ubiqx, mine);
+    let r = rig(RigSetup {
+        repo,
+        ..RigSetup::default()
+    });
+    r.shield.set_observation(machine);
+    r.service.view().unwrap();
+    assert_eq!(r.service.status().hosts, TierState::InUseByOther);
+    assert!(r.service.system_applied());
+    assert!(says_what_stays(&r.service.quit_dialog().message));
+}

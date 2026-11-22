@@ -127,6 +127,16 @@ describe('the consent wizard', () => {
     expect(calls('enable')[0]?.args.vision_consent).toEqual({ provider: 'ubi', managed: true });
   });
 
+  it('the consent says what the private-windows switch under it says (frontend final review)', async () => {
+    renderPage();
+    await goTo(3);
+    const step = screen.getByTestId('wizard-step-3');
+    expect(within(step).getByTestId('vision-consent-text')).toHaveTextContent('Janelas anônimas são verificadas.');
+    fireEvent.click(within(step).getByRole('switch', { name: 'Janelas anônimas' }));
+    expect(within(step).getByTestId('vision-consent-text')).toHaveTextContent('Janelas anônimas não são verificadas.');
+    expect(within(step).getByTestId('vision-consent-text')).not.toHaveTextContent('Janelas anônimas são verificadas');
+  });
+
   it('keeps the AI check off, and says why, when no provider is usable', async () => {
     __nofapMock.setAi('anthropic', 'no_key');
     const openSettings = vi.fn();

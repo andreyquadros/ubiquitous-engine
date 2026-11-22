@@ -56,7 +56,7 @@ site, qual janela) fica na memória por até 10 minutos e nunca vai para o disco
 **Uma exceção é exceção: fica escrita.** Se você usar "Pedir exceção" num cartão (ou pedir
 para liberar um site na página), o nome do site fica guardado em texto no banco, como parte do
 pedido que espera o seu tempo de espera, até o pedido ser aplicado, cancelado ou vencer.
-Aplicado, ele vira um item da sua lista "nunca bloquear", que também é guardada em texto. Esse
+Aplicado, ele vira um item da sua lista "nunca barrar", que também é guardada em texto. Esse
 pedido entra na exportação.
 
 **Só no ubiqX: o que o rastreador de produtividade esquece.** Uma amostra de uma página
@@ -177,7 +177,7 @@ não conseguiram decidir:
 - sites de bancos, pagamentos, governo, saúde, e-mail e documentos da lista "nunca
   fotografar", e as versões web de mensageiros (WhatsApp, Telegram, Messenger, Discord);
 - endereços da sua rede local (`localhost`, roteador, servidores internos);
-- sites que já foram decididos (bloqueados ou na sua lista "nunca bloquear");
+- sites que já foram decididos (bloqueados ou na sua lista "nunca barrar");
 - gerenciadores de senha e as janelas do próprio ubiqX e do NoFap;
 - qualquer outro app que não seja navegador, player ou visualizador;
 - no ubiqX, os apps e domínios das suas listas de privacidade. Uma exclusão que já existia

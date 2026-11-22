@@ -173,6 +173,25 @@ describe('quitting from the window (design 6.3)', () => {
     expect(await screen.findByTestId('quit-message')).toHaveTextContent('o que está aplicado no sistema continua valendo');
   });
 
+  it('says what stays while the other app keeps every layer on this computer (frontend final review)', async () => {
+    start({ onboarded: true, scenario: 'secondary' });
+    await screen.findByTestId('nofap-status');
+    expect(screen.getByTestId('tier-row-hosts')).toHaveTextContent('Aplicado pelo outro app');
+    fireEvent.click(screen.getByTestId('nav-quit'));
+    const message = await screen.findByTestId('quit-message');
+    expect(message).toHaveTextContent('o que está aplicado no sistema continua valendo');
+    expect(message).not.toHaveTextContent('nada fica barrando');
+  });
+
+  it('with settings that cannot be read, says what stays as the sentence on the page does (frontend final review)', async () => {
+    start({ onboarded: true, scenario: 'unreadable' });
+    expect(await screen.findByTestId('issue-config_unreadable')).toHaveTextContent('O que está aplicado no sistema continua valendo');
+    fireEvent.click(screen.getByTestId('nav-quit'));
+    const message = await screen.findByTestId('quit-message');
+    expect(message).toHaveTextContent('o que está aplicado no sistema continua valendo');
+    expect(message).not.toHaveTextContent('nada fica barrando');
+  });
+
   it('does not promise the system layer while the module is on but its tiers are closed on this system (R15)', async () => {
     start({ onboarded: true, scenario: 'gated' });
     await screen.findByTestId('nofap-status');

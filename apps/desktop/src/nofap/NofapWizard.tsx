@@ -11,6 +11,7 @@ import { DelayPicker } from './components/DelayPicker';
 import { ResolverChoice } from './components/ResolverChoice';
 import { SampleFrameView } from './components/SampleFrameView';
 import { consentComplete, VisionConsent } from './components/VisionConsent';
+import { RemovalHelp } from './components/RemovalHelp';
 import { VisionScope } from './components/VisionScope';
 import { nofapIpc } from './ipc';
 import { fmtDelay, fmtMoney, reasonText, VALUES_MAX_CHARS, type Translate } from './labels';
@@ -198,7 +199,7 @@ export function NofapWizard({ view, host, onEnabled }: Props) {
               </Field>
               {vision ? (
                 <>
-                  <VisionConsent provider={view.provider} name={name} product={view.product} consent={consent} onConsent={setConsent} managed={managed} onManaged={setManaged} />
+                  <VisionConsent provider={view.provider} name={name} product={view.product} privateWindows={scope.private_windows} consent={consent} onConsent={setConsent} managed={managed} onManaged={setManaged} />
                   {visionBlocked && (
                     <p className="text-xs text-ink-2" role="status">
                       {t('nofap.vision.need_tick')}
@@ -258,7 +259,13 @@ export function NofapWizard({ view, host, onEnabled }: Props) {
           {(['data', 'off', 'remove'] as const).map((part) => (
             <section key={part}>
               <h3 className="text-[13px] font-medium text-ink">{t(`nofap.helptab.${part}.title`)}</h3>
-              <p className="mt-1 text-[13px] leading-5 text-ink-2">{t(`nofap.helptab.${part}.body`)}</p>
+              {part === 'remove' ? (
+                <div className="mt-1">
+                  <RemovalHelp os={view.capabilities.os} />
+                </div>
+              ) : (
+                <p className="mt-1 text-[13px] leading-5 text-ink-2">{t(`nofap.helptab.${part}.body`)}</p>
+              )}
             </section>
           ))}
           <p className="text-xs leading-5 text-ink-3">{t('nofap.privacy.at_rest', { name })}</p>

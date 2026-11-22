@@ -111,6 +111,23 @@ describe('copy for two products (integrator decision 32)', () => {
   });
 });
 
+describe('the consent and the private-windows switch (frontend final review)', () => {
+  it('ends with the sentence the switch replaces, in every consent and both languages', () => {
+    for (const locale of LOCALES) {
+      const t = (key: string, vars?: Record<string, string | number>) => translate(locale, key, vars);
+      for (const provider of ['anthropic', 'ubi'] as const) {
+        for (const product of ['shield', 'ubiqx'] as const) {
+          const on = consentText(provider, 'NoFap', product, t);
+          const off = consentText(provider, 'NoFap', product, t, false);
+          expect(on, `${locale} ${provider} ${product}`).toContain(t('nofap.vision.private_on'));
+          expect(off, `${locale} ${provider} ${product}`).not.toContain(t('nofap.vision.private_on'));
+          expect(off.replace(t('nofap.vision.private_off'), t('nofap.vision.private_on')), `${locale} ${provider} ${product}`).toBe(on);
+        }
+      }
+    }
+  });
+});
+
 describe('the consent sentence with the managed provider (integrator decision 24)', () => {
   /** The sentences of a text, each without its closing full stop. */
   const sentences = (text: string): string[] => text.split(/\. (?=[A-ZÀ-Ý{])/u);

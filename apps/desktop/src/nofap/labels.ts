@@ -45,9 +45,23 @@ export function withUbiqxLine(text: string, ubiqxKey: string, product: ProductId
   return product === 'ubiqx' ? `${text} ${t(ubiqxKey)}` : text;
 }
 
-/** The consent sentence as the page shows it in `product`. */
-export const consentText = (provider: AiProvider, name: string, product: ProductId, t: Translate): string =>
-  withUbiqxLine(t(consentKey(provider), { name, provider: providerName(provider, t) }), 'nofap.vision.pause_note', product, t);
+/**
+ * The consent sentence as the page shows it in `product`. Its last sentence says private windows are checked, the
+ * default; with the switch "Janelas anônimas" off it says they are not, so the text never contradicts the switch
+ * shown under it.
+ */
+export function consentText(provider: AiProvider, name: string, product: ProductId, t: Translate, privateWindows = true): string {
+  let text = t(consentKey(provider), { name, provider: providerName(provider, t) });
+  const checked = t('nofap.vision.private_on');
+  if (!privateWindows && text.endsWith(checked)) text = `${text.slice(0, -checked.length)}${t('nofap.vision.private_off')}`;
+  return withUbiqxLine(text, 'nofap.vision.pause_note', product, t);
+}
+
+/**
+ * Where the step-by-step removal guide is published, given as text: neither app ships the document, and the page
+ * needs no network to show the address.
+ */
+export const REMOVAL_URL = 'https://github.com/andreyquadros/ubiquitous-engine/blob/main/docs/nofap/REMOVAL.md';
 
 /** How the AI check stops at once, as the page shows it in `product`. */
 export const aiExitText = (product: ProductId, t: Translate): string => withUbiqxLine(t('nofap.helptab.ai.body'), 'nofap.helptab.ai.local_only', product, t);

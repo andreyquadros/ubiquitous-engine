@@ -13,6 +13,7 @@ import { IssueList, type IssueAction } from './components/IssueList';
 import { LapseFlow } from './components/LapseFlow';
 import { CrisisCard, PanicSheet } from './components/PanicSheet';
 import { PendingBanner } from './components/PendingBanner';
+import { RemovalHelp } from './components/RemovalHelp';
 import { SiteLists } from './components/SiteLists';
 import { SurfTimer } from './components/SurfTimer';
 import { SystemPreview } from './components/SystemPreview';
@@ -39,6 +40,18 @@ const OVERALL_COLOR: Record<Overall, string> = { off: 'var(--ink-4)', protected:
 const needsApply = (tier: TierState): boolean => tier.state === 'not_applied' || tier.state === 'update_pending' || tier.state === 'changed' || tier.state === 'missing';
 const drifted = (tier: TierState): boolean => tier.state === 'changed' || tier.state === 'missing';
 const leftOnSystem = (tier: TierState): boolean => tier.state === 'applied' || tier.state === 'update_pending' || tier.state === 'changed';
+
+/**
+ * Whether "Restaurar minha rede" has something to give back: filtered DNS is in place (this app's or the other's,
+ * intact or not), it does not answer, or it was chosen and the machine has not said otherwise yet. Never after the
+ * user chose "Só a lista neste computador", nor once the network was restored: the OS prompt would be for nothing.
+ */
+const networkToRestore = (view: NofapView): boolean => {
+  const state = view.status.resolver.state;
+  if (state === 'applied' || state === 'update_pending' || state === 'changed' || state === 'missing' || state === 'in_use_by_other') return true;
+  if (view.status.issues.includes('resolver_unreachable')) return true;
+  return view.config.system.resolver !== null && !view.config.system.network_restored && state === 'not_applied';
+};
 
 /** The status header: the overall state with the layers that are on, one row per layer, and what needs attention. */
 function StatusCard({ view, onIssue, onOpen }: { view: NofapView; onIssue: (action: IssueAction) => void; onOpen: (dialog: NofapDialog) => void }) {
@@ -89,10 +102,10 @@ function StatusCard({ view, onIssue, onOpen }: { view: NofapView; onIssue: (acti
 }
 
 /** The exits that never wait (design 6.3), on every tab: each is at most two clicks from here. */
-function ExitsCard({ name, onOpen }: { name: string; onOpen: (dialog: NofapDialog) => void }) {
+function ExitsCard({ name, network, onOpen }: { name: string; network: boolean; onOpen: (dialog: NofapDialog) => void }) {
   const t = useT();
   const exits: [NofapDialog, string][] = [
-    ['restore_network', t('nofap.btn.restore_network')],
+    ...(network ? [['restore_network', t('nofap.btn.restore_network')] as [NofapDialog, string]] : []),
     ['erase', t('nofap.data.erase', { name })],
     ['info:remove', t('nofap.exits.remove')],
     ['info:quit', t('nofap.exits.quit')],
@@ -202,6 +215,9 @@ export function NofapPage({ host }: { host?: NofapHost }) {
     },
     [request, toast, t, fail, loadSupport],
   );
+
+  /** `send` for a form: whether the engine took the change, so what was typed is cleared only then. */
+  const sent = useCallback(async (change: NofapChange) => (await send(change)) !== null, [send]);
 
   const reportOutcome = (outcome: ApplyOutcome, done: string) => {
     switch (outcome.outcome) {
@@ -441,7 +457,7 @@ export function NofapPage({ host }: { host?: NofapHost }) {
           </>
         }
       >
-        <VisionConsent provider={view.provider} name={name} product={view.product} consent={consent} onConsent={setConsent} managed={managed} onManaged={setManaged} />
+        <VisionConsent provider={view.provider} name={name} product={view.product} privateWindows={view.config.vision.private_windows} consent={consent} onConsent={setConsent} managed={managed} onManaged={setManaged} />
       </Dialog>
       {(['remove', 'quit', 'ai'] as const).map((topic) => (
         <Dialog
@@ -463,17 +479,24 @@ export function NofapPage({ host }: { host?: NofapHost }) {
             </>
           }
         >
-          <p className="text-sm leading-6 text-ink-2" data-testid={`info-${topic}`}>
-            {topic === 'ai' ? aiExitText(view.product, t) : t(`nofap.helptab.${topic}.body`)}
-          </p>
+          {topic === 'remove' ? (
+            <div data-testid="info-remove">
+              <RemovalHelp os={view.capabilities.os} />
+            </div>
+          ) : (
+            <p className="text-sm leading-6 text-ink-2" data-testid={`info-${topic}`}>
+              {topic === 'ai' ? aiExitText(view.product, t) : t(`nofap.helptab.${topic}.body`)}
+            </p>
+          )}
         </Dialog>
       ))}
     </>
   );
 
   if (status.issues.includes('config_unreadable')) {
-    // The stored settings could not be read: one sentence and the way out. Nothing else of the page is offered,
-    // because every write would be refused until the defaults are restored (integrator decision 33).
+    // The stored settings could not be read: one sentence and the way out. Nothing else of the module is offered,
+    // because every write would be refused until the defaults are restored (integrator decision 33). The exits that
+    // never wait stay: none of them needs the settings, and what was chosen is unknown, so the network one is there.
     return (
       <div data-testid="page-nofap">
         <PageHeader title={name} subtitle={t('nofap.page.subtitle')} actions={talkButton} />
@@ -487,6 +510,7 @@ export function NofapPage({ host }: { host?: NofapHost }) {
               <IssueList issues={status.issues.filter((issue) => issue === 'config_unreadable')} onAction={onIssue} />
             </div>
           </Card>
+          <ExitsCard name={name} network onOpen={open} />
         </div>
         {dialogs}
       </div>
@@ -566,12 +590,12 @@ export function NofapPage({ host }: { host?: NofapHost }) {
           <StatusCard view={view} onIssue={onIssue} onOpen={open} />
           <Tabs<NofapTab> value={tab} onChange={setTab} items={TABS.map((value) => ({ value, label: t(`nofap.tab.${value}`) }))} className="self-start" />
           {tab === 'protection' && <ProtectionTab view={view} host={host} onRequest={(change) => void send(change)} onOpen={open} />}
-          {tab === 'support' && <SupportTab view={view} support={support} record={record} onRequest={async (change) => void (await send(change))} onOpen={open} />}
-          {tab === 'lists' && (sites ? <SiteLists view={view} sites={sites} onRequest={async (change) => void (await send(change))} /> : <Skeleton className="h-64" />)}
+          {tab === 'support' && <SupportTab view={view} support={support} record={record} onRequest={sent} onOpen={open} />}
+          {tab === 'lists' && (sites ? <SiteLists view={view} sites={sites} onRequest={sent} /> : <Skeleton className="h-64" />)}
           {tab === 'help' && <HelpTab view={view} resources={resources} host={host} onOpen={open} onExport={data.onExport} onTestCard={data.onTestCard} />}
         </div>
         <aside className="col-span-12 flex flex-col gap-5 min-[1100px]:col-span-4">
-          <ExitsCard name={name} onOpen={open} />
+          <ExitsCard name={name} network={networkToRestore(view)} onOpen={open} />
         </aside>
       </div>
       {dialogs}

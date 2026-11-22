@@ -96,17 +96,18 @@ describe('the card window', () => {
     expect(__nofapMock.state().config.pending).toEqual([]);
   });
 
-  it('"Não era isso" on a list hit becomes a request that waits, and the card says so without naming the site', async () => {
+  it('"Não era isso" that becomes a request that waits says so, without naming the site or a list', async () => {
     await open('blocked', { discreet: false, message_key: 'block.default', actions: ['not_it', 'ok'], auto_close_secs: null });
     fireEvent.click(screen.getByRole('button', { name: 'Não era isso' }));
-    await waitFor(() => expect(screen.getByTestId('card-message')).toHaveTextContent(/^Esse site está na lista\. Pedi a exceção; ela vale daqui a 10 minutos\.$/));
+    await waitFor(() => expect(screen.getByTestId('card-message')).toHaveTextContent(/^Pedi a exceção; ela vale daqui a 10 minutos\.$/));
     expect(__nofapMock.state().config.pending.map((p) => p.change.kind)).toEqual(['add_allow']);
   });
 
   it('"Pedir exceção" creates the delayed request', async () => {
     await open('vision_ask');
     fireEvent.click(screen.getByRole('button', { name: 'Pedir exceção' }));
-    await waitFor(() => expect(screen.getByTestId('card-message')).toHaveTextContent('Pedi a exceção; ela vale daqui a 10 minutos.'));
+    // An unsure verdict on a site no list knows: the card does not say it is on one.
+    await waitFor(() => expect(screen.getByTestId('card-message')).toHaveTextContent(/^Pedi a exceção; ela vale daqui a 10 minutos\.$/));
     expect(__nofapMock.state().config.pending).toHaveLength(1);
   });
 
@@ -426,7 +427,7 @@ describe('a card never shows a site, a window title or an application', () => {
     const t = (key: string, vars?: Record<string, string | number>) => translate('pt-BR', key, vars);
     expect(requestedText(t, null)).toBe('Pedi a exceção. Ela espera o tempo que você escolheu.');
     expect(requestedText(t, 0)).toBe('Pedi a exceção. Falta você confirmar na página do app.');
-    expect(requestedText(t, 600)).toBe('Esse site está na lista. Pedi a exceção; ela vale daqui a 10 minutos.');
+    expect(requestedText(t, 600)).toBe('Pedi a exceção; ela vale daqui a 10 minutos.');
     expect(cardText('reminder.on', t, null, 600)).toBeNull();
     expect(cardText('reminder.on', t, 'Escudo', null)).toBe('O Escudo está ligado neste computador. Veja como desligar.');
     expect(cardText('notit.request', t, 'Escudo', 0)).toBeNull();

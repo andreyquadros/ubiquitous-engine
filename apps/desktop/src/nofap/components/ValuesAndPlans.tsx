@@ -10,8 +10,9 @@ import type { IfThenPlan } from '../types';
 interface Props {
   values: string;
   plans: IfThenPlan[];
-  onSaveValues: (text: string) => Promise<void>;
-  onSavePlans: (plans: IfThenPlan[]) => Promise<void>;
+  /** Each answers whether the engine took the change: a plan that was not saved stays in its fields. */
+  onSaveValues: (text: string) => Promise<boolean>;
+  onSavePlans: (plans: IfThenPlan[]) => Promise<boolean>;
 }
 
 /**
@@ -27,7 +28,7 @@ export function ValuesAndPlans({ values, plans, onSaveValues, onSavePlans }: Pro
 
   useEffect(() => setText(values), [values]);
 
-  const run = async (act: () => Promise<void>) => {
+  const run = async (act: () => Promise<unknown>) => {
     setBusy(true);
     try {
       await act();
@@ -38,7 +39,7 @@ export function ValuesAndPlans({ values, plans, onSaveValues, onSavePlans }: Pro
 
   const addPlan = () =>
     run(async () => {
-      await onSavePlans([...plans, { when: when.trim(), then: then.trim() }]);
+      if (!(await onSavePlans([...plans, { when: when.trim(), then: then.trim() }]))) return;
       setWhen('');
       setThen('');
     });

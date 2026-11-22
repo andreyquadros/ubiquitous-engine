@@ -18,7 +18,8 @@ interface ListProps {
   addLabel: string;
   empty: string;
   entries: SiteEntry[];
-  onAdd: (host: string) => Promise<void>;
+  /** Whether the engine took the site: what was typed stays in the field otherwise, to correct or try again. */
+  onAdd: (host: string) => Promise<boolean>;
   onRemove: (entry: SiteEntry) => void;
   /** Something that belongs to this list, shown under it. */
   footer?: ReactNode;
@@ -39,8 +40,7 @@ function SiteList({ title, subtitle, inputLabel, addLabel, empty, entries, onAdd
     }
     setBusy(true);
     try {
-      await onAdd(text.trim());
-      setText('');
+      if (await onAdd(text.trim())) setText('');
     } finally {
       setBusy(false);
     }
@@ -97,8 +97,8 @@ function SiteList({ title, subtitle, inputLabel, addLabel, empty, entries, onAdd
 interface Props {
   view: NofapView;
   sites: SitesView;
-  /** Sends the change; the caller tells the user whether it applied or waits. */
-  onRequest: (change: NofapChange) => Promise<void>;
+  /** Sends the change; the caller tells the user whether it applied, waits or failed, and answers whether it was taken. */
+  onRequest: (change: NofapChange) => Promise<boolean>;
 }
 
 /**

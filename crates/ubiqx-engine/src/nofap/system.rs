@@ -142,26 +142,27 @@ impl NofapService {
         let now = self.now();
         {
             let rt = self.rt.lock();
-            if rt.config_error {
-                // Unknown is not "off": the page must not read as a module nobody enabled,
-                // and it says why (integrator decision 33).
-                return NofapStatus {
-                    overall: Overall::Reduced,
-                    issues: vec![Issue::ConfigUnreadable],
-                    ..NofapStatus::off()
-                };
-            }
-            if !rt.config.enabled {
+            if rt.config_error || !rt.config.enabled {
                 // Tiers that are still on the machine keep showing, so the page can offer
-                // to remove them.
+                // to remove them and the quit sentence is true.
                 let [hosts, resolver, policies] = tier_states(&rt, None);
                 let known = rt.system.assessment.is_some();
-                return NofapStatus {
+                let tiers = NofapStatus {
                     hosts: if known { hosts } else { TierState::Off },
                     resolver: if known { resolver } else { TierState::Off },
                     policies: if known { policies } else { TierState::Off },
                     ..NofapStatus::off()
                 };
+                if rt.config_error {
+                    // Unknown is not "off": the page must not read as a module nobody
+                    // enabled, and it says why (integrator decision 33).
+                    return NofapStatus {
+                        overall: Overall::Reduced,
+                        issues: vec![Issue::ConfigUnreadable],
+                        ..tiers
+                    };
+                }
+                return tiers;
             }
         }
         let env = self.deps.env.snapshot();
@@ -786,16 +787,14 @@ impl NofapService {
     /// Reads the system for the page, at most once a minute and never in the way of the
     /// answer: `view` carries the last observation, and a fresh one arrives as a `status`
     /// event (integrator decisions 14 and 21). Nothing is read for a module that was
-    /// never enabled.
+    /// never enabled; a stored configuration that cannot be read may hide one that was,
+    /// so the machine is read then too (it is only looked at, never changed).
     pub(crate) fn read_for_view(&self) {
         let now = self.now();
         {
             let mut rt = self.rt.lock();
-            let ever_on = rt.config.enabled || rt.config.enabled_at.is_some();
-            if rt.config_error
-                || !ever_on
-                || !due(rt.system.view_read_at, VIEW_READ_EVERY_SECS, now)
-            {
+            let ever_on = rt.config.enabled || rt.config.enabled_at.is_some() || rt.config_error;
+            if !ever_on || !due(rt.system.view_read_at, VIEW_READ_EVERY_SECS, now) {
                 return;
             }
             rt.system.view_read_at = Some(now);
@@ -1026,10 +1025,9 @@ impl NofapService {
     /// "Restaurar minha rede": DNS goes back to automatic where it is still ours; the
     /// other tiers stay. Never delayed (a broken network is a safety problem) and not
     /// counted as an override.
+    /// It needs no configuration, so it also runs while the stored one cannot be read
+    /// (the note that the network was restored is then not stored).
     pub fn restore_network(&self) -> CoreResult<ApplyOutcome> {
-        if self.rt.lock().config_error {
-            return Err(unreadable_config());
-        }
         let _prompt = self.one_prompt()?;
         let outcome = self
             .deps
@@ -1042,10 +1040,14 @@ impl NofapService {
                 rt.system.probe_fail_streak = 0;
                 // DNS is back to automatic either way; when that cannot be stored the
                 // next look reports the resolver as missing, which is the truth.
-                let stored = self.update_config(&mut rt, |config| {
-                    config.system.network_restored = true;
+                let stored = if rt.config_error {
                     Ok(())
-                });
+                } else {
+                    self.update_config(&mut rt, |config| {
+                        config.system.network_restored = true;
+                        Ok(())
+                    })
+                };
                 if let Err(error) = stored {
                     tracing::debug!(
                         class = error_class(&error),
@@ -1062,12 +1064,12 @@ impl NofapService {
 
     /// Whether at least one system tier is in place: which of the two quit sentences is
     /// true (`quit.confirm_system` or `quit.confirm_none`). When the machine was not
-    /// looked at yet in this run (a quit right after the start), it is looked at now.
+    /// looked at yet in this run (a quit right after the start), it is looked at now. A
+    /// tier the other product keeps on the machine stays after this app quits too.
     pub fn system_applied(&self) -> bool {
         let unknown = {
             let rt = self.rt.lock();
-            (rt.config.enabled || rt.config.enabled_at.is_some())
-                && !rt.config_error
+            (rt.config.enabled || rt.config.enabled_at.is_some() || rt.config_error)
                 && rt.system.observation.is_none()
         };
         if unknown && self.read_system(false, false).is_ok() {
@@ -1075,7 +1077,8 @@ impl NofapService {
         }
         let rt = self.rt.lock();
         let status = &rt.status;
-        in_place(&status.hosts) || in_place(&status.resolver) || in_place(&status.policies)
+        let stays = |state: &TierState| in_place(state) || *state == TierState::InUseByOther;
+        stays(&status.hosts) || stays(&status.resolver) || stays(&status.policies)
     }
 
     // -----------------------------------------------------------------------------------------

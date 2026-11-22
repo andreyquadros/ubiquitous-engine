@@ -39,6 +39,9 @@ function tierText(layer: 'hosts' | 'resolver' | 'policies', status: NofapStatus,
       details.push(t('nofap.system.gated'));
       break;
     case 'off':
+      // The hint says what the layer does once applied; read next to "Desligado" it would be false.
+      details.push(t(`nofap.layer.${layer}.off`));
+      break;
     case 'applied':
       details.push(t(`nofap.layer.${layer}.hint`));
       break;

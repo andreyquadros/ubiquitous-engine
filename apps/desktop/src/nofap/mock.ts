@@ -201,9 +201,9 @@ function pendingView(pending: PendingChange): PendingView {
 function status(): NofapStatus {
   if (S.scripted) return clone(S.scripted);
   if (S.unreadable) {
-    // As the engine says it: not "off", nothing in force from the app, and the reason.
-    const off: TierState = { state: 'off' };
-    return { overall: 'reduced', guard: { state: 'off' }, hosts: off, resolver: off, policies: off, vision: { state: 'off', reason: 'disabled' }, issues: ['config_unreadable'], pending: [], hosts_waiting: 0, extras_left_out: 0 };
+    // As the engine says it: not "off", no guard and no check, what is still on the machine, and the reason.
+    const left = (tier: Tier): TierState => ({ state: S.applied[tier] ? 'applied' : 'off' });
+    return { overall: 'reduced', guard: { state: 'off' }, hosts: left('hosts'), resolver: left('resolver'), policies: left('policies'), vision: { state: 'off', reason: 'disabled' }, issues: ['config_unreadable'], pending: [], hosts_waiting: 0, extras_left_out: 0 };
   }
   const pending = S.config.pending.map(pendingView);
   const hosts = tierState('hosts');
@@ -527,11 +527,11 @@ function systemRemove(): ApplyOutcome {
   });
 }
 
+/** Needs no configuration, so it runs also while the stored one cannot be read (and then notes nothing). */
 function restoreNetwork(): ApplyOutcome {
-  refuseUnreadable();
   return prompted(() => {
     S.applied.resolver = false;
-    S.config.system.network_restored = true;
+    if (!S.unreadable) S.config.system.network_restored = true;
   });
 }
 

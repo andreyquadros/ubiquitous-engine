@@ -14,8 +14,11 @@ import { useAutostart } from './autostart';
 import { hostIpc } from './hostIpc';
 import { useHostStore } from './hostStore';
 
-/** A tier counts as applied while it is in place on the machine (the engine's `system_applied`). */
-const inPlace = (tier: TierState): boolean => tier.state === 'applied' || tier.state === 'update_pending';
+/**
+ * A tier stays after the quit while it is in place on the machine (the engine's `system_applied`): this app's, or
+ * the other app's (`in_use_by_other`), which quitting this one does not take away.
+ */
+const inPlace = (tier: TierState): boolean => tier.state === 'applied' || tier.state === 'update_pending' || tier.state === 'in_use_by_other';
 
 /** Whether something stays on the system after the app quits: picks the quit sentence that is true. */
 export const systemApplied = (view: NofapView | null): boolean => !!view && [view.status.hosts, view.status.resolver, view.status.policies].some(inPlace);
