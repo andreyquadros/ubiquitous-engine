@@ -2380,6 +2380,53 @@ async fn s22_the_tracker_forgets_a_hit() {
     ));
 }
 
+/// Integrator decision 36: once the tracker's block is scrubbed after a hit, the page's
+/// title and address are in neither the database file nor its write-ahead log. Before the
+/// scrub both are in the log (the block was tracked as usual), so the test can fail.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_scrubbed_block_leaves_no_copy_in_the_file_or_the_log() {
+    let h = harness().await;
+    h.enable(true);
+    let state = h.state().clone();
+    let title = "Um título de página que não pode ficar no disco";
+    let address = url_of(UNKNOWN);
+    let tab = window("Google Chrome", CHROME, title, Some(7));
+    for _ in 0..4 {
+        h.advance(30);
+        let sample = sample_of(&h, &tab, Some(address.clone()));
+        ubiqx_engine::tracker::handle_sample(&state, sample).unwrap();
+    }
+    let open = BlockRepo::open_block(h.store.as_ref()).unwrap().unwrap();
+    assert_eq!(open.title, title);
+    let database = h.tmp.path().join("ubiqx.db");
+    let log = h.tmp.path().join("ubiqx.db-wal");
+    let found_in = |needle: &str| -> Vec<&'static str> {
+        [(&database, "the database file"), (&log, "the log")]
+            .into_iter()
+            .filter(|(file, _)| contains(&std::fs::read(file).unwrap_or_default(), needle))
+            .map(|(_, name)| name)
+            .collect()
+    };
+    assert!(found_in(title).contains(&"the log"));
+    assert!(found_in(&address).contains(&"the log"));
+
+    h.foreground.set(tab.clone(), Some(&address));
+    h.detector.push(Ok(explicit(Confidence::High)));
+    assert_eq!(h.check_within(30).await, Some(true));
+    ubiqx_engine::tracker::scrub_open_block(&state).unwrap();
+
+    let block = BlockRepo::get(h.store.as_ref(), &open.id).unwrap().unwrap();
+    assert_eq!(block.title, PRIVATE_TITLE);
+    for needle in [title, &title.to_lowercase(), &address, UNKNOWN] {
+        assert_eq!(found_in(needle), Vec::<&str>::new(), "{needle}");
+    }
+    assert_eq!(
+        std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0),
+        0,
+        "the log is emptied"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn s23_the_other_product_runs_the_passes_while_its_heartbeat_is_fresh() {
     let h = harness_with(Setup {
@@ -3838,6 +3885,122 @@ impl ExplicitDetector for HeldDetector {
         self.asked.fetch_add(1, Ordering::SeqCst);
         let _released = self.answer.acquire().await;
         Ok(self.verdict)
+    }
+}
+
+/// A clock that counts its reads: both passes read it first, so a read is a pass.
+struct CountingClock {
+    inner: FixedClock,
+    reads: AtomicUsize,
+}
+
+impl Clock for CountingClock {
+    fn now(&self) -> DateTime<Utc> {
+        self.reads.fetch_add(1, Ordering::SeqCst);
+        self.inner.now()
+    }
+}
+
+/// A service built from ports alone whose passes can be counted.
+fn counted_service() -> (Arc<NofapService>, Arc<CountingClock>, tempfile::TempDir) {
+    let tmp = tempfile::tempdir().unwrap();
+    let foreground = Arc::new(Foreground::default());
+    let clock = Arc::new(CountingClock {
+        inner: FixedClock::new(fixed_now()),
+        reads: AtomicUsize::new(0),
+    });
+    let ports = NofapPorts {
+        system: Arc::new(NoSystemShield),
+        frames: Arc::new(ScriptedFrameSource::new()),
+        detector: None,
+        presenter: Arc::new(LogNofapPresenter),
+        sink: Arc::new(NullNofapSink),
+        repo: Arc::new(MemoryNofapRepo::default()),
+        shared_dir: None,
+        tuning: Tuning {
+            confirm_after: Duration::from_millis(5),
+            check_timeout: Duration::from_secs(5),
+            background: Background::Inline,
+            display: DisplaySession::Full,
+        },
+    };
+    let host = NofapHost {
+        env: Arc::new(StaticEnv),
+        activity: foreground.clone(),
+        urls: foreground.clone(),
+        enforcer: Arc::new(MockEnforcer::default()),
+        permissions: foreground,
+        notifier: Arc::new(RecordingNotifier::default()),
+        usage: Arc::new(ubiqx_ai::fake::MemoryUsageRepo::new()),
+        clock: clock.clone(),
+        identity: &ubiqx_core::product::SHIELD,
+        export_dir: tmp.path().join("exports"),
+    };
+    (
+        NofapService::new(NofapDeps::assemble(ports, host)),
+        clock,
+        tmp,
+    )
+}
+
+/// Polls `future` once (with the test task's waker); whether it is still pending.
+async fn poll_once<F: std::future::Future + Unpin>(future: &mut F) -> bool {
+    std::future::poll_fn(|cx| {
+        std::task::Poll::Ready(std::pin::Pin::new(&mut *future).poll(cx).is_pending())
+    })
+    .await
+}
+
+/// Integrator decision 37: a loop asked to stop while a tick is due stops without one
+/// more pass. The loop is polled by hand: until it waits for its second tick, then not
+/// until that tick is due and the cancel is signalled, so both branches are ready when it
+/// next looks. Without `biased` each attempt starts a pass one time in two; 24 attempts of
+/// each loop in a row.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_cancel_with_a_tick_due_stops_both_loops_without_another_pass() {
+    let every = Duration::from_millis(10);
+    for attempt in 0..24 {
+        for guard in [true, false] {
+            let (service, clock, _tmp) = counted_service();
+            let cancel = tokio_util::sync::CancellationToken::new();
+            let mut running: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> =
+                if guard {
+                    Box::pin(ubiqx_engine::nofap::run_guard_loop(
+                        service,
+                        every,
+                        cancel.clone(),
+                        Arc::new(|| {}),
+                    ))
+                } else {
+                    Box::pin(ubiqx_engine::nofap::run_verify_loop(
+                        service,
+                        every,
+                        cancel.clone(),
+                    ))
+                };
+            // The first tick is immediate but completes only once the timer driver has
+            // seen it: a sleep that ends later has let it fire. The next poll takes it and
+            // waits for the second tick.
+            assert!(
+                poll_once(&mut running).await,
+                "the loop waits for its first tick"
+            );
+            tokio::time::sleep(Duration::from_millis(3)).await;
+            assert!(poll_once(&mut running).await, "the loop waits for its tick");
+            let before = clock.reads.load(Ordering::SeqCst);
+            // Well past the tick: the timer has fired by the time this sleep ends.
+            tokio::time::sleep(every * 4).await;
+            cancel.cancel();
+            tokio::time::timeout(Duration::from_secs(20), running)
+                .await
+                .expect("the loop ends when cancelled");
+            assert_eq!(
+                clock.reads.load(Ordering::SeqCst),
+                before,
+                "attempt {attempt}: a {} pass ran after the cancel",
+                if guard { "guard" } else { "verify" }
+            );
+        }
     }
 }
 

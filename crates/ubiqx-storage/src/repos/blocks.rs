@@ -254,6 +254,10 @@ impl BlockRepo for SqliteStore {
         self.with(|conn| insert_block(conn, block))
     }
 
+    fn fold_log(&self) -> CoreResult<()> {
+        self.with(|conn| SqliteStore::fold_log_now(conn))
+    }
+
     fn update(&self, block: &ActivityBlock) -> CoreResult<()> {
         self.with(|conn| {
             let scratch = Scratch::of(block);

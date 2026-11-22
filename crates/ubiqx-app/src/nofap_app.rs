@@ -817,6 +817,104 @@ mod tests {
         assert_eq!(env.snapshot().ai, AiReadiness::NoKey);
     }
 
+    /// A clock that counts its reads: both passes read it first, so a read is a pass.
+    struct CountingClock(AtomicUsize);
+
+    impl Clock for CountingClock {
+        fn now(&self) -> chrono::DateTime<chrono::Utc> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            chrono::Utc::now()
+        }
+    }
+
+    /// A settings row that counts its reads: the update loop reads it first on each pass.
+    struct CountingSettings(Arc<SqliteStore>, AtomicUsize);
+
+    impl SettingsRepo for CountingSettings {
+        fn load(&self) -> CoreResult<Settings> {
+            self.1.fetch_add(1, Ordering::SeqCst);
+            self.0.load()
+        }
+
+        fn save(&self, settings: &Settings) -> CoreResult<()> {
+            self.0.save(settings)
+        }
+    }
+
+    /// Polls `future` once (with the test task's waker); whether it is still pending.
+    async fn poll_once<F: std::future::Future + Unpin>(future: &mut F) -> bool {
+        std::future::poll_fn(|cx| {
+            std::task::Poll::Ready(std::pin::Pin::new(&mut *future).poll(cx).is_pending())
+        })
+        .await
+    }
+
+    type Running = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
+
+    /// Integrator decision 37: a loop asked to stop while its tick is due stops without one
+    /// more pass. Each loop is polled by hand until it waits for its next tick, then not
+    /// until that tick is due and the stop is signalled, so both branches are ready when it
+    /// next looks. Without `biased` an attempt runs a pass one time in two; 24 attempts of
+    /// each loop in a row.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_stop_with_a_tick_due_ends_each_loop_without_another_pass() {
+        let every = Duration::from_millis(10);
+        for attempt in 0..24 {
+            for which in ["guard", "verify", "update"] {
+                let dir = tempfile::tempdir().unwrap();
+                let clock = Arc::new(CountingClock(AtomicUsize::new(0)));
+                let app = NofapApp::start(
+                    NofapAppConfig {
+                        data_dir: Some(dir.path().to_path_buf()),
+                        in_memory_db: true,
+                        scripted_platform: Some(Scenario::new(Vec::new())),
+                        ai: AiBackend::None,
+                        loops: false,
+                        clock: Some(clock.clone()),
+                        ..NofapAppConfig::default()
+                    },
+                    Arc::new(ubiqx_engine::deps::NullNofapSink),
+                )
+                .unwrap();
+                let settings = Arc::new(CountingSettings(app.store.clone(), AtomicUsize::new(0)));
+                let passes = || match which {
+                    "update" => settings.1.load(Ordering::SeqCst),
+                    _ => clock.0.load(Ordering::SeqCst),
+                };
+                let (stop, rx) = watch::channel(false);
+                let mut running: Running = match which {
+                    "guard" => Box::pin(guard_loop(app.service.clone(), every, rx)),
+                    "verify" => Box::pin(verify_loop(app.service.clone(), every, rx)),
+                    _ => Box::pin(update_loop(
+                        app.updates.clone(),
+                        settings.clone(),
+                        every,
+                        every,
+                        rx,
+                    )),
+                };
+                // The first tick of an interval is immediate but completes only once the
+                // timer driver has seen it: a sleep that ends later has let it fire. The
+                // next poll takes it and waits for the next tick.
+                assert!(poll_once(&mut running).await, "{which} waits");
+                tokio::time::sleep(Duration::from_millis(3)).await;
+                assert!(poll_once(&mut running).await, "{which} waits for its tick");
+                let before = passes();
+                // Well past the tick: the timer has fired by the time this sleep ends.
+                tokio::time::sleep(every * 4).await;
+                stop.send(true).unwrap();
+                tokio::time::timeout(Duration::from_secs(20), running)
+                    .await
+                    .expect("the loop ends when stopped");
+                assert_eq!(
+                    passes(),
+                    before,
+                    "attempt {attempt}: one more {which} pass ran after the stop"
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_fake_backend_needs_no_key() {
         let (env, secrets) = env(onboarded(AiProvider::Anthropic), false);

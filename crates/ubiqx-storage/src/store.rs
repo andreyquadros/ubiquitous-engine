@@ -27,6 +27,23 @@ impl SqliteStore {
         &self.db
     }
 
+    /// Folds the write-ahead log back into the database file and truncates it to nothing
+    /// (`PRAGMA wal_checkpoint(TRUNCATE)`). Every page the log held, older versions of
+    /// rewritten and deleted rows included, is gone from it afterwards; the file gets the
+    /// current version only, and `secure_delete` has already zeroed what was freed. An
+    /// error when the checkpoint could not finish (another connection reading): the log
+    /// then still holds what it held.
+    pub(crate) fn fold_log_now(conn: &Connection) -> StorageResult<()> {
+        let busy: i64 = query_one(conn, FOLD_LOG, [], |row| Ok(row.get(0)?))?;
+        if busy != 0 {
+            return Err(StorageError::Sqlite(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                Some("the write-ahead log could not be folded: the database is in use".into()),
+            )));
+        }
+        Ok(())
+    }
+
     /// Runs `f` on the connection and maps the error onto `CoreError`.
     pub(crate) fn with<R>(
         &self,
@@ -35,6 +52,8 @@ impl SqliteStore {
         self.db.with(f).map_err(Into::into)
     }
 }
+
+const FOLD_LOG: &str = "PRAGMA wal_checkpoint(TRUNCATE)";
 
 /// Runs a query and maps every row.
 pub(crate) fn query_list<T, P: Params>(

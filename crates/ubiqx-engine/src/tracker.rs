@@ -155,7 +155,8 @@ pub fn handle_sample(state: &Arc<EngineState>, sample: ActivitySample) -> CoreRe
 /// After a hit of the `nofap` module: the block the tracker had open is closed and made
 /// private, so nothing of the page stays in the productivity data. Its title becomes
 /// [`PRIVATE_TITLE`], its address, description and the text sent to the AI go, its
-/// category becomes the private one, and its screenshots are deleted, rows and files.
+/// category becomes the private one, and its screenshots are deleted, rows and files;
+/// then the store's log is folded, so no earlier version of the row stays in it.
 /// A block too short to be kept is dropped altogether. Runs on a blocking thread.
 ///
 /// Only the block of the window the hit was about is touched. The guard acts within
@@ -205,6 +206,15 @@ pub fn scrub_open_block(state: &Arc<EngineState>) -> CoreResult<()> {
     }
     for shot in repos.screenshots.delete_for_block(&block.id)? {
         screenshots::unlink(&shot);
+    }
+    // The write-ahead log still holds the earlier versions of the row, title and address
+    // included, until it is folded (integrator decision 36). A fold that cannot finish now
+    // (another process reading) leaves them there until the next one.
+    if let Err(error) = repos.blocks.fold_log() {
+        tracing::debug!(
+            class = crate::nofap::error_class(&error),
+            "nofap: the log was not folded after a scrub"
+        );
     }
     if significant {
         state.deps.sink.emit(EngineEvent::BlockClosed { block });

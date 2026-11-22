@@ -709,6 +709,9 @@ pub async fn run_guard_loop(
     tick.tick().await;
     loop {
         tokio::select! {
+            // A cancel already signalled wins over a tick due at the same moment: no pass
+            // starts after the host asked the loop to stop (integrator decision 37).
+            biased;
             _ = cancel.cancelled() => break,
             _ = tick.tick() => {}
         }
@@ -758,6 +761,9 @@ pub async fn run_verify_loop(
     tick.tick().await;
     loop {
         tokio::select! {
+            // A cancel already signalled wins over a tick due at the same moment: no pass
+            // starts after the host asked the loop to stop (integrator decision 37).
+            biased;
             _ = cancel.cancelled() => break,
             _ = tick.tick() => {}
         }

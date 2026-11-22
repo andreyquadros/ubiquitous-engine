@@ -27,9 +27,9 @@ const WIPE: [&str; 10] = [
 
 const DELETE_LEARNED_RULES: &str = "DELETE FROM rules WHERE origin = ?1";
 
-/// Freed pages still hold the deleted text until the file is rebuilt; the checkpoint folds the
-/// WAL back into the main file first so the old rows do not linger there either.
-const COMPACT: &str = "PRAGMA wal_checkpoint(TRUNCATE); VACUUM;";
+/// Rebuilds the file without the freed pages. The write-ahead log is folded before (so the old
+/// rows do not linger there) and after (`VACUUM` writes the rebuilt pages through the log).
+const VACUUM: &str = "VACUUM";
 
 impl MaintenanceRepo for SqliteStore {
     fn wipe_user_data(&self) -> CoreResult<()> {
@@ -40,7 +40,9 @@ impl MaintenanceRepo for SqliteStore {
             }
             tx.execute(DELETE_LEARNED_RULES, [RuleOrigin::Learned.as_str()])?;
             tx.commit()?;
-            conn.execute_batch(COMPACT)?;
+            SqliteStore::fold_log_now(conn)?;
+            conn.execute_batch(VACUUM)?;
+            SqliteStore::fold_log_now(conn)?;
             tracing::info!("user data wiped");
             Ok(())
         })

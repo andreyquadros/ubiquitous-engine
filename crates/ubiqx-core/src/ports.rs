@@ -237,6 +237,13 @@ pub trait BlockRepo: Send + Sync {
     /// Blocks classified by the user (for the memory classifier), newest first.
     fn list_user_classified(&self, limit: usize) -> CoreResult<Vec<ActivityBlock>>;
     fn delete_before(&self, before: DateTime<Utc>) -> CoreResult<u64>;
+    /// Folds the store's write-ahead log back into its file and empties it, so a row just
+    /// rewritten or deleted (a scrubbed block) leaves no older copy in the log. Called after
+    /// a block is scrubbed and after "delete all data". A store without a log has nothing to
+    /// do.
+    fn fold_log(&self) -> CoreResult<()> {
+        Ok(())
+    }
 }
 
 pub trait CategoryRepo: Send + Sync {
