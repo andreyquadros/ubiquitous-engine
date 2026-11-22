@@ -222,7 +222,10 @@ cd apps/desktop && pnpm tauri build --bundles appimage,deb    # Linux
 # o app separado NoFap: interface no navegador (http://localhost:1430, ?nofap=<cenário>) e o app
 cd apps/desktop && pnpm dev:nofap
 cd apps/desktop && pnpm build:nofap                           # só a interface (dist-nofap)
-cd apps/nofap/src-tauri && node ../../desktop/node_modules/@tauri-apps/cli/tauri.js build   # o CLI do Tauri roda da pasta do app
+# o CLI do Tauri roda da pasta do app; os mesmos --bundles da CI (no Windows só NSIS: um .msi não remove as camadas)
+cd apps/nofap/src-tauri && node ../../desktop/node_modules/@tauri-apps/cli/tauri.js build --bundles app,dmg        # macOS
+cd apps/nofap/src-tauri && node ../../desktop/node_modules/@tauri-apps/cli/tauri.js build --bundles nsis           # Windows
+cd apps/nofap/src-tauri && node ../../desktop/node_modules/@tauri-apps/cli/tauri.js build --bundles appimage,deb   # Linux
 ```
 
 O app separado e o módulo usam o mesmo serviço (`ubiqx_engine::nofap::NofapService`); o app separado o monta
@@ -230,7 +233,7 @@ sem o motor do ubiqX (`ubiqx_app::nofap_app::NofapApp`), então nenhum rastreado
 **Cuidado ao testar as camadas do sistema na sua máquina**: com a proteção ligada, o app escreve de verdade no
 `hosts`, no DNS e nas políticas dos navegadores. Como desfazer: [`docs/nofap/REMOVAL.md`](docs/nofap/REMOVAL.md).
 
-Variáveis úteis: `UBIQX_LOG=debug` (log), `UBIQX_FAKE_AI=1` (IA falsa no app desktop), `UBIQX_SCRIPTED=1`
+Variáveis úteis: `UBIQX_LOG=debug` (log da CLI; os dois apps gravam sempre no nível `info`), `UBIQX_FAKE_AI=1` (IA falsa no app desktop), `UBIQX_SCRIPTED=1`
 (plataforma roteirizada — o app "trabalha sozinho" para demonstração, sempre com IA falsa a menos que
 `UBIQX_ALLOW_REAL_AI=1`), `UBIQX_ANTHROPIC_API_KEY` / `UBIQX_OPENAI_API_KEY` / `UBIQX_XAI_API_KEY` (CLI, junto com
 `--provider anthropic|openai|xai`).

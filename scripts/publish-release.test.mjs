@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -1325,5 +1325,301 @@ describe('app-version', () => {
     assert.match(printed.join('\n'), /Opção desconhecida/);
     assert.equal(appVersionMain(['--help'], {}, io), 0);
     assert.match(printed.join('\n'), /^Uso: node scripts\/app-version\.mjs/m);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The CI workflow that feeds the publisher: .github/workflows/ci.yml builds both products in the same
+// jobs, into the same target/release/bundle/<kind>/ directories, so what keeps their files, releases and
+// feeds apart is a handful of globs and conditions. Node has no YAML parser, so the workflow is read with a
+// small reader of the subset it uses (block mappings, step lists, `|` literal blocks).
+
+describe('ci workflow', () => {
+  const WORKFLOW = '.github/workflows/ci.yml';
+  const text = readRepoFile(WORKFLOW).replace(/\r\n/g, '\n');
+  const lines = text.split('\n');
+
+  /** The keys of a block mapping at exactly `indent` spaces, each with its inline value and its child lines. */
+  function keysAt(block, indent) {
+    const out = new Map();
+    const prefix = ' '.repeat(indent);
+    for (let i = 0; i < block.length; i += 1) {
+      const line = block[i];
+      if (!line.startsWith(prefix) || line.startsWith(`${prefix} `)) continue;
+      const m = /^([A-Za-z_][\w-]*):(?: (.*))?$/.exec(line.slice(indent));
+      if (!m) continue;
+      const children = [];
+      for (let j = i + 1; j < block.length && (block[j].trim() === '' || block[j].startsWith(`${prefix} `)); j += 1) children.push(block[j]);
+      out.set(m[1], { value: (m[2] ?? '').trim(), children });
+    }
+    return out;
+  }
+
+  /** A scalar: the inline value, or the dedented content of a `|` literal block. */
+  function scalar(entry) {
+    if (!entry) return undefined;
+    if (entry.value !== '|') return entry.value;
+    const body = [...entry.children];
+    while (body.length && body.at(-1).trim() === '') body.pop();
+    const indent = Math.min(...body.filter((l) => l.trim()).map((l) => /^ */.exec(l)[0].length));
+    return `${body.map((l) => l.slice(indent)).join('\n')}\n`;
+  }
+
+  /** Every job: its job-level keys and its steps (each step's keys, `with` flattened into `with.<key>`). */
+  function readJobs() {
+    const start = lines.indexOf('jobs:');
+    assert.ok(start >= 0, `${WORKFLOW} has no jobs: mapping`);
+    const body = lines.slice(start + 1);
+    const jobs = new Map();
+    for (const [name, entry] of keysAt(body, 2)) {
+      const keys = keysAt(entry.children, 4);
+      const steps = [];
+      for (const line of keys.get('steps')?.children ?? []) {
+        if (line.startsWith('      - ')) steps.push([`        ${line.slice(8)}`]);
+        else if (steps.length) steps.at(-1).push(line);
+      }
+      jobs.set(name, {
+        keys,
+        steps: steps.map((stepLines) => {
+          const step = {};
+          for (const [key, value] of keysAt(stepLines, 8)) step[key] = scalar(value);
+          for (const [key, value] of keysAt(keysAt(stepLines, 8).get('with')?.children ?? [], 10)) step[`with.${key}`] = scalar(value);
+          return step;
+        }),
+      });
+    }
+    return jobs;
+  }
+
+  const jobs = readJobs();
+  const job = (name) => {
+    assert.ok(jobs.has(name), `${WORKFLOW} has no job ${name}`);
+    return jobs.get(name);
+  };
+  const conditionOf = (name) => scalar(job(name).keys.get('if'));
+  const runs = (name) => job(name).steps.map((s) => s.run ?? '').join('\n');
+  const UBIQX_CONF = PRODUCTS.ubiqx.tauriConf;
+  const SHIELD_CONF = PRODUCTS.shield.tauriConf;
+  const SHIELD_DIR = path.posix.dirname(SHIELD_CONF);
+  const APP_JOBS = { macos: 'macos-app', windows: 'windows-app', linux: 'linux-app' };
+
+  test('the reader sees the jobs the release depends on', () => {
+    for (const name of ['rust-linux', 'frontend', ...Object.values(APP_JOBS), 'publish-continuous', 'publish-shield']) job(name);
+    assert.ok(job('macos-app').steps.length > 10, 'the steps of a job are read');
+  });
+
+  test('only a push to main publishes ubiqX, and the standalone app also needs NOFAP_PUBLISH', () => {
+    assert.equal(conditionOf('publish-continuous'), "github.event_name == 'push' && github.ref == 'refs/heads/main'");
+    const shield = conditionOf('publish-shield');
+    assert.doesNotMatch(shield, /\|\||!|\bcontains\(|\bstartsWith\(/, 'every part of the condition is required');
+    assert.deepEqual(
+      shield.split('&&').map((part) => part.trim()).sort(),
+      ["github.event_name == 'push'", "github.ref == 'refs/heads/main'", "vars.NOFAP_PUBLISH == 'true'"],
+    );
+    for (const name of ['publish-continuous', 'publish-shield']) {
+      assert.deepEqual(scalar(job(name).keys.get('needs')), '[macos-app, windows-app, linux-app]', `${name} waits for the three platforms`);
+    }
+  });
+
+  test('each publish job takes only its own product\'s artefacts and files, under its own product', () => {
+    const download = (name) => job(name).steps.find((s) => s.uses?.startsWith('actions/download-artifact'));
+    assert.equal(download('publish-continuous')['with.pattern'], `${PRODUCTS.ubiqx.assetPrefix}-*-app`);
+    assert.equal(download('publish-shield')['with.pattern'], `${PRODUCTS.shield.assetPrefix}-*-app`);
+
+    const ubiqx = runs('publish-continuous');
+    assert.match(ubiqx, new RegExp(`find dist -type f -name '${PRODUCTS.ubiqx.assetPrefix}-\\*' ! -name '\\*\\.sig'`));
+    assert.match(ubiqx, /node scripts\/publish-release\.mjs --strict /);
+    assert.doesNotMatch(ubiqx, /--product|--tag/, 'ubiqX publishes with the defaults it always had');
+    assert.match(ubiqx, /bash scripts\/ci-app-version\.sh\n/);
+
+    const shield = runs('publish-shield');
+    assert.match(shield, new RegExp(`find dist -type f -name '${PRODUCTS.shield.assetPrefix}-\\*' ! -name '\\*\\.sig'`));
+    assert.match(shield, /node scripts\/publish-release\.mjs --product shield --strict /);
+    assert.doesNotMatch(shield, /--tag/, 'the tag comes from the product table');
+    assert.match(shield, /bash scripts\/ci-app-version\.sh --product shield\n/);
+
+    // The download pattern of each job, read the way a case-insensitive matcher would, still misses the
+    // other product's artefacts: the case of `ubiqX` is not what keeps them apart.
+    const artefacts = Object.keys(APP_JOBS).flatMap((os) => [`${PRODUCTS.ubiqx.assetPrefix}-${os}-app`, `${PRODUCTS.shield.assetPrefix}-${os}-app`]);
+    const caseless = (pattern) => new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`, 'i');
+    assert.deepEqual(artefacts.filter((a) => caseless(download('publish-shield')['with.pattern']).test(a)), artefacts.filter((a) => a.startsWith(`${PRODUCTS.shield.assetPrefix}-`)));
+  });
+
+  test('no update feed variable is set where both shells build', () => {
+    const feedVars = /^(UBIQX_UPDATE_FEED_URL|UBIQX_SHIELD_UPDATE_FEED_URL)$/;
+    const topEnv = keysAt(lines, 0).get('env');
+    for (const key of keysAt(topEnv?.children ?? [], 2).keys()) assert.doesNotMatch(key, feedVars, `workflow-level env sets ${key}`);
+    for (const [name, { keys }] of jobs) {
+      for (const key of keysAt(keys.get('env')?.children ?? [], 6).keys()) assert.doesNotMatch(key, feedVars, `job ${name} sets ${key}`);
+    }
+  });
+
+  test('every app job builds the standalone app from its own shell, after ubiqX is uploaded, and Windows ships it without an MSI', () => {
+    for (const [os, name] of Object.entries(APP_JOBS)) {
+      const { steps } = job(name);
+      const build = steps.findIndex((s) => s['working-directory'] === SHIELD_DIR && /tauri\.js build /.test(s.run ?? ''));
+      assert.ok(build >= 0, `${name} builds the standalone app in ${SHIELD_DIR}`);
+      const ubiqxUpload = steps.findIndex((s) => s['with.name'] === `${PRODUCTS.ubiqx.assetPrefix}-${os}-app`);
+      const shieldUpload = steps.findIndex((s) => s['with.name'] === `${PRODUCTS.shield.assetPrefix}-${os}-app`);
+      assert.ok(ubiqxUpload >= 0 && ubiqxUpload < build && build < shieldUpload, `${name}: ubiqX uploaded, then the standalone app built and uploaded`);
+      const stamps = steps.map((s) => s.run ?? '').join('\n');
+      assert.match(stamps, /bash scripts\/ci-app-version\.sh --product shield\n/, `${name} stamps the standalone app's version`);
+      const bundles = /--bundles (\S+)/.exec(steps[build].run)?.[1];
+      if (os === 'windows') assert.equal(bundles, 'nsis', 'the standalone app has no MSI on Windows (decision 39)');
+      else assert.ok(bundles, `${name} names the bundles of the standalone app`);
+    }
+    const windows = runs('windows-app');
+    assert.match(windows, /cargo clippy -p ubiqx-nofap-desktop --all-targets -- -D warnings/);
+    assert.match(windows, /cargo test -p ubiqx-nofap-desktop\n/);
+    assert.match(runs('frontend'), /pnpm build:nofap/);
+    for (const command of ['cargo clippy --workspace', 'cargo test --workspace']) {
+      const line = runs('rust-linux').split('\n').find((l) => l.startsWith(command));
+      assert.match(line, /--exclude ubiqx-desktop --exclude ubiqx-nofap-desktop/, `rust-linux: ${command} leaves both shells out`);
+    }
+  });
+
+  // The rename steps run for real, with bash, against a bundle tree holding both products' outputs under the
+  // names Tauri gives them (from each productName), then the upload globs are matched against what is left.
+  // Only the tools that do not exist everywhere (ditto, dpkg-deb) are stand-ins.
+  describe('the rename steps and the upload globs, run against both products\' bundles', { skip: process.platform === 'win32' && 'bash steps' }, () => {
+    const NAMES = {
+      ubiqx: JSON.parse(readRepoFile(UBIQX_CONF)).productName,
+      shield: JSON.parse(readRepoFile(SHIELD_CONF)).productName,
+    };
+    const BINARIES = { ubiqx: 'ubiqx-desktop', shield: 'ubiqx-shield' };
+    const ARCH = { macos: 'aarch64', windows: 'x86_64', linux: 'x86_64' };
+
+    /** What `tauri build` leaves for one product, by OS (paths under target/release). */
+    function tauriOutputs(os, product) {
+      const n = NAMES[product];
+      switch (os) {
+        case 'macos':
+          return [`bundle/macos/${n}.app/Contents/MacOS/${BINARIES[product]}`, `bundle/macos/${n}.app.tar.gz`, `bundle/macos/${n}.app.tar.gz.sig`, `bundle/dmg/${n}_0.1.7_aarch64.dmg`];
+        case 'windows':
+          return [
+            `bundle/msi/${n}_0.1.7_x64_pt-BR.msi`, `bundle/msi/${n}_0.1.7_x64_en-US.msi`,
+            `bundle/nsis/${n}_0.1.7_x64-setup.exe`, `bundle/nsis/${n}_0.1.7_x64-setup.nsis.zip`, `bundle/nsis/${n}_0.1.7_x64-setup.nsis.zip.sig`,
+          ];
+        default:
+          return [`bundle/appimage/${n}_0.1.7_amd64.AppImage`, `bundle/appimage/${n}_0.1.7_amd64.AppImage.tar.gz`, `bundle/appimage/${n}_0.1.7_amd64.AppImage.tar.gz.sig`, `bundle/deb/${n}_0.1.7_amd64.deb`];
+      }
+    }
+
+    /** The stable names each product's upload must hold, signed or not. */
+    function expected(os, product, signed) {
+      const p = `${PRODUCTS[product].assetPrefix}-${os}-${ARCH[os]}`;
+      switch (os) {
+        case 'macos':
+          return [`bundle/dmg/${p}.dmg`, `bundle/macos/${p}.app.zip`, ...(signed ? [`bundle/macos/${p}.app.tar.gz`, `bundle/macos/${p}.app.tar.gz.sig`] : [])];
+        case 'windows':
+          return [
+            ...(product === 'ubiqx' ? [`bundle/msi/${p}.msi`] : []),
+            `bundle/nsis/${p}-setup.exe`,
+            ...(signed ? [`bundle/nsis/${p}-setup.nsis.zip`, `bundle/nsis/${p}-setup.nsis.zip.sig`] : []),
+          ];
+        default:
+          return [`bundle/appimage/${p}.AppImage`, ...(signed ? [`bundle/appimage/${p}.AppImage.tar.gz`, `bundle/appimage/${p}.AppImage.tar.gz.sig`] : []), `bundle/deb/${p}.deb`];
+      }
+    }
+
+    function filesUnder(dir, base = dir) {
+      if (!existsSync(dir)) return [];
+      return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const full = path.join(dir, entry.name);
+        return entry.isDirectory() ? filesUnder(full, base) : [path.relative(base, full).split(path.sep).join('/')];
+      });
+    }
+
+    /** upload-artifact's glob, for the `*` the workflow uses; case-insensitive on Windows, as it is there. */
+    function globMatcher(pattern, os) {
+      const source = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*');
+      return new RegExp(`^${source}$`, os === 'windows' ? 'i' : '');
+    }
+
+    function renameStep(name, conf) {
+      const found = job(name).steps.filter((s) => (s.run ?? '').includes(`require('./${conf}')`) && (s.run ?? '').includes('mv '));
+      assert.equal(found.length, 1, `${name}: one rename step reads ${conf}`);
+      return found[0].run;
+    }
+
+    function runStep(root, os, script, signed) {
+      const file = path.join(root, 'zz-step.sh');
+      writeFileSync(file, script);
+      // The Windows job runs bash with pipefail (its defaults.run.shell); the others take GitHub's default.
+      const flags = os === 'windows' ? ['--noprofile', '--norc', '-e', '-o', 'pipefail'] : ['-e'];
+      const result = spawnSync('bash', [...flags, file], {
+        cwd: root,
+        encoding: 'utf8',
+        env: {
+          PATH: [path.join(root, 'zz-bin'), path.dirname(process.execPath), process.env.PATH].join(path.delimiter),
+          UBIQX_ARCH: ARCH[os],
+          UBIQX_UPDATER_SIGNED: signed ? '1' : '0',
+        },
+      });
+      rmSync(file);
+      assert.equal(result.status, 0, `${os} step failed:\n${result.stdout}\n${result.stderr}`);
+    }
+
+    function scratch(os) {
+      const root = mkdtempSync(path.join(tmpdir(), 'ubiqx-ci-steps-'));
+      for (const conf of [UBIQX_CONF, SHIELD_CONF]) {
+        mkdirSync(path.join(root, path.dirname(conf)), { recursive: true });
+        copyFileSync(path.join(REPO_ROOT, conf), path.join(root, conf));
+      }
+      const bin = path.join(root, 'zz-bin');
+      mkdirSync(bin);
+      // ditto writes the zip named by its last argument; dpkg-deb only prints in these steps.
+      writeFileSync(path.join(bin, 'ditto'), '#!/bin/sh\nfor last; do :; done\n: > "$last"\n');
+      writeFileSync(path.join(bin, 'dpkg-deb'), '#!/bin/sh\necho "Package: stand-in"\n');
+      for (const tool of ['ditto', 'dpkg-deb']) chmodSync(path.join(bin, tool), 0o755);
+      const release = path.join(root, 'target/release');
+      const seed = (relative, content = relative) => {
+        mkdirSync(path.dirname(path.join(release, relative)), { recursive: true });
+        writeFileSync(path.join(release, relative), content);
+      };
+      for (const product of ['ubiqx', 'shield']) for (const f of tauriOutputs(os, product)) seed(f);
+      if (os === 'windows') seed('nsis/x64/installer.nsi', `!define MAINBINARYNAME "${BINARIES.ubiqx}"\n`);
+      return { root, release, seed };
+    }
+
+    for (const os of Object.keys(APP_JOBS)) {
+      for (const signed of [true, false]) {
+        test(`${os}, ${signed ? 'signed' : 'unsigned'}: each step renames only its own product's files, and each upload takes only them`, () => {
+          const name = APP_JOBS[os];
+          const { root, release } = scratch(os);
+          try {
+            const bundle = path.join(release, 'bundle');
+            const shieldBefore = tauriOutputs(os, 'shield').map((f) => [f, readFileSync(path.join(release, f), 'utf8')]);
+
+            // ubiqX first, as in the job, but with the standalone app's files already there: its globs must
+            // name ubiqX, not take the first .dmg, .msi or .deb they find.
+            runStep(root, os, renameStep(name, UBIQX_CONF), signed);
+            for (const [f, content] of shieldBefore) assert.equal(readFileSync(path.join(release, f), 'utf8'), content, `ubiqX's step left ${f} alone`);
+            runStep(root, os, renameStep(name, SHIELD_CONF), signed);
+
+            const left = filesUnder(bundle).map((f) => `bundle/${f}`);
+            for (const product of ['ubiqx', 'shield']) {
+              const upload = job(name).steps.find((s) => s['with.name'] === `${PRODUCTS[product].assetPrefix}-${os}-app`);
+              assert.equal(upload['with.if-no-files-found'], 'error');
+              const globs = upload['with.path'].trim().split('\n').map((g) => globMatcher(g.trim().replace(/^target\/release\//, ''), os));
+              const taken = left.filter((f) => globs.some((g) => g.test(f))).sort();
+              assert.deepEqual(taken, expected(os, product, signed).sort(), `${upload['with.name']} uploads exactly its own files`);
+              for (const f of taken) assert.ok(path.posix.basename(f).startsWith(`${PRODUCTS[product].assetPrefix}-`), f);
+              if (product === 'shield') assert.ok(!taken.some((f) => f.endsWith('.msi')), 'no MSI of the standalone app');
+              // Each renamed file is the one Tauri built for that product, not the other product's.
+              for (const f of taken.filter((t) => !t.endsWith('.app.zip'))) {
+                assert.match(readFileSync(path.join(release, f), 'utf8'), new RegExp(`^bundle/[a-z]+/${NAMES[product]}[._]`), `${f} holds ${NAMES[product]}'s output`);
+              }
+            }
+            if (!signed) {
+              const updater = left.filter((f) => /\.(tar\.gz|nsis\.zip)(\.sig)?$/.test(f));
+              assert.deepEqual(updater, [], 'an unsigned build leaves no updater artefact of either product');
+            }
+          } finally {
+            rmSync(root, { recursive: true, force: true });
+          }
+        });
+      }
+    }
   });
 });

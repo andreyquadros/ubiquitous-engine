@@ -624,6 +624,14 @@ products installed:
 
 Change `REMOVAL.md` to what is found.
 
+What the build tools say, short of an installed app (review of U9b): the NSIS template inside the
+Tauri CLI this repository pins (`@tauri-apps/cli` 2.11.4) sets `$INSTDIR` to
+`$LOCALAPPDATA\${PRODUCTNAME}` for `installMode: currentUser`, which both shells use, unless a
+previous install left another location in the registry (`RestorePreviousInstallLocation`). The
+MSI folder and the autostart entries are still read from nowhere but the documentation of
+Tauri and `auto-launch` (`<app name>.plist`, `.desktop`, `Run` value, the app name being
+`productName`).
+
 - Evidence (date, OS versions, installer file names, the listings):
 
 ### [x] 26. Windows: owner and access list of the hosts file after a write (review of U9a)
