@@ -89,8 +89,8 @@ describe('copy for two products (integrator decision 32)', () => {
       expect(nofap['pt-BR'][key]!.endsWith('Janelas anônimas são verificadas.'), key).toBe(true);
       expect(nofap.en[key]!.endsWith('Private-browsing windows are checked.'), key).toBe(true);
     }
-    expect(nofap['pt-BR']['helptab.ai.body']).toBe('Remover a chave de IA nas configurações do app para a verificação na hora, sem espera.');
-    expect(nofap.en['helptab.ai.body']).toBe("Removing the AI key in the app's settings stops the check at once, with no wait.");
+    expect(nofap['pt-BR']['helptab.ai.body']).toBe('A verificação para na hora, sem espera, quando você remove a chave de IA nas configurações do app.');
+    expect(nofap.en['helptab.ai.body']).toBe("The check stops at once, with no wait, when you remove the AI key in the app's settings.");
   });
 
   it('adds the ubiqX-only line in ubiqX and nothing in the standalone app', () => {

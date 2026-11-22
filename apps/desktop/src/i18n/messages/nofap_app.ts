@@ -53,7 +53,7 @@ const messages = {
     'settings.general': 'Geral',
     'settings.language': 'Idioma',
     'settings.ai': 'Verificação por IA',
-    'settings.ai_hint': 'Remover a chave para a verificação na hora, sem tempo de espera.',
+    'settings.ai_hint': 'A verificação para na hora, sem tempo de espera, quando você remove a chave.',
     'settings.permissions': 'Permissões do sistema',
     'settings.permissions_hint': 'A verificação por IA precisa delas para ver a janela da frente e o endereço do navegador.',
     'settings.updates': 'Atualizações',

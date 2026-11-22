@@ -489,7 +489,7 @@ describe('exits that never wait (design 6.3): at most two clicks from the main p
     const openSettings = vi.fn();
     renderPage({ openSettings });
     fireEvent.click(await screen.findByTestId('exit-info:ai')); // 1
-    expect(await screen.findByTestId('info-ai')).toHaveTextContent('Remover a chave de IA nas configurações do app para a verificação na hora, sem espera.');
+    expect(await screen.findByTestId('info-ai')).toHaveTextContent('A verificação para na hora, sem espera, quando você remove a chave de IA nas configurações do app.');
     fireEvent.click(screen.getByTestId('nofap-open-settings')); // 2
     expect(openSettings).toHaveBeenCalledTimes(1);
   });
@@ -764,14 +764,14 @@ describe('the two products (integrator decision 32)', () => {
     const { unmount } = renderPage();
     await openTab('Ajuda');
     const ai = await screen.findByTestId('help-ai');
-    expect(ai).toHaveTextContent('Remover a chave de IA nas configurações do app para a verificação na hora, sem espera. O modo só local, também nas configurações, faz o mesmo.');
+    expect(ai).toHaveTextContent('A verificação para na hora, sem espera, quando você remove a chave de IA nas configurações do app. O modo só local, também nas configurações, faz o mesmo.');
     unmount();
 
     resetNofap('on', 'shield');
     renderPage();
     await openTab('Ajuda');
     const standalone = await screen.findByTestId('help-ai');
-    expect(standalone).toHaveTextContent('Remover a chave de IA nas configurações do app para a verificação na hora, sem espera.');
+    expect(standalone).toHaveTextContent('A verificação para na hora, sem espera, quando você remove a chave de IA nas configurações do app.');
     expect(standalone).not.toHaveTextContent('modo só local');
     fireEvent.click(screen.getByTestId('exit-info:ai'));
     expect(await screen.findByTestId('info-ai')).not.toHaveTextContent('modo só local');

@@ -400,7 +400,7 @@ export function NofapPage({ host }: { host?: NofapHost }) {
         footer={
           <>
             {cancelButton}
-            <Button variant="primary" loading={busy} onClick={() => void erase(nofapIpc.reset, t('nofap.config.restored'))} data-testid="nofap-restore-defaults-confirm">
+            <Button variant="danger" loading={busy} onClick={() => void erase(nofapIpc.reset, t('nofap.config.restored'))} data-testid="nofap-restore-defaults-confirm">
               {t('nofap.btn.restore_defaults')}
             </Button>
           </>
