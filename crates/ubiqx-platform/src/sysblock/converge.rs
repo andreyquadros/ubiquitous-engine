@@ -20,7 +20,7 @@ use ubiqx_nofap::resolvers::{self, PROBE_NAME, PROBE_WAIT_SECS};
 use ubiqx_nofap::{hosts, list, matcher};
 
 use super::observe::{block_present, observe};
-use super::{hostsfile, state, Fs, NameLookup, OsBackend, Runner};
+use super::{hostsfile, state, Fs, NameLookup, OsBackend, RunLock, Runner};
 
 /// Everything a helper run works through.
 pub struct Ports<'a> {
@@ -28,6 +28,8 @@ pub struct Ports<'a> {
     pub runner: &'a dyn Runner,
     pub fs: &'a dyn Fs,
     pub names: &'a dyn NameLookup,
+    /// Lets one helper run at a time change the machine.
+    pub lock: &'a dyn RunLock,
     /// Waits between two tries of the probe (a real sleep outside tests).
     pub pause: &'a dyn Fn(Duration),
     /// Unix milliseconds, for `applied_at`.

@@ -1,7 +1,8 @@
-//! The real ports of the system layer: process spawn, file I/O, directory metadata and
-//! `getaddrinfo`. No decision is taken here, and this is the only file of the module that
-//! may contain `cfg`: Unix metadata, the Windows no-console flag and the two Windows
-//! directory lookups, which are the module's only FFI.
+//! The real ports of the system layer: process spawn, file I/O, directory metadata,
+//! `getaddrinfo` and the lock between helper runs. No decision is taken here, and this is
+//! the only file of the module that may contain `cfg`: Unix metadata, the Windows
+//! no-console flag, the two Windows directory lookups and the run lock (`flock`, a named
+//! mutex), which are the module's only FFI.
 
 use std::fs;
 use std::io::{self, Write};
@@ -12,29 +13,66 @@ use std::process::{Command, Stdio};
 use ubiqx_nofap::hosts;
 use ubiqx_nofap::state_dir::DirMeta;
 
-use super::{Fs, NameLookup, Output, Runner};
+use super::{Fs, NameLookup, OsBackend, Output, RunLock, RunLockHeld, Runner};
 
 /// Runs system tools as child processes with exactly the environment it is given.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SystemRunner;
 
+/// The command for `program` with exactly `env`, its output captured.
+fn command(program: &str, args: &[String], env: &[(String, String)]) -> Command {
+    let mut command = Command::new(program);
+    command.args(args).env_clear();
+    command.envs(env.iter().map(|(name, value)| (name, value)));
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW: no console flashes up behind the app.
+        command.creation_flags(0x0800_0000);
+    }
+    command
+}
+
+fn output_of(output: std::process::Output) -> Output {
+    Output {
+        status: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    }
+}
+
 impl Runner for SystemRunner {
     fn run(&self, program: &str, args: &[String], env: &[(String, String)]) -> io::Result<Output> {
-        let mut command = Command::new(program);
-        command.args(args).env_clear().stdin(Stdio::null());
-        command.envs(env.iter().map(|(name, value)| (name, value)));
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            // CREATE_NO_WINDOW: no console flashes up behind the app.
-            command.creation_flags(0x0800_0000);
-        }
-        let output = command.output()?;
-        Ok(Output {
-            status: output.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        })
+        let mut command = command(program, args, env);
+        command.stdin(Stdio::null());
+        Ok(output_of(command.output()?))
+    }
+
+    fn run_with_input(
+        &self,
+        program: &str,
+        args: &[String],
+        env: &[(String, String)],
+        input: &[u8],
+    ) -> io::Result<Output> {
+        let mut command = command(program, args, env);
+        command.stdin(Stdio::piped());
+        let mut child = command.spawn()?;
+        let mut stdin = child.stdin.take();
+        // Written from another thread while this one collects the output, so neither
+        // side waits for the other when the input is larger than the pipe holds. The
+        // pipe closes when the writer is done; a child that stops reading early ends it.
+        let output = std::thread::scope(|scope| {
+            scope.spawn(move || {
+                if let Some(stdin) = stdin.as_mut() {
+                    let _ = stdin.write_all(input);
+                }
+                drop(stdin);
+            });
+            child.wait_with_output()
+        })?;
+        Ok(output_of(output))
     }
 }
 
@@ -175,6 +213,98 @@ impl Fs for SystemFs {
 
     fn exists(&self, path: &Path) -> bool {
         fs::symlink_metadata(path).is_ok()
+    }
+}
+
+/// The lock between helper runs on this machine (see [`RunLock`]).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SystemRunLock;
+
+impl RunLock for SystemRunLock {
+    fn try_lock(&self, backend: &dyn OsBackend) -> io::Result<Option<RunLockHeld>> {
+        lock_beside(&backend.state_dir())
+    }
+}
+
+/// The name of the Windows mutex, in the namespace every session shares: an uninstall
+/// hook and an app may run in different sessions.
+#[cfg(windows)]
+const RUN_MUTEX: &str = "Global\\ubiqx-shield-helper";
+
+/// Takes the lock between helper runs for the state directory `state_dir`.
+///
+/// Unix: `flock` on the directory that holds the state directory (`/var/lib`,
+/// `/Library/Application Support`). That directory is always there and belongs to root,
+/// a lock on it leaves nothing on disk, and it does not go away when the state directory
+/// is removed with the last owner. The descriptor is closed on exec, so a tool the helper
+/// starts never keeps the lock. Windows: a named mutex, which leaves nothing on disk either
+/// and is released by Windows when a run dies (`WAIT_ABANDONED` then hands it on). Both
+/// are released when the process ends, however it ends.
+pub fn lock_beside(state_dir: &Path) -> io::Result<Option<RunLockHeld>> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::io::AsRawFd;
+        let dir = state_dir
+            .parent()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+            .open(dir)?;
+        // SAFETY: `flock` on a descriptor this function owns and keeps open while held.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+            return Ok(Some(RunLockHeld::new(file)));
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() == io::ErrorKind::WouldBlock {
+            Ok(None)
+        } else {
+            Err(error)
+        }
+    }
+    #[cfg(windows)]
+    {
+        use windows::core::HSTRING;
+        use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_ABANDONED, WAIT_OBJECT_0};
+        use windows::Win32::System::Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject};
+
+        /// An owned mutex: released and closed when dropped (by the thread that took it).
+        struct Owned(HANDLE);
+        // SAFETY: the handle is only used to release and close the mutex, once.
+        unsafe impl Send for Owned {}
+        impl Drop for Owned {
+            fn drop(&mut self) {
+                // SAFETY: the handle is open and this process owns the mutex.
+                unsafe {
+                    let _ = ReleaseMutex(self.0);
+                    let _ = CloseHandle(self.0);
+                }
+            }
+        }
+
+        let _ = state_dir;
+        // SAFETY: no security attributes (the default for an elevated process), a name
+        // that outlives the call.
+        let handle = unsafe { CreateMutexW(None, false, &HSTRING::from(RUN_MUTEX)) }
+            .map_err(io::Error::other)?;
+        // SAFETY: the handle was just opened; a zero wait only tries.
+        let waited = unsafe { WaitForSingleObject(handle, 0) };
+        if waited == WAIT_OBJECT_0 || waited == WAIT_ABANDONED {
+            return Ok(Some(RunLockHeld::new(Owned(handle))));
+        }
+        // SAFETY: the handle is open and not owned; closed once.
+        let _ = unsafe { CloseHandle(handle) };
+        if waited == windows::Win32::Foundation::WAIT_TIMEOUT {
+            Ok(None)
+        } else {
+            Err(io::Error::other("the run mutex could not be waited for"))
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = state_dir;
+        Err(io::Error::from(io::ErrorKind::Unsupported))
     }
 }
 

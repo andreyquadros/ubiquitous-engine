@@ -857,7 +857,9 @@ say "saved: $HOSTS ($(wc -c < "$WORK/hosts.before" | tr -d ' ') bytes), the DNS 
 CHANGED=1
 say "apply"
 applied=0
-helper apply --plan-b64 "$PLAN" --unverified "$TIERS" || applied=$?
+# The plan goes on standard input (`--plan-b64 -`), the way the app hands it to the helper
+# through pkexec on Linux, so that path is the one exercised here.
+printf '%s\n' "$PLAN" | helper apply --plan-b64 - --unverified "$TIERS" || applied=$?
 
 # ---------------------------------------------------------------------------------------------
 # 3. Check what was applied.

@@ -316,8 +316,9 @@ impl SystemShield for MockSystemShield {
             RemoveScope::All => {
                 owners.remove(&owner);
             }
+            // As the helper: DNS goes back to automatic for every owner.
             RemoveScope::Resolver => {
-                if let Some(wants) = owners.get_mut(&owner) {
+                for wants in owners.values_mut() {
                     wants.resolver = None;
                 }
             }
@@ -499,6 +500,21 @@ mod tests {
         assert!(machine.resolver.interfaces[0].servers.is_empty());
         let wants = &machine.state.unwrap().owners[&ProductId::Shield];
         assert!(wants.hosts && wants.resolver.is_none());
+    }
+
+    #[test]
+    fn mock_system_remove_resolver_takes_it_off_for_both_owners() {
+        let shield = MockSystemShield::new(Os::Windows);
+        shield.apply(&plan_of(ProductId::Ubiqx, &[])).unwrap();
+        shield.apply(&plan_of(ProductId::Shield, &[])).unwrap();
+        shield
+            .remove(ProductId::Ubiqx, RemoveScope::Resolver)
+            .unwrap();
+        let machine = shield.observation();
+        assert!(machine.resolver.interfaces[0].servers.is_empty());
+        let state = machine.state.unwrap();
+        assert_eq!(state.owners.len(), 2);
+        assert!(state.owners.values().all(|wants| wants.resolver.is_none()));
     }
 
     #[test]

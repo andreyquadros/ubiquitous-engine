@@ -179,8 +179,9 @@ impl Enforcer for WindowsEnforcer {
                 let _ = CloseHandle(handle);
             }
         }
-        tracing::info!(
-            app = %stem,
+        // Debug and without the app: nofap's "Fechar a janela" quits through here, and the
+        // app's log file (info and above) never gets the app.
+        tracing::debug!(
             windows = targets.len(),
             terminated,
             "focus guard closed an app"

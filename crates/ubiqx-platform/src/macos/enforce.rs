@@ -144,7 +144,9 @@ impl Enforcer for MacEnforcer {
         for app in apps {
             any |= app.terminate();
         }
-        tracing::info!(app = %id, quit = any, "focus guard asked an app to quit");
+        // Debug and without the app: nofap's "Fechar a janela" quits through here, and the
+        // app's log file (info and above) never gets the app.
+        tracing::debug!(quit = any, "focus guard asked an app to quit");
         Ok(any)
     }
 

@@ -53,7 +53,13 @@ impl Enforcer for LinuxEnforcer {
             let r = unsafe { libc::kill(*pid as libc::pid_t, libc::SIGTERM) };
             any |= r == 0;
         }
-        tracing::info!(app = %stem, processes = pids.len(), signalled = any, "focus guard asked an app to quit");
+        // Debug and without the app: nofap's "Fechar a janela" quits through here, and the
+        // app's log file (info and above) never gets the app.
+        tracing::debug!(
+            processes = pids.len(),
+            signalled = any,
+            "focus guard asked an app to quit"
+        );
         Ok(any)
     }
 
@@ -162,6 +168,73 @@ mod tests {
             .quit_app("definitely-not-running-xyz")
             .unwrap());
         assert!(!LinuxEnforcer.run_shortcut("   ").unwrap());
+    }
+
+    /// Every event logged while it is the thread's subscriber: its level and its fields.
+    struct Capture(std::sync::Arc<parking_lot::Mutex<Vec<(tracing::Level, String)>>>);
+
+    impl tracing::Subscriber for Capture {
+        fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+        fn event(&self, event: &tracing::Event<'_>) {
+            struct Fields(String);
+            impl tracing::field::Visit for Fields {
+                fn record_debug(
+                    &mut self,
+                    field: &tracing::field::Field,
+                    value: &dyn std::fmt::Debug,
+                ) {
+                    self.0.push_str(&format!(" {}={value:?}", field.name()));
+                }
+            }
+            let mut fields = Fields(String::new());
+            event.record(&mut fields);
+            self.0.lock().push((*event.metadata().level(), fields.0));
+        }
+        fn enter(&self, _: &tracing::span::Id) {}
+        fn exit(&self, _: &tracing::span::Id) {}
+    }
+
+    /// "Fechar a janela" on a nofap card quits the app behind it. The shells keep the info
+    /// level in their log file, and the privacy promise is that the file never gets the
+    /// app: quitting one leaves no line at info or above, and none that names it.
+    #[test]
+    fn quitting_an_app_logs_nothing_that_names_it() {
+        use std::os::unix::process::CommandExt;
+        let Some(sleep) = ["/bin/sleep", "/usr/bin/sleep"]
+            .into_iter()
+            .find(|path| std::path::Path::new(path).exists())
+        else {
+            return;
+        };
+        // A copy under a name nothing else runs, so only this child is signalled. Started
+        // as `sleep`, for a binary that serves several tools by the name it is called by.
+        let dir = tempfile::tempdir().unwrap();
+        let stem = "ubiqxquitprobe";
+        let copy = dir.path().join(stem);
+        std::fs::copy(sleep, &copy).unwrap();
+        let Ok(mut child) = Command::new(&copy).arg0("sleep").arg("30").spawn() else {
+            eprintln!("skipped: a copied program cannot run from the temporary directory");
+            return;
+        };
+        let events = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let quit = tracing::subscriber::with_default(Capture(events.clone()), || {
+            LinuxEnforcer.quit_app(stem)
+        });
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(quit.unwrap(), "the probe was not signalled");
+        let events = events.lock();
+        for (level, fields) in events.iter() {
+            assert!(*level > tracing::Level::INFO, "{level} {fields}");
+            assert!(!fields.contains(stem), "{level} {fields}");
+        }
     }
 
     #[test]

@@ -328,3 +328,83 @@ fn an_appimage_and_an_odd_argument_are_refused_without_running_anything() {
     );
     assert_eq!(runner.calls.lock().len(), 1);
 }
+
+/// A command line, program first, and what was handed to its standard input.
+type PipedCall = (Vec<String>, Option<Vec<u8>>);
+
+/// Records each command it runs, with what was handed to the child's standard input.
+#[derive(Default)]
+struct Piped {
+    calls: Mutex<Vec<PipedCall>>,
+}
+
+impl Piped {
+    fn push(&self, program: &str, args: &[String], input: Option<&[u8]>) -> io::Result<Output> {
+        let mut line = vec![program.to_owned()];
+        line.extend(args.iter().cloned());
+        self.calls.lock().push((line, input.map(<[u8]>::to_vec)));
+        exited(0, "")
+    }
+}
+
+impl Runner for Piped {
+    fn run(&self, program: &str, args: &[String], _env: &[(String, String)]) -> io::Result<Output> {
+        self.push(program, args, None)
+    }
+
+    fn run_with_input(
+        &self,
+        program: &str,
+        args: &[String],
+        _env: &[(String, String)],
+        input: &[u8],
+    ) -> io::Result<Output> {
+        self.push(program, args, Some(input))
+    }
+}
+
+/// `pkexec` writes every command line it authorises to the system journal, which keeps it
+/// after the sites are taken off the list and after the app is removed. So on Linux the
+/// plan, which holds the sites the user typed, goes to the helper on its standard input and
+/// the command line only says `--plan-b64 -`.
+#[test]
+fn on_linux_the_plan_reaches_the_helper_on_stdin_not_on_the_command_line() {
+    let plan = "eyJ2IjoxfQ";
+    let args = strings(&["apply", "--plan-b64", plan, "--unverified", "hosts"]);
+    let exe = Path::new("/usr/bin/ubiqx");
+    for os in Os::ALL {
+        let runner = Arc::new(Piped::default());
+        let elevator = RunnerElevator::new(os, "/tool".into(), Vec::new(), runner.clone(), false);
+        assert_eq!(elevator.run_elevated(exe, &args), ElevatedExit::Exited(0));
+        let calls = runner.calls.lock().clone();
+        assert_eq!(calls.len(), 1, "{os:?}");
+        let (line, input) = &calls[0];
+        if os == Os::Linux {
+            assert_eq!(
+                *line,
+                strings(&[
+                    "/tool",
+                    "/usr/bin/ubiqx",
+                    "--shield-helper",
+                    "apply",
+                    "--plan-b64",
+                    "-",
+                    "--unverified",
+                    "hosts",
+                ])
+            );
+            assert_eq!(input.as_deref(), Some(plan.as_bytes()));
+        } else {
+            // The macOS and Windows prompts hand the helper no standard input.
+            assert_eq!(*line, argv(os, "/tool", exe, &args), "{os:?}");
+            assert!(input.is_none(), "{os:?}");
+        }
+    }
+    // A run without a plan has nothing to hand over.
+    let runner = Arc::new(Piped::default());
+    let elevator =
+        RunnerElevator::new(Os::Linux, "/tool".into(), Vec::new(), runner.clone(), false);
+    let remove = strings(&["remove", "--owner", "shield", "--scope", "all"]);
+    elevator.run_elevated(exe, &remove);
+    assert_eq!(runner.calls.lock()[0].1, None);
+}

@@ -264,3 +264,25 @@ fn a_name_resolves_after_the_environment_is_pinned() {
         "no name resolves in this process"
     );
 }
+
+#[test]
+fn real_runner_hands_the_child_its_input() {
+    if std::env::consts::OS == "windows" {
+        return;
+    }
+    let args = ["-c".to_owned(), "cat; echo; exit 2".to_owned()];
+    let output = SystemRunner
+        .run_with_input("/bin/sh", &args, &[], b"eyJ2IjoxfQ")
+        .unwrap();
+    assert_eq!(output.status, 2);
+    assert_eq!(output.stdout, "eyJ2IjoxfQ\n");
+    // Larger than a pipe holds, so the input is written while the child reads it.
+    let big = vec![b'a'; 200_000];
+    let args = ["-c".to_owned(), "wc -c".to_owned()];
+    let counted = SystemRunner
+        .run_with_input("/bin/sh", &args, &[], &big)
+        .unwrap();
+    assert_eq!(counted.stdout.trim(), "200000");
+    let missing = SystemRunner.run_with_input("/no/such/tool", &[], &[], b"x");
+    assert_eq!(missing.unwrap_err().kind(), ErrorKind::NotFound);
+}

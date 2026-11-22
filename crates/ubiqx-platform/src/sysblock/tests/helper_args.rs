@@ -10,7 +10,9 @@ use ubiqx_nofap::plan::{self, EXIT_APPLIED, EXIT_GATED, EXIT_INVALID_PLAN};
 use ubiqx_nofap::{hosts, matcher};
 
 use crate::sysblock::elevate;
-use crate::sysblock::helper::{after_flag, apply_args, parse, remove_args, Verb};
+use crate::sysblock::helper::{
+    after_flag, apply_args, parse, plan_from_stdin, remove_args, Verb, PLAN_ON_STDIN,
+};
 use crate::sysblock::testing::{
     all_open, b64, closed_tier, plan_for, plan_of, unverified_arg, Rig, ALL_TIERS, CF, EXE,
 };
@@ -387,4 +389,55 @@ fn a_plan_longer_than_the_argument_budget_is_never_sent() {
             "{os:?}: no prompt for a plan that cannot travel"
         );
     }
+}
+
+#[test]
+fn a_plan_on_stdin_takes_the_place_of_the_dash() {
+    let strings = |list: &[&str]| -> Vec<String> { list.iter().map(|s| (*s).to_owned()).collect() };
+    let encoded = plan::encode_plan(&plan_of(ProductId::Shield, &["blocked.example"]));
+    let args = strings(&[
+        "apply",
+        "--plan-b64",
+        PLAN_ON_STDIN,
+        "--unverified",
+        "hosts",
+    ]);
+    let mut input = std::io::Cursor::new(format!("{encoded}\n"));
+    assert_eq!(
+        plan_from_stdin(&args, &mut input),
+        Some(strings(&[
+            "apply",
+            "--plan-b64",
+            &encoded,
+            "--unverified",
+            "hosts"
+        ]))
+    );
+    // Without the dash nothing is read.
+    let mut untouched = std::io::Cursor::new("never read");
+    let given = strings(&["apply", "--plan-b64", &encoded]);
+    assert_eq!(plan_from_stdin(&given, &mut untouched), Some(given.clone()));
+    assert_eq!(untouched.position(), 0);
+    let remove = strings(&["remove", "--owner", "all", "--scope", "all"]);
+    assert_eq!(
+        plan_from_stdin(&remove, &mut untouched),
+        Some(remove.clone())
+    );
+    // Nothing, too much, or more than one line on stdin is refused.
+    let dash = strings(&["apply", "--plan-b64", PLAN_ON_STDIN]);
+    for bad in [
+        String::new(),
+        "\n".to_owned(),
+        "a".repeat(plan::HELPER_ARG_MAX + 1),
+        format!("{encoded}\n{encoded}"),
+    ] {
+        let mut input = std::io::Cursor::new(bad.clone());
+        assert_eq!(plan_from_stdin(&dash, &mut input), None, "{:.40}", bad);
+    }
+    // What came on stdin is checked like an argument afterwards.
+    let rig = Rig::new(Os::Linux);
+    let mut input = std::io::Cursor::new("not base64!");
+    let args = plan_from_stdin(&dash, &mut input).expect("one line");
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    refused(&rig, &args, EXIT_INVALID_PLAN);
 }

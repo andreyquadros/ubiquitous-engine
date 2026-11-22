@@ -7,7 +7,7 @@
 //! |---|---|---|
 //! | macOS | `osascript -e 'do shell script "<exe> --shield-helper …" with administrator privileges'` | error -128 is `Declined` |
 //! | Windows | `powershell.exe -NoProfile -NonInteractive -Command "try { $p = Start-Process … -Verb RunAs -Wait -PassThru …; exit $p.ExitCode } catch { exit 1223 }"` | 1223 is `Declined` |
-//! | Linux | `pkexec <exe> --shield-helper …` | 126 is `Declined`; 127 or no `pkexec` is `no_polkit_agent`; an AppImage is `appimage` without trying |
+//! | Linux | `pkexec <exe> --shield-helper …`, the plan on standard input (`--plan-b64 -`) | 126 is `Declined`; 127 or no `pkexec` is `no_polkit_agent`; an AppImage is `appimage` without trying |
 
 use std::io;
 use std::path::Path;
@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use ubiqx_core::nofap::{reason, Os};
 
-use super::helper::HELPER_FLAG;
+use super::helper::{HELPER_FLAG, OPT_PLAN, PLAN_ON_STDIN};
 use super::{ElevatedExit, Elevator, Output, Runner};
 
 /// AppleScript's "user canceled" error number.
@@ -116,6 +116,25 @@ pub fn pkexec_argv(pkexec: &str, exe: &Path, args: &[String]) -> Vec<String> {
     argv
 }
 
+/// Linux: `args` with the plan taken out and [`PLAN_ON_STDIN`] in its place, and the plan,
+/// which then goes to the helper on its standard input. `pkexec` writes every command line
+/// it authorises to the system journal (`journalctl -t pkexec`), where it stays after the
+/// sites are taken off the list and after the app is removed, and other accounts can read
+/// a running process's arguments; the plan holds the sites the user typed. `pkexec` hands
+/// its standard input to the program it starts. The macOS and Windows prompts hand the
+/// helper none, so there the plan stays an argument (`None`).
+pub fn plan_to_stdin(os: Os, args: &[String]) -> (Vec<String>, Option<String>) {
+    let at = args.windows(2).position(|pair| pair[0] == OPT_PLAN);
+    match at {
+        Some(at) if os == Os::Linux && args[at + 1] != PLAN_ON_STDIN => {
+            let mut moved = args.to_vec();
+            let plan = std::mem::replace(&mut moved[at + 1], PLAN_ON_STDIN.to_owned());
+            (moved, Some(plan))
+        }
+        _ => (args.to_vec(), None),
+    }
+}
+
 /// The elevation command line of `os`: the program first, then its arguments. `tool` is
 /// the absolute path of `osascript`, PowerShell or `pkexec`.
 pub fn argv(os: Os, tool: &str, exe: &Path, args: &[String]) -> Vec<String> {
@@ -196,8 +215,15 @@ impl Elevator for RunnerElevator {
         if !args.iter().all(|arg| is_helper_arg(arg)) {
             return ElevatedExit::Unavailable(reason::FAILED.to_owned());
         }
-        let argv = argv(self.os, &self.tool, exe, args);
-        let ran = self.runner.run(&argv[0], &argv[1..], &self.env);
+        let (args, plan) = plan_to_stdin(self.os, args);
+        let argv = argv(self.os, &self.tool, exe, &args);
+        let ran = match plan {
+            Some(plan) => {
+                self.runner
+                    .run_with_input(&argv[0], &argv[1..], &self.env, plan.as_bytes())
+            }
+            None => self.runner.run(&argv[0], &argv[1..], &self.env),
+        };
         exit_of(self.os, &ran)
     }
 }

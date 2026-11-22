@@ -370,3 +370,37 @@ fn an_owner_that_asks_for_nothing_is_not_kept_in_the_state() {
         assert!(rig.observe().state.is_none(), "{os:?}");
     }
 }
+
+#[test]
+fn restoring_the_network_takes_the_resolver_off_for_both_owners() {
+    // "Restaurar minha rede" fixes a broken network: DNS goes back to automatic even when
+    // the other product also had the family resolver, and that product then sees its
+    // resolver as not applied (its "Religar"), not as somebody else's.
+    for os in Os::ALL {
+        let rig = Rig::new(os);
+        let ubiqx = plan_of(ProductId::Ubiqx, &[]);
+        let shield = plan_of(ProductId::Shield, &[]);
+        assert_eq!(rig.apply(&ubiqx), EXIT_APPLIED);
+        assert_eq!(rig.apply(&shield), EXIT_APPLIED);
+        assert_eq!(rig.remove("ubiqx", "resolver"), EXIT_APPLIED, "{os:?}");
+        let observed = rig.observe();
+        assert!(observed.resolver.dropin.is_none(), "{os:?}");
+        assert!(
+            observed
+                .resolver
+                .interfaces
+                .iter()
+                .all(|interface| interface.servers != cf_servers()),
+            "{os:?}: the provider's servers are still set"
+        );
+        let state = observed.state.expect("both owners stay");
+        for owner in [ProductId::Ubiqx, ProductId::Shield] {
+            let wants = &state.owners[&owner];
+            assert!(wants.hosts && wants.policies, "{os:?} {owner:?}");
+            assert!(wants.resolver.is_none(), "{os:?} {owner:?}");
+        }
+        let seen_by_shield = rig.assess(&shield);
+        assert_eq!(seen_by_shield.resolver, TierState::NotApplied, "{os:?}");
+        assert_eq!(seen_by_shield.hosts, TierState::Applied, "{os:?}");
+    }
+}

@@ -10,8 +10,8 @@
 //! |---|---|---|
 //! | `status` | none | prints `SystemObservation` as JSON, with the canary's answer while the block is in the hosts file |
 //! | `elevate-argv --plan-b64 <b64>` | none | prints the elevation command line as a JSON array and runs nothing |
-//! | `apply --plan-b64 <b64> [--unverified <tiers>]` | admin | validates, records the owner's wants, applies the union of all owners' wants |
-//! | `remove --owner <ubiqx\|shield\|all> --scope <all\|resolver>` | admin | drops that owner's wants, re-applies what other owners still want, removes what nobody wants |
+//! | `apply --plan-b64 <b64> [--unverified <tiers>]` | admin | validates, records the owner's wants, applies the union of all owners' wants. `--plan-b64 -` reads the plan from standard input (one line), which is how the app hands it over on Linux |
+//! | `remove --owner <ubiqx\|shield\|all> --scope <all\|resolver>` | admin | `all`: drops that owner's wants, re-applies what other owners still want, removes what nobody wants; `resolver`: takes the resolver off for every owner (DNS is one setting of the machine) and leaves the rest |
 //!
 //! Exit codes are `ubiqx_nofap::plan::EXIT_*`. This is the privileged side: it trusts
 //! nothing it is given and nothing it reads back. The plan is validated again here, the
@@ -19,7 +19,7 @@
 //! absolute path, and no value from an argument or a file becomes a path, an address or a
 //! command.
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Duration;
 
@@ -32,7 +32,7 @@ use ubiqx_nofap::plan::{self, EXIT_APPLIED, EXIT_FAILED, EXIT_INVALID_PLAN};
 
 use super::converge::converge;
 pub use super::converge::Ports;
-use super::{elevate, native_backend, observe, state, sys};
+use super::{elevate, native_backend, observe, state, sys, RunLockHeld};
 
 /// The first argument that turns a start of the app into a helper run. Process arguments
 /// are visible to other accounts, so it carries the machine id, not the display name.
@@ -43,6 +43,10 @@ pub const VERB_ELEVATE_ARGV: &str = "elevate-argv";
 pub const VERB_APPLY: &str = "apply";
 pub const VERB_REMOVE: &str = "remove";
 pub const OPT_PLAN: &str = "--plan-b64";
+/// `--plan-b64 -`: the plan comes on standard input. On Linux the app hands it over that
+/// way, because `pkexec` writes every command line it authorises to the system journal
+/// and the plan holds the sites the user typed.
+pub const PLAN_ON_STDIN: &str = "-";
 pub const OPT_UNVERIFIED: &str = "--unverified";
 pub const OPT_OWNER: &str = "--owner";
 pub const OPT_SCOPE: &str = "--scope";
@@ -72,11 +76,41 @@ pub fn after_flag(args: &[String]) -> &[String] {
     }
 }
 
+/// `args` with the plan read from `input` in place of [`PLAN_ON_STDIN`]; `args` as they
+/// are when they do not ask for that (nothing is read then). `None` when the input is not
+/// one line of at most `HELPER_ARG_MAX` characters (one line break at the end is allowed).
+/// What is read is only text here: it is checked like an argument afterwards.
+pub fn plan_from_stdin(args: &[String], input: &mut dyn Read) -> Option<Vec<String>> {
+    let Some(at) = args
+        .windows(2)
+        .position(|pair| pair[0] == OPT_PLAN && pair[1] == PLAN_ON_STDIN)
+    else {
+        return Some(args.to_vec());
+    };
+    let mut bytes = Vec::new();
+    let most = u64::try_from(plan::HELPER_ARG_MAX + 2).unwrap_or(u64::MAX);
+    input.take(most).read_to_end(&mut bytes).ok()?;
+    let text = String::from_utf8(bytes).ok()?;
+    let line = text.strip_suffix('\n').unwrap_or(&text);
+    let line = line.strip_suffix('\r').unwrap_or(line);
+    if line.is_empty() || line.len() > plan::HELPER_ARG_MAX || line.contains(['\n', '\r']) {
+        return None;
+    }
+    let mut args = args.to_vec();
+    args[at + 1] = line.to_owned();
+    Some(args)
+}
+
 /// Runs one verb with the real system ports. `args` starts at the verb. Returns the exit
 /// code.
 pub fn run(args: &[String]) -> i32 {
     // Before anything looks a name up: see `sys::pin_system_environment`.
     sys::pin_system_environment();
+    let Some(args) = plan_from_stdin(args, &mut std::io::stdin().lock()) else {
+        eprintln!("ubiqx-shield: no plan on standard input");
+        return EXIT_INVALID_PLAN;
+    };
+    let args = args.as_slice();
     let (Some(backend), Ok(exe)) = (native_backend(), std::env::current_exe()) else {
         eprintln!("ubiqx-shield: this system has no system layer");
         return EXIT_FAILED;
@@ -91,6 +125,7 @@ pub fn run(args: &[String]) -> i32 {
         runner: &sys::SystemRunner,
         fs: &sys::SystemFs,
         names: &sys::SystemLookup,
+        lock: &sys::SystemRunLock,
         pause: &|time: Duration| std::thread::sleep(time),
         now_ms,
     };
@@ -187,6 +222,39 @@ pub fn remove_args(owner: ProductId, scope: RemoveScope) -> Vec<String> {
     .to_vec()
 }
 
+/// How long `apply` and `remove` wait, in seconds, for another helper run to finish. A run
+/// takes seconds; the wait covers a slow one (PowerShell, the probe after a DNS change).
+pub const LOCK_WAIT_SECS: u64 = 120;
+
+/// Waits for the lock between helper runs. `Err` is the exit code of an `apply` that did
+/// not get it. A removal goes on without it once the wait is over, and so does any run on a
+/// machine where the lock cannot be taken at all: the way out is never closed, and the
+/// lock only guards against two runs overlapping.
+fn take_lock(
+    ports: &Ports<'_>,
+    removal: bool,
+    err: &mut dyn Write,
+) -> Result<Option<RunLockHeld>, i32> {
+    for attempt in 0..LOCK_WAIT_SECS {
+        match ports.lock.try_lock(ports.backend) {
+            Ok(Some(held)) => return Ok(Some(held)),
+            Ok(None) if attempt + 1 < LOCK_WAIT_SECS => (ports.pause)(Duration::from_secs(1)),
+            Ok(None) => {}
+            Err(_) => return Ok(None),
+        }
+    }
+    if removal {
+        let _ = writeln!(
+            err,
+            "ubiqx-shield: another helper run is still going; removing anyway"
+        );
+        Ok(None)
+    } else {
+        let _ = writeln!(err, "ubiqx-shield: another helper run is still going");
+        Err(EXIT_FAILED)
+    }
+}
+
 /// Runs one verb over the given ports; `exe` is the executable an elevation would re-run.
 /// What the verb prints goes to `out`, why it refused goes to `err`.
 pub fn run_with(
@@ -242,6 +310,10 @@ pub fn run_with(
                     return refused.exit_code();
                 }
             };
+            let _lock = match take_lock(ports, false, err) {
+                Ok(held) => held,
+                Err(code) => return code,
+            };
             let Ok(previous) = state::open(backend, ports.fs) else {
                 let _ = writeln!(err, "ubiqx-shield: the state directory cannot be used");
                 return EXIT_FAILED;
@@ -250,6 +322,10 @@ pub fn run_with(
             converge(ports, owners, previous.as_ref(), Some(plan.owner), &gate)
         }
         Verb::Remove { owner, scope } => {
+            let _lock = match take_lock(ports, true, err) {
+                Ok(held) => held,
+                Err(code) => return code,
+            };
             let Ok(previous) = state::open(backend, ports.fs) else {
                 let _ = writeln!(err, "ubiqx-shield: the state directory cannot be used");
                 return EXIT_FAILED;
@@ -261,11 +337,14 @@ pub fn run_with(
             let named = |id: &ProductId| owner.is_none_or(|owner| owner == *id);
             match scope {
                 RemoveScope::All => owners.retain(|id, _| !named(id)),
+                // "Restaurar minha rede": DNS is one setting of the machine, so it goes
+                // back to automatic for every owner, whoever asks. Taken off only for the
+                // asking owner, it would stay in place for the other product and the run
+                // would still report the network as restored. The other product then
+                // shows its resolver as not applied, with its own "Religar".
                 RemoveScope::Resolver => {
-                    for (id, wants) in owners.iter_mut() {
-                        if named(id) {
-                            wants.resolver = None;
-                        }
+                    for wants in owners.values_mut() {
+                        wants.resolver = None;
                     }
                 }
             }

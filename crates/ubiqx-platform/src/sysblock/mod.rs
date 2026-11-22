@@ -3,7 +3,7 @@
 //!
 //! One adapter, [`NativeSystemShield`], whose three OS back-ends ([`OsBackend`]) are command
 //! builders and output parsers compiled on every OS. Everything that touches the machine
-//! goes through four small traits, so whole apply → observe → remove cycles run in tests
+//! goes through five small traits, so whole apply → observe → remove cycles run in tests
 //! against an in-memory file system and a recorded command runner:
 //!
 //! * [`Runner`]: runs one system tool, by absolute path, with an environment the caller
@@ -11,7 +11,8 @@
 //! * [`Fs`]: reads, atomic writes, removals, directory metadata;
 //! * [`Elevator`]: re-runs this executable as `--shield-helper <verb>` through the
 //!   operating system's own prompt;
-//! * [`NameLookup`]: resolves the canary and the probe name through the OS.
+//! * [`NameLookup`]: resolves the canary and the probe name through the OS;
+//! * [`RunLock`]: lets one helper run at a time change the machine.
 //!
 //! The adapter holds no decision: validation, the hosts splice, the policy values, the
 //! gate and the judgement of an observation are `ubiqx_nofap`.
@@ -77,6 +78,19 @@ impl Output {
 /// of the child: nothing is inherited.
 pub trait Runner: Send + Sync {
     fn run(&self, program: &str, args: &[String], env: &[(String, String)]) -> io::Result<Output>;
+
+    /// [`run`](Self::run) with `input` on the child's standard input, closed after it.
+    /// A runner that cannot do that refuses, rather than run the tool without it.
+    fn run_with_input(
+        &self,
+        program: &str,
+        args: &[String],
+        env: &[(String, String)],
+        input: &[u8],
+    ) -> io::Result<Output> {
+        let _ = (program, args, env, input);
+        Err(io::Error::from(io::ErrorKind::Unsupported))
+    }
 }
 
 /// The file operations of the system layer. Nothing here follows a link unless it says so.
@@ -133,6 +147,31 @@ pub trait NameLookup: Send + Sync {
     /// with "host not found".
     fn lookup_blocked(&self, name: &str) -> Vec<String> {
         self.lookup(name)
+    }
+}
+
+/// Lets one helper run at a time change the machine. Each run reads the state file once,
+/// changes the machine and writes the whole file back, so two runs that overlap (the two
+/// products, an uninstall hook during an apply) would otherwise lose what the first one to
+/// finish recorded. Held from before the state file is read until after its last write.
+pub trait RunLock: Send + Sync {
+    /// Takes the lock when no other helper run holds it: `Ok(Some(_))` holds it until the
+    /// value is dropped, `Ok(None)` means another run holds it, `Err` that it cannot be
+    /// taken on this machine at all.
+    fn try_lock(&self, backend: &dyn OsBackend) -> io::Result<Option<RunLockHeld>>;
+}
+
+/// A held [`RunLock`]; dropping it lets the next run in.
+pub struct RunLockHeld {
+    _held: Box<dyn Send>,
+}
+
+impl RunLockHeld {
+    /// `held` releases the lock when it is dropped.
+    pub fn new(held: impl Send + 'static) -> Self {
+        Self {
+            _held: Box::new(held),
+        }
     }
 }
 

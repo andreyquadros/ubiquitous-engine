@@ -26,7 +26,7 @@ use super::macos::MacosBackend;
 use super::windows::{self, WindowsBackend};
 use super::{
     macos, parent, ElevatedExit, Elevator, Fs, NameLookup, NativeSystemShield, OsBackend, Output,
-    Runner,
+    RunLock, RunLockHeld, Runner,
 };
 
 pub(crate) const SYSTEM32: &str = "C:\\Windows\\System32";
@@ -55,9 +55,14 @@ pub(crate) struct MemFs {
     rename_fails: Mutex<HashMap<String, ErrorKind>>,
     tamper: Mutex<HashSet<String>>,
     stall: Mutex<HashSet<String>>,
+    /// Something that happens once, from outside the run, when a write to a path
+    /// ending in the given text begins: another helper run starting meanwhile.
+    meanwhile: Mutex<Option<(String, Meanwhile)>>,
     /// The user new files and directories belong to (0: the helper runs as root).
     euid: Mutex<u32>,
 }
+
+type Meanwhile = Box<dyn FnOnce() + Send>;
 
 fn key(path: &Path) -> String {
     path.to_string_lossy().into_owned()
@@ -76,6 +81,7 @@ impl MemFs {
             rename_fails: Mutex::new(HashMap::new()),
             tamper: Mutex::new(HashSet::new()),
             stall: Mutex::new(HashSet::new()),
+            meanwhile: Mutex::new(None),
             euid: Mutex::new(0),
         };
         if os != Os::Windows {
@@ -175,6 +181,27 @@ impl MemFs {
         self.stall.lock().insert(path.into());
     }
 
+    /// Runs `then` once, when the next write to a path ending in `suffix` begins.
+    pub(crate) fn meanwhile(&self, suffix: &str, then: impl FnOnce() + Send + 'static) {
+        *self.meanwhile.lock() = Some((suffix.to_owned(), Box::new(then)));
+    }
+
+    fn run_meanwhile(&self, path: &Path) {
+        let due = {
+            let mut planted = self.meanwhile.lock();
+            match planted.take() {
+                Some((suffix, then)) if key(path).ends_with(&suffix) => Some(then),
+                other => {
+                    *planted = other;
+                    None
+                }
+            }
+        };
+        if let Some(then) = due {
+            then();
+        }
+    }
+
     pub(crate) fn set_euid(&self, uid: u32) {
         *self.euid.lock() = uid;
     }
@@ -220,6 +247,7 @@ impl Fs for MemFs {
     }
 
     fn write_atomic(&self, path: &Path, bytes: &[u8], mode: Option<u32>) -> io::Result<()> {
+        self.run_meanwhile(path);
         if !self.has_dir(path) {
             return Err(not_found());
         }
@@ -232,6 +260,7 @@ impl Fs for MemFs {
     }
 
     fn write_in_place(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        self.run_meanwhile(path);
         let at = self.follow(path)?;
         self.log.lock().push(format!("write-in-place {at}"));
         if self.stall.lock().remove(&at) {
@@ -793,6 +822,48 @@ impl NameLookup for FakeLookup {
     }
 }
 
+/// The lock between helper runs, shared by every run on one pretend machine.
+#[derive(Default)]
+pub(crate) struct FakeLock {
+    held: Arc<Mutex<bool>>,
+    /// Every try answers "cannot be taken here".
+    pub broken: Mutex<bool>,
+    pub tries: Mutex<u32>,
+}
+
+impl FakeLock {
+    pub(crate) fn is_held(&self) -> bool {
+        *self.held.lock()
+    }
+
+    /// Holds the lock as another run would, until the answer is dropped.
+    pub(crate) fn hold(&self) -> RunLockHeld {
+        *self.held.lock() = true;
+        RunLockHeld::new(Release(self.held.clone()))
+    }
+}
+
+struct Release(Arc<Mutex<bool>>);
+
+impl Drop for Release {
+    fn drop(&mut self) {
+        *self.0.lock() = false;
+    }
+}
+
+impl RunLock for FakeLock {
+    fn try_lock(&self, _backend: &dyn OsBackend) -> io::Result<Option<RunLockHeld>> {
+        *self.tries.lock() += 1;
+        if *self.broken.lock() {
+            return Err(io::Error::other("no lock on this machine"));
+        }
+        if self.is_held() {
+            return Ok(None);
+        }
+        Ok(Some(self.hold()))
+    }
+}
+
 pub(crate) fn backend_for(os: Os) -> Box<dyn OsBackend> {
     match os {
         Os::Macos => Box::new(MacosBackend),
@@ -810,6 +881,7 @@ pub(crate) struct Rig {
     pub win: Arc<WinMachine>,
     pub linux: Arc<LinuxMachine>,
     pub names: Arc<FakeLookup>,
+    pub lock: Arc<FakeLock>,
     pub pauses: Arc<Mutex<Vec<Duration>>>,
     /// What the next elevations answer instead of running the helper.
     pub elevations: Arc<Mutex<VecDeque<ElevatedExit>>>,
@@ -915,6 +987,7 @@ impl Rig {
             win: Arc::new(win),
             linux: Arc::new(linux),
             names: Arc::new(FakeLookup::new(answer)),
+            lock: Arc::new(FakeLock::default()),
             pauses: Arc::new(Mutex::new(Vec::new())),
             elevations: Arc::new(Mutex::new(VecDeque::new())),
             elevated: Arc::new(Mutex::new(Vec::new())),
@@ -985,6 +1058,7 @@ impl Rig {
             runner: runner.as_ref(),
             fs: self.fs.as_ref(),
             names: self.names.as_ref(),
+            lock: self.lock.as_ref(),
             pause: &pause,
             now_ms: 1_795_100_000_000,
         };
