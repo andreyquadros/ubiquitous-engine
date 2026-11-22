@@ -41,7 +41,8 @@ export type Issue =
   | 'vision_cap_reached'
   | 'vision_no_provider'
   | 'consent_outdated'
-  | 'other_product_primary';
+  | 'other_product_primary'
+  | 'config_unreadable';
 
 export type ChangeKind =
   | 'disable'

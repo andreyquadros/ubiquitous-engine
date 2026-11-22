@@ -1,11 +1,13 @@
 import { useId } from 'react';
 import { useT } from '../../i18n';
-import { consentKey, providerName } from '../labels';
-import type { AiProvider } from '../types';
+import { consentText } from '../labels';
+import type { AiProvider, ProductId } from '../types';
 
 interface Props {
   provider: AiProvider;
   name: string;
+  /** The product that hosts the page: ubiqX adds the line about its pause and private mode. */
+  product: ProductId;
   consent: boolean;
   onConsent: (ticked: boolean) => void;
   /** The second tick, asked only when the checks go through the managed route ("IA do Ubi"). */
@@ -24,11 +26,11 @@ function Tick({ checked, onChange, label }: { checked: boolean; onChange: (v: bo
 }
 
 /** What the AI check sends, to whom, and the box that has to be ticked by hand before it can be switched on. */
-export function VisionConsent({ provider, name, consent, onConsent, managed, onManaged }: Props) {
+export function VisionConsent({ provider, name, product, consent, onConsent, managed, onManaged }: Props) {
   const t = useT();
   return (
     <div className="flex flex-col gap-3" data-testid="vision-consent">
-      <p className="panel-raised p-3 text-[13px] leading-5 text-ink-2">{t(consentKey(provider), { name, provider: providerName(provider, t) })}</p>
+      <p className="panel-raised p-3 text-[13px] leading-5 text-ink-2">{consentText(provider, name, product, t)}</p>
       <Tick checked={consent} onChange={onConsent} label={t('nofap.vision.consent_tick')} />
       {provider === 'ubi' && (
         <>

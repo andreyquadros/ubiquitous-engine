@@ -26,6 +26,7 @@ import type {
   PendingChange,
   PendingView,
   PlannedChange,
+  ProductId,
   SampleFrame,
   SitesView,
   SupportView,
@@ -45,7 +46,7 @@ const thaw = <T>(value: unknown): T => structuredClone(value) as T;
 export type PromptAnswer = 'accept' | 'decline' | 'partial' | 'unavailable';
 
 /** Ready-made states for the browser preview and the screenshots (`?nofap=<name>`). */
-export const SCENARIOS = ['off', 'on', 'pending', 'ready', 'reduced', 'gated', 'drift', 'secondary', 'left', 'help'] as const;
+export const SCENARIOS = ['off', 'on', 'pending', 'ready', 'reduced', 'gated', 'drift', 'secondary', 'left', 'help', 'unreadable'] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
 const TIERS: Tier[] = ['hosts', 'resolver', 'policies'];
@@ -78,6 +79,8 @@ interface State {
   /** Whether "Ver um exemplo" has a window to show. */
   hasCandidate: boolean;
   secondary: boolean;
+  /** The stored configuration cannot be read: defaults in memory, writes refused until a reset or the wizard. */
+  unreadable: boolean;
   /** A whole status that replaces the computed one (the fixtures' statuses, for rendering every state). */
   scripted: NofapStatus | null;
   seq: number;
@@ -114,12 +117,15 @@ function freshState(): State {
     cards: new Map(),
     hasCandidate: true,
     secondary: false,
+    unreadable: false,
     scripted: null,
     seq: 0,
   };
 }
 
 let S: State = freshState();
+/** Which product hosts the page: ubiqX, unless the standalone app's mock says otherwise. Survives the scenarios. */
+let product: ProductId = 'ubiqx';
 
 const nowIso = (): IsoDateTime => new Date().toISOString();
 const plus = (iso: IsoDateTime, secs: number): IsoDateTime => new Date(new Date(iso).getTime() + secs * 1000).toISOString();
@@ -194,6 +200,11 @@ function pendingView(pending: PendingChange): PendingView {
 
 function status(): NofapStatus {
   if (S.scripted) return clone(S.scripted);
+  if (S.unreadable) {
+    // As the engine says it: not "off", nothing in force from the app, and the reason.
+    const off: TierState = { state: 'off' };
+    return { overall: 'reduced', guard: { state: 'off' }, hosts: off, resolver: off, policies: off, vision: { state: 'off', reason: 'disabled' }, issues: ['config_unreadable'], pending: [], hosts_waiting: 0, extras_left_out: 0 };
+  }
   const pending = S.config.pending.map(pendingView);
   const hosts = tierState('hosts');
   const resolver = tierState('resolver');
@@ -226,7 +237,7 @@ function view(): NofapView {
     capabilities: clone(S.capabilities),
     today: { ...S.today },
     display_name: DISPLAY_NAME,
-    product: 'ubiqx',
+    product,
     provider: S.provider,
     ai: S.ai,
     cost_line: { month_usd: S.today.checks ? 0.21 : 0, month_checks: S.today.checks ? 300 : 0, cap_usd: S.config.vision.monthly_cap_usd },
@@ -367,7 +378,13 @@ function applyChange(change: NofapChange): void {
 const canonical = (change: NofapChange): string =>
   JSON.stringify(change, (_, value: unknown) => (value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))) : value));
 
+/** The engine's answer to a write while the stored configuration cannot be read. */
+function refuseUnreadable(): void {
+  if (S.unreadable) throw new Error('storage: the stored configuration of the module cannot be read; run the set-up again');
+}
+
 function request(change: NofapChange): ChangeOutcome {
+  refuseUnreadable();
   if (loosens(S.config, change)) {
     // The same change asked for again is the request that is already waiting, with its clock as it stands.
     const waiting = S.config.pending.find((p) => canonical(p.change) === canonical(change));
@@ -392,6 +409,7 @@ function findPending(id: Id): PendingChange {
 }
 
 function confirmPending(id: Id): NofapView {
+  refuseUnreadable();
   const pending = findPending(id);
   if (!pendingView(pending).ready) throw new Error('invalid: the request is still waiting');
   S.config.pending = S.config.pending.filter((p) => p.id !== id);
@@ -402,6 +420,7 @@ function confirmPending(id: Id): NofapView {
 }
 
 function cancelPending(id: Id): NofapView {
+  refuseUnreadable();
   findPending(id);
   S.config.pending = S.config.pending.filter((p) => p.id !== id);
   emit({ type: 'pending_changed' });
@@ -429,6 +448,8 @@ function enable(options: EnableOptions): NofapView {
     ui: { ...S.config.ui, discreet: options.discreet },
     pending: [],
   };
+  // The wizard writes a fresh configuration: one way out of an unreadable one.
+  S.unreadable = false;
   if (S.prompt === 'accept') applySystem();
   announce();
   return view();
@@ -491,6 +512,7 @@ function prompted(act: () => void): ApplyOutcome {
 }
 
 function systemApply(): ApplyOutcome {
+  refuseUnreadable();
   return prompted(() => {
     S.config.system.network_restored = false;
     applySystem();
@@ -506,6 +528,7 @@ function systemRemove(): ApplyOutcome {
 }
 
 function restoreNetwork(): ApplyOutcome {
+  refuseUnreadable();
   return prompted(() => {
     S.applied.resolver = false;
     S.config.system.network_restored = true;
@@ -620,8 +643,9 @@ function eraseHistory(): null {
   return null;
 }
 
+/** "Apagar tudo", and "Restaurar padrões" while the stored configuration cannot be read (a fresh state clears it). */
 function reset(): null {
-  if (S.config.enabled) throw new Error('invalid: only while the module is off');
+  if (S.config.enabled && !S.unreadable) throw new Error('invalid: only while the module is off');
   const { capabilities, applied, prompt, provider, ai } = S;
   S = { ...freshState(), capabilities, applied, prompt, provider, ai };
   emit({ type: 'sites_changed' });
@@ -653,6 +677,7 @@ export function handle(command: NofapCommand): unknown {
     case 'enable':
       return enable(command.args);
     case 'consent_vision': {
+      refuseUnreadable();
       S.config.vision.consent = { ...command.args, at: nowIso() };
       announce();
       return view();
@@ -688,6 +713,7 @@ export function handle(command: NofapCommand): unknown {
     case 'reset':
       return reset();
     case 'export':
+      refuseUnreadable();
       return { path: views.export.path } satisfies ExportResult;
     case 'test_card':
       present({ ...neutralCard(nextId('card')), discreet: S.config.ui.discreet, message_key: S.config.ui.discreet ? 'block.discreet' : 'block.breathe' });
@@ -744,6 +770,12 @@ function applyScenario(name: Scenario): void {
     case 'left':
       S.config.enabled = false;
       break;
+    case 'unreadable':
+      // What the engine holds when the stored row does not parse: the defaults, and the flag.
+      S.config = freshConfig();
+      S.sites = { blocked: [], allowed: [], learned_count: 0 };
+      S.unreadable = true;
+      break;
     case 'help':
       S.support.help_due = true;
       S.support.progress = { window_days: 30, days: 19, streak: 0, after_reset: true };
@@ -794,6 +826,10 @@ export const __nofapMock = {
   },
   setCandidate(present: boolean): void {
     S.hasCandidate = present;
+  },
+  /** Which product hosts the page (`view.product`); the standalone app's mock says `shield`. */
+  setProduct(next: ProductId): void {
+    product = next;
   },
   /** Shows a card the way the engine would. */
   present,

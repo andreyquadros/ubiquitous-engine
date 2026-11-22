@@ -5,9 +5,9 @@ import { describe, expect, it } from 'vitest';
 import forbidden from '../../../../crates/ubiqx-nofap/data/forbidden-words.json';
 import tauriConf from '../../src-tauri/tauri.conf.json?raw';
 import { hasKey, NAMESPACES, translate } from '../i18n';
-import { PANIC_CRISIS } from '../i18n/messages/nofap';
+import { PANIC_CRISIS, UBIQX_ONLY } from '../i18n/messages/nofap';
 import type { Locale } from '../i18n/types';
-import { consentKey, providerName } from './labels';
+import { aiExitText, consentKey, consentText, providerName } from './labels';
 
 // The design document itself. Vite refuses `?raw` for a file outside the app, so the test reads it from disk.
 const here = (import.meta as unknown as { dirname: string }).dirname;
@@ -39,7 +39,7 @@ describe('the copy bank (design 5.6)', () => {
   const rows = copyBank();
 
   it('is read from the design in full', () => {
-    expect(rows).toHaveLength(68);
+    expect(rows).toHaveLength(69);
     expect(rows.map((r) => r[0])).toContain('block.discreet');
   });
 
@@ -54,6 +54,60 @@ describe('the copy bank (design 5.6)', () => {
   it('names the product only through the {name} placeholder', () => {
     const withName = rows.filter(([, pt]) => pt.includes('{name}')).map((r) => r[0]);
     expect(withName).toEqual(expect.arrayContaining(['wizard.what', 'vision.consent', 'exclusion.delay', 'drift.notice', 'reminder.on', 'privacy.at_rest']));
+  });
+});
+
+describe('copy for two products (integrator decision 32)', () => {
+  /** ubiqX by name (not the `ubiqx-shield` marker of the hosts block), its pause, its private mode, its local mode. */
+  const UBIQX_WORDS = [/ubiqx(?!-shield)/i, /\bpausar o\b|\bnão pausa o\b|\bpausing\b|\bdoes not pause\b/i, /modo privado|private mode/i, /modo só local|local-only/i];
+  const namesUbiqx = (text: string): boolean => UBIQX_WORDS.some((word) => word.test(text));
+
+  it('says nothing of ubiqX in a string both products show', () => {
+    for (const locale of LOCALES) {
+      for (const [key, text] of strings(locale)) {
+        const bare = key.replace(/^nofap\./, '');
+        if (key.startsWith('nofap.') && bare in UBIQX_ONLY) continue;
+        expect(namesUbiqx(text), `${key} (${locale}): ${text}`).toBe(false);
+      }
+    }
+  });
+
+  it('keeps the list of ubiqX-only strings honest: each exists in both languages and does speak of ubiqX', () => {
+    expect(Object.keys(UBIQX_ONLY).sort()).toEqual(['helptab.ai.local_only', 'vision.managed', 'vision.managed_tick', 'vision.off.local_only', 'vision.pause_note']);
+    for (const key of Object.keys(UBIQX_ONLY)) {
+      for (const locale of LOCALES) {
+        expect(hasKey(`nofap.${key}`, locale), `${key} (${locale})`).toBe(true);
+        expect(namesUbiqx(nofap[locale][key]!), `${key} (${locale})`).toBe(true);
+      }
+    }
+  });
+
+  it('the old sentences are gone from the shared strings, in both languages', () => {
+    expect(nofap['pt-BR']['dns.disclosure']).toContain('Este app não recebe nada.');
+    expect(nofap.en['dns.disclosure']).toContain('This app receives nothing.');
+    for (const key of ['vision.consent', 'vision.consent_ubi']) {
+      expect(nofap['pt-BR'][key]!.endsWith('Janelas anônimas são verificadas.'), key).toBe(true);
+      expect(nofap.en[key]!.endsWith('Private-browsing windows are checked.'), key).toBe(true);
+    }
+    expect(nofap['pt-BR']['helptab.ai.body']).toBe('Remover a chave de IA nas configurações do app para a verificação na hora, sem espera.');
+    expect(nofap.en['helptab.ai.body']).toBe("Removing the AI key in the app's settings stops the check at once, with no wait.");
+  });
+
+  it('adds the ubiqX-only line in ubiqX and nothing in the standalone app', () => {
+    for (const locale of LOCALES) {
+      const t = (key: string, vars?: Record<string, string | number>) => translate(locale, key, vars);
+      for (const provider of ['anthropic', 'openai', 'xai', 'ubi'] as const) {
+        const standalone = consentText(provider, 'NoFap', 'shield', t);
+        const ubiqx = consentText(provider, 'NoFap', 'ubiqx', t);
+        expect(standalone).toBe(t(consentKey(provider), { name: 'NoFap', provider: providerName(provider, t) }));
+        expect(ubiqx).toBe(`${standalone} ${t('nofap.vision.pause_note')}`);
+        expect(namesUbiqx(standalone), `${locale} ${provider}`).toBe(false);
+      }
+      expect(aiExitText('shield', t)).toBe(t('nofap.helptab.ai.body'));
+      expect(aiExitText('ubiqx', t)).toBe(`${t('nofap.helptab.ai.body')} ${t('nofap.helptab.ai.local_only')}`);
+    }
+    // In ubiqX the consent reads as it did before the split.
+    expect(consentText('anthropic', 'NoFap', 'ubiqx', (key, vars) => translate('pt-BR', key, vars)).endsWith('Janelas anônimas são verificadas. Pausar o ubiqX ou usar o modo privado não pausa esta verificação.')).toBe(true);
   });
 });
 

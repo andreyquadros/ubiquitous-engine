@@ -65,8 +65,11 @@ let calls: HostCommand[] = [];
 
 const readiness = (): AiReadiness => (!H.settings.onboarding_done ? 'not_onboarded' : H.settings.ai_provider === 'ubi' ? 'licence_required' : H.keys.has(H.settings.ai_provider) ? 'ready' : 'no_key');
 
-/** Tells the module's mock what the real host's environment would answer. */
-const sync = (): void => __nofapMock.setAi(H.settings.ai_provider, readiness());
+/** Tells the module's mock what the real host's environment would answer, and that the page is this product's. */
+const sync = (): void => {
+  __nofapMock.setProduct('shield');
+  __nofapMock.setAi(H.settings.ai_provider, readiness());
+};
 sync();
 
 const refuseManaged = (provider: AiProvider): void => {

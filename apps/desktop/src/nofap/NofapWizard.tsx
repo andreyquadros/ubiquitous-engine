@@ -198,7 +198,7 @@ export function NofapWizard({ view, host, onEnabled }: Props) {
               </Field>
               {vision ? (
                 <>
-                  <VisionConsent provider={view.provider} name={name} consent={consent} onConsent={setConsent} managed={managed} onManaged={setManaged} />
+                  <VisionConsent provider={view.provider} name={name} product={view.product} consent={consent} onConsent={setConsent} managed={managed} onManaged={setManaged} />
                   {visionBlocked && (
                     <p className="text-xs text-ink-2" role="status">
                       {t('nofap.vision.need_tick')}

@@ -106,7 +106,9 @@ pub struct TrayLabels {
     pub check_updates: String,
     /// "Sair" (standalone).
     pub quit: String,
-    /// Tooltip of ubiqX's pause and private-mode items: "Não pausa o {name}".
+    /// Tooltip of ubiqX's pause and private-mode items: "Não pausa o {name}". The one label
+    /// that speaks of ubiqX's pause, so only ubiqX's tray shows it; the standalone app has
+    /// no pause (integrator decision 32, pinned by a test).
     pub not_paused: String,
 }
 
@@ -375,6 +377,30 @@ mod tests {
                 not_paused: format!("Does not pause {DISPLAY_NAME}"),
             }
         );
+    }
+
+    /// The Rust sources of a shell, every file of its `src` directory.
+    fn shell_sources(shell: &str) -> String {
+        let dir = std::path::Path::new(REPO).join(shell).join("src");
+        let mut text = String::new();
+        for entry in std::fs::read_dir(&dir).unwrap_or_else(|error| panic!("{shell}: {error}")) {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|ext| ext == "rs") {
+                text.push_str(&std::fs::read_to_string(&path).unwrap());
+            }
+        }
+        text
+    }
+
+    #[test]
+    fn the_label_about_ubiqx_pause_is_shown_by_ubiqx_alone() {
+        let standalone = shell_sources("apps/nofap/src-tauri");
+        let ubiqx = shell_sources("apps/desktop/src-tauri");
+        // The standalone tray takes the module's labels, but not the one about a pause it
+        // does not have.
+        assert!(standalone.contains("tray_labels"));
+        assert!(!standalone.contains("not_paused"));
+        assert!(ubiqx.contains("labels.not_paused"));
     }
 
     #[test]

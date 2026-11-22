@@ -7,10 +7,12 @@ import { NofapPage } from './NofapPage';
 import type { NofapHost } from './NofapWizard';
 import { __nofapMock, type Scenario } from './mock';
 import { useNofapStore } from './store';
-import type { NofapCmd, NofapCommand } from './types';
+import type { NofapCmd, NofapCommand, ProductId } from './types';
 
-export function resetNofap(scenario: Scenario): void {
+/** A fresh mock in `scenario`, hosted by ubiqX unless `product` says otherwise, and a clean store. */
+export function resetNofap(scenario: Scenario, product: ProductId = 'ubiqx'): void {
   __nofapMock.reset(scenario);
+  __nofapMock.setProduct(product);
   useNofapStore.setState({ view: null, error: null, sites: null, support: null, supportFailed: false });
 }
 

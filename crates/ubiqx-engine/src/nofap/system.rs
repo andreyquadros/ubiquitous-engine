@@ -135,9 +135,11 @@ impl NofapService {
         {
             let rt = self.rt.lock();
             if rt.config_error {
-                // Unknown is not "off": the page must not read as a module nobody enabled.
+                // Unknown is not "off": the page must not read as a module nobody enabled,
+                // and it says why (integrator decision 33).
                 return NofapStatus {
                     overall: Overall::Reduced,
+                    issues: vec![Issue::ConfigUnreadable],
                     ..NofapStatus::off()
                 };
             }
@@ -318,6 +320,9 @@ impl NofapService {
     /// module off it returns before any platform call.
     pub fn verify_pass_after(&self, elapsed: Duration) -> CoreResult<()> {
         let now = self.now();
+        if self.read_config_again() {
+            self.refresh_status();
+        }
         {
             let rt = self.rt.lock();
             if !rt.config.enabled || rt.config_error {
@@ -349,6 +354,36 @@ impl NofapService {
         }
         self.flush(outbox);
         failed.map_or(Ok(()), Err)
+    }
+
+    /// While the stored configuration could not be read, each verify pass reads it again
+    /// (and asks the repository nothing else). A read that works replaces the defaults in
+    /// memory, ends the degraded state and takes the issue away (integrator decision 33).
+    /// Returns whether it did.
+    fn read_config_again(&self) -> bool {
+        let mut rt = self.rt.lock();
+        if !rt.config_error {
+            return false;
+        }
+        let mut config = match self.deps.repo.load_config() {
+            Ok(config) => config,
+            Err(error) => {
+                tracing::debug!(
+                    class = error_class(&error),
+                    "nofap: the stored configuration still cannot be read"
+                );
+                return false;
+            }
+        };
+        config.sanitize();
+        rt.config = config;
+        rt.config_error = false;
+        // The learned sites are matched with the salt of the configuration just read.
+        self.reload_sites(&mut rt);
+        drop(rt);
+        self.clear_memory();
+        tracing::info!("nofap: the stored configuration was read");
+        true
     }
 
     /// Credits running time to the waiting requests and to new exclusions, drops requests

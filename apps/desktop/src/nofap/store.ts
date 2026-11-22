@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { ipcErrorMessage } from '../lib/ipc';
 import { onNofapEvent } from './events';
 import { nofapIpc } from './ipc';
-import type { ChangeOutcome, Id, NofapChange, NofapEvent, NofapView, SitesView, SupportView } from './types';
+import type { ChangeOutcome, Id, NofapChange, NofapEvent, NofapStatus, NofapView, SitesView, SupportView } from './types';
 
 /** The module's own store: it shares nothing with the host app's settings, by design (6.1). */
 interface NofapState {
@@ -83,7 +83,9 @@ export const useNofapStore = create<NofapState>((set, get) => ({
         if (!view) break;
         set({ view: { ...view, status: event.status } });
         // The configuration behind a different overall state (switched off, switched on) is stale: read it again.
-        if (view.status.overall !== event.status.overall) void get().load();
+        // So is the one held while the stored settings could not be read, once they can (integrator decision 33).
+        const unreadable = (status: NofapStatus) => status.issues.includes('config_unreadable');
+        if (view.status.overall !== event.status.overall || unreadable(view.status) !== unreadable(event.status)) void get().load();
         break;
       }
       case 'pending_changed':

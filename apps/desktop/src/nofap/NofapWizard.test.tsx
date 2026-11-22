@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { nofapIpc } from './ipc';
 import { __nofapMock } from './mock';
+import { setLocale } from '../i18n';
 import { calls, READS, renderPage, resetNofap } from './testing';
 
 const next = () => fireEvent.click(screen.getByRole('button', { name: 'Continuar' }));
@@ -243,5 +244,63 @@ describe('the consent wizard', () => {
     expect(step).toHaveTextContent('Cancelar o pedido é sempre na hora.');
     expect(step).toHaveTextContent('ubiqx-shield BEGIN e END');
     expect(step).toHaveTextContent('Quem tem acesso à sua conta neste computador pode ver que o NoFap está instalado');
+  });
+});
+
+describe('the wizard in the two products (integrator decision 32)', () => {
+  /** ubiqX by name, not the marker of the hosts block (`ubiqx-shield`), which is the same in both products. */
+  const NAMES_UBIQX = /ubiqx(?!-shield)/i;
+
+  /** The text of steps 2 and 3, where the disclosures and the consent are. */
+  async function disclosures(): Promise<string> {
+    await goTo(2);
+    const two = screen.getByTestId('wizard-step-2').textContent ?? '';
+    next();
+    const three = (await screen.findByTestId('wizard-step-3')).textContent ?? '';
+    return `${two}\n${three}`;
+  }
+
+  it('says in both products that the app receives nothing from the DNS choice', async () => {
+    for (const product of ['ubiqx', 'shield'] as const) {
+      resetNofap('off', product);
+      const { unmount } = renderPage();
+      const text = await disclosures();
+      expect(text, product).toContain('É a Cloudflare que decide o que barrar: sites adultos e sites que ela considera perigosos. Este app não recebe nada.');
+      unmount();
+    }
+  });
+
+  it('adds the line about pausing ubiqX and its private mode in ubiqX only', async () => {
+    resetNofap('off', 'ubiqx');
+    const { unmount } = renderPage();
+    const ubiqx = await disclosures();
+    expect(ubiqx).toContain('Janelas anônimas são verificadas. Pausar o ubiqX ou usar o modo privado não pausa esta verificação.');
+    unmount();
+
+    resetNofap('off', 'shield');
+    renderPage();
+    const standalone = await disclosures();
+    expect(standalone).toContain('Janelas anônimas são verificadas.');
+    expect(standalone).not.toMatch(NAMES_UBIQX);
+    expect(standalone).not.toMatch(/modo privado|modo só local/);
+  });
+
+  it('names nothing of ubiqX in the standalone wizard in English either', async () => {
+    setLocale('en');
+    resetNofap('off', 'shield');
+    renderPage();
+    await screen.findByTestId('wizard-step-1');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'It is for me, on my own computer' }));
+    const text: string[] = [screen.getByTestId('wizard-step-1').textContent ?? ''];
+    for (let s = 1; s < 5; s++) {
+      if (s === 3) for (const box of within(screen.getByTestId('wizard-step-3')).queryAllByRole('checkbox')) fireEvent.click(box);
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      text.push((await screen.findByTestId(`wizard-step-${s + 1}`)).textContent ?? '');
+    }
+    const all = text.join('\n');
+    expect(all).toContain('This app receives nothing.');
+    expect(all).toContain('Private-browsing windows are checked.');
+    expect(all).not.toMatch(NAMES_UBIQX);
+    expect(all).not.toMatch(/private mode|local-only/i);
   });
 });

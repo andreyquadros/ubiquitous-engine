@@ -3,7 +3,7 @@
 
 import { hasKey, type Locale, type Vars } from '../i18n';
 import { PANIC_CRISIS } from '../i18n/messages/nofap';
-import type { AiProvider, ConfigView, HelpResource, NofapCard, NofapStatus, PendingView, PlainTierState, PreviewKey, PreviewPlaceholder, SitesView } from './types';
+import type { AiProvider, ConfigView, HelpResource, NofapCard, NofapStatus, PendingView, PlainTierState, PreviewKey, PreviewPlaceholder, ProductId, SitesView } from './types';
 
 export type Translate = (key: string, vars?: Vars) => string;
 
@@ -36,6 +36,21 @@ export function providerName(provider: AiProvider, t: Translate): string {
  * terms that apply to the image are those of the vendor it sends the image on to.
  */
 export const consentKey = (provider: AiProvider): string => (provider === 'ubi' ? 'nofap.vision.consent_ubi' : 'nofap.vision.consent');
+
+/**
+ * A sentence of the module followed by the line that is true only in ubiqX (integrator decision 32), which the
+ * standalone app never shows: `vision.pause_note` after the consent, `helptab.ai.local_only` after the AI exit.
+ */
+export function withUbiqxLine(text: string, ubiqxKey: string, product: ProductId, t: Translate): string {
+  return product === 'ubiqx' ? `${text} ${t(ubiqxKey)}` : text;
+}
+
+/** The consent sentence as the page shows it in `product`. */
+export const consentText = (provider: AiProvider, name: string, product: ProductId, t: Translate): string =>
+  withUbiqxLine(t(consentKey(provider), { name, provider: providerName(provider, t) }), 'nofap.vision.pause_note', product, t);
+
+/** How the AI check stops at once, as the page shows it in `product`. */
+export const aiExitText = (product: ProductId, t: Translate): string => withUbiqxLine(t('nofap.helptab.ai.body'), 'nofap.helptab.ai.local_only', product, t);
 
 /** A waiting time in words: "10 minutos", "4 horas". Zero reads "sem espera", which fits a label and no sentence (`delayVariant`). */
 export function fmtDelay(secs: number, t: Translate): string {

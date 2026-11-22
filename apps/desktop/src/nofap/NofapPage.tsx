@@ -19,7 +19,7 @@ import { SystemPreview } from './components/SystemPreview';
 import { TierRow } from './components/TierRow';
 import { consentComplete, VisionConsent } from './components/VisionConsent';
 import { nofapIpc } from './ipc';
-import { fmtDelay, LAYERS, layersOn, providerName, quoted, reasonText } from './labels';
+import { aiExitText, fmtDelay, LAYERS, layersOn, providerName, quoted, reasonText } from './labels';
 import { NofapWizard, type NofapHost } from './NofapWizard';
 import { useNofapEvents, useNofapStore } from './store';
 import { HelpTab } from './tabs/HelpTab';
@@ -32,7 +32,7 @@ const TABS: NofapTab[] = ['protection', 'support', 'lists', 'help'];
 const isTab = (v: string | null): v is NofapTab => !!v && (TABS as string[]).includes(v);
 
 /** The dialogs of the page. The three `info:*` ones only explain an exit that lives outside the module. */
-export type NofapDialog = 'panic' | 'talk' | 'surf' | 'lapse' | 'apply' | 'remove' | 'restore_network' | 'erase' | 'reset' | 'off' | 'consent' | 'info:remove' | 'info:quit' | 'info:ai';
+export type NofapDialog = 'panic' | 'talk' | 'surf' | 'lapse' | 'apply' | 'remove' | 'restore_network' | 'erase' | 'reset' | 'restore_defaults' | 'off' | 'consent' | 'info:remove' | 'info:quit' | 'info:ai';
 
 const OVERALL_COLOR: Record<Overall, string> = { off: 'var(--ink-4)', protected: 'var(--signal)', reduced: 'var(--amber)', pending_off: 'var(--violet)', secondary: 'var(--volt)' };
 
@@ -275,7 +275,7 @@ export function NofapPage({ host }: { host?: NofapHost }) {
     }
   };
 
-  const onIssue = (action: IssueAction) => open(action === 'restore_network' ? 'restore_network' : action === 'apply' ? 'apply' : 'consent');
+  const onIssue = (action: IssueAction) => open(action === 'apply' || action === 'restore_network' || action === 'restore_defaults' ? action : 'consent');
 
   if (!view) {
     return (
@@ -393,6 +393,22 @@ export function NofapPage({ host }: { host?: NofapHost }) {
         <p className="text-sm leading-6 text-ink-2">{t(dialog === 'reset' ? 'nofap.data.reset_body' : 'nofap.data.erase_body', { name })}</p>
       </Dialog>
       <Dialog
+        open={dialog === 'restore_defaults'}
+        onClose={closeDialog}
+        title={t('nofap.btn.restore_defaults')}
+        width="sm"
+        footer={
+          <>
+            {cancelButton}
+            <Button variant="primary" loading={busy} onClick={() => void erase(nofapIpc.reset, t('nofap.config.restored'))} data-testid="nofap-restore-defaults-confirm">
+              {t('nofap.btn.restore_defaults')}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm leading-6 text-ink-2">{t('nofap.config.reset_body', { name })}</p>
+      </Dialog>
+      <Dialog
         open={dialog === 'off'}
         onClose={closeDialog}
         title={t('nofap.off.dialog_title', { name })}
@@ -425,7 +441,7 @@ export function NofapPage({ host }: { host?: NofapHost }) {
           </>
         }
       >
-        <VisionConsent provider={view.provider} name={name} consent={consent} onConsent={setConsent} managed={managed} onManaged={setManaged} />
+        <VisionConsent provider={view.provider} name={name} product={view.product} consent={consent} onConsent={setConsent} managed={managed} onManaged={setManaged} />
       </Dialog>
       {(['remove', 'quit', 'ai'] as const).map((topic) => (
         <Dialog
@@ -448,12 +464,34 @@ export function NofapPage({ host }: { host?: NofapHost }) {
           }
         >
           <p className="text-sm leading-6 text-ink-2" data-testid={`info-${topic}`}>
-            {t(`nofap.helptab.${topic}.body`)}
+            {topic === 'ai' ? aiExitText(view.product, t) : t(`nofap.helptab.${topic}.body`)}
           </p>
         </Dialog>
       ))}
     </>
   );
+
+  if (status.issues.includes('config_unreadable')) {
+    // The stored settings could not be read: one sentence and the way out. Nothing else of the page is offered,
+    // because every write would be refused until the defaults are restored (integrator decision 33).
+    return (
+      <div data-testid="page-nofap">
+        <PageHeader title={name} subtitle={t('nofap.page.subtitle')} actions={talkButton} />
+        <div className="mx-auto flex w-full max-w-[720px] flex-col gap-5">
+          <Card data-testid="nofap-unreadable">
+            <h2 className="display flex items-center gap-2.5 text-lg" data-testid="nofap-overall">
+              <span className="size-2.5 shrink-0 rounded-full" style={{ background: OVERALL_COLOR[status.overall] }} aria-hidden />
+              {t(`nofap.overall.${status.overall}`)}
+            </h2>
+            <div className="mt-3">
+              <IssueList issues={status.issues.filter((issue) => issue === 'config_unreadable')} onAction={onIssue} />
+            </div>
+          </Card>
+        </div>
+        {dialogs}
+      </div>
+    );
+  }
 
   if (!view.config.enabled) {
     const left = [status.hosts, status.resolver, status.policies].some(leftOnSystem);

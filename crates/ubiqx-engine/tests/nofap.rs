@@ -3425,6 +3425,8 @@ struct Flaky {
     fail_lists: AtomicBool,
     fail_counters: AtomicBool,
     saves: AtomicUsize,
+    /// Reads of the stored configuration, failed ones included.
+    loads: AtomicUsize,
     calls: AtomicUsize,
 }
 
@@ -3441,6 +3443,7 @@ impl Flaky {
 impl NofapRepo for Flaky {
     fn load_config(&self) -> CoreResult<NofapConfig> {
         self.called();
+        self.loads.fetch_add(1, Ordering::SeqCst);
         if self.unreadable.load(Ordering::SeqCst) {
             return Err(CoreError::Storage("line 1 column 9".into()));
         }
@@ -5284,36 +5287,41 @@ fn with_the_module_off_no_port_is_called() {
         idle_secs: Some(0.0),
         window_id: Some(7),
     };
-    let everything_a_host_calls_by_itself = |service: &NofapService, repo: &Flaky| {
-        let stored = repo.calls();
-        for _ in 0..3 {
-            let outcome = service.guard_pass().unwrap();
-            assert!(!outcome.hit && outcome.job.is_none());
-        }
-        service.verify_pass().unwrap();
-        service.verify_pass_after(Duration::from_secs(120)).unwrap();
-        assert!(!service.redacts(&sample));
-        assert!(!service.capture_veto(CHROME, Some(listed()), TAB_TITLE));
-        assert!(!service.covers_open_block(CHROME, Some(&url_of(listed()))));
-        assert!(!service.enabled());
-        service.status();
-        service.on_quit();
-        service.release_primary();
-        assert_eq!(repo.calls(), stored, "the database was asked");
-    };
+    // `rereads`: the reads of the stored configuration the two verify passes may make (one
+    // each while it cannot be read, integrator decision 33); nothing else is asked.
+    let everything_a_host_calls_by_itself =
+        |service: &NofapService, repo: &Flaky, rereads: usize| {
+            let stored = repo.calls();
+            let loads = repo.loads.load(Ordering::SeqCst);
+            for _ in 0..3 {
+                let outcome = service.guard_pass().unwrap();
+                assert!(!outcome.hit && outcome.job.is_none());
+            }
+            service.verify_pass().unwrap();
+            service.verify_pass_after(Duration::from_secs(120)).unwrap();
+            assert!(!service.redacts(&sample));
+            assert!(!service.capture_veto(CHROME, Some(listed()), TAB_TITLE));
+            assert!(!service.covers_open_block(CHROME, Some(&url_of(listed()))));
+            assert!(!service.enabled());
+            service.status();
+            service.on_quit();
+            service.release_primary();
+            assert_eq!(repo.calls(), stored + rereads, "the database was asked");
+            assert_eq!(repo.loads.load(Ordering::SeqCst), loads + rereads);
+        };
 
     // Never enabled.
     let repo = Arc::new(Flaky::default());
     let service = untouchable(repo.clone());
     assert_eq!(service.status(), NofapStatus::off());
-    everything_a_host_calls_by_itself(&service, &repo);
+    everything_a_host_calls_by_itself(&service, &repo, 0);
 
     // A stored configuration that cannot be read: nothing is assumed, nothing is touched.
     let repo = Arc::new(Flaky::default());
     repo.unreadable.store(true, Ordering::SeqCst);
     let service = untouchable(repo.clone());
     assert_eq!(service.status().overall, Overall::Reduced);
-    everything_a_host_calls_by_itself(&service, &repo);
+    everything_a_host_calls_by_itself(&service, &repo, 2);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -5386,6 +5394,139 @@ async fn d10_the_ways_out_of_an_unreadable_configuration() {
     assert!(r.service.enable(standalone_options()).is_err());
     assert_eq!(r.service.status().overall, Overall::Reduced);
     assert!(!r.service.enabled());
+}
+
+/// The issue of an unreadable configuration, and nothing else, in a status.
+fn says_unreadable(status: &NofapStatus) -> bool {
+    status.overall == Overall::Reduced && status.issues == vec![Issue::ConfigUnreadable]
+}
+
+/// A repository holding a module that was switched on, whose stored configuration then
+/// cannot be read.
+fn stored_on_then_unreadable() -> Arc<Flaky> {
+    let repo = Arc::new(Flaky::default());
+    {
+        let before = rig(RigSetup {
+            repo: repo.clone(),
+            ..RigSetup::default()
+        });
+        before.service.enable(standalone_options()).unwrap();
+    }
+    repo.unreadable.store(true, Ordering::SeqCst);
+    repo
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn d33_an_unreadable_configuration_is_its_own_issue_until_a_reset_replaces_it() {
+    let repo = stored_on_then_unreadable();
+    let r = rig(RigSetup {
+        repo: repo.clone(),
+        ..RigSetup::default()
+    });
+    // The status and the page's view say why protection is reduced.
+    assert!(
+        says_unreadable(&r.service.status()),
+        "{:?}",
+        r.service.status()
+    );
+    let view = r.service.view().unwrap();
+    assert!(says_unreadable(&view.status));
+    // Not a module nobody enabled: the defaults in memory are not presented as off.
+    assert_ne!(view.status, NofapStatus::off());
+    // Passes do not take it away while the row still cannot be read.
+    r.browse(listed());
+    r.pass();
+    r.pass();
+    r.service.verify_pass().unwrap();
+    assert!(says_unreadable(&r.service.status()));
+
+    // "Restaurar padrões": the reset stores a fresh configuration and the issue is gone,
+    // in the status and in the event the page listens to.
+    r.sink.0.lock().clear();
+    r.service.reset().unwrap();
+    assert_eq!(r.service.status(), NofapStatus::off());
+    assert!(r.service.view().unwrap().status.issues.is_empty());
+    let statuses: Vec<NofapStatus> = r
+        .sink
+        .0
+        .lock()
+        .iter()
+        .filter_map(|event| match event {
+            NofapEvent::Status { status } => Some(status.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(statuses.last(), Some(&NofapStatus::off()), "{statuses:?}");
+    // What is stored now is the default, and later passes keep it so.
+    repo.unreadable.store(false, Ordering::SeqCst);
+    r.service.verify_pass().unwrap();
+    assert_eq!(repo.inner.load_config().unwrap(), NofapConfig::default());
+    assert!(!r.service.enabled());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn d33_a_read_that_works_later_replaces_the_defaults_and_ends_the_issue() {
+    let repo = stored_on_then_unreadable();
+    let r = rig(RigSetup {
+        repo: repo.clone(),
+        ..RigSetup::default()
+    });
+    assert!(says_unreadable(&r.service.status()));
+    r.browse(listed());
+    r.pass();
+    assert!(!r.pass().hit, "nothing is assumed while it cannot be read");
+
+    // Each verify pass reads it again: still failing, the issue stays and nothing is
+    // written over the stored row.
+    let loads = repo.loads.load(Ordering::SeqCst);
+    let saves = repo.saves.load(Ordering::SeqCst);
+    r.service.verify_pass().unwrap();
+    assert_eq!(repo.loads.load(Ordering::SeqCst), loads + 1);
+    assert!(says_unreadable(&r.service.status()));
+    assert_eq!(repo.saves.load(Ordering::SeqCst), saves);
+
+    // The row can be read again (a database that was locked at the start): the next
+    // verify pass takes the stored configuration, the issue goes and the guard enforces.
+    repo.unreadable.store(false, Ordering::SeqCst);
+    r.sink.0.lock().clear();
+    r.service.verify_pass().unwrap();
+    assert!(r.service.enabled());
+    let status = r.service.status();
+    assert!(
+        !status.issues.contains(&Issue::ConfigUnreadable),
+        "{status:?}"
+    );
+    assert_ne!(status.overall, Overall::Off);
+    assert!(r.sink.0.lock().iter().any(|event| matches!(
+        event,
+        NofapEvent::Status { status } if !status.issues.contains(&Issue::ConfigUnreadable)
+    )));
+    r.pass();
+    assert!(r.pass().hit, "the stored configuration is in force");
+    // Once read, it is not read again by later passes.
+    let loads = repo.loads.load(Ordering::SeqCst);
+    r.service.verify_pass().unwrap();
+    assert_eq!(repo.loads.load(Ordering::SeqCst), loads);
+    // Writes are accepted again: the configuration is the person's own.
+    assert!(r
+        .service
+        .request(NofapChange::SetValues {
+            text: "pela minha saúde".into(),
+        })
+        .is_ok());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn d33_the_wizard_also_ends_the_issue() {
+    let repo = stored_on_then_unreadable();
+    let r = rig(RigSetup {
+        repo,
+        ..RigSetup::default()
+    });
+    assert!(says_unreadable(&r.service.status()));
+    let view = r.service.enable(standalone_options()).unwrap();
+    assert!(!view.status.issues.contains(&Issue::ConfigUnreadable));
+    assert!(!r.service.status().issues.contains(&Issue::ConfigUnreadable));
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -4,18 +4,20 @@ import { useT } from '../../i18n';
 import type { Issue } from '../types';
 
 /** What the one button of an issue does; most issues are information only. */
-export type IssueAction = 'restore_network' | 'apply' | 'consent';
+export type IssueAction = 'restore_network' | 'apply' | 'consent' | 'restore_defaults';
 
 const ACTIONS: Partial<Record<Issue, IssueAction>> = {
   resolver_unreachable: 'restore_network',
   new_connection_unfiltered: 'apply',
   consent_outdated: 'consent',
+  config_unreadable: 'restore_defaults',
 };
 
 const ACTION_LABEL: Record<IssueAction, string> = {
   restore_network: 'nofap.btn.restore_network',
   apply: 'nofap.btn.apply_again',
   consent: 'nofap.btn.review_consent',
+  restore_defaults: 'nofap.btn.restore_defaults',
 };
 
 /** Two issues reuse a sentence of the copy bank; the others have their own. */

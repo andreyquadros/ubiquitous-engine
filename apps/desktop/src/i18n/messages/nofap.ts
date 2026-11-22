@@ -8,6 +8,9 @@ import type { Locale, NamespaceMessages } from '../types';
 // character (`nofap/copy.test.ts` compares every string with that section). "Interface" is the short labels the
 // module's screens need. Both obey the tone rules of section 5.1, which tests enforce: no forbidden word, no claim,
 // no host or title on a card.
+//
+// Both products show these strings (integrator decision 32). A sentence that is true in only one of them names
+// nothing of ubiqX unless it is in `UBIQX_ONLY` below, and those are shown only where ubiqX alone can reach them.
 const messages = {
   'pt-BR': {
     // Copy bank (design 5.6)
@@ -55,13 +58,14 @@ const messages = {
     'wizard.what': 'O {name} bloqueia sites de pornografia neste computador e te acompanha quando a vontade aperta. É uma barreira e um apoio, não um tratamento.',
     'wizard.limits': 'Ele dificulta, não tranca. Quem tem a senha de administrador consegue desfazer tudo, e ele não alcança o celular nem outra rede.',
     'wizard.adult': 'É para uma pessoa adulta usar no próprio computador. Não serve para vigiar outra pessoa, e não manda relatório nem aviso para ninguém.',
-    'dns.disclosure': 'Com esta opção, todos os nomes de sites que este computador consultar passam pela Cloudflare (1.1.1.3), no lugar do seu provedor de internet. É a Cloudflare que decide o que barrar: sites adultos e sites que ela considera perigosos. O ubiqX não recebe nada. Se preferir, escolha "só a lista neste computador".',
+    'dns.disclosure': 'Com esta opção, todos os nomes de sites que este computador consultar passam pela Cloudflare (1.1.1.3), no lugar do seu provedor de internet. É a Cloudflare que decide o que barrar: sites adultos e sites que ela considera perigosos. Este app não recebe nada. Se preferir, escolha "só a lista neste computador".',
     'dns.previous': 'Seu DNS atual ({servers}) será substituído. Ao desligar, o DNS volta ao automático.',
     'hosts.readable': 'Os sites que você adiciona entram na lista do sistema, que outras contas deste computador conseguem ler.',
     'policies.disclosure': 'Os navegadores vão mostrar "Gerenciado pela sua organização". O DNS próprio do navegador é desligado para que os bloqueios valham.',
     'system.prompt_next': 'O sistema vai pedir sua senha de administrador para aplicar isso.',
     'system.gated': 'Em verificação neste sistema. Por enquanto valem o bloqueio no app e a verificação por IA.',
-    'vision.consent': 'Quando você abre um site ou vídeo que as listas não conhecem, o {name} tira uma foto reduzida só dessa janela e pergunta a {provider} se há pornografia nela. A resposta é uma palavra. A foto não é gravada neste computador. {provider} recebe a imagem, aplica as regras dele ao que recebe e guarda pelo prazo que os termos dele definem. Sites conhecidos de bancos, e-mail e documentos, endereços da sua rede local e os sites da sua lista "nunca bloquear" não são fotografados. Janelas anônimas são verificadas. Pausar o ubiqX ou usar o modo privado não pausa esta verificação.',
+    'vision.consent': 'Quando você abre um site ou vídeo que as listas não conhecem, o {name} tira uma foto reduzida só dessa janela e pergunta a {provider} se há pornografia nela. A resposta é uma palavra. A foto não é gravada neste computador. {provider} recebe a imagem, aplica as regras dele ao que recebe e guarda pelo prazo que os termos dele definem. Sites conhecidos de bancos, e-mail e documentos, endereços da sua rede local e os sites da sua lista "nunca bloquear" não são fotografados. Janelas anônimas são verificadas.',
+    'vision.pause_note': 'Pausar o ubiqX ou usar o modo privado não pausa esta verificação.',
     'vision.managed': 'As imagens da verificação passam pelo servidor do ubiqX a caminho da Anthropic. O servidor não guarda imagens. Ele registra que uma verificação foi feita (hora e custo), não o que havia na tela.',
     'vision.cost': 'Cada verificação custa cerca de US$ 0,001. Limite: {per_day} por dia e US$ {cap} por mês.',
     'vision.today': 'Hoje: {n} verificações. Cada uma envia uma imagem reduzida da janela ativa para {provider}. Nada é guardado neste computador.',
@@ -89,7 +93,7 @@ const messages = {
     'provider.ubi': 'IA do Ubi',
     // `vision.consent` with the managed provider: "IA do Ubi" is feminine and takes an article, and the image goes on
     // to Anthropic, whose rules and terms are the ones that apply. Everything else is the copy-bank sentence.
-    'vision.consent_ubi': 'Quando você abre um site ou vídeo que as listas não conhecem, o {name} tira uma foto reduzida só dessa janela e pergunta à {provider} se há pornografia nela. A resposta é uma palavra. A foto não é gravada neste computador. A {provider} envia a imagem à Anthropic, que aplica as próprias regras ao que recebe e guarda pelo prazo que os termos dela definem. Sites conhecidos de bancos, e-mail e documentos, endereços da sua rede local e os sites da sua lista "nunca bloquear" não são fotografados. Janelas anônimas são verificadas. Pausar o ubiqX ou usar o modo privado não pausa esta verificação.',
+    'vision.consent_ubi': 'Quando você abre um site ou vídeo que as listas não conhecem, o {name} tira uma foto reduzida só dessa janela e pergunta à {provider} se há pornografia nela. A resposta é uma palavra. A foto não é gravada neste computador. A {provider} envia a imagem à Anthropic, que aplica as próprias regras ao que recebe e guarda pelo prazo que os termos dela definem. Sites conhecidos de bancos, e-mail e documentos, endereços da sua rede local e os sites da sua lista "nunca bloquear" não são fotografados. Janelas anônimas são verificadas.',
     'overall.off': 'Desligado',
     'overall.protected': 'Proteção ativa',
     'overall.reduced': 'Proteção parcial',
@@ -176,6 +180,7 @@ const messages = {
     'issue.vision_cap_reached': 'O limite de verificações de hoje foi atingido.',
     'issue.vision_no_provider': 'A verificação por IA está sem provedor. As listas e o DNS seguem valendo.',
     'issue.consent_outdated': 'O provedor de IA mudou. A verificação fica em pausa até você confirmar o novo.',
+    'issue.config_unreadable': 'Não consegui ler as configurações salvas: o que já estava aplicado no sistema continua valendo, e o bloqueio no app e a verificação por IA ficam parados até você restaurar os padrões.',
     'btn.ok': 'Ok',
     'btn.support': 'Abrir apoio',
     'btn.surf': 'Respirar 3 min',
@@ -208,6 +213,7 @@ const messages = {
     'btn.remove_system': 'Remover do sistema',
     'btn.review_consent': 'Rever e confirmar',
     'btn.open_settings': 'Abrir configurações',
+    'btn.restore_defaults': 'Restaurar padrões',
     'pending.title': 'Pedido em espera',
     'pending.kind.disable': 'Desligar o {name}',
     'pending.kind.add_block': 'Barrar um site',
@@ -395,7 +401,8 @@ const messages = {
     'helptab.data.title': 'Seus dados',
     'helptab.data.body': 'Ficam guardados: contagens por dia e hora, os sites que você digitou, sua frase e seus planos. De um site aprendido pela verificação por IA fica só um código, sem o nome. Nenhum histórico de sites visitados, nenhuma imagem.',
     'helptab.ai.title': 'IA e privacidade',
-    'helptab.ai.body': 'O modo só local e a remoção da chave de IA param a verificação na hora, sem espera. Ficam nas configurações do app.',
+    'helptab.ai.body': 'Remover a chave de IA nas configurações do app para a verificação na hora, sem espera.',
+    'helptab.ai.local_only': 'O modo só local, também nas configurações, faz o mesmo.',
     'data.export': 'Exportar dados',
     'data.exported': 'Exportado em {path}',
     'data.erase': 'Apagar meu histórico do {name}',
@@ -405,6 +412,8 @@ const messages = {
     'data.reset_body': 'Apaga listas, frase, planos e contagens. Só fica disponível com o {name} desligado.',
     'data.reset_note': '"Apagar tudo" (listas, frase, planos e contagens) só aparece com o {name} desligado.',
     'data.reset_done': 'Tudo apagado.',
+    'config.reset_body': 'Volta tudo ao começo, com o {name} desligado: apaga as configurações, as suas listas, a sua frase, os seus planos e as contagens. O que está aplicado no sistema fica como está, e você configura o {name} de novo em seguida.',
+    'config.restored': 'Padrões restaurados.',
     'data.test_card': 'Ver um aviso de exemplo',
     'exits.title': 'Saídas que não esperam',
     'exits.subtitle': 'Nada disto passa pelo tempo de espera.',
@@ -485,13 +494,14 @@ const messages = {
     'wizard.what': '{name} blocks pornography sites on this computer and keeps you company when the urge gets strong. It is a barrier and a support, not a treatment.',
     'wizard.limits': 'It adds friction; it does not lock. Anyone with the administrator password can undo all of it, and it does not reach a phone or another network.',
     'wizard.adult': 'It is for an adult to use on their own computer. It is not for watching someone else, and it sends no report or alert to anyone.',
-    'dns.disclosure': 'With this option, every site name this computer looks up goes through Cloudflare (1.1.1.3) instead of your internet provider. Cloudflare decides what to stop: adult sites and sites it considers dangerous. ubiqX receives nothing. If you prefer, choose "only the list on this computer".',
+    'dns.disclosure': 'With this option, every site name this computer looks up goes through Cloudflare (1.1.1.3) instead of your internet provider. Cloudflare decides what to stop: adult sites and sites it considers dangerous. This app receives nothing. If you prefer, choose "only the list on this computer".',
     'dns.previous': 'Your current DNS ({servers}) will be replaced. When you turn this off, DNS goes back to automatic.',
     'hosts.readable': 'Sites you add go into the system list, which other accounts on this computer can read.',
     'policies.disclosure': 'Browsers will show "Managed by your organization". The browser\'s own DNS is switched off so that the blocks apply.',
     'system.prompt_next': 'The system will ask for your administrator password to apply this.',
     'system.gated': 'Being verified on this system. For now the in-app block and the AI check apply.',
-    'vision.consent': 'When you open a site or video the lists do not know, {name} takes a reduced picture of that window only and asks {provider} whether it shows pornography. The answer is one word. The picture is not saved on this computer. {provider} receives the image, applies its own rules to what it receives and keeps it for the period its terms state. Well-known bank, e-mail and document sites, addresses on your local network and the sites on your "never block" list are not pictured. Private-browsing windows are checked. Pausing ubiqX or using private mode does not pause this check.',
+    'vision.consent': 'When you open a site or video the lists do not know, {name} takes a reduced picture of that window only and asks {provider} whether it shows pornography. The answer is one word. The picture is not saved on this computer. {provider} receives the image, applies its own rules to what it receives and keeps it for the period its terms state. Well-known bank, e-mail and document sites, addresses on your local network and the sites on your "never block" list are not pictured. Private-browsing windows are checked.',
+    'vision.pause_note': 'Pausing ubiqX or using private mode does not pause this check.',
     'vision.managed': 'Check images pass through the ubiqX server on their way to Anthropic. The server keeps no images. It records that a check was made (time and cost), not what was on screen.',
     'vision.cost': 'Each check costs about US$ 0.001. Limit: {per_day} a day and US$ {cap} a month.',
     'vision.today': 'Today: {n} checks. Each sends a reduced image of the active window to {provider}. Nothing is kept on this computer.',
@@ -517,7 +527,7 @@ const messages = {
     'page.today_other': 'Today, {count} pages stopped.',
     'error.title': 'That didn\'t work',
     'provider.ubi': 'Ubi AI',
-    'vision.consent_ubi': 'When you open a site or video the lists do not know, {name} takes a reduced picture of that window only and asks {provider} whether it shows pornography. The answer is one word. The picture is not saved on this computer. {provider} sends the image on to Anthropic, which applies its own rules to what it receives and keeps it for the period its terms state. Well-known bank, e-mail and document sites, addresses on your local network and the sites on your "never block" list are not pictured. Private-browsing windows are checked. Pausing ubiqX or using private mode does not pause this check.',
+    'vision.consent_ubi': 'When you open a site or video the lists do not know, {name} takes a reduced picture of that window only and asks {provider} whether it shows pornography. The answer is one word. The picture is not saved on this computer. {provider} sends the image on to Anthropic, which applies its own rules to what it receives and keeps it for the period its terms state. Well-known bank, e-mail and document sites, addresses on your local network and the sites on your "never block" list are not pictured. Private-browsing windows are checked.',
     'overall.off': 'Off',
     'overall.protected': 'Protection on',
     'overall.reduced': 'Partial protection',
@@ -604,6 +614,7 @@ const messages = {
     'issue.vision_cap_reached': 'Today\'s limit of checks was reached.',
     'issue.vision_no_provider': 'The AI check has no provider. The lists and DNS still apply.',
     'issue.consent_outdated': 'The AI provider changed. The check is paused until you confirm the new one.',
+    'issue.config_unreadable': 'I couldn\'t read the saved settings: what was already applied to the system still holds, and the in-app block and the AI check stay off until you restore the defaults.',
     'btn.ok': 'OK',
     'btn.support': 'Open support',
     'btn.surf': 'Breathe for 3 min',
@@ -636,6 +647,7 @@ const messages = {
     'btn.remove_system': 'Remove from the system',
     'btn.review_consent': 'Review and confirm',
     'btn.open_settings': 'Open settings',
+    'btn.restore_defaults': 'Restore defaults',
     'pending.title': 'Request waiting',
     'pending.kind.disable': 'Turn {name} off',
     'pending.kind.add_block': 'Stop a site',
@@ -823,7 +835,8 @@ const messages = {
     'helptab.data.title': 'Your data',
     'helptab.data.body': 'Stored: counts per day and hour, the sites you typed, your sentence and your plans. Of a site the AI check learned, only a code is kept, without its name. No history of visited sites, no image.',
     'helptab.ai.title': 'AI and privacy',
-    'helptab.ai.body': 'Local-only mode and removing the AI key stop the check at once, with no wait. They are in the app\'s settings.',
+    'helptab.ai.body': 'Removing the AI key in the app\'s settings stops the check at once, with no wait.',
+    'helptab.ai.local_only': 'Local-only mode, also in the settings, does the same.',
     'data.export': 'Export data',
     'data.exported': 'Exported to {path}',
     'data.erase': 'Erase my {name} history',
@@ -833,6 +846,8 @@ const messages = {
     'data.reset_body': 'Erases lists, sentence, plans and counts. Available only while {name} is off.',
     'data.reset_note': '"Erase everything" (lists, sentence, plans and counts) is offered only while {name} is off.',
     'data.reset_done': 'Everything erased.',
+    'config.reset_body': 'Starts everything over with {name} off: erases the settings, your lists, your sentence, your plans and the counts. What is applied to the system stays as it is, and you set {name} up again right after.',
+    'config.restored': 'Defaults restored.',
     'data.test_card': 'Show a sample notice',
     'exits.title': 'Exits that never wait',
     'exits.subtitle': 'None of these goes through the waiting time.',
@@ -880,4 +895,19 @@ export default messages;
 export const PANIC_CRISIS: Record<Locale, string> = {
   'pt-BR': 'Se o que você sente é maior do que vontade (desespero, ou pensamentos de se machucar), ligue {crisis_phone}. É o {crisis_name}: grátis, 24 horas. Também há chat em {crisis_chat}. Em emergência, ligue {emergency_phone}.',
   en: 'If what you feel is bigger than an urge (despair, or thoughts of hurting yourself), please reach a crisis line now. In Brazil, call {crisis_phone} ({crisis_name}, free, 24 hours). Elsewhere, see {intl_directory}. In an emergency, call your local emergency number.',
+};
+
+/**
+ * The strings of this namespace that speak of ubiqX, its pause or its local mode (integrator decision 32), and what
+ * keeps each of them out of the standalone app: `product`, the page adds it only when `view.product` is `ubiqx`;
+ * `managed`, it belongs to the managed provider ("IA do Ubi"), which only ubiqX offers; `local_only`, it names a
+ * state that only ubiqX's settings can produce. `nofap/copy.test.ts` holds every other string to product-neutral
+ * words.
+ */
+export const UBIQX_ONLY: Record<string, 'product' | 'managed' | 'local_only'> = {
+  'vision.pause_note': 'product',
+  'helptab.ai.local_only': 'product',
+  'vision.managed': 'managed',
+  'vision.managed_tick': 'managed',
+  'vision.off.local_only': 'local_only',
 };

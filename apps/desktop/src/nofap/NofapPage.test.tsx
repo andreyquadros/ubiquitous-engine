@@ -6,7 +6,7 @@ import { VisionCaps } from './components/VisionCaps';
 import { nofapIpc } from './ipc';
 import { ProgressCard } from './components/ProgressCard';
 import { __nofapMock } from './mock';
-import { translate } from '../i18n';
+import { setLocale, translate } from '../i18n';
 import { waitingSwitches } from './labels';
 import { useNofapStore } from './store';
 import { calls, READS, renderPage, resetNofap } from './testing';
@@ -489,7 +489,7 @@ describe('exits that never wait (design 6.3): at most two clicks from the main p
     const openSettings = vi.fn();
     renderPage({ openSettings });
     fireEvent.click(await screen.findByTestId('exit-info:ai')); // 1
-    expect(await screen.findByTestId('info-ai')).toHaveTextContent('param a verificação na hora, sem espera');
+    expect(await screen.findByTestId('info-ai')).toHaveTextContent('Remover a chave de IA nas configurações do app para a verificação na hora, sem espera.');
     fireEvent.click(screen.getByTestId('nofap-open-settings')); // 2
     expect(openSettings).toHaveBeenCalledTimes(1);
   });
@@ -678,5 +678,121 @@ describe('lists', () => {
     fireEvent.click(within(blocked).getByRole('button', { name: 'Barrar site' }));
     expect(within(blocked).getByRole('alert')).toHaveTextContent('Digite um endereço como exemplo.com.');
     expect(calls('request')).toEqual([]);
+  });
+});
+
+describe('the stored settings could not be read (integrator decision 33)', () => {
+  beforeEach(() => resetNofap('unreadable'));
+
+  const SENTENCE_PT = 'Não consegui ler as configurações salvas: o que já estava aplicado no sistema continua valendo, e o bloqueio no app e a verificação por IA ficam parados até você restaurar os padrões.';
+  const SENTENCE_EN = 'I couldn\'t read the saved settings: what was already applied to the system still holds, and the in-app block and the AI check stay off until you restore the defaults.';
+
+  it('says so in one calm sentence, with "Restaurar padrões" as its one action, and offers nothing that would be refused', async () => {
+    renderPage();
+    const card = await screen.findByTestId('nofap-unreadable');
+    expect(screen.getByTestId('nofap-overall')).toHaveTextContent('Proteção parcial');
+    const issue = within(card).getByTestId('issue-config_unreadable');
+    expect(issue).toHaveTextContent(SENTENCE_PT);
+    expect(within(card).getAllByRole('button').map((b) => b.textContent)).toEqual(['Restaurar padrões']);
+    // Not the wizard of a module nobody enabled, and not the page of a module that is on.
+    expect(screen.queryByTestId('wizard-step-1')).toBeNull();
+    expect(screen.queryByTestId('nofap-status')).toBeNull();
+    // A person to talk to stays one step away.
+    expect(screen.getByTestId('nofap-talk')).toBeInTheDocument();
+    expect(writes()).toEqual([]);
+  });
+
+  it('says it in English too', async () => {
+    setLocale('en');
+    renderPage();
+    const issue = await screen.findByTestId('issue-config_unreadable');
+    expect(issue).toHaveTextContent(SENTENCE_EN);
+    expect(within(issue).getByRole('button')).toHaveTextContent('Restore defaults');
+    fireEvent.click(within(issue).getByRole('button'));
+    const dialog = await screen.findByRole('dialog', { name: 'Restore defaults' });
+    expect(dialog).toHaveTextContent('Starts everything over with NoFap off: erases the settings, your lists, your sentence, your plans and the counts. What is applied to the system stays as it is, and you set NoFap up again right after.');
+  });
+
+  it('"Restaurar padrões" says what it erases before the reset, and then the set-up starts again', async () => {
+    renderPage();
+    fireEvent.click(within(await screen.findByTestId('issue-config_unreadable')).getByRole('button', { name: 'Restaurar padrões' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Restaurar padrões' });
+    expect(dialog).toHaveTextContent('Volta tudo ao começo, com o NoFap desligado: apaga as configurações, as suas listas, a sua frase, os seus planos e as contagens. O que está aplicado no sistema fica como está, e você configura o NoFap de novo em seguida.');
+    // Nothing happens before the confirmation.
+    expect(writes()).toEqual([]);
+    fireEvent.click(within(dialog).getByTestId('nofap-restore-defaults-confirm'));
+    await waitFor(() => expect(writes()).toEqual([{ cmd: 'reset' }]));
+    expect(await screen.findByTestId('wizard-step-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('nofap-unreadable')).toBeNull();
+    expect(__nofapMock.state().unreadable).toBe(false);
+  });
+
+  it('cancelling the dialog changes nothing', async () => {
+    renderPage();
+    fireEvent.click(within(await screen.findByTestId('issue-config_unreadable')).getByRole('button', { name: 'Restaurar padrões' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Restaurar padrões' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(writes()).toEqual([]);
+    expect(screen.getByTestId('issue-config_unreadable')).toBeInTheDocument();
+  });
+
+  it('reads the settings again when the engine could read them after all, even with the same overall state', async () => {
+    renderPage();
+    await screen.findByTestId('nofap-unreadable');
+    // The engine's verify pass read the stored row: a module that is on, with a tier not in place ("reduced" both
+    // before and after). The status event alone carries no configuration, so the page has to ask for it.
+    __nofapMock.reset('reduced');
+    act(() => __nofapMock.setStatus(null));
+    expect(await screen.findByTestId('nofap-status')).toBeInTheDocument();
+    expect(screen.getByTestId('nofap-overall')).toHaveTextContent('Proteção parcial');
+    expect(screen.queryByTestId('nofap-unreadable')).toBeNull();
+    expect(screen.queryByTestId('wizard-step-1')).toBeNull();
+  });
+
+  it('the mock refuses what the engine refuses while the settings cannot be read', async () => {
+    await expect(nofapIpc.request({ kind: 'set_values', text: 'x' })).rejects.toThrow(/cannot be read/);
+    await expect(nofapIpc.export()).rejects.toThrow(/cannot be read/);
+    await expect(nofapIpc.systemApply()).rejects.toThrow(/cannot be read/);
+    await expect(nofapIpc.consentVision({ provider: 'anthropic', managed: false })).rejects.toThrow(/cannot be read/);
+  });
+});
+
+describe('the two products (integrator decision 32)', () => {
+  it('says how the AI check stops at once in words true in both, and adds local-only mode only in ubiqX', async () => {
+    resetNofap('on');
+    const { unmount } = renderPage();
+    await openTab('Ajuda');
+    const ai = await screen.findByTestId('help-ai');
+    expect(ai).toHaveTextContent('Remover a chave de IA nas configurações do app para a verificação na hora, sem espera. O modo só local, também nas configurações, faz o mesmo.');
+    unmount();
+
+    resetNofap('on', 'shield');
+    renderPage();
+    await openTab('Ajuda');
+    const standalone = await screen.findByTestId('help-ai');
+    expect(standalone).toHaveTextContent('Remover a chave de IA nas configurações do app para a verificação na hora, sem espera.');
+    expect(standalone).not.toHaveTextContent('modo só local');
+    fireEvent.click(screen.getByTestId('exit-info:ai'));
+    expect(await screen.findByTestId('info-ai')).not.toHaveTextContent('modo só local');
+  });
+
+  it('shows the line about pausing ubiqX in the consent dialog of ubiqX only, in both languages', async () => {
+    for (const [locale, line] of [
+      ['pt-BR', 'Pausar o ubiqX ou usar o modo privado não pausa esta verificação.'],
+      ['en', 'Pausing ubiqX or using private mode does not pause this check.'],
+    ] as const) {
+      for (const product of ['ubiqx', 'shield'] as const) {
+        resetNofap('on', product);
+        __nofapMock.setAi('openai');
+        setLocale(locale);
+        const { unmount } = renderPage();
+        fireEvent.click(within(await screen.findByTestId('issue-list')).getByRole('button'));
+        const consent = await screen.findByTestId('vision-consent');
+        if (product === 'ubiqx') expect(consent, `${locale} ${product}`).toHaveTextContent(line);
+        else expect(consent.textContent, `${locale} ${product}`).not.toMatch(/ubiqx/i);
+        unmount();
+      }
+    }
   });
 });

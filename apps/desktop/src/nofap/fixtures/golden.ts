@@ -1219,6 +1219,31 @@ export const views = {
       ],
       "hosts_waiting": 0,
       "extras_left_out": 0
+    },
+    {
+      "overall": "pending_off",
+      "guard": {
+        "state": "off"
+      },
+      "hosts": {
+        "state": "missing"
+      },
+      "resolver": {
+        "state": "unsupported",
+        "reason": "write_refused"
+      },
+      "policies": {
+        "state": "applied"
+      },
+      "vision": {
+        "state": "on"
+      },
+      "issues": [
+        "config_unreadable"
+      ],
+      "pending": [],
+      "hosts_waiting": 1,
+      "extras_left_out": 1
     }
   ],
   "preview_lines": [
@@ -1318,7 +1343,8 @@ export const views = {
       "vision_cap_reached",
       "vision_no_provider",
       "consent_outdated",
-      "other_product_primary"
+      "other_product_primary",
+      "config_unreadable"
     ],
     "change_kind": [
       "disable",

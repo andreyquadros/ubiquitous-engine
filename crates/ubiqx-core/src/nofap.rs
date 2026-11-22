@@ -758,10 +758,14 @@ pub enum Issue {
     ConsentOutdated,
     /// The other product on this machine runs the passes.
     OtherProductPrimary,
+    /// The stored configuration could not be read. The service assumes nothing about it
+    /// and refuses every write until a reset or a successful read replaces it
+    /// (integrator decisions 10 and 33).
+    ConfigUnreadable,
 }
 
 impl Issue {
-    pub const ALL: [Issue; 13] = [
+    pub const ALL: [Issue; 14] = [
         Issue::HostsNotHonoured,
         Issue::DnsBypassSuspected,
         Issue::ResolverUnreachable,
@@ -775,6 +779,7 @@ impl Issue {
         Issue::VisionNoProvider,
         Issue::ConsentOutdated,
         Issue::OtherProductPrimary,
+        Issue::ConfigUnreadable,
     ];
 }
 
@@ -1965,6 +1970,19 @@ mod tests {
     }
 
     #[test]
+    fn the_unreadable_configuration_has_its_own_issue() {
+        assert_eq!(
+            serde_json::to_value(Issue::ConfigUnreadable).unwrap(),
+            json!("config_unreadable")
+        );
+        assert_eq!(
+            serde_json::from_value::<Issue>(json!("config_unreadable")).unwrap(),
+            Issue::ConfigUnreadable
+        );
+        assert!(Issue::ALL.contains(&Issue::ConfigUnreadable));
+    }
+
+    #[test]
     fn tagged_states_have_the_documented_wire_form() {
         assert_eq!(
             serde_json::to_value(TierState::Applied).unwrap(),
@@ -2238,6 +2256,7 @@ mod tests {
             VisionNoProvider,
             ConsentOutdated,
             OtherProductPrimary,
+            ConfigUnreadable,
         );
         assert_all_listed!(
             CardKind: Blocked,

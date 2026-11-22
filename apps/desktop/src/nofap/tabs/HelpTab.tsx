@@ -2,6 +2,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { useT } from '../../i18n';
 import { CrisisCard } from '../components/PanicSheet';
+import { aiExitText } from '../labels';
 import type { NofapDialog } from '../NofapPage';
 import type { NofapHost } from '../NofapWizard';
 import type { HelpResource, NofapView } from '../types';
@@ -36,7 +37,7 @@ export function HelpTab({ view, resources, host, onOpen, onExport, onTestCard }:
               <h2 className="text-sm font-semibold text-ink">{t(`nofap.helptab.${topic}.title`)}</h2>
               <p className="mt-1 text-[13px] leading-5 text-ink-2">
                 {topic === 'limits' ? `${t('nofap.wizard.limits')} ` : ''}
-                {t(`nofap.helptab.${topic}.body`)}
+                {topic === 'ai' ? aiExitText(view.product, t) : t(`nofap.helptab.${topic}.body`)}
               </p>
               {topic === 'ai' && host?.openSettings && (
                 <div className="mt-2">
