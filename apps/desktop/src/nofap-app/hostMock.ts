@@ -10,8 +10,7 @@
 
 import { __nofapMock, handle as handleNofap } from '../nofap/mock';
 import type { AiProvider, AiReadiness, NofapCommand } from '../nofap/types';
-import { initialLocale } from '../i18n/locale';
-import { wireLanguage, type BuildInfo, type HostAbout, type HostCommand, type HostSettings, type PermissionStatus, type UpdateStatus } from './types';
+import type { BuildInfo, HostAbout, HostCommand, HostSettings, PermissionStatus, UpdateStatus } from './types';
 
 /** Model ids the mock offers per provider; the first is the default (`AiModels::for_provider`). */
 export const MOCK_MODELS: Record<AiProvider, string[]> = {
@@ -39,7 +38,8 @@ export const MOCK_BAD_KEY = 'sk-invalid';
 
 function fresh(onboarded: boolean): HostState {
   return {
-    settings: { ui_language: wireLanguage(initialLocale()), ai_provider: 'anthropic', vision_model: MOCK_MODELS.anthropic[0]!, check_updates: true, onboarding_done: onboarded },
+    // The backend's default row (`Settings::default`): Portuguese, whatever the system speaks.
+    settings: { ui_language: 'pt-br', ai_provider: 'anthropic', vision_model: MOCK_MODELS.anthropic[0]!, check_updates: true, onboarding_done: onboarded },
     keys: new Set(onboarded ? (['anthropic'] as AiProvider[]) : []),
     permissions: { screen_recording: 'not_applicable', automation: 'not_applicable', accessibility: 'not_applicable' },
     autostart: false,
@@ -95,7 +95,9 @@ export async function handleHost(command: HostCommand): Promise<unknown> {
       if (patch.vision_model !== undefined) {
         const model = patch.vision_model.trim();
         if (!model) throw new Error('invalid: vision model: empty');
-        if (!MOCK_MODELS[next.ai_provider].includes(model)) throw new Error(`invalid: vision model ${model} is not a model of ${next.ai_provider}`);
+        // Like `AiProvider::for_model`: only a model known to belong to another vendor is refused.
+        const vendor = (Object.keys(MOCK_MODELS) as AiProvider[]).find((p) => MOCK_MODELS[p].includes(model));
+        if (vendor && vendor !== next.ai_provider) throw new Error(`invalid: vision model ${model} is not a model of ${next.ai_provider}`);
         next.vision_model = model;
       }
       if (patch.check_updates !== undefined) next.check_updates = patch.check_updates;

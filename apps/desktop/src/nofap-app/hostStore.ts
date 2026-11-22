@@ -13,15 +13,20 @@ interface HostState {
   settings: HostSettings | null;
   error: string | null;
   theme: Theme;
-  /** Reads the settings row and applies its language (an address with `?lang=` wins, for previews). */
+  /** Reads the settings row and applies its language once the welcome is done (an address with `?lang=` wins, for previews). */
   load: () => Promise<void>;
   /** Writes the fields given and applies the language. The module is read again: its AI readiness may have changed. */
   save: (patch: SettingsPatch) => Promise<HostSettings>;
   toggleTheme: () => void;
 }
 
+/**
+ * The stored language wins once the welcome is done. Before that the row holds only the backend's default (`pt-BR`),
+ * which nobody chose: the page keeps the language it started in (the system's, or the one picked last on this
+ * computer), and the welcome's last button stores it.
+ */
 const applyLanguage = (settings: HostSettings): void => {
-  if (!hasUrlLocaleOverride()) setLocale(localeOf(settings.ui_language));
+  if (!hasUrlLocaleOverride() && settings.onboarding_done) setLocale(localeOf(settings.ui_language));
 };
 
 export const useHostStore = create<HostState>((set, get) => ({

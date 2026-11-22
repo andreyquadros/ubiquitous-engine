@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import { getLocale } from '../i18n';
+import { getLocale, setLocale } from '../i18n';
 import { __nofapMock } from '../nofap/mock';
 import { calls as nofapCalls, READS, resetNofap } from '../nofap/testing';
 import type { Scenario } from '../nofap/mock';
@@ -48,6 +48,26 @@ describe('the welcome (first start)', () => {
     // Nothing of the protection was switched on: that is the wizard's last button.
     expect(writes()).toEqual([]);
     expect(__nofapMock.state().config.enabled).toBe(false);
+  });
+
+  it('speaks the system\'s language on a first start, not the stored default, and stores it at the end', async () => {
+    // An English system: the page starts in English, while the backend's row says Portuguese.
+    setLocale('en');
+    start({ onboarded: false });
+    expect(__hostMock.state().settings.ui_language).toBe('pt-br');
+    expect(await screen.findByTestId('welcome-step-1')).toHaveTextContent('It does not measure productivity');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(await screen.findByTestId('welcome-finish'));
+    await screen.findByTestId('wizard-step-1');
+    expect(getLocale()).toBe('en');
+    expect(__hostMock.state().settings.ui_language).toBe('en');
+  });
+
+  it('follows the stored language once the welcome is done', async () => {
+    setLocale('en');
+    start({ onboarded: true });
+    await screen.findByTestId('wizard-step-1');
+    expect(getLocale()).toBe('pt-BR');
   });
 
   it('does not come back once the onboarding is done', async () => {
@@ -152,6 +172,16 @@ describe('quitting from the window (design 6.3)', () => {
     fireEvent.click(screen.getByTestId('nav-quit'));
     expect(await screen.findByTestId('quit-message')).toHaveTextContent('o que está aplicado no sistema continua valendo');
   });
+
+  it('does not promise the system layer while the module is on but its tiers are closed on this system (R15)', async () => {
+    start({ onboarded: true, scenario: 'gated' });
+    await screen.findByTestId('nofap-status');
+    expect(__nofapMock.state().config.enabled).toBe(true);
+    fireEvent.click(screen.getByTestId('nav-quit'));
+    const message = await screen.findByTestId('quit-message');
+    expect(message).toHaveTextContent('nada fica barrando sites neste computador');
+    expect(message).not.toHaveTextContent('continua valendo');
+  });
 });
 
 describe('the settings', () => {
@@ -185,6 +215,13 @@ describe('the settings', () => {
     expect(screen.queryByTestId('notices')).not.toBeInTheDocument();
     fireEvent.click(within(about).getByTestId('notices-toggle'));
     expect(screen.getByTestId('notices')).toHaveTextContent('StevenBlack/hosts');
+  });
+
+  it('says in the about box what the AI check sends, instead of claiming nothing leaves the computer', async () => {
+    start({ onboarded: true, entry: '/settings' });
+    const about = await screen.findByTestId('settings-about');
+    expect(about).toHaveTextContent('só a imagem reduzida da janela em dúvida vai ao provedor que você escolheu');
+    expect(about).not.toHaveTextContent('não envia nada');
   });
 
   it('asks for a missing permission only where the system has it', async () => {
