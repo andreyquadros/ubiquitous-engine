@@ -204,10 +204,12 @@ Pushes of the other units of this wave cancelled most runs of this unit's commit
 | `44970964558` (`1b666de`) | Linux, macOS | **success** both; `ubiqX-linux-app` and `ubiqx-shield-linux-app` (4 files each: `.AppImage`, `.AppImage.tar.gz`, `.sig`, `.deb`); `.deb` packages `ubiq-x` and `no-fap` |
 | `44972849562` (`2fd83eb`) | Rust Linux, Frontend (with `pnpm build:nofap`), Linux, macOS | **success**; `usr/bin/ubiqx-desktop` and `usr/bin/ubiqx-shield` in the two `.deb`; Windows: ubiqX's MSI and NSIS built and uploaded under the old names, `MAINBINARYNAME "ubiqx-desktop"`, standalone clippy and tests passed, then cancelled during the standalone NSIS build by a snapshot push |
 
+| **`44975006898` (`da88636`, the commit that added this file)** | all seven | **every job green**: Rust Linux, Frontend, macOS, Windows and Linux app builds success; both publish jobs skipped (feature branch). Six artefacts: `ubiqX-macos-app` (4 files), `ubiqX-windows-app` (4: `.msi`, `-setup.exe`, `-setup.nsis.zip`, `.sig`), `ubiqX-linux-app` (4), `ubiqx-shield-macos-app` (4), `ubiqx-shield-windows-app` (3: `-setup.exe`, `-setup.nsis.zip`, `.sig`; no `.msi`), `ubiqx-shield-linux-app` (4). `MAINBINARYNAME` `ubiqx-desktop` and `ubiqx-shield` |
+
 The updater signing secrets are present: every job above built signed updater artefacts for
 both products (`UBIQX_UPDATER_SIGNED=1`). The publish jobs were never reached (`push` on a
-feature branch: both are skipped by their conditions). The run of this file's commit is the one
-the final report of this unit lists.
+feature branch: both are skipped by their conditions). This row was added by a later commit (this
+section only); its own run is listed in the final report of this unit.
 
 ### Open points
 
