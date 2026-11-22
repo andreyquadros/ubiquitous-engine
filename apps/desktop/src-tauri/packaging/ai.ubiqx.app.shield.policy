@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  polkit action of the ubiqX package, installed by the .deb to
+  /usr/share/polkit-1/actions/ (bundle.linux.deb.files of tauri.conf.json).
+
+  The app elevates itself through pkexec, with /usr/bin/ubiqx-desktop as the program, to apply or
+  remove what the user chose on its page: the hosts block, the family resolver and the
+  browser policies. pkexec picks this action because its program is the exec.path below,
+  so the password dialog says what is being done and by which app, instead of the generic
+  "run a program as the super user". Without the file (an AppImage never elevates, a build
+  run by hand) pkexec falls back to that generic action and works the same.
+-->
+<policyconfig>
+  <vendor>ubiqX</vendor>
+  <action id="ai.ubiqx.app.shield-helper">
+    <description>Apply or remove the site block on this computer</description>
+    <description xml:lang="pt_BR">Aplicar ou remover o bloqueio de sites neste computador</description>
+    <message>ubiqX needs an administrator password to apply or remove the site block you chose (hosts file, family DNS, browser policies).</message>
+    <message xml:lang="pt_BR">O ubiqX precisa da senha de administrador para aplicar ou remover o bloqueio de sites que você escolheu (arquivo hosts, DNS de família, políticas dos navegadores).</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/ubiqx-desktop</annotate>
+  </action>
+</policyconfig>

@@ -418,6 +418,12 @@ jobs:
           # The package and executable names, for docs/nofap/REMOVAL.md (checklist item 25).
           dpkg-deb --field "$deb" Package Version
           dpkg-deb --contents "$deb" | grep -E 'usr/bin/' || true
+          # The polkit action is installed, and its exec.path is the executable the package installs
+          # (pkexec picks the action by that path; crates/ubiqx-app/tests/packaging.rs checks the source).
+          bin="$(dpkg-deb --contents "$deb" | awk '$NF ~ /^(\.\/|\/)?usr\/bin\/[^\/]+$/ && !found { found = 1; f = $NF; sub(/^\.?\/?/, "", f); print "/" f }')"
+          test -n "$bin"
+          dpkg-deb --fsys-tarfile "$deb" | tar -xO --wildcards '*usr/share/polkit-1/actions/ai.ubiqx.app.shield.policy' \
+            | grep -F "<annotate key=\"org.freedesktop.policykit.exec.path\">$bin</annotate>"
           mv "$appimage" "target/release/bundle/appimage/ubiqX-linux-${UBIQX_ARCH}.AppImage"
           mv "$deb" "target/release/bundle/deb/ubiqX-linux-${UBIQX_ARCH}.deb"
           # Unsigned, the updater artifact is deleted rather than published (ci-updater-signing.sh).
@@ -452,6 +458,12 @@ jobs:
           test -f "$appimage" && test -f "$deb"
           dpkg-deb --field "$deb" Package Version
           dpkg-deb --contents "$deb" | grep -E 'usr/bin/' || true
+          # The polkit action is installed, and its exec.path is the executable the package installs
+          # (pkexec picks the action by that path; crates/ubiqx-app/tests/packaging.rs checks the source).
+          bin="$(dpkg-deb --contents "$deb" | awk '$NF ~ /^(\.\/|\/)?usr\/bin\/[^\/]+$/ && !found { found = 1; f = $NF; sub(/^\.?\/?/, "", f); print "/" f }')"
+          test -n "$bin"
+          dpkg-deb --fsys-tarfile "$deb" | tar -xO --wildcards '*usr/share/polkit-1/actions/ai.ubiqx.shield.policy' \
+            | grep -F "<annotate key=\"org.freedesktop.policykit.exec.path\">$bin</annotate>"
           mv "$appimage" "target/release/bundle/appimage/ubiqx-shield-linux-${UBIQX_ARCH}.AppImage"
           mv "$deb" "target/release/bundle/deb/ubiqx-shield-linux-${UBIQX_ARCH}.deb"
           if [ "${UBIQX_UPDATER_SIGNED:-0}" = "1" ]; then

@@ -79,7 +79,10 @@
           "libayatana-appindicator3-1 | libappindicator3-1",
           "librsvg2-2"
         ],
-        "preRemoveScript": "packaging/deb-prerm.sh"
+        "preRemoveScript": "packaging/deb-prerm.sh",
+        "files": {
+          "/usr/share/polkit-1/actions/ai.ubiqx.app.shield.policy": "packaging/ai.ubiqx.app.shield.policy"
+        }
       },
       "appimage": {
         "bundleMediaFramework": false

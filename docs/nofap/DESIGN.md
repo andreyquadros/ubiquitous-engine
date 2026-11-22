@@ -588,7 +588,7 @@ approves the OS prompt, is "some extra hostnames resolve to 0.0.0.0".
 |---|---|---|
 | macOS | `/usr/bin/osascript -e 'do shell script "<exe> --shield-helper apply --plan-b64 <b64>" with administrator privileges'`; the executable path goes through `sh_quote` then `applescript_quote` (any character, including non-ASCII, is handled by quoting, not by a whitelist) | error -128 → `Declined` |
 | Windows | `powershell.exe -NoProfile -NonInteractive -Command "try { $p = Start-Process -FilePath '<exe>' -ArgumentList '--shield-helper','apply','--plan-b64','<b64>' -Verb RunAs -Wait -PassThru -WindowStyle Hidden; exit $p.ExitCode } catch { exit 1223 }"`; the path goes through `ps_single_quote`. Chosen over `ShellExecuteExW` because it needs no FFI that this sandbox cannot run; it is the same Windows mechanism underneath [U]. | 1223 → `Declined` |
-| Linux | `/usr/bin/pkexec <exe> --shield-helper ...`; the `.deb` installs a polkit action with `org.freedesktop.policykit.exec.path` so the dialog shows our sentence [U] | 126 → `Declined`; 127 or no `pkexec` → `Unavailable { no_polkit_agent }`; `APPIMAGE` set → `Unavailable { appimage }` without trying, because root cannot read the user's FUSE mount |
+| Linux | `/usr/bin/pkexec <exe> --shield-helper ...`; the `.deb` installs a polkit action with `org.freedesktop.policykit.exec.path` so the dialog shows our sentence (`packaging/ai.ubiqx.shield.policy`, `packaging/ai.ubiqx.app.shield.policy`, shipped through `bundle.linux.deb.files`) [U] | 126 → `Declined`; 127 or no `pkexec` → `Unavailable { no_polkit_agent }`; `APPIMAGE` set → `Unavailable { appimage }` without trying, because root cannot read the user's FUSE mount |
 
 Stated plainly in `docs/nofap/PRIVACY.md` and the checklist: the macOS prompt names
 `osascript`; the Windows prompt says "unknown publisher" for an unsigned build; the
@@ -645,7 +645,8 @@ background process.
   `remove`**. dpkg also runs `prerm` with `upgrade` on every package update, and an update
   must not take the protection off. NSIS: an uninstall hook does the same
   [U `bundle.windows.nsis.installerHooks`], skipped when the uninstaller runs as part of an
-  update (`$UpdateMode`, [U]). The ubiqX installer is per-user and not elevated, so the hook
+  update (`$UpdateMode`, [U]) or when a newer `-setup.exe` started it in place from its reinstall
+  page (`$EXEDIR` is the install folder; a real uninstall runs from NSIS's temporary copy). The ubiqX installer is per-user and not elevated, so the hook
   starts the helper through the same `Start-Process -Verb RunAs` command as the app, which
   shows one UAC prompt; if the user declines, the uninstall finishes and the last page
   points to `REMOVAL.md`. macOS drag-to-trash and AppImage have no hook.

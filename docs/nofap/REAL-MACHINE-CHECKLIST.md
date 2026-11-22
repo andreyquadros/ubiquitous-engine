@@ -291,7 +291,7 @@ on from the page, and once more decline the prompt.
 |---|---|---|
 | macOS, ad-hoc signed app in `/Applications` | the prompt appears; its wording (it names `osascript`); Cancel gives "not applied" on the page (AppleScript error -128); with the password, the helper runs as root from inside the `.app` and the tier reads "ativa" | |
 | Windows, unsigned per-user install (`-setup.exe`) | the UAC prompt appears through `Start-Process -Verb RunAs`; it says "unknown publisher"; "No" gives "not applied" (exit code 1223); "Yes" applies | |
-| Linux, `.deb` on Ubuntu with a desktop session | `pkexec` shows the product's sentence (the polkit action file is installed); Cancel gives "not applied" (exit 126); with the password the tier applies | |
+| Linux, `.deb` on Ubuntu with a desktop session | `pkexec` shows the product's sentence (the polkit action file is installed: `/usr/share/polkit-1/actions/ai.ubiqx.shield.policy` or `ai.ubiqx.app.shield.policy`, and `pkaction --action-id ai.ubiqx.shield.helper --verbose` lists it); Cancel gives "not applied" (exit 126); with the password the tier applies | |
 | Linux, AppImage | no prompt is tried; the page says the system tiers are unavailable in this format (`appimage`) | |
 | Linux, no polkit agent (a bare window manager, or over SSH) | the page says so (`no_polkit_agent`), nothing hangs | |
 
@@ -471,6 +471,7 @@ consent text (`vision.consent`, `vision.managed`) and PRIVACY.md to what they sa
 | NSIS uninstall | apply, uninstall from Settings: one UAC prompt, then the block and the state directory are gone | |
 | NSIS uninstall, prompt declined | the uninstall finishes; the system keeps what was applied (the hook prints one detail line before the prompt and reports nothing after: `ExecShellWait` has no exit code) | |
 | In-app update on Windows | apply, let the app update itself: **nothing is removed** (`$UpdateMode`) | |
+| Newer `-setup.exe` run by hand on Windows | apply, run the next version's `-setup.exe` and keep the default "uninstall before installing": **no UAC prompt for the app's executable, nothing is removed**, the install log shows "This app is being installed again", and the page still reads the tiers as "ativa" afterwards (the old uninstaller runs in place with `_?=`; the hook keeps the changes when `$EXEDIR` is the install folder). Then uninstall from Settings: one UAC prompt and the block is gone (the uninstaller runs from a temporary copy) | |
 | ubiqX `.msi`, macOS `.app`, AppImage | no hook (the standalone app ships no `.msi`, decision 39): the MSI command of `REMOVAL.md` part 1 and the commands of part 2 work with the installed executable, and part 3 works after the app is gone | |
 | Each hook removes only its own product's wants | both products applied; uninstall one: the other product's tiers stay (`--owner ubiqx` / `--owner shield` in the hooks) | |
 | Both products installed | apply the hosts tier in both; remove in one: the block stays, the state file lists the other owner; remove in the other: everything is gone | |
