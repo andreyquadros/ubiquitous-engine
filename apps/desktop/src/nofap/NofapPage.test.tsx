@@ -684,8 +684,8 @@ describe('lists', () => {
 describe('the stored settings could not be read (integrator decision 33)', () => {
   beforeEach(() => resetNofap('unreadable'));
 
-  const SENTENCE_PT = 'Não consegui ler as configurações salvas: o que já estava aplicado no sistema continua valendo, e o bloqueio no app e a verificação por IA ficam parados até você restaurar os padrões.';
-  const SENTENCE_EN = 'I couldn\'t read the saved settings: what was already applied to the system still holds, and the in-app block and the AI check stay off until you restore the defaults.';
+  const SENTENCE_PT = 'As configurações salvas não puderam ser lidas. O que está aplicado no sistema continua valendo; o bloqueio no app e a verificação por IA ficam parados até elas voltarem a ser lidas ou até você restaurar os padrões e configurar de novo.';
+  const SENTENCE_EN = 'The saved settings could not be read. What is applied to the system still holds; the in-app block and the AI check stay stopped until they can be read again or until you restore the defaults and go through the set-up again.';
 
   it('says so in one calm sentence, with "Restaurar padrões" as its one action, and offers nothing that would be refused', async () => {
     renderPage();

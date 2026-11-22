@@ -203,6 +203,21 @@ describe('tone rules (design 5.1)', () => {
     expect(nofap['pt-BR']['block.discreet']).toBe('Página bloqueada pelo UBI.');
     expect(nofap.en['block.discreet']).toBe('Page blocked by UBI.');
   });
+
+  it('says every issue in the voice of the others: about the app and the system, never as an "I"', () => {
+    const firstPerson = { 'pt-BR': /\b(consegui|não pude|eu)\b/i, en: /\b(I|I'm|I've|couldn't)\b/ } as const;
+    for (const locale of LOCALES) {
+      const issues = Object.entries(nofap[locale]).filter(([key]) => key.startsWith('issue.') && key !== 'issue.title');
+      expect(issues.length).toBeGreaterThan(10);
+      for (const [key, text] of issues) expect(firstPerson[locale].test(text), `${key} (${locale}): ${text}`).toBe(false);
+    }
+  });
+
+  it('does not promise that restoring the defaults turns protection back on (integrator decision 33)', () => {
+    // A reset leaves the module off; protection comes back when the row can be read again or after the set-up.
+    expect(nofap['pt-BR']['issue.config_unreadable']).toContain('até elas voltarem a ser lidas ou até você restaurar os padrões e configurar de novo');
+    expect(nofap.en['issue.config_unreadable']).toContain('until they can be read again or until you restore the defaults and go through the set-up again');
+  });
 });
 
 describe('naming (design 0.1)', () => {

@@ -5529,6 +5529,69 @@ async fn d33_the_wizard_also_ends_the_issue() {
     assert!(!r.service.status().issues.contains(&Issue::ConfigUnreadable));
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn d33_review_only_the_verify_pass_reads_again_and_the_person_s_own_settings_come_back() {
+    // A module switched on with a sentence of the person's own, then a row that does not
+    // parse at the next start.
+    let repo = Arc::new(Flaky::default());
+    {
+        let before = rig(RigSetup {
+            repo: repo.clone(),
+            ..RigSetup::default()
+        });
+        before.service.enable(no_delay()).unwrap();
+        before
+            .service
+            .request(NofapChange::SetValues {
+                text: "pela Ana de amanhã".into(),
+            })
+            .unwrap();
+    }
+    repo.unreadable.store(true, Ordering::SeqCst);
+    let r = rig(RigSetup {
+        repo: repo.clone(),
+        ..RigSetup::default()
+    });
+    assert!(says_unreadable(&r.service.status()));
+    // The defaults in memory are not shown as the person's settings.
+    assert_eq!(r.service.view().unwrap().config.values, "");
+
+    // Guard passes, the view and the status never read the row again; only the verify
+    // pass does, once each, and a pass that still fails sends no status event.
+    let loads = repo.loads.load(Ordering::SeqCst);
+    r.browse(listed());
+    for _ in 0..5 {
+        assert!(!r.pass().hit);
+    }
+    r.service.view().unwrap();
+    r.service.status();
+    assert_eq!(repo.loads.load(Ordering::SeqCst), loads);
+    r.sink.0.lock().clear();
+    for _ in 0..3 {
+        r.service.verify_pass().unwrap();
+    }
+    assert_eq!(repo.loads.load(Ordering::SeqCst), loads + 3);
+    assert!(
+        !r.sink
+            .0
+            .lock()
+            .iter()
+            .any(|event| matches!(event, NofapEvent::Status { .. })),
+        "a pass that still cannot read the row is not news"
+    );
+    assert!(says_unreadable(&r.service.status()));
+
+    // The row parses again: the next verify pass brings back the person's own settings,
+    // not the defaults, and the view says so with the issue gone.
+    repo.unreadable.store(false, Ordering::SeqCst);
+    r.service.verify_pass().unwrap();
+    let view = r.service.view().unwrap();
+    assert_eq!(view.config.values, "pela Ana de amanhã");
+    assert!(view.config.enabled);
+    assert!(!view.status.issues.contains(&Issue::ConfigUnreadable));
+    assert!(!r.service.status().issues.contains(&Issue::ConfigUnreadable));
+}
+
 // ---------------------------------------------------------------------------------------------
 // The second review
 // ---------------------------------------------------------------------------------------------
