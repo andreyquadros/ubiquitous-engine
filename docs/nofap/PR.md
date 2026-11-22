@@ -68,6 +68,15 @@ alteram), `docs/nofap/PRIVACY.md` (o que é visto, enviado e guardado), `docs/no
   `ubi-api`, a lista, typecheck, Vitest e os dois builds da interface, os testes dos scripts de
   release, e o `/etc/hosts` da máquina de build sem nenhuma linha `ubiqx-shield`.
 
+## Revisão adversarial final
+
+Seis frentes independentes (privilégios, privacidade, lógica, lista, experiência, entrega) leram o
+PR inteiro; cada achado passou por três céticos e só ficou com dois votos. 41 achados, 33
+confirmados, todos corrigidos com teste que falhava antes (dois críticos: a segunda foto de uma
+verificação podia pegar outra página na mesma janela; "Apagar tudo" escondia camadas ainda
+aplicadas no sistema). O que ficou de fora está nas seções "Final review" dos hand-offs U2, U4, U5
+e U6.
+
 ## O que só uma pessoa numa máquina real pode verificar
 
 `docs/nofap/REAL-MACHINE-CHECKLIST.md`, seções 4 e 5: os pedidos de senha de cada sistema, as
