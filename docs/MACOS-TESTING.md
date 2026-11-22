@@ -276,5 +276,60 @@ exatamente o texto enviado à IA por bloco e permite apagar tudo.
 | A release saiu sem `updater.json` e o app não se atualiza sozinho | Os secrets `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` não foram cadastrados, e o build avisou isso na etapa **Updater signing key** | Cadastrar os dois em Settings → Secrets and variables → Actions (§ 3.2); o build seguinte já se atualiza |
 | **Atualizar agora** diz "Este build não consegue se atualizar sozinho" | O `updater.json` não tem entrada para este sistema/arquitetura, ou o build saiu sem assinatura | Usar **Baixar (.dmg)** e instalar como no § 3.1; conferir o `updater.json` da release `continuous` |
 | Cmd+Q "não fecha" o app | Esperado: Cmd+Q só esconde a janela | Para encerrar de verdade: tray → **Sair** |
-| Log sem linhas do rastreador | Nível de log baixo | `UBIQX_LOG=debug` antes de abrir o app; o arquivo fica em `~/Library/Logs/ai.ubiqx.app/` |
+| Log sem linhas do rastreador | O app grava no nível `info`; as linhas de detalhe são `debug` | O nível do app é fixo; `UBIQX_LOG=debug` vale para a CLI (`ubiqx …`). O arquivo do app fica em `~/Library/Logs/ai.ubiqx.app/` |
 | macOS 15 mostra aviso periódico de captura de tela | Comportamento do sistema para apps que usam captura | Esperado; clique em *Continuar a permitir* |
+
+## 7. O NoFap no Mac
+
+O módulo NoFap (a página **NoFap** do ubiqX) e o app separado NoFap fazem o mesmo: guarda do navegador,
+lista no `/etc/hosts`, DNS filtrado, políticas do Firefox e, se a pessoa quiser, a verificação por IA. O que
+é olhado, enviado e guardado está em [`nofap/PRIVACY.md`](nofap/PRIVACY.md); como tirar tudo do Mac, em
+[`nofap/REMOVAL.md`](nofap/REMOVAL.md).
+
+**Antes de testar.** Com a proteção ligada e uma camada do sistema escolhida, o app escreve de verdade no
+`/etc/hosts`, no DNS dos serviços de rede e nas preferências do Firefox, depois de pedir a senha de
+administrador. Teste num Mac (ou numa conta) em que isso não atrapalhe e tenha o
+[`nofap/REMOVAL.md`](nofap/REMOVAL.md) à mão. Desligar pela página espera o tempo que você escolheu no
+assistente (10 minutos por padrão); **Restaurar minha rede** devolve o DNS ao automático na hora.
+
+**O app separado.** O artifact `ubiqx-shield-macos-app` traz `ubiqx-shield-macos-aarch64.dmg` e
+`ubiqx-shield-macos-aarch64.app.zip`, com o `NoFap.app` dentro. Abra como no § 3.1, trocando `ubiqX.app` por
+`NoFap.app` (quarentena e assinatura do mesmo jeito; assine com a mesma identidade `ubiqX Dev` para as
+permissões sobreviverem). Ele não aparece no Dock: fica só na barra de menus. Dados em
+`~/Library/Application Support/ai.ubiqx.shield/` (banco `shield.db`), logs em
+`~/Library/Logs/ai.ubiqx.shield/`, chave de IA no Keychain com o serviço `ai.ubiqx.shield`. Pode ficar instalado
+junto com o ubiqX: quando os dois estão ligados, só um faz a guarda, e cada um remove do sistema só o que ele
+mesmo pediu.
+
+| O quê | No Mac |
+|---|---|
+| Guarda | lê o endereço da aba pela Automação (§ 4, passo 3), nos mesmos navegadores do ubiqX. Sem Automação para um navegador, ou no Firefox (que não informa o endereço), a página diz que a guarda está limitada; a verificação por IA, se estiver ligada, cobre o que der |
+| Verificação por IA | precisa de **Gravação de Tela**. No app separado, o pedido aparece no assistente e em Configurações → Permissões, sem o rastreador |
+| Pedido de senha | uma janela do sistema que fala em `osascript` (a ferramenta usada para pedir a permissão). O app mostra antes a lista exata do que vai mudar. Cancelar não muda nada |
+| Lista no `hosts` | até 20.000 nomes no `/etc/hosts`; o app limpa o cache de DNS depois de escrever |
+| DNS filtrado | todo serviço de rede ativo recebe os endereços da Cloudflare for Families (`networksetup -setdnsservers`). Ao remover, o DNS volta ao **automático**, não a um DNS fixo que você tinha antes: o app mostra o anterior para você pôr de volta à mão |
+| Políticas | só o Firefox (`/Library/Preferences/org.mozilla.firefox`). Esta camada está fechada no macOS até alguém conferir os navegadores à mão (item 9 de [`nofap/REAL-MACHINE-CHECKLIST.md`](nofap/REAL-MACHINE-CHECKLIST.md)) |
+| Safari com a Retransmissão Privada do iCloud | pode ignorar a lista do `hosts` e o DNS filtrado; a guarda e a verificação por IA continuam |
+
+**Quais camadas estão abertas.** A lista no `hosts` e o DNS filtrado estão abertos no macOS (a CI aplicou e
+removeu os dois de verdade num runner de macOS; `crates/ubiqx-nofap/src/gate.rs`). Para testar uma camada
+fechada, abra o executável com a variável `UBIQX_SHIELD_UNVERIFIED_TIERS` (o `open` não passa variáveis):
+
+```bash
+UBIQX_SHIELD_UNVERIFIED_TIERS=policies /Applications/NoFap.app/Contents/MacOS/ubiqx-shield
+```
+
+**Ver o que está aplicado**, sem senha e sem abrir janela:
+
+```bash
+/Applications/NoFap.app/Contents/MacOS/ubiqx-shield --shield-helper status
+```
+
+**Desinstalar.** Arrastar o app para o Lixo não remove nada do sistema. Remova pela página (ou com o comando
+da parte 2 do [`nofap/REMOVAL.md`](nofap/REMOVAL.md)) **antes** de apagar o app.
+
+**Ainda não conferido num Mac de verdade** (itens de [`nofap/REAL-MACHINE-CHECKLIST.md`](nofap/REAL-MACHINE-CHECKLIST.md)):
+o texto e o código de cancelamento da janela de senha com um app assinado ad hoc, os pedidos de Gravação de
+Tela e Automação feitos pelo app separado, e se o cartão do NoFap aparece em todos os espaços **sem tirar o
+foco** da janela em que você está.
+

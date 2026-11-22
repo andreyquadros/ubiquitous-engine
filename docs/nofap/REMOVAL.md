@@ -35,20 +35,32 @@ largam o aviso "Gerenciado pela sua organização" e os endereços que tinham em
 3. Se quiser tirar também os dados, com a proteção desligada use **Apagar tudo do NoFap**.
 4. Desligue "Abrir junto com o computador" antes de desinstalar.
 
-**Desinstaladores.** O que cada formato faz ao desinstalar:
+**Desinstaladores.** O que cada formato faz ao desinstalar. Os dois que removem algo removem
+só o que **aquele** produto pediu: se o outro produto também estiver instalado e ligado, o que
+ele pediu continua no sistema.
 
 | Formato | Ao desinstalar |
 |---|---|
-| Windows, instalador `-setup.exe` | o desinstalador pede a permissão de administrador uma vez e remove as camadas do sistema. Se você recusar, a desinstalação termina e sobra o que está na parte 2. Uma atualização do app não remove nada |
-| Windows, `.msi` | não remove as camadas do sistema: use a parte 2 antes de desinstalar, ou a parte 3 depois |
-| Linux, `.deb` | `sudo apt remove <pacote>` remove as camadas do sistema antes de tirar os arquivos (`dpkg -l \| grep -i -e ubiq -e nofap` mostra o nome do pacote instalado). Uma atualização do pacote não remove nada |
+| Windows, instalador `-setup.exe` (ubiqX e app separado) | antes de apagar os arquivos, o desinstalador abre o próprio app com `--shield-helper remove`, e o Windows pede a permissão de administrador uma vez. Se você recusar, a desinstalação continua e o que estava aplicado fica no sistema: siga a parte 3. O desinstalador não mostra se a remoção deu certo; confira com a parte 5. Quando o app se atualiza sozinho, o desinstalador da versão antiga roda sem remover nada |
+| Windows, `.msi` (só o ubiqX; o app separado não tem `.msi`) | **não remove as camadas do sistema.** Rode o comando abaixo **antes** de desinstalar; depois de desinstalado, só a parte 3 (ou o auxiliar compilado da parte 2) |
+| Linux, `.deb` (ubiqX e app separado) | `sudo apt remove <pacote>` roda o app com `--shield-helper remove` antes de tirar os arquivos, já como administrador, sem pedir senha (o nome do pacote instalado: veja a parte 2). Uma atualização do pacote não remove nada. Se a remoção falhar, a desinstalação continua mesmo assim: confira com a parte 5 |
 | Linux, AppImage | o AppImage não consegue aplicar as camadas do sistema, então não há o que remover delas; apague o arquivo e veja a parte 4 |
 | macOS, `.app` (arrastado do `.dmg`) | arrastar para o Lixo não remove nada do sistema: use a parte 2 antes de apagar o app, ou a parte 3 depois |
 
-**Não conte com o desinstalador ainda.** A tabela diz o que cada formato foi projetado para
-fazer. Quando este texto foi escrito, os passos de desinstalação do `-setup.exe` e do `.deb`
-ainda não estavam nos instaladores, e nenhum foi conferido em máquina real (item 15 de
-[REAL-MACHINE-CHECKLIST.md](REAL-MACHINE-CHECKLIST.md)). O caminho seguro, em qualquer
+**O `.msi` do ubiqX.** No PowerShell, antes de desinstalar (o Windows pede a permissão):
+
+```powershell
+$exe = "$env:ProgramFiles\ubiqX\ubiqx-desktop.exe"
+$p = Start-Process -FilePath $exe -ArgumentList '--shield-helper','remove','--owner','ubiqx','--scope','all' -Verb RunAs -Wait -PassThru
+$p.ExitCode   # 0: tudo saiu
+```
+
+`--owner ubiqx` tira só o que o ubiqX pediu, como fazem os outros desinstaladores; use
+`--owner all` para tirar também o que o app separado pediu.
+
+**Não conte só com o desinstalador.** Os passos de desinstalação do `-setup.exe` e do `.deb`
+estão nos instaladores dos dois produtos, mas nenhum foi conferido em máquina real ainda (item
+15 de [REAL-MACHINE-CHECKLIST.md](REAL-MACHINE-CHECKLIST.md)). O caminho seguro, em qualquer
 formato: remova pelo app ou pela parte 2 **antes** de desinstalar e, depois de desinstalar,
 confira com a parte 5.
 
@@ -91,7 +103,9 @@ instalado.
 
 ### Windows
 
-No PowerShell (não precisa abrir como administrador: o Windows pede a permissão):
+No PowerShell (não precisa abrir como administrador: o Windows pede a permissão). O app é um
+programa de janela, então não escreve nada no PowerShell: o resultado é só o código de saída da
+última linha.
 
 ```powershell
 # ubiqX, instalado pelo -setup.exe
@@ -369,7 +383,9 @@ O histórico de notificações é do sistema operacional, não do app; como limp
 ## 5. Como conferir que saiu tudo
 
 Com o app ou com o auxiliar, a ação `status` mostra o que há no sistema, sem precisar de
-senha (por exemplo `/usr/bin/ubiqx-shield --shield-helper status`). Sem eles:
+senha (por exemplo `/usr/bin/ubiqx-shield --shield-helper status`). No Windows o app instalado
+não mostra nada com `status` (é um programa de janela, sem console): lá, use o auxiliar
+compilado da parte 2 (`ubiqx-shield-helper.exe status`) ou os comandos abaixo. Sem eles:
 
 ### Linux
 

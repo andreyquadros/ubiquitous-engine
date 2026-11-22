@@ -42,6 +42,9 @@ ubiqx/
 ├── crates/
 │   ├── ubiqx-core/               # DOMÍNIO: modelos, ports (traits), segmentação, regras, aprendizado,
 │   │                             #   insights, agendamento, redação de dados, renderização de relatórios — sem I/O
+│   │                             #   (+ nofap.rs / nofap_ipc.rs / product.rs: tipos, ports e IPC do NoFap, as duas identidades)
+│   ├── ubiqx-nofap/              # DOMÍNIO do NoFap: listas embutidas, matcher, plano do sistema, compromisso,
+│   │                             #   amostragem da visão, mensagens — puro, sem I/O (§ 9)
 │   ├── ubiqx-storage/            # ADAPTER: SQLite (rusqlite) — repositórios e migrações
 │   ├── ubiqx-platform/           # ADAPTER: macOS, Windows e Linux (janela ativa, título, idle, print por janela,
 │   │                             #   URL, permissões, segredos) + plataforma roteirizada (mock) para testes/CI
@@ -50,17 +53,24 @@ ubiqx/
 │   │                             #   redator de relatórios, conselheiro, fakes para testes
 │   ├── ubiqx-engine/             # APLICAÇÃO: amostrador, tracker, worker de classificação, agendador de
 │   │                             #   relatórios, nudges, retenção, correções (aprendizado), fachada de leitura
-│   ├── ubiqx-app/                # COMPOSIÇÃO: monta engine + SQLite + plataforma + IA (usado pelo desktop e CLI)
+│   ├── ubiqx-app/                # COMPOSIÇÃO: monta engine + SQLite + plataforma + IA (usado pelo desktop e CLI);
+│   │                             #   nofap_app.rs monta o app separado (NofapApp, sem Engine)
 │   └── ubiqx-cli/                # CLI headless: simulação, status, classificação, relatórios (roda em Linux)
 ├── apps/desktop/
-│   ├── src/                      # React 19 + TypeScript + Tailwind 4 (UI)
+│   ├── src/                      # React 19 + TypeScript + Tailwind 4 (UI); src/nofap/ = páginas do módulo,
+│   │                             #   src/nofap-app/ = moldura do app separado (entrada index.nofap.html, dist-nofap)
 │   └── src-tauri/                # Tauri 2: tray de barra de menus, comandos IPC, eventos, notificações
+├── apps/nofap/src-tauri/         # Tauri 2: o app separado NoFap (binário ubiqx-shield, id ai.ubiqx.shield)
 ├── docs/                         # Arquitetura, guia de teste no macOS, screenshots
-├── scripts/                      # assinatura de dev, instalação do modelo 3D do UBI
-└── .github/workflows/            # CI: testes Linux + type-check macOS/Windows + frontend + builds nos três SOs + release
+├── scripts/                      # assinatura de dev, instalação do modelo 3D do UBI, publicação das releases
+│                                 #   (publish-release.mjs --product ubiqx|shield), scripts/nofap/ (lista, smoke)
+└── .github/workflows/            # CI: testes Linux + type-check macOS/Windows + frontend + builds dos dois apps nos
+                                  #   três SOs + as duas releases; nofap-smoke.yml aplica e remove as camadas do sistema
 ```
 
-Regra de dependência (hexagonal): `core` ← `storage | platform | ai` ← `engine` ← `app` ← `desktop | cli`.
+Regra de dependência (hexagonal): `core` ← `storage | platform | ai` ← `engine` ← `app` ← `desktop | nofap-desktop | cli`.
+O crate puro `nofap` depende só de `core` e é usado por `platform` (o auxiliar do sistema), `engine`, `app` e pelo
+shell do app separado; `storage` e `ai` não o usam.
 `core` não depende de nenhum adapter; adapters dependem só de `core`; `engine` usa apenas as traits de `core`
 e recebe as implementações por injeção (`EngineDeps`), montadas em `ubiqx-app`.
 
@@ -206,3 +216,89 @@ UBI: modelo 3D (`public/ubi/Ubi.glb`, GLTFLoader via react-three-fiber, canvas t
    ver [`WINDOWS-LINUX.md`](WINDOWS-LINUX.md). O que ainda falta: Wayland pelos portais (`xdg-desktop-portal`;
    hoje só X11/XWayland), URL do navegador no Linux por acessibilidade (AT-SPI; hoje só pelo título), eventos de
    sono/bloqueio de tela e exportação DOCX.
+
+## 9. O módulo NoFap e o segundo produto
+
+O NoFap é uma ferramenta de autocontrole contra a pornografia que uma pessoa adulta instala no próprio computador:
+visível, desligada até a pessoa concluir o assistente, sem relatório para ninguém. O projeto completo está em
+[`nofap/DESIGN.md`](nofap/DESIGN.md) (as decisões tomadas durante a construção, que valem sobre ele, em
+[`nofap/handoff/INTEGRATOR.md`](nofap/handoff/INTEGRATOR.md)); a privacidade em [`nofap/PRIVACY.md`](nofap/PRIVACY.md);
+a remoção em [`nofap/REMOVAL.md`](nofap/REMOVAL.md).
+
+### 9.1 Camadas
+
+| Camada | Onde está | O que faz |
+|---|---|---|
+| L1 guarda | `ubiqx_engine::nofap::guard` + `ubiqx_nofap::matcher` | a cada 2 s, o site da aba em frente contra a lista embutida (~240 mil entradas como hashes; as 20 mil mais visitadas também por extenso), as regras de palavras e terminações (`heuristics`) e a lista da pessoa; um acerto fecha a aba e mostra um cartão |
+| L2 `hosts` | `ubiqx_nofap::hosts` + `ubiqx_platform::sysblock` | um bloco marcado (`# >>> ubiqx-shield v1 BEGIN …` / `# <<< ubiqx-shield END`) com até 20.000 nomes (8.000 no Windows) |
+| L3 DNS filtrado | `ubiqx_nofap::resolvers` | DNS do sistema na Cloudflare for Families (`1.1.1.3`, `1.0.0.3` e IPv6) |
+| L4 políticas | `ubiqx_nofap::policies` | DNS próprio do navegador desligado e SafeSearch forçado (Chrome, Chromium, Edge, Brave, Firefox) |
+| L5 visão | `ubiqx_engine::nofap::vision` + `ubiqx_ai::explicit` + `ubiqx_nofap::sampling` | uma imagem da janela em frente, reduzida a 640 px, ao provedor de IA escolhido quando as regras locais não decidem; resposta fechada (explícito, sugestivo, nada, não sei) |
+
+Cada camada tem o seu estado (`TierState`) e a página mostra o que está protegendo e o que não está, sem silêncio.
+L2 a L4 passam pela trava por sistema `ubiqx_nofap::gate::TIER_GATE`: uma camada só abre num sistema depois de uma
+execução verde do job `nofap-system-smoke` nele (hoje `hosts` e `resolver` abertos em macOS, Windows e Linux;
+`policies` fechado nos três até a conferência manual dos navegadores).
+
+### 9.2 Onde fica a lógica
+
+- **`ubiqx-core`** (`nofap.rs`, `nofap_ipc.rs`, `product.rs`): tipos, ports (`SystemShield`, `FrameSource`,
+  `ExplicitDetector`, `NofapPresenter`, `NofapSink`, `NofapRepo`, `NofapEnv`), comandos e respostas do IPC, e as
+  duas identidades de produto (`UBIQX`, `SHIELD`: bundle id, banco, serviço do cofre, feed).
+- **`ubiqx-nofap`**: as decisões e os dados embutidos, puros e testados sem I/O: listas e matcher, plano e avaliação
+  do sistema (`plan`), compromisso (pedidos que enfraquecem a proteção esperam o tempo que a pessoa escolheu e
+  depois pedem confirmação), amostragem e limites da visão, episódios, exclusões, papel primário entre os dois
+  produtos, mensagens e recursos de ajuda.
+- **`ubiqx-engine::nofap`**: `NofapService`, construído só de ports (a forma do `UpdateChecker`), com dois laços:
+  guarda (2 s) e verificação do sistema (120 s). Ele nunca referencia `EngineState`, e é isso que deixa o app
+  separado hospedá-lo. No ubiqX, um acerto também faz o rastreador esquecer a página (`tracker::scrub_open_block`,
+  `redacts`, `capture_veto`).
+- **`ubiqx-platform::sysblock`**: um adaptador `NativeSystemShield` com os três back-ends (macOS, Windows, Linux)
+  escritos como montadores de comando e leitores de saída, compilados em todos os sistemas atrás de `Runner`, `Fs`
+  e `Elevator`. A elevação é o próprio executável do app chamado como `--shield-helper <verbo>` por `osascript`,
+  `Start-Process -Verb RunAs` ou `pkexec` (`elevate.rs`); os verbos são só `status`, `elevate-argv`, `apply` e
+  `remove` (`helper.rs`). Não há serviço privilegiado em segundo plano. O mesmo código existe como binário de linha
+  de comando, `ubiqx-shield-helper`, para a CI e para a remoção sem o app.
+- **`ubiqx-storage`**: as tabelas `nofap_day` (contagens por dia e hora), `nofap_sites` (lista da pessoa, sites
+  aprendidos como hash com sal, adiamentos) e `nofap_state` (a configuração, uma linha), na migração 3. Toda conexão
+  abre com `secure_delete`, e o apagamento do histórico passa o WAL para o arquivo principal.
+- **`ubiqx-ai::explicit`**: `LlmExplicitDetector` sobre o mesmo cliente roteado do ubiqX; para o tipo
+  `nofap_vision`, nenhuma linha de log no caminho de sucesso e o custo gravado na hora cheia.
+
+### 9.3 Dois produtos, um código
+
+| | ubiqX | NoFap separado |
+|---|---|---|
+| Shell | `apps/desktop/src-tauri` (`ubiqx-desktop`) | `apps/nofap/src-tauri` (`ubiqx-nofap-desktop`, binário `ubiqx-shield`) |
+| Composição | `App::start` monta o `Engine` com `EngineDeps.nofap` | `NofapApp::start` (`ubiqx_app::nofap_app`): só o serviço, sem `Engine`; nenhum amostrador, rastreador, classificador ou relatório existe no processo |
+| Interface | página `/nofap` dentro do ubiqX | `src/nofap-app/` sobre as mesmas páginas de `src/nofap/`, construída com `pnpm build:nofap` (`vite --mode nofap`, saída `dist-nofap`) |
+| Comandos | `nofap` | `nofap`, `nofap_host` (configurações, chave de IA, modelos, permissões, atualização, sobre) e `quit_app` |
+| Identidade | `ai.ubiqx.app`, `ubiqx.db`, cofre `ai.ubiqx` | `ai.ubiqx.shield`, `shield.db`, cofre `ai.ubiqx.shield` |
+| Atualização | release `continuous` (`ubiqX-*`), variável `UBIQX_UPDATE_FEED_URL` | release `shield-continuous` (`ubiqx-shield-*`), variável `UBIQX_SHIELD_UPDATE_FEED_URL`; publicação só com `NOFAP_PUBLISH=true` |
+| IA | as três com chave própria ou a IA do Ubi | só as três com chave própria |
+
+Os dois podem estar instalados juntos. As camadas do sistema são de quem as pediu: o arquivo de estado do sistema
+guarda o que cada produto quer, e `remove --owner ubiqx|shield` tira só o de um. Quando os dois estão ligados, só
+um faz a guarda: o arquivo `primary.lock` na pasta `ubiqx-shield` dos dados locais diz qual (`ubiqx_nofap::primary`).
+Cada app ignora o feed de atualização do outro (`ubiqx_core::update::feed_matches_product`).
+
+### 9.4 Os três anéis de nomes
+
+- **Fonte**: `nofap` (crates, módulos, tabelas, comandos, namespace de i18n).
+- **Máquina**: `ubiqx-shield`, em tudo o que é escrito no computador ou publicado (bloco do `hosts`, pastas de
+  estado, nomes dos arquivos de política, argumentos de processo, nomes dos instaladores do app separado).
+- **Exibição**: `ubiqx_core::nofap::DISPLAY_NAME` ("NoFap"), o único lugar do nome visível.
+
+`cargo test -p ubiqx-nofap --test naming` falha se a palavra da fonte aparecer no anel da máquina.
+
+### 9.5 CI
+
+`rust-linux` roda `python3 scripts/nofap/build_blocklist.py --check` (a lista embutida é a que as fontes fixadas
+geram, sem rede) e o teste dos nomes; clippy e testes excluem os dois shells (sem webkit). `frontend` roda
+`pnpm build:nofap`. Os três jobs de app compilam os dois produtos (o do NoFap com o CLI do Tauri a partir de
+`apps/nofap/src-tauri`, cujo `beforeBuildCommand` gera `dist-nofap`) e renomeiam os arquivos de cada um pelo
+`productName` do seu `tauri.conf.json`, porque os dois empacotam nas mesmas pastas de `target/release/bundle`. O
+job do Windows roda clippy e testes do `ubiqx-nofap-desktop`. `publish-continuous` publica só `ubiqX-*`;
+`publish-shield` publica só `ubiqx-shield-*`, só na `main` e só com `vars.NOFAP_PUBLISH == 'true'`. O workflow
+`nofap-smoke.yml` aplica e remove as camadas do sistema de verdade nos três sistemas, com o auxiliar como
+administrador.

@@ -52,6 +52,49 @@ e ele aprende. O **UBI**, o mascote, mostra seu humor de foco e avisa quando voc
   evidências; visão mensal por categoria que agrupa continuações ("continuou X — 3 dias, 7 h 20") e exporta Markdown.
 - **UBI**: humor derivado do score de foco; avisos com teto diário, cooldown, horário silencioso e silêncio em reuniões.
 
+## NoFap: o módulo contra a pornografia, e o app separado
+
+O **NoFap** é uma ferramenta de autocontrole que uma pessoa adulta instala no próprio computador para ficar longe
+de pornografia. É visível (ícone na bandeja, página própria), só liga depois que a pessoa conclui o assistente e
+não manda nada a ninguém: não há "parceiro de responsabilidade", conta nem telemetria. Ele existe de duas formas,
+feitas do mesmo código:
+
+- **dentro do ubiqX**, como a página **NoFap** do menu lateral;
+- **como um produto à parte**, para quem não quer rastrear produtividade e só quer vencer a pornografia: um app
+  próprio (`apps/nofap/src-tauri`) com janela, bandeja, banco, chave de IA e canal de atualização seus, e nada do
+  rastreador. No sistema ele aparece com o nome neutro `ubiqx-shield` (pacotes, pastas, o bloco no `hosts`).
+
+Cinco camadas, cada uma com o seu estado na página:
+
+| Camada | O que faz |
+|---|---|
+| Guarda | a cada 2 s compara o site da aba em frente com uma lista embutida de cerca de 240 mil sites adultos, regras de palavras e terminações e a lista da pessoa; um acerto fecha a aba e mostra um cartão discreto |
+| Lista no sistema | um bloco marcado no arquivo `hosts` com os sites mais visitados da lista (até 20 mil; 8 mil no Windows) |
+| DNS filtrado (opcional) | o DNS do sistema passa para a Cloudflare for Families |
+| Políticas dos navegadores (opcional) | DNS próprio do navegador desligado e busca segura forçada |
+| Verificação por IA (opcional) | a IA que o app já usa olha uma imagem reduzida da janela em frente quando o site ou o app é desconhecido |
+
+As camadas do sistema pedem a senha de administrador uma vez por mudança, pelo próprio sistema, e são aplicadas
+pelo executável do app chamado com `--shield-helper`; não há serviço em segundo plano. Desligar a proteção espera
+um tempo que a pessoa mesma escolhe; "Restaurar minha rede" e sair do app nunca esperam. O aconselhamento vem de
+um banco de frases revisado, nunca de texto escrito por um modelo. Cada camada do sistema só abre num sistema
+depois que a CI aplicou e removeu a camada de verdade nele (`crates/ubiqx-nofap/src/gate.rs`): hoje a lista no
+sistema e o DNS filtrado estão abertos nos três sistemas, e as políticas dos navegadores ainda não.
+
+- O que é olhado, enviado e guardado, camada por camada: [`docs/nofap/PRIVACY.md`](docs/nofap/PRIVACY.md).
+- Como tirar tudo do computador, com o app ou sem ele: [`docs/nofap/REMOVAL.md`](docs/nofap/REMOVAL.md).
+- O projeto inteiro e o que ainda falta conferir numa máquina real:
+  [`docs/nofap/DESIGN.md`](docs/nofap/DESIGN.md), [`docs/nofap/REAL-MACHINE-CHECKLIST.md`](docs/nofap/REAL-MACHINE-CHECKLIST.md).
+
+**O app separado na CI.** Cada execução da CI compila os dois produtos nos três sistemas. Os instaladores do app
+separado saem como `ubiqx-shield-<sistema>-<arquitetura>.<ext>` nos artifacts `ubiqx-shield-macos-app`,
+`ubiqx-shield-windows-app` e `ubiqx-shield-linux-app` (`.dmg` e `.app.zip`; só `-setup.exe` no Windows, sem
+`.msi`; `.AppImage` e `.deb`). A publicação dele é separada da do ubiqX: o job `publish-shield` publica na release
+rolante `shield-continuous`, com `latest.json` e `updater.json` próprios, e só roda na `main` quando a variável
+do repositório `NOFAP_PUBLISH` é `true` (Settings → Secrets and variables → Actions → Variables). Ela fica
+desligada até o nome de exibição ser liberado. Os dois produtos nunca mexem na release um do outro
+(`scripts/publish-release.mjs --product ubiqx|shield`).
+
 ## Telas
 
 | Hoje | Timeline |
@@ -74,7 +117,7 @@ e ele aprende. O **UBI**, o mascote, mostra seu humor de foco e avisa quando voc
 
 | | macOS 13+ (Apple Silicon) | Windows 10/11 (x64) | Linux x64 (X11) |
 |---|---|---|---|
-| Instalador | `.dmg` (+ `.app.zip`) | `-setup.exe` (NSIS) e `.msi` | `.AppImage` e `.deb` |
+| Instalador | `.dmg` (+ `.app.zip`) | `-setup.exe` (NSIS) e `.msi` (o app separado NoFap: só `-setup.exe`) | `.AppImage` e `.deb` |
 | App, janela e título em foco | sim | sim | sim em sessão X11; em sessão Wayland só os apps que rodam pelo XWayland ([guia](docs/WINDOWS-LINUX.md#4-limitações-conhecidas)) |
 | URL da aba ativa | Safari, Chrome, Arc, Brave, Edge, Vivaldi, Opera (Automação) | Chrome, Edge, Brave, Opera, Vivaldi, Firefox (UI Automation) | só pelo título da janela |
 | Screenshots da janela ativa | sim | sim | sim (X11) |
@@ -95,8 +138,8 @@ em `https://<owner>.github.io/ubiquitous-engine/` pelo workflow `site.yml`; dese
 
 | Camada | Tecnologia |
 |---|---|
-| Núcleo / daemon | **Rust** — workspace hexagonal (`core` → `storage` / `platform` / `ai` → `engine` → `app` → `desktop` / `cli`) |
-| Desktop | **Tauri 2** (tray na barra de menus ou na bandeja, notificações, iniciar com o sistema) |
+| Núcleo / daemon | **Rust** — workspace hexagonal (`core` → `nofap` / `storage` / `platform` / `ai` → `engine` → `app` → `desktop` / `nofap-desktop` / `cli`) |
+| Desktop | **Tauri 2** (tray na barra de menus ou na bandeja, notificações, iniciar com o sistema), dois apps: ubiqX (`apps/desktop/src-tauri`) e o NoFap separado (`apps/nofap/src-tauri`) |
 | UI | **React 19 + TypeScript + Vite + Tailwind 4**, Recharts, Framer Motion, react-three-fiber (UBI em 3D) |
 | Dados | **SQLite** local (`rusqlite`, WAL) |
 | IA | **Anthropic Messages API**, **OpenAI Chat Completions** ou **xAI Grok** (API compatível com OpenAI) via HTTP, escolhida pelo usuário; saída estruturada JSON em todas |
@@ -122,7 +165,7 @@ Sem toolchain local: baixe o `.app` pronto do GitHub Actions (artifact `ubiqX-ma
 [Codemagic](https://codemagic.io) com o `codemagic.yaml` da raiz; quarentena e assinatura em
 [`docs/MACOS-TESTING.md`](docs/MACOS-TESTING.md) § 3.1.
 
-**Atualizações.** Cada push vira a release rolante [`continuous`](https://github.com/andreyquadros/ubiquitous-engine/releases/tag/continuous)
+**Atualizações.** Cada push na `main` vira a release rolante [`continuous`](https://github.com/andreyquadros/ubiquitous-engine/releases/tag/continuous)
 (`.dmg` + `.app.zip`, `-setup.exe` + `.msi`, `.AppImage` + `.deb`, os artefatos de atualização assinados e dois
 feeds: `latest.json` com as três plataformas e `updater.json` no formato do `tauri-plugin-updater`), publicada de
 uma vez pelo GitHub Actions e, com um token, também pelo Codemagic (só macOS; as plataformas dos feeds são
@@ -132,7 +175,9 @@ reabre o app sozinho, e **Baixar** continua abrindo o instalador do sistema em u
 build é `0.1.<número do build>` (`scripts/app-version.mjs`), que é o que o updater compara. No macOS a CI assina
 ad hoc, então a atualização automática custa reconceder Gravação de Tela e Automação — o app avisa antes.
 Assinatura, secrets, instalação, token do Codemagic e `UBIQX_UPDATE_FEED_URL` em
-[`docs/MACOS-TESTING.md`](docs/MACOS-TESTING.md) § 3.2.
+[`docs/MACOS-TESTING.md`](docs/MACOS-TESTING.md) § 3.2. O app separado NoFap tem o seu próprio feed
+(`shield-continuous`) e a sua própria variável de build, `UBIQX_SHIELD_UPDATE_FEED_URL`; cada app ignora o feed do
+outro.
 
 Na primeira execução o onboarding pede para **escolher a IA** e colar a chave correspondente, a permissão de
 **Gravação de Tela** (reinicie o app depois de conceder) e a **Automação** para o navegador; depois você cria as
@@ -153,9 +198,13 @@ Sem chave, tudo continua funcionando em modo local (regras + memória + relatór
 ## Desenvolvimento
 
 ```bash
-# testes e lint dos crates portáveis (Linux/macOS)
-cargo test --workspace --exclude ubiqx-desktop
-cargo clippy --workspace --all-targets -- -D warnings
+# testes e lint dos crates portáveis (Linux/macOS); os dois apps Tauri precisam do webkit2gtk no Linux
+cargo test --workspace --exclude ubiqx-desktop --exclude ubiqx-nofap-desktop
+cargo clippy --workspace --exclude ubiqx-desktop --exclude ubiqx-nofap-desktop --all-targets -- -D warnings
+
+# NoFap: a lista embutida é a que as fontes fixadas geram (sem rede), e a regra dos nomes
+python3 scripts/nofap/build_blocklist.py --check
+cargo test -p ubiqx-nofap --test naming
 
 # simulação ponta a ponta de um dia de trabalho com IA falsa (não precisa de Mac nem de chave)
 cargo run -p ubiqx-cli -- --ephemeral --fake-ai simulate --seconds 60 --events
@@ -169,7 +218,17 @@ cd apps/desktop && pnpm tauri dev
 # instaladores de Windows e Linux (ver docs/WINDOWS-LINUX.md § 2)
 cd apps/desktop && pnpm tauri build --bundles msi,nsis        # Windows
 cd apps/desktop && pnpm tauri build --bundles appimage,deb    # Linux
+
+# o app separado NoFap: interface no navegador (http://localhost:1430, ?nofap=<cenário>) e o app
+cd apps/desktop && pnpm dev:nofap
+cd apps/desktop && pnpm build:nofap                           # só a interface (dist-nofap)
+cd apps/nofap/src-tauri && node ../../desktop/node_modules/@tauri-apps/cli/tauri.js build   # o CLI do Tauri roda da pasta do app
 ```
+
+O app separado e o módulo usam o mesmo serviço (`ubiqx_engine::nofap::NofapService`); o app separado o monta
+sem o motor do ubiqX (`ubiqx_app::nofap_app::NofapApp`), então nenhum rastreador, classificador ou relatório existe nele.
+**Cuidado ao testar as camadas do sistema na sua máquina**: com a proteção ligada, o app escreve de verdade no
+`hosts`, no DNS e nas políticas dos navegadores. Como desfazer: [`docs/nofap/REMOVAL.md`](docs/nofap/REMOVAL.md).
 
 Variáveis úteis: `UBIQX_LOG=debug` (log), `UBIQX_FAKE_AI=1` (IA falsa no app desktop), `UBIQX_SCRIPTED=1`
 (plataforma roteirizada — o app "trabalha sozinho" para demonstração, sempre com IA falsa a menos que

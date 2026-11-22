@@ -167,3 +167,68 @@ janelas em outro monitor com escala diferente podem sair com bordas de alguns pi
   na Timeline se o domínio aparece. Se não aparecer, bloqueie o app.
 - **Compilação no Windows reclama de `link.exe`**: instale o Visual Studio Build Tools com a carga de
   trabalho *Desktop development with C++* e abra um terminal novo.
+
+## 6. O NoFap no Windows e no Linux
+
+O módulo NoFap (a página **NoFap** do ubiqX) e o app separado NoFap fazem o mesmo: guarda do navegador,
+lista no arquivo `hosts`, DNS filtrado, políticas dos navegadores e, se a pessoa quiser, a verificação por
+IA. O que é olhado, enviado e guardado está em [`nofap/PRIVACY.md`](nofap/PRIVACY.md); como tirar tudo do
+computador, em [`nofap/REMOVAL.md`](nofap/REMOVAL.md). Esta seção é o que muda para quem testa no Windows e
+no Linux.
+
+**Antes de testar.** Com a proteção ligada e uma camada do sistema escolhida, o app escreve de verdade no
+`hosts`, no DNS e nas políticas dos navegadores da máquina, depois de pedir a senha de administrador. Teste
+numa máquina (ou conta, ou VM) em que isso não atrapalhe, e tenha [`nofap/REMOVAL.md`](nofap/REMOVAL.md) à
+mão. Desligar pela página espera o tempo que você escolheu no assistente (10 minutos por padrão);
+**Restaurar minha rede** devolve o DNS ao automático na hora.
+
+**O app separado.** Os instaladores dele saem da CI nos artifacts `ubiqx-shield-windows-app` e
+`ubiqx-shield-linux-app`: `ubiqx-shield-windows-x86_64-setup.exe` (NSIS, por usuário; o app separado não tem
+`.msi`), `ubiqx-shield-linux-x86_64.AppImage` e `ubiqx-shield-linux-x86_64.deb`. Ele tem pasta de dados,
+banco, chave e feed de atualização próprios (`ai.ubiqx.shield`) e pode ficar instalado junto com o ubiqX:
+quando os dois estão ligados, só um faz a guarda, e cada um remove do sistema só o que ele mesmo pediu.
+
+| | Windows | Linux |
+|---|---|---|
+| Guarda (site da aba em frente) | pela UI Automation, nos navegadores do § 3 | só pelo título da janela numa sessão X11 (a página diz "limitada"); numa sessão Wayland não há guarda nem verificação por IA (a página diz por quê) |
+| Pedido de senha | UAC, uma vez por mudança: o app abre `powershell.exe`, que reabre o próprio app com `Start-Process -Verb RunAs`. Enquanto o app não for assinado, o UAC mostra "Fornecedor desconhecido" | `pkexec`, que precisa de um agente do polkit na sessão (os ambientes de desktop comuns já trazem). Sem ele a página diz que não há como pedir a senha |
+| Lista no `hosts` | até 8.000 nomes (o cliente DNS do Windows fica lento com arquivos maiores) | até 20.000 nomes |
+| DNS filtrado | os adaptadores ativos recebem os endereços da Cloudflare for Families, IPv4 e IPv6 | um arquivo em `/etc/systemd/resolved.conf.d/`; precisa do `systemd-resolved` ativo e do `/etc/resolv.conf` apontando para ele. Sem isso a camada fica indisponível e a página diz por quê |
+| Políticas dos navegadores | registro, em `HKLM\SOFTWARE\Policies\…` | arquivos `ubiqx-shield.json` nas pastas de política de cada navegador (o Firefox e o Chromium em Snap leem as mesmas pastas); um navegador instalado só como Flatpak fica de fora |
+| AppImage | | o AppImage não consegue pedir a senha (o administrador não lê a montagem do usuário): as camadas do sistema ficam indisponíveis. Para testá-las, instale o `.deb` |
+
+**Quais camadas estão abertas.** Cada camada do sistema só abre num sistema depois que a CI a aplicou e
+removeu de verdade nele (`crates/ubiqx-nofap/src/gate.rs`). Hoje a lista no `hosts` e o DNS filtrado estão
+abertos no Windows e no Linux; as políticas dos navegadores estão fechadas em todos os sistemas até alguém
+conferir os navegadores à mão (item 9 de [`nofap/REAL-MACHINE-CHECKLIST.md`](nofap/REAL-MACHINE-CHECKLIST.md)).
+Para testar uma camada fechada na sua máquina, abra o app com a variável `UBIQX_SHIELD_UNVERIFIED_TIERS`
+(nomes separados por vírgula: `hosts`, `resolver`, `policies`):
+
+```bash
+UBIQX_SHIELD_UNVERIFIED_TIERS=policies ./ubiqx-shield-linux-x86_64.AppImage   # o .deb: /usr/bin/<executável>
+```
+
+```powershell
+$env:UBIQX_SHIELD_UNVERIFIED_TIERS = 'policies'; & "$env:LOCALAPPDATA\NoFap\ubiqx-shield.exe"
+```
+
+**Os navegadores mostram "Gerenciado pela sua organização"** quando as políticas estão aplicadas. Não há
+organização nenhuma: é o efeito do mecanismo. Feche e reabra o navegador depois de aplicar ou remover.
+
+**Desinstalar.** O desinstalador do `-setup.exe` (os dois produtos) e o `apt remove` do `.deb` (os dois
+produtos) removem do sistema o que aquele produto aplicou antes de apagar os arquivos, e não fazem isso numa
+atualização; no Windows isso custa um pedido do UAC durante a desinstalação. **O `.msi` do ubiqX não
+remove nada do sistema.** Nenhum desses caminhos foi conferido numa máquina real ainda (item 15 da lista).
+Os comandos para cada caso estão em [`nofap/REMOVAL.md`](nofap/REMOVAL.md).
+
+**O executável não escreve no console no Windows.** Os dois apps são programas de janela no build de
+release, então `<app>.exe --shield-helper status` num terminal termina sem mostrar nada (o código de saída
+existe; o texto, não). Para ver o estado do sistema no Windows, use o auxiliar de linha de comando
+compilado do código (`cargo build -p ubiqx-platform --bin ubiqx-shield-helper`, depois
+`target\debug\ubiqx-shield-helper.exe status`) ou os comandos da parte 5 de
+[`nofap/REMOVAL.md`](nofap/REMOVAL.md).
+
+**Na CI.** O job `windows-app` também roda clippy e os testes do `ubiqx-nofap-desktop`; o `rust-linux` deixa os
+dois shells de fora (o runner não tem webkit). O workflow `nofap-smoke.yml` aplica e remove as camadas do
+sistema com o auxiliar, como administrador, nos runners de Windows, macOS e Ubuntu; o resultado de cada
+execução está na seção 3 da lista de verificação.

@@ -34,8 +34,9 @@ O que não existe, em nenhuma camada:
 
 **O que olha.** A cada 2 segundos, o app pergunta ao sistema qual janela está na frente. Se
 for um navegador que ele sabe ler, lê o endereço da aba ativa. Em alguns casos só o título da
-janela está disponível (Linux com X11), e em outros nada (Firefox no macOS, Linux com
-Wayland); a página do NoFap diz quando a guarda está limitada e por quê.
+janela está disponível (Linux com X11), e em outros nada (Firefox no macOS, um navegador
+para o qual você negou a Automação no macOS, Linux com Wayland); a página do NoFap diz quando
+a guarda está limitada e por quê.
 
 **O que faz com isso.** Compara o nome do site, dentro do seu computador, com uma lista
 embutida de cerca de 240 mil sites adultos, com regras de palavras e de terminações, e com a
@@ -52,12 +53,24 @@ o horário exato. O cartão que aparece na tela também não carrega o nome do s
 **Na memória, até fechar o app.** O que um botão do cartão precisa para agir (qual app, qual
 site, qual janela) fica na memória por até 10 minutos e nunca vai para o disco.
 
-**Só no ubiqX: o que o rastreador de produtividade esquece.** Quando há um bloqueio, o bloco
-de atividade que estava aberto é reescrito como "privado": título, endereço, domínio e
-descrição são apagados, e as capturas de tela daquele bloco são excluídas do disco. Enquanto o
-site é um site bloqueado ou misto, o rastreador não tira captura dele. Limite conhecido: o
-banco de dados não sobrescreve os bytes de uma linha alterada, então o título antigo pode
-continuar no arquivo do banco até aquele espaço ser reutilizado.
+**Uma exceção é exceção: fica escrita.** Se você usar "Pedir exceção" num cartão (ou pedir
+para liberar um site na página), o nome do site fica guardado em texto no banco, como parte do
+pedido que espera o seu tempo de espera, até o pedido ser aplicado, cancelado ou vencer.
+Aplicado, ele vira um item da sua lista "nunca bloquear", que também é guardada em texto. Esse
+pedido entra na exportação.
+
+**Só no ubiqX: o que o rastreador de produtividade esquece.** Uma amostra de uma página
+bloqueada, ou de uma janela que teve um bloqueio nos últimos 10 minutos, é registrada como a
+de uma janela anônima: o tempo conta, o título e o endereço não. Se o rastreador já tinha um
+bloco aberto daquela janela quando o bloqueio aconteceu, esse bloco é fechado e reescrito como
+"privado": título, endereço, domínio, descrição e o texto que iria para a IA são apagados, e
+as capturas de tela dele são excluídas, do disco e do banco. O bloco de outra janela que
+estava aberto antes (uma hora no editor, outro site) fica como estava. O rastreador não tira
+captura de uma página bloqueada ou mista, nem de uma janela que teve um sinal ou um bloqueio
+nos últimos 10 minutos. O banco sobrescreve com zeros o que libera, então o título antigo
+some do arquivo principal do banco; ele ainda pode ficar por um tempo no arquivo auxiliar
+`ubiqx.db-wal`, até o SQLite passar esse arquivo para o banco, o que acontece sozinho com o
+uso e quando o app fecha.
 
 ### 2. Lista no sistema (arquivo `hosts`)
 
@@ -183,10 +196,11 @@ ninguém.
   o provedor.
 - **"IA do Ubi" (só no ubiqX, com um segundo consentimento).** A imagem passa pelo servidor
   do ubiqX a caminho da Anthropic. O servidor não guarda a imagem nem o conteúdo do pedido, e
-  não os escreve em registro. Ele anota, como para qualquer pedido, a hora, o modelo, a
-  quantidade de tokens e o custo. Uma sequência de pedidos pequenos com imagem é reconhecível:
-  quem opera o servidor consegue saber que um assinante usa a verificação, mas não o que
-  havia na tela.
+  não os escreve em registro. Ele anota, como para qualquer pedido, o código de assinante da
+  sua licença, a hora, o modelo, a quantidade de tokens e o custo. Uma sequência de pedidos
+  pequenos com imagem é reconhecível: quem opera o servidor consegue saber que aquele
+  assinante usa a verificação, mas não o que havia na tela. O app separado não oferece a "IA
+  do Ubi".
 
 **O que o provedor faz com a imagem.** Isso está fora do app. O provedor aplica as regras e
 os sistemas de segurança dele ao que recebe e guarda pelo prazo que os termos dele definem.
@@ -207,8 +221,10 @@ comunicação própria. Antes de ligar esta camada, leia os termos do provedor q
   guardado ao lado, então quem tem acesso à sua conta consegue testar se um site específico
   está no conjunto, mas não consegue listar o conjunto.
 - Nenhuma linha de registro por verificação. O arquivo de log do app não recebe o resultado,
-  o site, o título nem o app. Uma chamada que falha deixa uma linha de aviso com o provedor e
-  o erro, sem dizer de que tipo de chamada se tratava.
+  o site, o título nem o app, e as bibliotecas de rede ficam no nível de aviso, então nem o
+  pedido aparece lá. Uma chamada que falha deixa uma linha de aviso com o provedor e o erro,
+  sem dizer de que tipo de chamada se tratava. Quando a verificação para depois de falhas
+  seguidas, e quando volta a responder, fica uma linha dizendo só isso.
 
 **Limites que você define.** Por padrão: até 20 verificações por hora, 120 por dia e
 US$ 2,00 por mês. Ao atingir um limite, a verificação para e a página diz por quê. Uma tela
@@ -226,8 +242,10 @@ esta verificação. O texto de consentimento diz isso.
   que você faz nesses fluxos é enviado a alguém.
 - O que você toca vira contagem por dia e hora: respirações iniciadas e concluídas, pedidos
   de respiro, deslizes que você mesmo registrou, check-ins e os gatilhos que você marcou,
-  pedidos de desligar e cancelamentos, saídas do app com a proteção ligada. A nota de 0 a 10
-  no fim da respiração aparece na tela e não é guardada.
+  pedidos de desligar e cancelamentos, saídas do app com a proteção ligada, "Não era isso" e
+  "Restaurar minha rede". Também viram contagem, sem detalhe, as mudanças que o app notou nas
+  camadas do sistema e as vezes em que ele mostrou os contatos de ajuda. A nota de 0 a 10 no
+  fim da respiração aparece na tela e não é guardada.
 - A sua frase de valores e os planos "se… então…" ficam guardados em texto legível no banco
   de dados do app.
 - O histórico de deslizes não é um diário: é só o número por dia e hora, e só você o inicia.
@@ -243,14 +261,14 @@ esta verificação. O texto de consentimento diz isso.
 
 | Onde | O quê |
 |---|---|
-| Banco de dados do app (SQLite, sem criptografia) | suas escolhas e consentimentos; a frase e os planos; pedidos de mudança pendentes; os sites da sua lista, em texto; sites aprendidos e adiamentos, só como código embaralhado; contagens por dia e hora; o custo das verificações; o seu DNS anterior |
-| Cofre do sistema (Keychain, Gerenciador de Credenciais, Secret Service) | a chave do provedor de IA |
+| Banco de dados do app (SQLite, sem criptografia) | suas escolhas e consentimentos; a frase e os planos; pedidos de mudança pendentes (um pedido de exceção leva o nome do site); os sites da sua lista, em texto; sites aprendidos e adiamentos, só como código embaralhado; contagens por dia e hora; o custo das verificações; o seu DNS anterior |
+| Cofre do sistema (Keychain, Gerenciador de Credenciais, Secret Service) | a chave do provedor de IA. No Windows e no Linux, quando o cofre não responde, ela vai para o arquivo `secrets.json` na pasta de dados do app (no Linux com permissão só para você) |
 | Arquivo `hosts` do sistema | o bloco descrito acima |
 | Pasta de estado do sistema | o arquivo de estado descrito acima |
 | Configuração de DNS e políticas dos navegadores | o que as camadas 3 e 4 escreveram |
-| Pasta compartilhada entre os dois produtos | um arquivo que diz qual dos dois está fazendo a guarda agora (produto, número do processo, horário do último sinal); existe só enquanto a proteção roda |
-| Pasta de exportações | o arquivo que você pediu em "Exportar dados", se pediu |
-| Arquivo de log do app | mudanças de estado (ligou, camada aplicada, verificação em espera); nunca um bloqueio, site, título ou resultado |
+| Pasta compartilhada entre os dois produtos (`ubiqx-shield`, na pasta de dados locais da sua conta) | o arquivo `primary.lock`, que diz qual dos dois está fazendo a guarda agora (produto, número do processo, horário do último sinal). Ele é apagado quando a proteção é desligada e quando o app fecha; a pasta vazia fica |
+| Pasta `exports` dentro da pasta de dados do app | o arquivo que você pediu em "Exportar dados" (`shield-<data>-<hora>.json`), se pediu |
+| Arquivo de log do app (`ubiqX.log` ou `NoFap.log`) | mudanças de estado: ligou, desligou, camadas do sistema aplicadas ou removidas, rede restaurada, qual dos dois produtos faz a guarda, verificação por IA em espera ou de volta; avisos sem detalhe quando a configuração ou as listas não puderam ser lidas. Nunca um bloqueio, site, título ou resultado |
 
 O banco de dados fica na pasta de dados de cada produto:
 
@@ -258,6 +276,10 @@ O banco de dados fica na pasta de dados de cada produto:
 |---|---|---|---|
 | ubiqX (`ubiqx.db`) | `~/Library/Application Support/ai.ubiqx.app/` | `%AppData%\ai.ubiqx.app\` | `~/.local/share/ai.ubiqx.app/` |
 | app separado (`shield.db`) | `~/Library/Application Support/ai.ubiqx.shield/` | `%AppData%\ai.ubiqx.shield\` | `~/.local/share/ai.ubiqx.shield/` |
+
+O arquivo de log fica em `~/Library/Logs/<identificador>/` no macOS,
+`%LocalAppData%\<identificador>\logs\` no Windows e `~/.local/share/<identificador>/logs/` no
+Linux, com `ai.ubiqx.app` ou `ai.ubiqx.shield` no lugar de `<identificador>`.
 
 Os dois produtos não compartilham banco, chave nem configurações. O app separado não tem
 rastreador de produtividade: as tabelas de atividade, capturas e relatórios existem no banco
@@ -280,19 +302,26 @@ dele e ficam vazias.
 
 - **"Apagar todos os dados" do ubiqX não desliga o NoFap de propósito.** Se apagasse as
   escolhas, seria um botão de desligar sem o tempo de espera que você mesmo escolheu.
-- **"Apagar meu histórico do NoFap" sobrescreve o que apaga.** As contagens, os adiamentos e
-  as versões anteriores das suas escolhas são sobrescritos no arquivo do banco, e não só
-  marcados como livres. Se outro programa estiver com o banco aberto ao mesmo tempo (a linha
-  de comando do ubiqX, por exemplo), parte disso só é consolidada quando ele fechar.
-- **"Apagar todos os dados" não sobrescreve.** Ele apaga as linhas; os bytes podem continuar
-  no arquivo até serem reutilizados.
+- **O banco sobrescreve o que apaga.** Nos dois produtos, o banco de dados é aberto de um
+  jeito que grava zeros sobre tudo o que ele libera: uma linha apagada, a versão anterior de
+  uma linha alterada. "Apagar meu histórico do NoFap" e "Apagar tudo do NoFap" ainda passam o
+  arquivo auxiliar do banco (`-wal`) para o arquivo principal na hora, para que as contagens,
+  os adiamentos, a frase, os planos e as versões anteriores das suas escolhas não fiquem
+  legíveis em nenhum dos dois. Se outro programa estiver com o banco aberto ao mesmo tempo (a
+  linha de comando do ubiqX, por exemplo), parte disso só é consolidada quando ele fechar.
+- **"Apagar todos os dados" (ubiqX) também sobrescreve**: ele apaga as linhas, passa o
+  arquivo auxiliar para o principal e reconstrói o arquivo do banco. Ele apaga também a pasta
+  `exports`, com as exportações do NoFap que estiverem lá.
 - **"Apagar tudo do NoFap"** (escolhas, listas e histórico) existe só com a proteção
   desligada.
-- **Exportação.** "Exportar dados do NoFap" grava um arquivo na pasta de exportações do app.
-  Ele não inclui o sal nem os códigos dos sites aprendidos. A exportação geral do ubiqX não
-  inclui nada do NoFap, porque é a que uma pessoa costuma mandar para outra.
-- **Remover do computador.** O que o produto pode deixar no sistema, e os comandos para tirar
-  cada coisa mesmo sem o app, estão em [REMOVAL.md](REMOVAL.md).
+- **Exportação.** "Exportar dados do NoFap" grava um arquivo na pasta `exports` do app, com
+  as suas escolhas (sem os campos internos do app), os sites que você digitou, a quantidade
+  de sites aprendidos e as contagens. Ele não inclui o sal nem os códigos dos sites
+  aprendidos. A exportação geral do ubiqX não inclui nada do NoFap, porque é a que uma pessoa
+  costuma mandar para outra.
+- **Remover do computador.** O que o produto pode deixar no sistema, o que cada
+  desinstalador faz (o `.msi` do ubiqX não remove as camadas do sistema), e os comandos para
+  tirar cada coisa mesmo sem o app, estão em [REMOVAL.md](REMOVAL.md).
 
 ## Quem consegue ver o quê
 
@@ -304,7 +333,7 @@ dele e ficam vazias.
 | A rede e o provedor de internet | os nomes de sites consultados, como antes. Com o DNS filtrado, as consultas vão para a Cloudflare |
 | A Cloudflare (só com o DNS filtrado) | os nomes de sites que este computador consulta e o endereço de onde vêm |
 | O provedor de IA (só com a verificação por IA) | as imagens enviadas, pela chave ou conta usada, e que elas vêm de um app de autocontrole contra pornografia (o texto do pedido diz isso) |
-| O servidor do ubiqX (só com a "IA do Ubi") | que uma verificação foi feita: hora, modelo, tokens e custo. Nunca a imagem |
+| O servidor do ubiqX (só com a "IA do Ubi") | que um assinante fez uma verificação: o código de assinante, hora, modelo, tokens e custo. Nunca a imagem |
 | Qualquer outra pessoa | nada. O NoFap não envia nada a ninguém |
 
 ## Senha de administrador
@@ -351,8 +380,9 @@ ela veio, como em qualquer acesso. Cada produto lê só o próprio arquivo e ign
 
 ## O que ainda falta confirmar
 
-Este texto descreve o projeto (`docs/nofap/DESIGN.md`) e o código que está no repositório.
-Três pontos dependem de verificação fora do código, e estão na lista de
+Este texto foi conferido, frase por frase, com o código que está no repositório (o
+registro dessa conferência está em `docs/nofap/handoff/U9b.md`). Três pontos dependem de
+verificação fora do código, e estão na lista de
 [REAL-MACHINE-CHECKLIST.md](REAL-MACHINE-CHECKLIST.md):
 
 - **Termos dos provedores de IA** (item 12). Ninguém leu ainda o que a Anthropic, a OpenAI e

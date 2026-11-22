@@ -217,3 +217,64 @@ repositório). A chave de exemplo assinada com esse par (`sub_dev_managed_0001`,
 com `ubi-license issue`. O mock do frontend (`apps/desktop/src/lib/mock.ts`) não usa essas
 chaves: ele monta as suas (`__mock.sampleLicenseKeys`, assinatura fictícia, validade relativa
 ao carregamento) porque nada ali verifica assinatura.
+
+## 7. O NoFap e o app separado
+
+### Licença e planos
+
+O módulo NoFap (dentro do ubiqX) e o app separado NoFap (`apps/nofap/src-tauri`, identificador
+`ai.ubiqx.shield`) seguem uma regra só: **bloquear nunca depende de licença.** A guarda, a lista no
+`hosts`, o DNS filtrado, as políticas dos navegadores, o aconselhamento e o tempo de espera para
+desligar funcionam com ou sem chave, nos dois produtos, nos modos *soft* e *hard*. Uma assinatura
+vencida nunca tira um bloqueio.
+
+| | ubiqX | App separado |
+|---|---|---|
+| Verificação por IA com a chave da própria pessoa (Anthropic, OpenAI, xAI) | sem plano | sem plano |
+| Verificação por IA pela IA do Ubi | precisa de licença `monthly_managed` válida, como qualquer uso da IA do Ubi, e de um segundo consentimento na página do módulo | não existe: o seletor oferece só os três provedores com chave, e o app recusa um consentimento para a IA do Ubi (`NofapApp::handle`) |
+| Chave de licença | a mesma de sempre | o app separado não lê chave de licença nesta versão |
+
+Vender o app separado exigiria um plano novo (uma variante de `Plan` ou um campo de produto nos
+*claims*), e os builds atuais do ubiqX leem uma chave com um plano desconhecido como inválida.
+Nada disso foi feito: `license.rs`, os *claims* e o proxy não mudaram com o módulo. Pela IA do Ubi,
+uma verificação passa pelo proxy como qualquer pedido com imagem (limite de corpo de 4 MiB,
+`413 request_too_large` acima disso); o proxy grava no livro-razão o `sub`, o modelo, os tokens e o
+custo, como em todo pedido, e nunca o corpo (`services/ubi-api/tests/images.rs`).
+
+### As listas de sites (`THIRD-PARTY-NOTICES`)
+
+A lista embutida de sites adultos (`crates/ubiqx-nofap/data/core.bin`, ~240 mil entradas como hashes,
+e `hosts-tier.txt`, os 20 mil nomes que vão para o arquivo `hosts`) é compilada de listas públicas
+fixadas por commit e SHA-256 em `crates/ubiqx-nofap/data/sources.lock.json`, por
+`scripts/nofap/build_blocklist.py`. A CI confere, sem rede, que os dados embutidos são o que essas
+fontes geram (`build_blocklist.py --check`).
+
+| Fonte | Licença | Uso |
+|---|---|---|
+| StevenBlack/hosts, extensão "porn" (que reúne Sinfonietta, Clefspeare13, bigdargon, brijrajparmar27 e tiuxo) | MIT; duas das entradas reunidas são CC BY 4.0 | lista principal |
+| ShadowWhisperer/BlockLists, "Adult" | domínio público (The Unlicense) | lista principal |
+| 4skinSkywalker/Anti-Porn-HOSTS-File | MIT | só as entradas com uma palavra forte (a lista também traz rastreadores e sites comuns) |
+| `extra-ptbr.txt`, `never-block.txt`, `mixed.txt`, `never-capture.txt` | nossas | sites brasileiros que faltam nas listas públicas; o que nunca é bloqueado; plataformas mistas; o que nunca é fotografado |
+| Chrome UX Report (via zakird/crux-top-lists) | CC BY 4.0 | só no build: a ordem de popularidade, que escolhe os nomes do `hosts`, e a tabela de sites populares |
+| Public Suffix List | MPL 2.0 | só no build, como filtro; não vai no app |
+
+Não entram, por licença: Bon-Appetit e UT1 (CC BY-SA 4.0), HaGeZi e oisd (GPL-3.0), blocklistproject
+(derivada da UT1) e mhhakim (sem licença).
+
+O MIT e o CC BY 4.0 pedem que o aviso acompanhe as cópias. Os avisos estão em dois arquivos:
+
+- `THIRD-PARTY-NOTICES`, na raiz: as fontes, as licenças e o texto da licença MIT. O app separado mostra
+  esse arquivo inteiro em Configurações → Sobre (embutido no frontend, `NofapSettings.tsx`).
+- `crates/ubiqx-nofap/data/NOTICE.txt`: o mesmo, com os commits exatos e as linhas de copyright
+  copiadas pelo script dos arquivos de licença de cada fonte. Ele é gerado junto com os dados; não edite
+  à mão. O `THIRD-PARTY-NOTICES` é escrito à mão, e o script falha se faltar nele uma linha de copyright
+  do `NOTICE.txt`.
+
+**Em aberto:** o ubiqX embute as mesmas listas, mas ainda não mostra esses avisos em nenhuma tela, e
+nenhum dos instaladores leva o arquivo `THIRD-PARTY-NOTICES` ao lado do app. Antes de publicar um build
+do ubiqX com o módulo para outras pessoas, a tela Sobre (ou a página de ajuda do módulo) precisa mostrar
+o arquivo, como o app separado já faz.
+
+Trocar ou acrescentar uma fonte: edite `sources.lock.json` e o script, rode
+`python3 scripts/nofap/build_blocklist.py` com rede, confira a licença da fonte nova e atualize os dois
+arquivos de aviso.

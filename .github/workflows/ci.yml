@@ -172,6 +172,8 @@ jobs:
         # Tauri names them after productName (ubiqX.app, ubiqX_<version>_<arch>.dmg, ubiqX.app.tar.gz).
         run: |
           name="$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').productName")"
+          # The executable inside the bundle, for docs/nofap/REMOVAL.md (checklist item 25).
+          ls -la "target/release/bundle/macos/${name}.app/Contents/MacOS"
           ditto -c -k --sequesterRsrc --keepParent "target/release/bundle/macos/${name}.app" "target/release/bundle/macos/ubiqX-macos-${UBIQX_ARCH}.app.zip"
           dmg="$(ls target/release/bundle/dmg/"${name}"_*.dmg | head -n 1)"
           test -f "$dmg"
@@ -208,6 +210,7 @@ jobs:
         # picked by the standalone app's productName, so ubiqX's renamed files are never touched.
         run: |
           name="$(node -p "require('./apps/nofap/src-tauri/tauri.conf.json').productName")"
+          ls -la "target/release/bundle/macos/${name}.app/Contents/MacOS"
           ditto -c -k --sequesterRsrc --keepParent "target/release/bundle/macos/${name}.app" "target/release/bundle/macos/ubiqx-shield-macos-${UBIQX_ARCH}.app.zip"
           dmg="$(ls target/release/bundle/dmg/"${name}"_*.dmg | head -n 1)"
           test -f "$dmg"
@@ -295,6 +298,8 @@ jobs:
         run: |
           name="$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').productName")"
           ls -la target/release/bundle/msi target/release/bundle/nsis
+          # The installed executable's name, for docs/nofap/REMOVAL.md (checklist item 25).
+          grep -h 'define MAINBINARYNAME' target/release/nsis/*/installer.nsi || true
           msi="$(ls target/release/bundle/msi/"${name}"_*pt-BR*.msi | head -n 1)"
           exe="$(ls target/release/bundle/nsis/"${name}"_*-setup.exe | head -n 1)"
           zip="${exe%.exe}.nsis.zip"
@@ -331,6 +336,7 @@ jobs:
         # app's productName, so ubiqX's renamed files are never touched.
         run: |
           name="$(node -p "require('./apps/nofap/src-tauri/tauri.conf.json').productName")"
+          grep -h 'define MAINBINARYNAME' target/release/nsis/*/installer.nsi || true
           exe="$(ls target/release/bundle/nsis/"${name}"_*-setup.exe | head -n 1)"
           zip="${exe%.exe}.nsis.zip"
           test -f "$exe"
@@ -409,6 +415,9 @@ jobs:
           deb="$(ls target/release/bundle/deb/"${name}"_*.deb | head -n 1)"
           tgz="$appimage.tar.gz"
           test -f "$appimage" && test -f "$deb"
+          # The package and executable names, for docs/nofap/REMOVAL.md (checklist item 25).
+          dpkg-deb --field "$deb" Package Version
+          dpkg-deb --contents "$deb" | grep -E '/usr/bin/' || true
           mv "$appimage" "target/release/bundle/appimage/ubiqX-linux-${UBIQX_ARCH}.AppImage"
           mv "$deb" "target/release/bundle/deb/ubiqX-linux-${UBIQX_ARCH}.deb"
           # Unsigned, the updater artifact is deleted rather than published (ci-updater-signing.sh).
@@ -435,7 +444,6 @@ jobs:
         working-directory: apps/nofap/src-tauri
       - name: Standalone app - stable installer names
         # ubiqx-shield-linux-<arch>.AppImage / .deb / .AppImage.tar.gz, picked by the standalone app's productName.
-        # The package name inside the .deb is printed for the real-machine checklist (item 25).
         run: |
           name="$(node -p "require('./apps/nofap/src-tauri/tauri.conf.json').productName")"
           appimage="$(ls target/release/bundle/appimage/"${name}"_*.AppImage | head -n 1)"
@@ -443,7 +451,7 @@ jobs:
           tgz="$appimage.tar.gz"
           test -f "$appimage" && test -f "$deb"
           dpkg-deb --field "$deb" Package Version
-          dpkg-deb --contents "$deb" | grep -E '/usr/bin/|DEBIAN' || true
+          dpkg-deb --contents "$deb" | grep -E '/usr/bin/' || true
           mv "$appimage" "target/release/bundle/appimage/ubiqx-shield-linux-${UBIQX_ARCH}.AppImage"
           mv "$deb" "target/release/bundle/deb/ubiqx-shield-linux-${UBIQX_ARCH}.deb"
           if [ "${UBIQX_UPDATER_SIGNED:-0}" = "1" ]; then
