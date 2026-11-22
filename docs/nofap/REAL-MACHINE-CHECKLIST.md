@@ -469,9 +469,10 @@ consent text (`vision.consent`, `vision.managed`) and PRIVACY.md to what they sa
 | `.deb` removal | apply the hosts tier, `sudo apt remove <package>`: the block, the state directory and the drop-in are gone | |
 | `.deb` upgrade | apply, install a newer `.deb` over it: **nothing is removed** (`prerm` acts only on `remove`) | |
 | NSIS uninstall | apply, uninstall from Settings: one UAC prompt, then the block and the state directory are gone | |
-| NSIS uninstall, prompt declined | the uninstall finishes and its last page points to `REMOVAL.md` | |
+| NSIS uninstall, prompt declined | the uninstall finishes; the system keeps what was applied (the hook prints one detail line before the prompt and reports nothing after: `ExecShellWait` has no exit code) | |
 | In-app update on Windows | apply, let the app update itself: **nothing is removed** (`$UpdateMode`) | |
-| MSI, macOS `.app`, AppImage | no hook: the commands of `REMOVAL.md` part 2 work with the installed executable, and part 3 works after the app is gone | |
+| ubiqX `.msi`, macOS `.app`, AppImage | no hook (the standalone app ships no `.msi`, decision 39): the MSI command of `REMOVAL.md` part 1 and the commands of part 2 work with the installed executable, and part 3 works after the app is gone | |
+| Each hook removes only its own product's wants | both products applied; uninstall one: the other product's tiers stay (`--owner ubiqx` / `--owner shield` in the hooks) | |
 | Both products installed | apply the hosts tier in both; remove in one: the block stays, the state file lists the other owner; remove in the other: everything is gone | |
 | Both products running | only one runs the guard; the other shows "Proteção ativa pelo outro app" and takes over within about 90 seconds of the first one quitting | |
 | Installer names | no installed file, package name, menu entry description or uninstall entry carries the source name of the module unless it is the display name itself (design 0.1) | |
@@ -584,10 +585,13 @@ the runner's adapters; **person** on a machine with IPv6 switched off on the act
 
 ### [ ] 23. The scrubbed block in ubiqX's database file (hand-off U3)
 
-After a hit, the open activity block is rewritten as private with a plain update, so the old
-title and address can stay in freed bytes of the database file. **Person:** after a block in
-ubiqX, close the app and search the database file and its write-ahead log for the host name
-(`strings ubiqx.db | grep <host>`). Whatever the result, PRIVACY.md must match it.
+After a hit, the open activity block of that window is rewritten as private. Every
+connection now runs with `secure_delete` (decision 20), so the old version is zeroed in the
+main file once the write-ahead log is checkpointed; until then the old title and address can
+be read in `ubiqx.db-wal` (decision 36 asks for a checkpoint after the scrub). **Person:** after
+a block in ubiqX, search the database file and its write-ahead log for the host name
+(`strings ubiqx.db ubiqx.db-wal | grep <host>`) once with the app running and once after
+closing it. Whatever the result, PRIVACY.md must match it.
 
 - Evidence (date, result of the search):
 
@@ -602,11 +606,12 @@ both, and search the files for a snooze or a counter that was erased.
 ### [ ] 25. Installed paths and package names of both products (review of U9a)
 
 `REMOVAL.md` part 2 names the installed executable of each product and part 4 names the
-autostart entries. None of these names was read from an installed build: ubiqX's follow
-`docs/WINDOWS-LINUX.md` and `docs/MACOS-TESTING.md`, the standalone app's follow its
-`tauri.conf.json`. ubiqX's shell has no `mainBinaryName`, and its Cargo package is
-`ubiqx-desktop`, so the executable may carry that name instead. **Person, each OS and each
-installer format**, with both products installed:
+autostart entries. The executable and package names are now printed by the CI app jobs from
+the bundles they build (the `.app`'s `Contents/MacOS`, the `.deb`'s `Package` field and
+`/usr/bin` entry, the NSIS script's `MAINBINARYNAME`), and `REMOVAL.md` follows those
+listings (hand-off U9b has the run). Nobody has read them from an installed build, and the
+autostart entries are still unread. **Person, each OS and each installer format**, with both
+products installed:
 
 | What | Expected by `REMOVAL.md` | Found |
 |---|---|---|
@@ -696,4 +701,4 @@ Carried from the design's "Still open" list, for whoever reads this file first.
 | The name: neither "NoFap" nor "Escudo" is cleared (item 17) | owner | |
 | The elevated executable is the app itself; bundling the small helper and signing the builds is deferred (design 12) | owner | |
 | The per-key cap front-loads the AI check on a host with a standing signal (hand-off U2) | integrator | |
-| `PRAGMA secure_delete` for every table of both products (hand-off U3, item 23) | integrator | |
+| `PRAGMA secure_delete` for every table of both products (hand-off U3, item 23) | integrator | on for every connection (decision 20) |
