@@ -173,3 +173,77 @@ Not run: the Tauri shells' own tests, anything on macOS or Windows, and no CI ru
 - `vision.managed` and `vision.managed_tick` name ubiqX's server and are kept out of the
   standalone app by its refusal of the managed provider, not by a check of `view.product`
   (a check there would leave the second tick required and hidden).
+
+## Review
+
+Independent review of this unit, after commit 772ef22. Fixes are in commit 0996501.
+
+### Reproduced
+
+| Command | Result |
+|---|---|
+| `cargo test -p ubiqx-core nofap` | 34 passed |
+| `cargo test -p ubiqx-nofap` | 302 + 22 + 12 + 0 passed |
+| `cargo test -p ubiqx-engine` | 20 + 12 + 77 + 2 + 28 + 6 + 0 passed before the review; the nofap file has 78 with the review test |
+| `UBIQX_BLESS=1 cargo test -p ubiqx-core nofap_ipc_golden` | passed, and `git status` shows no change to the fixtures afterwards: the committed fixtures are what the bless writes. Their diff in 84d8f59 is only `config_unreadable` in `enums.issue` and the fourteenth status of `statuses` |
+| `cargo clippy -p ubiqx-core -p ubiqx-nofap -p ubiqx-engine --all-targets -- -D warnings`, `cargo fmt --all -- --check` | clean |
+| `pnpm typecheck`, `pnpm test -- --run` (apps/desktop) | clean; 35 files, 478 tests before the review, 480 after |
+| `pnpm build`, `pnpm build:nofap` | both build |
+| `cargo test -p ubiqx-app nofap` | passed |
+
+Not run: the Tauri shells' own tests, `cargo check --workspace`, anything on macOS or Windows, Playwright screenshots (the copy was read in the source and checked through the page tests), CI.
+
+### Bundle and i18n grep
+
+`dist` and `dist-nofap` each hold every i18n namespace (`i18n/index.ts` imports all of them),
+so both contain "ubiqX" (63 and 50 times), most of them in ubiqX's own namespaces (licence,
+tracking, updates, onboarding, the engine error of `AppShell`) that no component of the
+standalone frame imports. In the module's namespaces the remaining hits are exactly
+`UBIQX_ONLY`: `vision.pause_note` and `helptab.ai.local_only` (gated on `view.product` in
+`labels.ts::withUbiqxLine`), `vision.managed` and `vision.managed_tick` (managed provider
+only; the standalone refuses it), `vision.off.local_only` (`AiReadiness::LocalOnly` is set
+only by ubiqX's `engine/src/nofap/env.rs`; `ubiqx-app/src/nofap_app.rs` never produces it).
+"Pausar"/"pause" elsewhere in the namespaces is the AI check's own pause or the rule snoozes.
+"UBI" (`block.discreet`, `card.window_label`) is the mascot's discreet name chosen by design
+5.6 and 0.1 for both products, not ubiqX's name; left as it is.
+
+### What was wrong, and what changed
+
+- **`issue.config_unreadable` spoke in the first person** ("Não consegui ler…", "I couldn't
+  read…"), while every other issue speaks of the app and the system. It also said the in-app
+  block and the AI check stay off "até você restaurar os padrões", which a reset does not do
+  (it leaves the module off; protection returns after the set-up), and it left out the other
+  way back that this unit built (a verify pass that reads the row again). New text:
+  "As configurações salvas não puderam ser lidas. O que está aplicado no sistema continua
+  valendo; o bloqueio no app e a verificação por IA ficam parados até elas voltarem a ser lidas
+  ou até você restaurar os padrões e configurar de novo." / "The saved settings could not be
+  read. What is applied to the system still holds; the in-app block and the AI check stay
+  stopped until they can be read again or until you restore the defaults and go through the
+  set-up again." (The first clause follows `quit.confirm_system` of 5.6.)
+- Tests added: `copy.test.ts` "says every issue in the voice of the others" (fails on the old
+  Portuguese sentence, checked) and a pin of the two ways back; `crates/ubiqx-engine/tests/nofap.rs`
+  `d33_review_only_the_verify_pass_reads_again_and_the_person_s_own_settings_come_back`: guard
+  passes, `view` and `status` never read the row, each verify pass reads it once, a pass that
+  still fails emits no status event, and a read that works brings back the person's own
+  sentence and switched-on state, with the issue gone from the view.
+
+### Still open (outside this unit's files, or for the integrator)
+
+- **After "Restaurar padrões" the system tiers have no in-app way out.** The reset leaves what
+  is applied on the machine (the dialog says so), but the switched-off page offers "Remover do
+  sistema" only when `config.self_use_at` is set, and a fresh configuration has none; the
+  service also does not read the system for a module never enabled (`read_for_view`), so the
+  page cannot know tiers were left. A person who restores the defaults to leave has the manual
+  steps of the Help text (not reachable from the switched-off page), the uninstaller, or the
+  wizard and then a waited "off". Either the reset keeps `enabled_at`/`self_use_at`, or the
+  unreadable page also offers `system_remove` (which the service already allows in that
+  state). Needs an engine or design decision (`service.rs` / `system.rs`, not this unit's).
+- `unreadable_config()` in `crates/ubiqx-engine/src/nofap/mod.rs` still says "run the set-up
+  again"; not shown by the page in this state today (open point of the engineer, confirmed).
+- `DESIGN.md` line 415 (section 2.3) still quotes "O ubiqX não recebe nada".
+- `helptab.ai.body` says the check stops when the AI key is removed; with ubiqX's managed
+  provider there is no key, and only the ubiqX-only line (local-only mode) gives the true way.
+  True as shown, but the first sentence alone would not be for that provider.
+- Every i18n namespace ships in the standalone bundle; nothing of ubiqX's namespaces is shown
+  there today, but a split per product (`i18n/index.ts`, not this unit's) would make that
+  structural rather than a matter of which components are imported.
