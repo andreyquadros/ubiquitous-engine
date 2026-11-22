@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_notification::NotificationExt;
 use ubiqx_app::nofap_app::{NofapApp, NofapAppConfig, NofapHostCommand};
@@ -76,15 +76,19 @@ async fn nofap(app: AppHandle, command: NofapCommand) -> Result<Value, IpcError>
 }
 
 /// The standalone product's own command: its settings, the AI key, permissions, updates,
-/// about. A settings write relabels the tray (the language may have changed).
+/// about. On the blocking pool, like the module's command and ubiqX's key and permission
+/// commands: the keychain can wait for the user to unlock it and a permission request can
+/// raise a system prompt; the vendor calls are awaited there. A settings write relabels the
+/// tray (the language may have changed).
 #[tauri::command]
-async fn nofap_host(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    command: NofapHostCommand,
-) -> Result<Value, IpcError> {
+async fn nofap_host(app: AppHandle, command: NofapHostCommand) -> Result<Value, IpcError> {
     let relabel = matches!(command, NofapHostCommand::SettingsSet(_));
-    let reply = state.app.handle_host(command).await?;
+    let handle = app.clone();
+    let reply = tauri::async_runtime::spawn_blocking(move || {
+        tauri::async_runtime::block_on(handle.state::<AppState>().app.handle_host(command))
+    })
+    .await
+    .map_err(join_error)??;
     if relabel {
         tray::sync_later(&app);
     }
