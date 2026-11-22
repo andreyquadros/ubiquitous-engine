@@ -72,7 +72,7 @@ open /Applications/ubiqX.app
 
 Sem `.dmg` (build do GitHub Actions, ou DMG que falhou), use o `ubiqX.app` do zip: `ditto -x -k` no zip,
 `xattr -dr com.apple.quarantine ubiqX.app`, assine e abra. Se mesmo assim o macOS disser "danificado", o zip
-perdeu o bit de execução: `chmod +x ubiqX.app/Contents/MacOS/ubiqX` e assine de novo.
+perdeu o bit de execução: `chmod +x ubiqX.app/Contents/MacOS/ubiqx-desktop` e assine de novo.
 
 Depois siga o passo 4 normalmente. Para o app já sair assinado da nuvem, exporte o certificado `ubiqX Dev`
 como `.p12` (Acesso às Chaves → Meus Certificados → botão direito → Exportar) e cadastre no Codemagic um grupo

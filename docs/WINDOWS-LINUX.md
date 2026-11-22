@@ -14,7 +14,7 @@ com os instaladores das três plataformas, sempre com os mesmos nomes:
 | Windows 10/11 (x64) | `ubiqX-windows-x86_64-setup.exe` | instalador NSIS, por usuário, sem privilégios de administrador |
 | Windows 10/11 (x64) | `ubiqX-windows-x86_64.msi` | pacote MSI (WiX), para quem instala por política ou script |
 | Linux (x64) | `ubiqX-linux-x86_64.AppImage` | roda de qualquer pasta, sem instalar |
-| Linux (x64, Debian/Ubuntu) | `ubiqX-linux-x86_64.deb` | instala em `/usr/bin/ubiqx` com entrada de menu |
+| Linux (x64, Debian/Ubuntu) | `ubiqX-linux-x86_64.deb` | instala em `/usr/bin/ubiqx-desktop` com entrada de menu |
 
 **Windows.** Abra o instalador e siga os passos. O binário ainda não tem assinatura de editor, então o
 SmartScreen pode avisar: clique em *Mais informações* e depois em *Executar assim mesmo*. O ubiqX fica na

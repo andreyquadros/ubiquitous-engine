@@ -74,11 +74,15 @@ e mantém o que o outro ainda quer.
 O comando termina com 0 quando tudo saiu, 3 quando uma parte não saiu (rode de novo, ou siga
 a parte 3) e 4 quando não conseguiu começar.
 
+O executável do ubiqX se chama `ubiqx-desktop` (o nome que o Cargo dá ao programa; o do app
+separado é `ubiqx-shield`). Os nomes abaixo são os que a CI lê dos pacotes que ela monta; ainda
+não foram conferidos num app instalado.
+
 ### macOS
 
 ```sh
 # ubiqX
-sudo "/Applications/ubiqX.app/Contents/MacOS/ubiqX" --shield-helper remove --owner all --scope all
+sudo "/Applications/ubiqX.app/Contents/MacOS/ubiqx-desktop" --shield-helper remove --owner all --scope all
 
 # app separado
 sudo "/Applications/NoFap.app/Contents/MacOS/ubiqx-shield" --shield-helper remove --owner all --scope all
@@ -92,7 +96,7 @@ outro lugar: ele é o único arquivo dentro de `<app>.app/Contents/MacOS/`
 
 ```sh
 # ubiqX
-sudo /usr/bin/ubiqx --shield-helper remove --owner all --scope all
+sudo /usr/bin/ubiqx-desktop --shield-helper remove --owner all --scope all
 
 # app separado
 sudo /usr/bin/ubiqx-shield --shield-helper remove --owner all --scope all
@@ -109,8 +113,8 @@ programa de janela, então não escreve nada no PowerShell: o resultado é só o
 
 ```powershell
 # ubiqX, instalado pelo -setup.exe
-$exe = "$env:LOCALAPPDATA\ubiqX\ubiqX.exe"
-# ubiqX, instalado pelo .msi:      $exe = "$env:ProgramFiles\ubiqX\ubiqX.exe"
+$exe = "$env:LOCALAPPDATA\ubiqX\ubiqx-desktop.exe"
+# ubiqX, instalado pelo .msi:      $exe = "$env:ProgramFiles\ubiqX\ubiqx-desktop.exe"
 # app separado, pelo -setup.exe:   $exe = "$env:LOCALAPPDATA\NoFap\ubiqx-shield.exe"
 
 $p = Start-Process -FilePath $exe -ArgumentList '--shield-helper','remove','--owner','all','--scope','all' -Verb RunAs -Wait -PassThru
@@ -429,11 +433,15 @@ Nos navegadores, depois de reabrir: `chrome://policy`, `edge://policy`, `brave:/
   não foram executados em máquina real (itens 1, 3, 9 e 15 da lista de verificação).
 - O comando do arquivo `hosts` pode deixar uma quebra de linha a mais no fim do arquivo,
   quando o arquivo original não terminava com uma. Não tem efeito nenhum.
-- Os caminhos de instalação da parte 2 e os nomes do início automático da parte 4 seguem o
-  nome de exibição de cada produto. Os do ubiqX são os que `docs/WINDOWS-LINUX.md` e
-  `docs/MACOS-TESTING.md` descrevem; nem eles nem os do app separado foram conferidos num
-  instalador de verdade para este texto (item 25 da lista de verificação), e os do app
+- Os nomes dos executáveis da parte 2 vêm do que a CI monta: o `ubiqx-desktop` e o
+  `ubiqx-shield` dentro de cada `.app`, o `MAINBINARYNAME` do instalador NSIS e o arquivo em
+  `/usr/bin` de cada `.deb` (registro em `docs/nofap/handoff/U9b.md`). As pastas de instalação
+  (`/Applications/<nome>.app`, `%LocalAppData%\<nome>`, `%ProgramFiles%\<nome>`) e os nomes do
+  início automático da parte 4 seguem o nome de exibição de cada produto. Nada disso foi
+  conferido num app instalado de verdade (item 25 da lista de verificação), e as pastas do app
   separado mudam se o nome de exibição dele mudar (`NoFap.app`, `%LocalAppData%\NoFap`,
-  `NoFap.plist`). Por isso cada bloco da parte 2 diz como achar o executável quando o nome
-  for outro. O nome do executável do app separado (`ubiqx-shield`) e tudo o que fica no
-  sistema (parte 3) não mudam.
+  `NoFap.plist`). Por isso cada bloco da parte 2 diz como achar o executável quando o nome for
+  outro. O nome do executável do app separado (`ubiqx-shield`) e tudo o que fica no sistema
+  (parte 3) não mudam.
+- Os passos de desinstalação do `-setup.exe` e do `.deb` estão em
+  `apps/desktop/src-tauri/packaging/` e `apps/nofap/src-tauri/packaging/`.
