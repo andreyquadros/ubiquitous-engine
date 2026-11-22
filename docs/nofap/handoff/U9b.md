@@ -50,10 +50,10 @@ ubiqX's artefact names (`ubiqX-<os>-<arch>.<ext>`), its artefact names on Action
   open block of the window the hit was about (`covers_open_block`), also drops the AI payload,
   and vetoes screenshots of blocked or mixed pages and of windows with a recent signal or hit.
 - "The database does not overwrite a changed row" is no longer true: every connection runs
-  with `secure_delete` (decision 20). What remains is the copy in `ubiqx.db-wal` until a
-  checkpoint (decision 36 is not in the code yet; see open points).
-- "Apagar todos os dados não sobrescreve" was false: it wipes with `secure_delete`, then
-  `wal_checkpoint(TRUNCATE)` and `VACUUM`, and deletes the `exports` folder.
+  with `secure_delete` (decision 20), and the tracker folds the write-ahead log right after a
+  scrub (decision 36, `2253638`). What remains is a fold that another reader blocks.
+- "Apagar todos os dados não sobrescreve" was false: it wipes with `secure_delete`, folds the
+  log before and after `VACUUM`, and deletes the `exports` folder.
 - The log file: its name, its path on each system, and the lines that can be in it (the `info`
   and `warn` lines of the module, the HTTP libraries held at `warn`).
 - The secret store falls back to `secrets.json` in the data directory on Windows and Linux.
@@ -98,7 +98,7 @@ Each claim, and the code that makes it true (paths from the repository root).
 | ubiqX: samples of a blocked page or of a window with a recent hit are redacted | `crates/ubiqx-engine/src/tracker.rs:79-86`, `crates/ubiqx-engine/src/nofap/service.rs:888` (`redacts`) |
 | ubiqX: the open block of that window is scrubbed, its screenshots deleted | `crates/ubiqx-engine/src/tracker.rs:155-206` (`scrub_open_block`), `service.rs:917` (`covers_open_block`) |
 | ubiqX: no screenshot of a blocked or mixed page, or of a window with a recent signal or hit | `crates/ubiqx-engine/src/screenshots.rs:41-47` (`capture_veto`) |
-| Freed bytes are zeroed; the WAL keeps them until a checkpoint | `crates/ubiqx-storage/src/db.rs:19-29` (`secure_delete = ON`) |
+| Freed bytes are zeroed; the log is folded after a scrub, unless another reader blocks it | `crates/ubiqx-storage/src/db.rs:19-29` (`secure_delete = ON`), `crates/ubiqx-engine/src/tracker.rs:210-218` (`fold_log`), `crates/ubiqx-storage/src/store.rs:36-45` (`fold_log_now`, busy is an error) |
 | The hosts block's markers, the canary name, the caps 20,000 / 8,000 | `crates/ubiqx-nofap/src/hosts.rs:44-56` |
 | The canary is looked up every 30 minutes | `crates/ubiqx-nofap/src/plan.rs:55` (`CANARY_EVERY_SECS = 1_800`), `crates/ubiqx-engine/src/nofap/system.rs:495` |
 | Cloudflare for Families addresses; the probe name `one.one.one.one` | `crates/ubiqx-nofap/src/resolvers.rs:28-39` |
@@ -123,7 +123,7 @@ Each claim, and the code that makes it true (paths from the repository root).
 | The export's folder, name and content; ubiqX's export has nothing of the module | `crates/ubiqx-engine/src/nofap/service.rs:842-868`, `crates/ubiqx-engine/src/state.rs:95`, `crates/ubiqx-app/src/nofap_app.rs:419`, `crates/ubiqx-engine/src/handle.rs:341-363` |
 | 90 days of counters | `crates/ubiqx-nofap/src/progress.rs:11` |
 | "Apagar meu histórico" overwrites and folds the WAL | `crates/ubiqx-storage/src/repos/nofap.rs:74`, `312` |
-| "Apagar todos os dados": counters go, choices and lists stay, overwritten, `exports` deleted | `crates/ubiqx-storage/src/repos/maintenance.rs:15-46`, `crates/ubiqx-engine/src/handle.rs:463-492` |
+| "Apagar todos os dados": counters go, choices and lists stay, overwritten, `exports` deleted | `crates/ubiqx-storage/src/repos/maintenance.rs:15-50` (`WIPE`, folds around `VACUUM`), `crates/ubiqx-engine/src/handle.rs:463-492` |
 | "Apagar tudo do NoFap" only while off | `crates/ubiqx-engine/src/nofap/service.rs:820-821` |
 | Snoozes last up to 24 hours | `crates/ubiqx-nofap/src/sampling.rs:65` (`SNOOZE_SECS`) |
 | The prompts: `osascript`, UAC, `pkexec`; the AppImage cannot | `crates/ubiqx-platform/src/sysblock/elevate.rs:8-10`, `194` |

@@ -67,10 +67,11 @@ bloco aberto daquela janela quando o bloqueio aconteceu, esse bloco é fechado e
 as capturas de tela dele são excluídas, do disco e do banco. O bloco de outra janela que
 estava aberto antes (uma hora no editor, outro site) fica como estava. O rastreador não tira
 captura de uma página bloqueada ou mista, nem de uma janela que teve um sinal ou um bloqueio
-nos últimos 10 minutos. O banco sobrescreve com zeros o que libera, então o título antigo
-some do arquivo principal do banco; ele ainda pode ficar por um tempo no arquivo auxiliar
-`ubiqx.db-wal`, até o SQLite passar esse arquivo para o banco, o que acontece sozinho com o
-uso e quando o app fecha.
+nos últimos 10 minutos. O banco sobrescreve com zeros o que libera, e logo depois de
+reescrever o bloco o app passa o arquivo auxiliar do banco (`ubiqx.db-wal`) para o arquivo
+principal, então o título antigo não fica legível em nenhum dos dois. Se outro programa estiver
+lendo o banco nesse momento (a linha de comando do ubiqX, por exemplo), essa passagem fica para a
+próxima vez, e até lá o título antigo continua no arquivo auxiliar.
 
 ### 2. Lista no sistema (arquivo `hosts`)
 
@@ -310,7 +311,7 @@ dele e ficam vazias.
   legíveis em nenhum dos dois. Se outro programa estiver com o banco aberto ao mesmo tempo (a
   linha de comando do ubiqX, por exemplo), parte disso só é consolidada quando ele fechar.
 - **"Apagar todos os dados" (ubiqX) também sobrescreve**: ele apaga as linhas, passa o
-  arquivo auxiliar para o principal e reconstrói o arquivo do banco. Ele apaga também a pasta
+  arquivo auxiliar para o principal antes e depois de reconstruir o arquivo do banco. Ele apaga também a pasta
   `exports`, com as exportações do NoFap que estiverem lá.
 - **"Apagar tudo do NoFap"** (escolhas, listas e histórico) existe só com a proteção
   desligada.

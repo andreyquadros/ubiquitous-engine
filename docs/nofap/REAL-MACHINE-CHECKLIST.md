@@ -587,8 +587,9 @@ the runner's adapters; **person** on a machine with IPv6 switched off on the act
 
 After a hit, the open activity block of that window is rewritten as private. Every
 connection now runs with `secure_delete` (decision 20), so the old version is zeroed in the
-main file once the write-ahead log is checkpointed; until then the old title and address can
-be read in `ubiqx.db-wal` (decision 36 asks for a checkpoint after the scrub). **Person:** after
+main file, and the tracker folds the write-ahead log right after the scrub
+(`BlockRepo::fold_log`, decision 36), so the old title and address should be in neither file;
+a fold that another reader blocks leaves them in `ubiqx.db-wal` until the next one. **Person:** after
 a block in ubiqX, search the database file and its write-ahead log for the host name
 (`strings ubiqx.db ubiqx.db-wal | grep <host>`) once with the app running and once after
 closing it. Whatever the result, PRIVACY.md must match it.
