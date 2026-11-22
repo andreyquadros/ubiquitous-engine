@@ -754,7 +754,9 @@ async fn s01_off_by_default_no_platform_call_no_card_no_row() {
     assert!(h.days().is_empty() && h.stored_sites().is_empty());
     assert_eq!(h.stored_config(), NofapConfig::default());
     assert_eq!(h.service.status(), NofapStatus::off());
-    // The tracker's two questions are answered "no" without looking anything up.
+    // The tracker's two questions are answered without looking anything up: a listed page
+    // is private whether the module is on or not (the list is in memory), and nothing else
+    // is.
     let sample = ActivitySample {
         at: fixed_now(),
         app_name: "Google Chrome".into(),
@@ -764,8 +766,15 @@ async fn s01_off_by_default_no_platform_call_no_card_no_row() {
         idle_secs: Some(0.0),
         window_id: Some(7),
     };
-    assert!(!h.service.redacts(&sample));
-    assert!(!h.service.capture_veto(CHROME, Some(listed()), "Página"));
+    assert!(h.service.redacts(&sample));
+    assert!(h.service.capture_veto(CHROME, Some(listed()), "Página"));
+    let other = ActivitySample {
+        url: Some(url_of(UNKNOWN)),
+        ..sample
+    };
+    assert!(!h.service.redacts(&other));
+    assert!(!h.service.capture_veto(CHROME, Some(UNKNOWN), "Página"));
+    assert_eq!(h.foreground.calls(), before, "the questions touched a port");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1206,22 +1215,30 @@ async fn s10_a_positive_for_a_window_or_host_that_changed_meanwhile_is_dropped()
     let h = harness().await;
     h.enable(true);
 
-    // Another window of the browser is in front when the answer arrives.
+    // Another window of the browser is in front when the answer arrives (the window is
+    // read once right before the frame, and once when the answer is acted on).
     h.browse(UNKNOWN);
     let job = h.job_within(30).unwrap();
     h.detector.push(Ok(explicit(Confidence::High)));
-    h.foreground.set(
-        window("Google Chrome", CHROME, "Outra", Some(8)),
-        Some(&url_of(UNKNOWN)),
-    );
+    h.foreground.peeks.lock().extend([
+        Some(window("Google Chrome", CHROME, TAB_TITLE, Some(7))),
+        Some(window("Google Chrome", CHROME, "Outra", Some(8))),
+    ]);
     assert!(!h.service.vision_check(job).await.unwrap().hit);
 
-    // The same window, but the tab went to another site.
+    // The same window, but the tab went to another site after the frame was taken.
     h.browse(UNKNOWN_2);
     let job = h.job_within(30).unwrap();
     h.detector.push(Ok(explicit(Confidence::High)));
-    *h.foreground.fresh.lock() = Some(Some(url_of(POPULAR)));
+    let foreground = h.foreground.clone();
+    *h.foreground.during_fresh.lock() = Some(Box::new(move || {
+        let later = foreground.clone();
+        *foreground.during_fresh.lock() = Some(Box::new(move || {
+            *later.fresh.lock() = Some(Some(url_of(POPULAR)));
+        }));
+    }));
     assert!(!h.service.vision_check(job).await.unwrap().hit);
+    *h.foreground.fresh.lock() = None;
 
     assert_eq!(h.detector.calls(), 2);
     assert!(h.enforcer.calls().is_empty(), "nothing closed");
@@ -5478,8 +5495,10 @@ fn with_the_module_off_no_port_is_called() {
             }
             service.verify_pass().unwrap();
             service.verify_pass_after(Duration::from_secs(120)).unwrap();
-            assert!(!service.redacts(&sample));
-            assert!(!service.capture_veto(CHROME, Some(listed()), TAB_TITLE));
+            // A listed page is private also while the module is off: the list is in
+            // memory and asks no port.
+            assert!(service.redacts(&sample));
+            assert!(service.capture_veto(CHROME, Some(listed()), TAB_TITLE));
             assert!(!service.covers_open_block(CHROME, Some(&url_of(listed()))));
             assert!(!service.enabled());
             service.status();
@@ -5821,8 +5840,11 @@ async fn a_soft_card_is_shown_only_while_its_window_is_in_front() {
     h.open_app("VLC", VLC, "ferias.mp4");
     let job = h.job_within(30).expect("a check of the player");
     h.detector.push(Ok(explicit(Confidence::Low)));
-    h.open_app("Slack", SLACK, "Geral");
-    *h.foreground.window.lock() = Some(window("Slack", SLACK, "Geral", Some(11)));
+    // The player is in front for its frame; Slack is when the answer comes.
+    h.foreground.peeks.lock().extend([
+        Some(window("VLC", VLC, "ferias.mp4", Some(9))),
+        Some(window("Slack", SLACK, "Geral", Some(11))),
+    ]);
     assert!(!h.service.vision_check(job).await.unwrap().hit);
     assert_eq!(h.detector.calls(), 1);
     assert!(
@@ -6106,5 +6128,532 @@ async fn a_status_computed_while_the_module_goes_off_is_never_the_last_word() {
             .iter()
             .all(|overall| *overall == Overall::Off),
         "{sent:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Final review: what the last round of skeptics confirmed
+// ---------------------------------------------------------------------------------------------
+
+/// A request that waits its delay.
+fn queued(h: &Harness, change: NofapChange) -> PendingView {
+    match h.service.request(change).unwrap() {
+        ChangeOutcome::Pending(waiting) => waiting,
+        ChangeOutcome::Applied(_) => panic!("this request should wait"),
+    }
+}
+
+/// Lets a waiting request become ready (ten minutes on the clock and of running time)
+/// and confirms it.
+fn wait_and_confirm(h: &Harness, waiting: &PendingView) {
+    h.advance(601);
+    h.observe_running(600);
+    h.service.confirm_pending(&waiting.id).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_second_frame_is_not_taken_when_the_window_shows_something_else_by_then() {
+    // `explicit` at medium confidence asks for a second frame four seconds later. What the
+    // window shows by then decides whether it is taken at all.
+    let staged = |change: Box<dyn FnOnce(&Foreground) + Send>| async move {
+        let medium = Arc::new(MediumDetector {
+            calls: AtomicUsize::new(0),
+            during_first: Mutex::new(None),
+        });
+        let r = rig(RigSetup {
+            detector: Some(medium.clone()),
+            ..RigSetup::default()
+        });
+        r.service.enable(standalone_options()).unwrap();
+        r.browse(UNKNOWN);
+        let job = r.job_within(30).expect("a check");
+        let foreground = r.foreground.clone();
+        *medium.during_first.lock() = Some(Box::new(move || change(&foreground)));
+        let hit = r.service.vision_check(job).await.unwrap().hit;
+        (
+            hit,
+            r.frames.calls().len(),
+            medium.calls.load(Ordering::SeqCst),
+        )
+    };
+    let chrome = || window("Google Chrome", CHROME, TAB_TITLE, Some(7));
+
+    // The same window went to the person's mail, which is never photographed.
+    let (hit, frames, sent) = staged(Box::new(move |foreground| {
+        foreground.set(chrome(), Some(&url_of(NEVER_CAPTURE)));
+    }))
+    .await;
+    assert!(!hit);
+    assert_eq!((frames, sent), (1, 1), "no second frame of the mail");
+
+    // The same window went to another site: the check was about the first one.
+    let (hit, frames, sent) = staged(Box::new(move |foreground| {
+        foreground.set(chrome(), Some(&url_of(UNKNOWN_2)));
+    }))
+    .await;
+    assert!(!hit);
+    assert_eq!((frames, sent), (1, 1), "no frame of another tab");
+
+    // Another application came to the front over the browser.
+    let (hit, frames, sent) = staged(Box::new(|foreground| {
+        foreground.set(window("Slack", SLACK, "Equipe", Some(9)), None);
+    }))
+    .await;
+    assert!(!hit);
+    assert_eq!(
+        (frames, sent),
+        (1, 1),
+        "no frame of a window behind another"
+    );
+
+    // The window still shows the page: the second frame is taken and decides.
+    let (hit, frames, sent) = staged(Box::new(|_| {})).await;
+    assert!(hit);
+    assert_eq!((frames, sent), (2, 2));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_sample_between_a_hit_and_its_scrub_does_not_keep_the_block_of_the_page() {
+    let h = harness().await;
+    h.enable(true);
+    let state = h.state().clone();
+    // The tracker has a block open on the unknown page.
+    let page = window("Google Chrome", CHROME, "Video explicito tal", Some(7));
+    for _ in 0..4 {
+        h.advance(5);
+        ubiqx_engine::tracker::handle_sample(&state, sample_of(&h, &page, Some(url_of(UNKNOWN))))
+            .unwrap();
+    }
+    let open = BlockRepo::open_block(h.store.as_ref()).unwrap().unwrap();
+    assert_eq!(open.domain.as_deref(), Some(UNKNOWN));
+
+    // The AI check closes the page; the tab that comes to the front is sampled before the
+    // engine's loop gets to the scrub.
+    h.foreground.set(page.clone(), Some(&url_of(UNKNOWN)));
+    h.detector.push(Ok(explicit(Confidence::High)));
+    assert_eq!(h.check_within(30).await, Some(true));
+    let next = window("Google Chrome", CHROME, "Enciclopédia", Some(7));
+    ubiqx_engine::tracker::handle_sample(&state, sample_of(&h, &next, Some(url_of(POPULAR))))
+        .unwrap();
+    ubiqx_engine::tracker::scrub_open_block(&state).unwrap();
+
+    let block = BlockRepo::get(h.store.as_ref(), &open.id).unwrap().unwrap();
+    assert!(!block.is_open);
+    assert_eq!(block.title, PRIVATE_TITLE);
+    assert_eq!((block.url.clone(), block.domain.clone()), (None, None));
+    assert_eq!(
+        block.category_id.as_deref(),
+        Some(system_categories::PRIVATE)
+    );
+    assert_eq!(
+        ScreenshotRepo::latest_for_block(h.store.as_ref(), &open.id).unwrap(),
+        None
+    );
+    // The tab that came next is the person's reading, and stays as it is.
+    let reading = BlockRepo::open_block(h.store.as_ref()).unwrap().unwrap();
+    assert_eq!(reading.domain.as_deref(), Some(POPULAR));
+    assert_eq!(reading.title, "Enciclopédia");
+
+    // A block of the same browser that opened after the hit is not the hit's.
+    for _ in 0..4 {
+        h.advance(30);
+        ubiqx_engine::tracker::handle_sample(&state, sample_of(&h, &next, Some(url_of(POPULAR))))
+            .unwrap();
+    }
+    h.advance(30);
+    let later = window("Google Chrome", CHROME, "Outra coisa", Some(7));
+    ubiqx_engine::tracker::handle_sample(&state, sample_of(&h, &later, None)).unwrap();
+    let kept = BlockRepo::get(h.store.as_ref(), &reading.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(kept.title, "Enciclopédia");
+    assert_eq!(kept.domain.as_deref(), Some(POPULAR));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn with_the_module_off_a_listed_page_still_leaves_nothing_in_the_productivity_data() {
+    // ubiqX's module is off (another product guards the machine, or nobody does): a page
+    // on the list is still recorded as private and gets no screenshot. A keyword rule,
+    // which can be wrong about a page, needs the module.
+    let h = harness().await;
+    assert!(!h.service.enabled());
+    let state = h.state().clone();
+    let chrome = window("Google Chrome", CHROME, TAB_TITLE, Some(7));
+    for _ in 0..4 {
+        h.advance(30);
+        ubiqx_engine::tracker::handle_sample(
+            &state,
+            sample_of(&h, &chrome, Some(url_of(listed()))),
+        )
+        .unwrap();
+    }
+    let open = BlockRepo::open_block(h.store.as_ref()).unwrap().unwrap();
+    assert_eq!(open.title, PRIVATE_TITLE);
+    assert_eq!(open.url, None);
+    assert!(h.service.capture_veto(CHROME, Some(listed()), TAB_TITLE));
+
+    let keyword = sample_of(&h, &chrome, Some(url_of(KEYWORD)));
+    assert!(!h.service.redacts(&keyword));
+    assert!(!h.service.capture_veto(CHROME, Some(KEYWORD), TAB_TITLE));
+    assert!(!h.service.covers_open_block(CHROME, Some(&url_of(listed()))));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_productivity_screenshot_is_taken_of_either_products_own_window() {
+    let h = harness().await;
+    h.enable(true);
+    let state = h.state().clone();
+    let feed = |front: &ForegroundWindow| {
+        for _ in 0..4 {
+            h.advance(30);
+            ubiqx_engine::tracker::handle_sample(&state, sample_of(&h, front, None)).unwrap();
+        }
+        BlockRepo::open_block(h.store.as_ref()).unwrap().unwrap()
+    };
+    let shot_of = |block: &ActivityBlock| {
+        ScreenshotRepo::latest_for_block(h.store.as_ref(), &block.id).unwrap()
+    };
+
+    // The page of the module is in front for two minutes.
+    for product in ubiqx_core::product::ALL {
+        let own = window(
+            product.display_name,
+            product.bundle_id,
+            product.display_name,
+            Some(4),
+        );
+        let block = feed(&own);
+        assert_eq!(block.app_id, product.bundle_id);
+        assert_eq!(shot_of(&block), None, "{}", product.display_name);
+    }
+    // Another application in the same place is captured as usual.
+    let editor = window("Editor", "com.example.editor", "relatorio.md", Some(3));
+    let block = feed(&editor);
+    assert!(shot_of(&block).is_some());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn counters_older_than_ninety_days_go_also_while_the_module_is_off() {
+    let h = harness().await;
+    assert!(!h.service.enabled());
+    let old_day = "2026-01-02";
+    let recent_day = "2026-09-01";
+    for day in [old_day, recent_day] {
+        NofapRepo::bump_day(h.store.as_ref(), day, 10, DayKind::Lapse, 1).unwrap();
+    }
+    // The same day as the start: nothing more is asked.
+    h.service
+        .verify_pass_after(Duration::from_secs(120))
+        .unwrap();
+    assert_eq!(h.days().len(), 2);
+    // The next day, the counters older than ninety days go, the others stay.
+    h.advance(86_400);
+    h.service
+        .verify_pass_after(Duration::from_secs(120))
+        .unwrap();
+    let days: Vec<String> = h.days().into_iter().map(|count| count.day).collect();
+    assert_eq!(days, vec![recent_day.to_owned()]);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn restore_on_a_drift_card_leaves_off_the_resolver_the_person_took_off() {
+    let h = harness().await;
+    h.service
+        .enable(EnableOptions {
+            resolver: Some(ResolverId::CloudflareFamily),
+            ..with_hosts(false)
+        })
+        .unwrap();
+    // Names stopped resolving: "Restaurar minha rede".
+    assert_eq!(h.service.restore_network().unwrap(), ApplyOutcome::Applied);
+    assert_eq!(h.service.status().resolver, TierState::NotApplied);
+
+    // An hour later the hosts block is taken out, and the card offers to restore it.
+    h.advance(3600);
+    h.shield
+        .edit_observation(|machine| machine.hosts.text = Some("127.0.0.1 localhost\n".into()));
+    h.service
+        .verify_pass_after(Duration::from_secs(120))
+        .unwrap();
+    assert_eq!(h.service.status().hosts, TierState::Missing);
+    let drift = h.cards_of(CardKind::Drift).pop().expect("the card");
+    h.shield.clear_calls();
+    h.service
+        .card_action(&drift.id, CardAction::Restore)
+        .unwrap();
+    let applied: Vec<SystemPlan> = h
+        .shield
+        .calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            SystemCall::Apply(plan) => Some(plan),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(applied.len(), 1);
+    assert!(applied[0].hosts);
+    assert_eq!(
+        applied[0].resolver, None,
+        "the DNS stays as the person left it"
+    );
+    let status = h.service.status();
+    assert_eq!(status.hosts, TierState::Applied);
+    assert_eq!(status.resolver, TierState::NotApplied);
+    assert!(h.stored_config().system.network_restored);
+
+    // "Religar" on the page still brings it back.
+    assert_eq!(h.service.system_apply().unwrap(), ApplyOutcome::Applied);
+    assert_eq!(h.service.status().resolver, TierState::Applied);
+    assert!(!h.stored_config().system.network_restored);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_look_not_it_bought_comes_whatever_the_caps_say() {
+    let h = harness().await;
+    let caps = NofapChange::SetCaps {
+        max_per_hour: 1,
+        max_per_day: 5,
+        monthly_cap_usd: 2.0,
+    };
+    assert!(matches!(
+        h.service.request(caps).unwrap(),
+        ChangeOutcome::Applied(_)
+    ));
+    h.enable(true);
+    let card = positive_on_unknown(&h).await;
+    assert_eq!(h.service.vision_ready(), Err(VisionOff::CapReached));
+    h.service.card_action(&card.id, CardAction::NotIt).unwrap();
+    assert_eq!(h.learned(), 0, "unlearned at once");
+    h.advance(25);
+    h.detector.push(Ok(explicit(Confidence::High)));
+    let job = h.job_within(30).expect("the look the button bought");
+    assert!(h.service.vision_check(job).await.unwrap().hit);
+    assert_eq!(h.learned(), 1, "learned again");
+    // Only that one: the cap holds for everything else.
+    h.browse(UNKNOWN_2);
+    assert!(h.job_within(600).is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn not_it_on_a_vision_card_is_a_request_when_no_look_can_follow() {
+    let h = harness().await;
+    h.enable(true);
+    let card = positive_on_unknown(&h).await;
+    // The check was switched off meanwhile (that waits; here its consent went with the
+    // provider): nothing would look again, so nothing is unlearned at once.
+    h.settings_mut(|settings| settings.ai_provider = AiProvider::OpenAi);
+    assert_eq!(h.service.vision_ready(), Err(VisionOff::ConsentOutdated));
+    h.service.card_action(&card.id, CardAction::NotIt).unwrap();
+    assert_eq!(h.learned(), 1, "still blocked");
+    let pending = h.stored_config().pending;
+    assert_eq!(pending.len(), 1);
+    assert_eq!(
+        pending[0].change,
+        NofapChange::AddAllow {
+            host: UNKNOWN.into()
+        }
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_snooze_is_not_stretched_or_multiplied_by_setting_the_clock_back() {
+    // A snooze lasts 24 hours, also when the clock is set back after it.
+    let h = harness().await;
+    h.enable(true);
+    h.browse(KEYWORD);
+    assert!(h.two_passes());
+    let card = h.cards().pop().unwrap();
+    h.service.card_action(&card.id, CardAction::NotIt).unwrap();
+    assert!(!h.two_passes(), "snoozed");
+    let start = h.clock.now();
+    h.clock.set(start - ChronoDuration::days(30));
+    h.advance(2 * 86_400);
+    h.service
+        .verify_pass_after(Duration::from_secs(120))
+        .unwrap();
+    assert!(h.two_passes(), "the snooze ended with its 24 hours");
+
+    // Three snoozes, then the clock set back a day: still three in the last 24 hours.
+    let h = harness().await;
+    h.enable(true);
+    for host in [KEYWORD, TLD, "terceira-coisa.xxx"] {
+        h.advance(200);
+        h.browse(host);
+        assert!(h.two_passes());
+        let card = h.cards().pop().unwrap();
+        h.service.card_action(&card.id, CardAction::NotIt).unwrap();
+    }
+    let back = h.clock.now() - ChronoDuration::days(1);
+    h.clock.set(back);
+    h.browse("quarta-coisa.xxx");
+    assert!(h.two_passes());
+    // A hit that seems to come before the last one continues its episode (no card);
+    // the next episode has one.
+    h.advance(200);
+    assert!(h.pass().hit);
+    let card = h.cards().pop().unwrap();
+    assert!(card.actions.contains(&CardAction::RequestException));
+    h.service.card_action(&card.id, CardAction::NotIt).unwrap();
+    let snoozes = h
+        .stored_sites()
+        .iter()
+        .filter(|site| site.origin == SiteOrigin::Snooze)
+        .count();
+    assert_eq!(snoozes, 3, "no fourth snooze");
+    assert_eq!(h.stored_config().pending.len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_confirmed_scope_request_keeps_a_switch_turned_on_while_it_waited() {
+    let h = harness().await;
+    h.enable(true);
+    let scope = |unknown: bool, messaging: bool| NofapChange::SetVisionScope {
+        unknown_sites: unknown,
+        media_apps: true,
+        messaging_apps: messaging,
+        private_windows: true,
+    };
+    // Messaging apps are not looked at; stopping the check of unknown sites waits.
+    let waiting = queued(&h, scope(false, false));
+    // Messaging apps are turned on meanwhile, which applies at once.
+    assert!(matches!(
+        h.service.request(scope(true, true)).unwrap(),
+        ChangeOutcome::Applied(_)
+    ));
+    assert!(h.stored_config().vision.messaging_apps);
+    wait_and_confirm(&h, &waiting);
+    let vision = h.stored_config().vision;
+    assert!(!vision.unknown_sites, "what the request asked for");
+    assert!(
+        vision.messaging_apps,
+        "what was turned on meanwhile stays on"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_tier_switched_off_by_a_confirmed_request_comes_off_the_machine() {
+    let h = harness().await;
+    let view = h.service.enable(with_hosts(false)).unwrap();
+    assert_eq!(view.status.hosts, TierState::Applied);
+    let waiting = queued(&h, NofapChange::SetHosts { on: false });
+    h.shield.clear_calls();
+    wait_and_confirm(&h, &waiting);
+    assert!(h
+        .shield
+        .calls()
+        .contains(&SystemCall::Remove(ProductId::Ubiqx, RemoveScope::All)));
+    assert_eq!(h.service.status().hosts, TierState::Off);
+
+    // The prompt declined: the block stays, and the page offers to apply.
+    let h = harness().await;
+    h.service
+        .enable(EnableOptions {
+            resolver: Some(ResolverId::CloudflareFamily),
+            ..with_hosts(false)
+        })
+        .unwrap();
+    let waiting = queued(&h, NofapChange::SetHosts { on: false });
+    h.shield.set_apply_outcome(Some(ApplyOutcome::Declined));
+    wait_and_confirm(&h, &waiting);
+    let plans: Vec<SystemPlan> = h
+        .shield
+        .calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            SystemCall::Apply(plan) => Some(plan),
+            _ => None,
+        })
+        .collect();
+    let last = plans.last().expect("the smaller plan was sent");
+    assert!(!last.hosts);
+    assert_eq!(last.resolver, Some(ResolverId::CloudflareFamily));
+    assert_eq!(h.service.status().hosts, TierState::UpdatePending);
+    h.shield.set_apply_outcome(None);
+    assert_eq!(h.service.system_apply().unwrap(), ApplyOutcome::Applied);
+    let status = h.service.status();
+    assert_eq!(status.hosts, TierState::Off);
+    assert_eq!(status.resolver, TierState::Applied);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn erasing_everything_keeps_showing_the_tiers_left_on_the_machine() {
+    let h = harness().await;
+    h.service.enable(with_hosts(false)).unwrap();
+    // Turned off, and the password prompt declined: the block stays on the machine.
+    h.shield.set_remove_outcome(Some(ApplyOutcome::Declined));
+    let waiting = queued(&h, NofapChange::Disable);
+    wait_and_confirm(&h, &waiting);
+    assert!(!h.service.enabled());
+    assert_eq!(h.service.view().unwrap().status.hosts, TierState::Applied);
+
+    // "Apagar tudo": the configuration goes, what is on the machine is still shown.
+    h.service.reset().unwrap();
+    let stored = h.stored_config();
+    assert!(!stored.enabled);
+    assert_eq!(stored.self_use_at, None);
+    assert!(
+        stored.enabled_at.is_some(),
+        "the page keeps reading the machine"
+    );
+    assert_eq!(h.service.view().unwrap().status.hosts, TierState::Applied);
+    h.advance(120);
+    assert_eq!(h.service.view().unwrap().status.hosts, TierState::Applied);
+
+    // "Remover do sistema" takes it off; a later reset forgets the module altogether.
+    h.shield.set_remove_outcome(None);
+    assert_eq!(h.service.system_remove().unwrap(), ApplyOutcome::Applied);
+    assert_eq!(h.service.status().hosts, TierState::Off);
+    h.service.reset().unwrap();
+    assert_eq!(h.stored_config().enabled_at, None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_change_of_the_ai_settings_keeps_the_caps_and_the_corrections_of_the_day() {
+    let h = harness().await;
+    let caps = NofapChange::SetCaps {
+        max_per_hour: 1,
+        max_per_day: 5,
+        monthly_cap_usd: 2.0,
+    };
+    assert!(matches!(
+        h.service.request(caps).unwrap(),
+        ChangeOutcome::Applied(_)
+    ));
+    h.enable(true);
+    h.browse(UNKNOWN);
+    h.detector.push(Ok(clean()));
+    assert_eq!(h.check_within(30).await, Some(false));
+    assert_eq!(h.service.vision_ready(), Err(VisionOff::CapReached));
+    // The host writes its settings (the language, a model): the hour's cap holds.
+    h.service.ai_settings_changed();
+    h.settings_mut(|settings| settings.local_only = true);
+    h.settings_mut(|settings| settings.local_only = false);
+    h.browse(UNKNOWN_2);
+    assert!(h.job_within(600).is_none(), "a second frame in the hour");
+    assert_eq!(h.detector.calls(), 1);
+
+    // A window whose second look agreed asks for a delayed exception for the rest of the
+    // day, also after a change of the settings.
+    let h = harness().await;
+    h.enable(true);
+    let card = positive_on_unknown(&h).await;
+    h.service.card_action(&card.id, CardAction::NotIt).unwrap();
+    h.advance(70);
+    h.detector.push(Ok(explicit(Confidence::High)));
+    let job = h.pass().job.expect("the look the button bought");
+    assert!(h.service.vision_check(job).await.unwrap().hit);
+    let again = h.cards_of(CardKind::VisionClosed).pop().unwrap();
+    assert!(again.actions.contains(&CardAction::RequestException));
+    h.service.ai_settings_changed();
+    // The window may still send the old name of the button: a request either way.
+    h.service.card_action(&again.id, CardAction::NotIt).unwrap();
+    assert_eq!(h.learned(), 1, "not unlearned for free");
+    let pending = h.stored_config().pending;
+    assert_eq!(pending.len(), 1);
+    assert_eq!(
+        pending[0].change,
+        NofapChange::AddAllow {
+            host: UNKNOWN.into()
+        }
     );
 }

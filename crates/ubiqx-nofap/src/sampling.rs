@@ -662,6 +662,17 @@ impl SamplerMemory {
         *self = Self::default();
     }
 
+    /// Forgets what belonged to the provider: the errors in a row, the backoff and the
+    /// rejected key (another provider or key was chosen, or the settings were written).
+    /// What the person's caps and corrections rest on stays: the frames of the hour and
+    /// of the day, each window's history (its "Pedir exceção" of the day, its signals and
+    /// the look "Não era isso" bought) and the heightened state.
+    pub fn forget_provider(&mut self) {
+        self.error_streak = 0;
+        self.degraded_until = None;
+        self.key_rejections = 0;
+    }
+
     /// Seconds `key` has been in front at `now`; 0 when another key is in front.
     fn dwell_secs(&self, key: u64, now: DateTime<Utc>) -> i64 {
         match self.front {
@@ -731,6 +742,16 @@ pub fn decide(ctx: &SampleCtx, memory: &SamplerMemory, day: &str, now: DateTime<
         return Decision::Skip(Skip::DayCap);
     }
     Decision::Capture { signal }
+}
+
+/// Whether a frame of the window `ctx` describes may be taken at all: one the check looks
+/// at (with the signals `memory` remembers), not excluded, with a window id. The part of
+/// [`decide`] that does not depend on time in front, cadence or caps; asked again right
+/// before every frame of a check, so that a window whose page changed meanwhile to one
+/// that is never captured is not.
+pub fn may_capture(ctx: &SampleCtx, memory: &SamplerMemory, now: DateTime<Utc>) -> bool {
+    let signal = ctx.local_signal() || memory.heightened(now) || memory.has_signal(ctx.key, now);
+    ctx.is_candidate(signal) && !ctx.excluded && ctx.has_window_id
 }
 
 /// Whether a frame with this difference hash is the same picture as the last one answered

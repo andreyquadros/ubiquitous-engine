@@ -91,6 +91,14 @@ fn tier_states(rt: &Runtime, capabilities: Option<&SystemCapabilities>) -> [Tier
             (None, _) if is_chosen => TierState::NotApplied,
             (None, _) => TierState::Off,
         };
+        // A tier switched off (by a confirmed request) that is still on the machine: the
+        // app would write something else now, and "Aplicar" takes it off. Read as
+        // "applied", the page would offer nothing.
+        let found = if rt.config.enabled && !is_chosen && found == TierState::Applied {
+            TierState::UpdatePending
+        } else {
+            found
+        };
         match capabilities {
             Some(capabilities) => overlay(found, is_chosen, capabilities.of(tier)),
             None => found,
@@ -324,8 +332,14 @@ impl NofapService {
             self.refresh_status();
         }
         {
-            let rt = self.rt.lock();
-            if !rt.config.enabled || rt.config_error {
+            let mut rt = self.rt.lock();
+            if rt.config_error {
+                return Ok(());
+            }
+            if !rt.config.enabled {
+                // What is kept has its retention also while the module is off: the
+                // counters and the snoozes, once a local day and nothing else.
+                self.prune_daily(&mut rt, now);
                 return Ok(());
             }
         }
@@ -462,13 +476,35 @@ impl NofapService {
 
     /// Ends snoozes that ran out and, once a local day, prunes old counters.
     fn housekeeping(&self, now: DateTime<Utc>) {
-        let (today, _) = self.day_hour(now);
         let mut rt = self.rt.lock();
         let purged = self.deps.repo.purge_expired_sites(now).unwrap_or(0);
         // Lists that could not be read are read again until it works.
-        if purged > 0 || rt.sites_error || rt.snooze_ends.is_some_and(|ends| ends <= now) {
+        let snooze_over = rt
+            .snooze_ends
+            .is_some_and(|ends| super::snooze_over(ends, now));
+        if purged > 0 || rt.sites_error || snooze_over {
             self.reload_sites(&mut rt);
         }
+        self.prune_counters(&mut rt, now);
+    }
+
+    /// While the module is off: once a local day, the snoozes that ran out and the
+    /// counters older than their retention go (PRIVACY.md promises 90 days, whatever the
+    /// switch says). Nothing else is asked.
+    pub(crate) fn prune_daily(&self, rt: &mut Runtime, now: DateTime<Utc>) {
+        let (today, _) = self.day_hour(now);
+        if rt.pruned_on.as_deref() == Some(today.as_str()) {
+            return;
+        }
+        if self.deps.repo.purge_expired_sites(now).unwrap_or(0) > 0 {
+            self.reload_sites(rt);
+        }
+        self.prune_counters(rt, now);
+    }
+
+    /// Once a local day, deletes the counters older than [`RETENTION_DAYS`].
+    fn prune_counters(&self, rt: &mut Runtime, now: DateTime<Utc>) {
+        let (today, _) = self.day_hour(now);
         if rt.pruned_on.as_deref() != Some(today.as_str()) {
             let cutoff = chrono::NaiveDate::parse_from_str(&today, progress::DAY_FORMAT)
                 .ok()
@@ -800,9 +836,10 @@ impl NofapService {
     // -----------------------------------------------------------------------------------------
 
     /// The plan this product would send now and the gate it is sent through; `None` on a
-    /// system without a back-end. "Aplicar" after "Restaurar minha rede" is "Religar", so
-    /// the plan asks for the resolver again.
-    fn plan_to_send(&self) -> Option<(SystemPlan, SystemPlan)> {
+    /// system without a back-end. With `relink` ("Aplicar" on the page after "Restaurar
+    /// minha rede" is "Religar") the plan asks for the resolver again; without it a
+    /// resolver the person took off stays off.
+    fn plan_to_send(&self, relink: bool) -> Option<(SystemPlan, SystemPlan)> {
         let capabilities = self.deps.system.capabilities();
         let os = capabilities.os?;
         let gate = Gate::new(os, capabilities.unverified.clone());
@@ -810,7 +847,9 @@ impl NofapService {
             let rt = self.rt.lock();
             (rt.config.clone(), rt.sites.clone())
         };
-        config.system.network_restored = false;
+        if relink {
+            config.system.network_restored = false;
+        }
         let wanted = plan::build_plan(&config, &sites, self.deps.identity.id, os).plan;
         let sent = plan::without_gated(&wanted, &gate);
         Some((wanted, sent))
@@ -821,7 +860,7 @@ impl NofapService {
     /// away.
     pub fn system_preview(&self) -> CoreResult<Vec<PlannedChange>> {
         let enabled = self.enabled();
-        let plan = match self.plan_to_send() {
+        let plan = match self.plan_to_send(true) {
             Some((_, sent)) if enabled => sent,
             Some(_) => empty_plan(self.deps.identity.id),
             None => return Ok(Vec::new()),
@@ -829,10 +868,24 @@ impl NofapService {
         self.deps.system.preview(&plan)
     }
 
-    /// "Aplicar", "Restaurar" and "Religar": applies the tiers the user chose, through the
-    /// operating system's prompt. Blocks for as long as the prompt is open; the runtime
-    /// lock is not held meanwhile.
+    /// "Aplicar" and "Religar" on the page: applies the tiers the user chose, through the
+    /// operating system's prompt, the resolver included also after "Restaurar minha
+    /// rede" (the page labels the button "Religar" then, and its preview lists the DNS
+    /// change). Blocks for as long as the prompt is open; the runtime lock is not held
+    /// meanwhile.
     pub fn system_apply(&self) -> CoreResult<ApplyOutcome> {
+        self.apply_tiers(true)
+    }
+
+    /// "Restaurar" on a drift card, and a tier switched off by a confirmed request: the
+    /// tiers the user chose, except a resolver taken off with "Restaurar minha rede".
+    /// That exit is never undone by anything but "Religar" (the card says nothing about
+    /// DNS, and the resolver it would bring back is the one that broke the network).
+    pub(crate) fn system_restore(&self) -> CoreResult<ApplyOutcome> {
+        self.apply_tiers(false)
+    }
+
+    fn apply_tiers(&self, relink: bool) -> CoreResult<ApplyOutcome> {
         {
             let rt = self.rt.lock();
             if rt.config_error {
@@ -844,7 +897,7 @@ impl NofapService {
         }
         let _prompt = self.one_prompt()?;
         let owner = self.deps.identity.id;
-        let Some((wanted, sent)) = self.plan_to_send() else {
+        let Some((wanted, sent)) = self.plan_to_send(relink) else {
             return Ok(ApplyOutcome::Unavailable(reason::UNSUPPORTED_OS.into()));
         };
         let before = self.deps.system.observe(ObserveOpts::FULL)?;
@@ -865,8 +918,11 @@ impl NofapService {
         } else {
             ApplyOutcome::Applied
         };
-        if matches!(outcome, ApplyOutcome::Applied | ApplyOutcome::Partial(_)) {
+        let applied = matches!(outcome, ApplyOutcome::Applied | ApplyOutcome::Partial(_));
+        if applied {
             tracing::info!("nofap: the system tiers were applied");
+        }
+        if relink && applied {
             let mut rt = self.rt.lock();
             // The tiers are on the machine either way: a note that cannot be stored must
             // not keep the outcome and the fresh read from the page.
@@ -915,6 +971,33 @@ impl NofapService {
             config.internal.previous_dns = previous;
             Ok(())
         })
+    }
+
+    /// Whether the last look at the machine found its state file listing this product.
+    pub(crate) fn listed_on_system(&self) -> bool {
+        let owner = self.deps.identity.id;
+        self.rt
+            .lock()
+            .system
+            .observation
+            .as_ref()
+            .and_then(|seen| seen.state.as_ref())
+            .is_some_and(|state| state.owners.contains_key(&owner))
+    }
+
+    /// Whether the state file lists this product: from the last look, or, when the
+    /// machine was not looked at in this run, from a quick look now.
+    pub(crate) fn listed_now(&self) -> bool {
+        if self.rt.lock().system.observation.is_some() {
+            return self.listed_on_system();
+        }
+        let owner = self.deps.identity.id;
+        self.deps
+            .system
+            .observe(ObserveOpts::QUICK)
+            .ok()
+            .and_then(|seen| seen.state)
+            .is_some_and(|state| state.owners.contains_key(&owner))
     }
 
     /// "Remover do sistema": takes this product's tiers off the machine. Only while the

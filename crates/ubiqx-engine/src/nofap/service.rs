@@ -11,7 +11,7 @@ use base64::Engine as _;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use ubiqx_core::nofap::{
     CardAction, CardKind, DayCount, DayKind, NofapCard, NofapChange, NofapConfig, NofapEvent,
-    NofapSite, ObserveOpts, SiteList, SiteOrigin, VisionConsent, DISPLAY_NAME,
+    NofapSite, SiteList, SiteOrigin, VisionConsent, DISPLAY_NAME,
 };
 use ubiqx_core::nofap_ipc::{
     ChangeOutcome, ConfigView, ConsentArgs, CostLine, EnableOptions, ExportResult, Mood, NofapView,
@@ -21,7 +21,7 @@ use ubiqx_core::{ActivitySample, CoreError, CoreResult};
 use ubiqx_nofap::commitment::{self, Requested};
 use ubiqx_nofap::exclusions::{self, ExclusionLists};
 use ubiqx_nofap::heuristics;
-use ubiqx_nofap::matcher::{normalize_host, site_key, HostClass, Verdict};
+use ubiqx_nofap::matcher::{normalize_host, site_key, BlockSource, HostClass, Verdict};
 use ubiqx_nofap::progress::{self, PROGRESS_WINDOW_DAYS};
 use ubiqx_nofap::sampling::{self, NotItEffect, SampleEvent, SNOOZE_SECS};
 use ubiqx_nofap::{help, messages};
@@ -361,6 +361,25 @@ impl NofapService {
                 );
             }
         }
+        // A tier switched off by a confirmed request comes off the machine now, through
+        // the operating system's prompt (the person just confirmed it): the plan sent is
+        // the smaller one, or a removal when nothing is asked any more. A resolver taken
+        // off with "Restaurar minha rede" stays off. A declined prompt leaves the tier
+        // there, and the page offers "Aplicar" for it.
+        let tier_off = matches!(
+            change,
+            NofapChange::SetHosts { on: false }
+                | NofapChange::SetResolver { resolver: None }
+                | NofapChange::SetPolicies { on: false }
+        );
+        if tier_off && self.enabled() && self.listed_on_system() {
+            if let Err(error) = self.system_restore() {
+                tracing::debug!(
+                    class = error_class(&error),
+                    "nofap: the tier was not taken off"
+                );
+            }
+        }
         if matches!(change, NofapChange::Disable) {
             // L1 and L5 stop first; then the operating system is asked to take L2 to L4
             // off. A declined prompt leaves them applied, and the page says so.
@@ -369,25 +388,7 @@ impl NofapService {
             self.clear_memory();
             // What the state file lists for this product comes off; when the machine was
             // never looked at in this run, it is looked at now.
-            let known = self
-                .rt
-                .lock()
-                .system
-                .observation
-                .as_ref()
-                .map(|seen| seen.state.clone());
-            let state = match known {
-                Some(state) => state,
-                None => self
-                    .deps
-                    .system
-                    .observe(ObserveOpts::QUICK)
-                    .ok()
-                    .and_then(|seen| seen.state),
-            };
-            let listed =
-                state.is_some_and(|state| state.owners.contains_key(&self.deps.identity.id));
-            if listed {
+            if self.listed_now() {
                 // The module is off whatever the removal does: a prompt that fails leaves
                 // the tiers on the machine, the page says so and offers to remove them.
                 if let Err(error) = self.remove_all() {
@@ -624,7 +625,7 @@ impl NofapService {
                 }
             }
             CardAction::Restore => {
-                self.system_apply()?;
+                self.system_restore()?;
             }
             CardAction::RestoreNetwork => {
                 self.restore_network()?;
@@ -685,15 +686,22 @@ impl NofapService {
 
     /// "Não era isso" on a vision card: a correction, not an off switch. The host that
     /// verdict learned is unlearned and one fresh, independent look follows twenty
-    /// seconds later, whatever the caps say.
+    /// seconds later, whatever the caps say. When that look cannot come (the check was
+    /// switched off, its consent or key went, the provider rejected the key), unlearning
+    /// would be a pass with nothing watching: the button is a delayed request instead, as
+    /// on a block card.
     fn not_it_on_vision(&self, context: &CardContext) -> CoreResult<()> {
         let now = self.now();
         let (day, _) = self.day_hour(now);
         let Some(key) = context.key else {
             return Ok(());
         };
-        if self.rt.lock().sampler.exception_only(key, &day) {
-            // The second look agreed with the first: today this is a delayed request.
+        // Without a host nothing was learned, so nothing is unlearned either.
+        let can_look =
+            context.host.is_none() || self.vision_allowed_in(&self.deps.env.snapshot()).is_ok();
+        if !can_look || self.rt.lock().sampler.exception_only(key, &day) {
+            // The second look agreed with the first, or no look can come: today this is
+            // a delayed request.
             return self.request_exception(context);
         }
         let mut outbox = Outbox::default();
@@ -814,13 +822,31 @@ impl NofapService {
     /// is off, because wiping the configuration of a running module would be an off
     /// switch without a delay. It is also the way out of a stored configuration that
     /// cannot be read.
+    ///
+    /// Tiers that are still on the machine (a removal that was declined, a configuration
+    /// that could not be read) are not forgotten with the rest: the machine is read again
+    /// right after, and the configuration keeps the moment the module was first enabled,
+    /// so the page keeps showing them and offering "Remover do sistema", also after a
+    /// restart.
     pub fn reset(&self) -> CoreResult<()> {
+        let now = self.now();
+        {
+            let rt = self.rt.lock();
+            if rt.config.enabled && !rt.config_error {
+                return Err(CoreError::Invalid("only while the module is off".into()));
+            }
+        }
+        let left = self.listed_now();
         {
             let mut rt = self.rt.lock();
             if rt.config.enabled && !rt.config_error {
                 return Err(CoreError::Invalid("only while the module is off".into()));
             }
-            self.replace_config(&mut rt, NofapConfig::default())?;
+            let mut fresh = NofapConfig::default();
+            if left {
+                fresh.enabled_at = rt.config.enabled_at.or(Some(now));
+            }
+            self.replace_config(&mut rt, fresh)?;
             // What was known about the machine was judged against the old choices.
             rt.system = SystemMemory::default();
             for origin in SiteOrigin::ALL {
@@ -830,6 +856,14 @@ impl NofapService {
             self.reload_sites(&mut rt);
         }
         self.clear_memory();
+        if left {
+            if let Err(error) = self.read_system(true, false) {
+                tracing::debug!(
+                    class = error_class(&error),
+                    "nofap: the system was not read"
+                );
+            }
+        }
         self.flush(Outbox {
             events: vec![NofapEvent::SitesChanged],
             status: true,
@@ -885,12 +919,17 @@ impl NofapService {
     /// Whether the tracker must record this sample as private: its host is blocked, or
     /// its window had a hit in the last ten minutes. A hit leaves nothing in the
     /// productivity data.
+    ///
+    /// The lists are asked also while the module is off or the other product runs the
+    /// passes: they are in memory and touch no port, and a page the standalone product
+    /// blocks would otherwise be kept with its title and address while ubiqX's own module
+    /// is off. While it is off only a listed host counts (the embedded list and the
+    /// person's own blocks), not the keyword and TLD rules, which can be wrong about a
+    /// page. What only the other product knows, its own sites and its AI's answers, is not
+    /// shared and stays out of reach; PRIVACY.md says so.
     pub fn redacts(&self, sample: &ActivitySample) -> bool {
         let now = self.now();
         let rt = self.rt.lock();
-        if !rt.config.enabled {
-            return false;
-        }
         // The same reading of the address as the guard's, so both name the window alike.
         let judged = match (&rt.matcher, sample.url.as_deref()) {
             (Some(matcher), Some(url)) => {
@@ -902,10 +941,18 @@ impl NofapService {
         let blocked = judged
             .as_ref()
             .is_some_and(|(verdict, _)| verdict.is_blocked());
+        if !rt.config.enabled {
+            return judged
+                .as_ref()
+                .is_some_and(|(verdict, _)| listed_block(*verdict));
+        }
+        if blocked {
+            return true;
+        }
         let page = judged.as_ref().map(|(_, page)| page.as_str());
         let key = context_key(page, &sample.app_id, &sample.window_title);
         let window_key = context_key(None, &sample.app_id, &sample.window_title);
-        blocked || recent(rt.hits.get(&key), now) || recent(rt.hits.get(&window_key), now)
+        recent(rt.hits.get(&key), now) || recent(rt.hits.get(&window_key), now)
     }
 
     /// Whether the block the tracker has open is the one a hit was just about: the same
@@ -915,6 +962,27 @@ impl NofapService {
     /// tracker has sampled it, and the block still open then is the work the user did
     /// before, which must not be turned into a private block.
     pub fn covers_open_block(&self, app_id: &str, url: Option<&str>) -> bool {
+        self.covers(app_id, url, None)
+    }
+
+    /// Whether a block the tracker is closing now was open when a hit of the last ten
+    /// minutes came, and is that hit's (the test of [`NofapService::covers_open_block`]
+    /// for a hit that came after `started_at`). An answer of the AI check is acted on and
+    /// the tracker's open block scrubbed a moment later, on another task: a sample that
+    /// arrives in between (the tab that comes to the front once the page is closed)
+    /// closes the page's block the ordinary way, and the scrub then finds another block
+    /// open. The tracker asks this before it keeps a block it closes, and makes it
+    /// private instead.
+    pub fn covers_closed_block(
+        &self,
+        app_id: &str,
+        url: Option<&str>,
+        started_at: DateTime<Utc>,
+    ) -> bool {
+        self.covers(app_id, url, Some(started_at))
+    }
+
+    fn covers(&self, app_id: &str, url: Option<&str>, since: Option<DateTime<Utc>>) -> bool {
         let now = self.now();
         let rt = self.rt.lock();
         if !rt.config.enabled {
@@ -924,30 +992,40 @@ impl NofapService {
             (Some(matcher), Some(url)) => matcher.verdict_for_url(url).0.is_blocked(),
             _ => false,
         };
+        // An open block is scrubbed when its page is blocked; a closed one only when a
+        // hit came while it was open.
+        if blocked && since.is_none() {
+            return true;
+        }
         let host = url.and_then(normalize_host);
-        blocked
-            || rt.hit_marks.iter().any(|mark| {
-                recent(Some(&mark.at), now)
-                    && mark.app_id.eq_ignore_ascii_case(app_id)
-                    // Without a host on either side, the application is all there is to
-                    // go by, and the block goes.
-                    && match (&mark.host, &host) {
+        rt.hit_marks.iter().any(|mark| {
+            recent(Some(&mark.at), now)
+                && since.is_none_or(|since| mark.at > since)
+                && mark.app_id.eq_ignore_ascii_case(app_id)
+                // Without a host on either side, the application is all there is to go
+                // by, and the block goes.
+                && (blocked
+                    || match (&mark.host, &host) {
                         (Some(hit), Some(open)) => hit == open,
                         _ => true,
-                    }
-            })
+                    })
+        })
     }
 
     /// Whether the tracker must not take a productivity screenshot of this window: its
     /// host is blocked or a mixed platform, or it carried a signal or had a hit in the
-    /// last ten minutes.
+    /// last ten minutes. While the module is off only a blocked host is vetoed (see
+    /// [`NofapService::redacts`]).
     pub fn capture_veto(&self, app_id: &str, domain: Option<&str>, title: &str) -> bool {
         let now = self.now();
         let rt = self.rt.lock();
-        if !rt.config.enabled {
-            return false;
-        }
         let host = domain.and_then(normalize_host);
+        if !rt.config.enabled {
+            return match (&rt.matcher, host.as_deref()) {
+                (Some(matcher), Some(host)) => listed_block(matcher.verdict(host)),
+                _ => false,
+            };
+        }
         let by_host = match (&rt.matcher, host.as_deref()) {
             (Some(matcher), Some(host)) => matches!(
                 matcher.verdict(host),
@@ -977,6 +1055,15 @@ impl NofapService {
     pub fn quit_dialog(&self) -> messages::QuitDialog {
         messages::quit_dialog(self.system_applied(), self.language())
     }
+}
+
+/// A host on a list: the embedded one, one the person typed or one the AI check learned
+/// (not a keyword or TLD rule).
+fn listed_block(verdict: Verdict) -> bool {
+    matches!(
+        verdict,
+        Verdict::Blocked(BlockSource::List | BlockSource::User | BlockSource::Learned)
+    )
 }
 
 /// Today's check-in answer: the mood counted today, the latest hour first.

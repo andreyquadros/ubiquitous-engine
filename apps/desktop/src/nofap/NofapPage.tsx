@@ -499,7 +499,7 @@ export function NofapPage({ host }: { host?: NofapHost }) {
       <div data-testid="page-nofap">
         <PageHeader title={name} subtitle={t('nofap.page.subtitle')} actions={talkButton} />
         <div className="mx-auto flex w-full max-w-[720px] flex-col gap-5">
-          {view.config.self_use_at && (
+          {(view.config.self_use_at || left) && (
             <Card data-testid="nofap-off">
               <h2 className="display text-lg">{t('nofap.off.title', { name })}</h2>
               <p className="mt-1 text-[13px] leading-5 text-ink-2">{left ? t('nofap.off.system_left') : t('nofap.off.removed_hint', { name })}</p>

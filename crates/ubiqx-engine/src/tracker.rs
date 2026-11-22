@@ -90,7 +90,17 @@ pub fn handle_sample(state: &Arc<EngineState>, sample: ActivitySample) -> CoreRe
     if let Some(mut closed) = outcome.closed {
         closed.is_open = false;
         let significant = state.segmenter.lock().is_significant(&closed);
-        if significant {
+        // A hit of the `nofap` module came while this block was open, and its scrub has
+        // not run yet: the block is made private here instead of being kept.
+        let address = closed.url.as_deref().or(closed.domain.as_deref());
+        let about_a_hit =
+            state
+                .nofap
+                .covers_closed_block(&closed.app_id, address, closed.started_at);
+        state.last_capture.lock().remove(&closed.id);
+        if about_a_hit {
+            make_private(state, closed, significant)?;
+        } else if significant {
             repos.blocks.touch(&closed)?;
             state.deps.sink.emit(EngineEvent::BlockClosed {
                 block: closed.clone(),
@@ -99,7 +109,6 @@ pub fn handle_sample(state: &Arc<EngineState>, sample: ActivitySample) -> CoreRe
             // Too short to matter: drop it so the timeline stays readable.
             repos.blocks.delete(&closed.id)?;
         }
-        state.last_capture.lock().remove(&closed.id);
     }
     if let Some(opened) = outcome.opened {
         repos.blocks.insert(&opened)?;
@@ -181,8 +190,19 @@ pub fn scrub_open_block(state: &Arc<EngineState>) -> CoreResult<()> {
         let significant = segmenter.is_significant(&closed);
         (closed, significant)
     };
-    let repos = &state.deps.repos;
     state.last_capture.lock().remove(&closed.id);
+    make_private(state, closed, significant)
+}
+
+/// Writes a closed block of a hit as private (see [`scrub_open_block`]): its title, address,
+/// description and AI text go, its category becomes the private one, its screenshots are
+/// deleted and the store's log folded. A block too short to be kept is dropped.
+fn make_private(
+    state: &Arc<EngineState>,
+    closed: ActivityBlock,
+    significant: bool,
+) -> CoreResult<()> {
+    let repos = &state.deps.repos;
     let mut block = closed;
     block.is_open = false;
     block.title = PRIVATE_TITLE.into();

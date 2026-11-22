@@ -7,7 +7,7 @@
 //! AI check; the check is handed back as a job and never awaited here.
 
 use chrono::{DateTime, Utc};
-use ubiqx_core::nofap::{CardAction, DayKind, GuardLimit, VisionPrefs};
+use ubiqx_core::nofap::{CardAction, DayKind, GuardLimit, SiteOrigin, VisionPrefs};
 use ubiqx_core::normalize::is_private_browsing_title;
 use ubiqx_core::{CoreError, CoreResult, ForegroundWindow};
 use ubiqx_nofap::episode::EpisodeCard;
@@ -19,11 +19,14 @@ use ubiqx_nofap::plan::bypass_suspected;
 use ubiqx_nofap::primary::Role;
 use ubiqx_nofap::sampling::{
     self, Decision, NotItEffect, SampleCtx, SampleEvent, Skip, WindowKind, HEIGHTENED_SECS,
+    SNOOZE_SECS,
 };
 
 use super::cards::{self, CardContext, Outbox};
 use super::vision::{VisionJob, NOT_READY_FOR_SECS};
-use super::{context_key, forget_old, mark_hit, DisplaySession, InFlight, NofapService};
+use super::{
+    context_key, forget_old, mark_hit, snooze_over, DisplaySession, InFlight, NofapService,
+};
 
 /// What one pass did.
 #[derive(Default)]
@@ -114,7 +117,7 @@ impl NofapService {
             self.rt.lock().confirmer.clear();
             return Ok(GuardOutcome::default());
         }
-        let front = self.read_front(&matcher, window);
+        let front = self.read_front(&matcher, window, false);
         match front.verdict {
             Some(Verdict::Blocked(source)) => self.enforce(&matcher, &front, source, now),
             _ => self.sample(&front, now),
@@ -129,19 +132,25 @@ impl NofapService {
         now: DateTime<Utc>,
     ) -> std::sync::Arc<Matcher> {
         let mut rt = self.rt.lock();
-        if rt.snooze_ends.is_some_and(|ends| ends <= now) {
+        if rt.snooze_ends.is_some_and(|ends| snooze_over(ends, now)) {
             self.reload_sites(&mut rt);
             return rt.matcher.clone().unwrap_or(matcher);
         }
         matcher
     }
 
-    /// Reads the address of a supported browser and judges it.
-    fn read_front(&self, matcher: &Matcher, window: ForegroundWindow) -> Front {
+    /// Reads the address of a supported browser and judges it. `fresh` reads it past the
+    /// resolver's cache.
+    fn read_front(&self, matcher: &Matcher, window: ForegroundWindow, fresh: bool) -> Front {
         let supported = self.deps.urls.supports(&window.app_id);
         let mut denied = false;
         let url = if supported {
-            match self.deps.urls.resolve(&window) {
+            let read = if fresh {
+                self.deps.urls.resolve_fresh(&window)
+            } else {
+                self.deps.urls.resolve(&window)
+            };
+            match read {
                 Ok(url) => url.filter(|url| !url.trim().is_empty()),
                 Err(CoreError::Permission(_)) => {
                     denied = true;
@@ -364,17 +373,31 @@ impl NofapService {
         }
     }
 
-    /// What "Não era isso" on a block of `source` would do now.
+    /// What "Não era isso" on a block of `source` would do now. What was used today is
+    /// the counter of the local day, and never less than the snoozes made in the last 24
+    /// hours (one made "in the future" counts too): moving the clock to another day
+    /// starts a new counter, not a new set of snoozes.
     pub(crate) fn not_it_effect(&self, source: BlockSource) -> NotItEffect {
-        let (day, _) = self.day_hour(self.now());
-        let used = self
+        let now = self.now();
+        let (day, _) = self.day_hour(now);
+        let counted = self
             .deps
             .repo
             .days_between(&day, &day)
             .map(|counts| ubiqx_nofap::progress::total_on(&counts, &day, DayKind::NotIt))
             // Counters that cannot be read must not hand out a snooze.
             .unwrap_or(u32::MAX);
-        sampling::not_it_on_block(source, self.vision_ready().is_ok(), used)
+        let snoozed = {
+            let rt = self.rt.lock();
+            let recent = rt
+                .sites
+                .iter()
+                .filter(|site| site.origin == SiteOrigin::Snooze)
+                .filter(|site| (now - site.created_at).num_seconds() < SNOOZE_SECS)
+                .count();
+            u32::try_from(recent).unwrap_or(u32::MAX)
+        };
+        sampling::not_it_on_block(source, self.vision_ready().is_ok(), counted.max(snoozed))
     }
 
     // -----------------------------------------------------------------------------------------
@@ -439,15 +462,24 @@ impl NofapService {
         let (Decision::Capture { .. }, Some(window_id)) = (decision, window.window_id) else {
             return Ok(GuardOutcome::default());
         };
-        let asked_lately = self
-            .rt
-            .lock()
-            .not_ready_at
-            .is_some_and(|at| (0..NOT_READY_FOR_SECS).contains(&(now - at).num_seconds()));
-        if asked_lately {
+        let (asked_lately, bought) = {
+            let rt = self.rt.lock();
+            let lately = rt
+                .not_ready_at
+                .is_some_and(|at| (0..NOT_READY_FOR_SECS).contains(&(now - at).num_seconds()));
+            (lately, rt.recheck.contains(&key))
+        };
+        // The look "Não era isso" bought comes whatever the caps and the budget say (it
+        // unlearned a verdict at once, and this look is what keeps that from being a pass
+        // with nothing watching); what the user can withdraw still stops it.
+        let ready = if bought {
+            self.vision_allowed_in(&env).map(|_| ())
+        } else if asked_lately {
             return Ok(GuardOutcome::default());
-        }
-        if self.vision_ready_in(&env).is_err() {
+        } else {
+            self.vision_ready_in(&env)
+        };
+        if ready.is_err() {
             self.rt.lock().not_ready_at = Some(now);
             return Ok(GuardOutcome::default());
         }
@@ -475,6 +507,64 @@ impl NofapService {
             }),
         })
     }
+}
+
+impl NofapService {
+    /// Whether the window a check is about still shows what the check was asked for,
+    /// read again right before a frame of it is taken: the same application and window
+    /// in front, the same page in it (read past the resolver's cache) or, without an
+    /// address, the same title, and that window still one the check may look at (not
+    /// never-capture, not decided, not excluded). A check takes up to fourteen seconds to
+    /// answer and its second frame comes four seconds after that: a browser window keeps
+    /// its id when its tab changes, so without this the second frame could show the
+    /// user's mail. Runs on the blocking pool.
+    pub(crate) fn still_shows(&self, spot: &CheckSpot) -> bool {
+        let (matcher, prefs, seen, enabled_at, delay_secs) = {
+            let rt = self.rt.lock();
+            let Some(matcher) = rt.matcher.clone() else {
+                return false;
+            };
+            (
+                matcher,
+                rt.config.vision.clone(),
+                rt.config.internal.exclusions_seen.clone(),
+                rt.config.enabled_at,
+                rt.config.delay_secs,
+            )
+        };
+        let Ok(Some(window)) = self.deps.activity.peek_foreground() else {
+            return false;
+        };
+        if window.window_id != Some(spot.window_id) || window.app_id != spot.app_id {
+            return false;
+        }
+        if crate::focus::is_exempt_window(&window.app_id, &window.app_name, None) {
+            return false;
+        }
+        let front = self.read_front(&matcher, window, true);
+        let kind = front.kind();
+        if kind != spot.kind || front.key() != spot.key {
+            return false;
+        }
+        let now = self.now();
+        let env = self.deps.env.snapshot();
+        let lists = ExclusionLists {
+            apps: env.excluded_apps,
+            domains: env.excluded_domains,
+        };
+        let effective = exclusions::effective(&lists, &seen, enabled_at, delay_secs, now);
+        let ctx = sample_ctx(&front, kind, spot.key, &prefs, &effective);
+        sampling::may_capture(&ctx, &self.rt.lock().sampler, now)
+    }
+}
+
+/// What a check was asked for: the window and what it showed (its key).
+#[derive(Debug, Clone)]
+pub(crate) struct CheckSpot {
+    pub key: u64,
+    pub app_id: String,
+    pub window_id: u32,
+    pub kind: WindowKind,
 }
 
 /// Whether a bypass suspicion is still fresh (it lasts as long as the heightened state).

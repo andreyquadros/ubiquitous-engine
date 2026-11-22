@@ -22,6 +22,7 @@ use ubiqx_nofap::messages::Notice;
 use ubiqx_nofap::sampling::{self, CheckError, Outcome, SampleEvent, Stage, WindowKind};
 
 use super::cards::{self, CardContext, Outbox, ASK_CLOSE_SECS};
+use super::guard::CheckSpot;
 use super::{error_class, forget_old, mark_hit, salt_of, DisplaySession, InFlight, NofapService};
 
 /// A key the provider rejected three times switches the check off; it is tried again
@@ -174,8 +175,9 @@ impl NofapService {
                 }
             }
             if changed {
-                rt.sampler.clear();
-                rt.recheck.clear();
+                // Only what belonged to the provider: the caps of the hour, the
+                // corrections of the day and the looks already bought stay.
+                rt.sampler.forget_provider();
                 rt.rejected_at = None;
                 rt.not_ready_at = None;
             }
@@ -188,13 +190,14 @@ impl NofapService {
     }
 
     /// The host changed its AI settings (a key was stored or removed, another provider
-    /// selected): what the sampler remembers about the old one is forgotten at once,
-    /// instead of when the guard next notices.
+    /// selected): what the sampler remembers about the old one (rejections, backoff) is
+    /// forgotten at once, instead of when the guard next notices. The hour's cap, each
+    /// window's history and the looks "Não era isso" bought are not the provider's and
+    /// stay (the standalone app calls this after every write of its settings).
     pub fn ai_settings_changed(&self) {
         {
             let mut rt = self.rt.lock();
-            rt.sampler.clear();
-            rt.recheck.clear();
+            rt.sampler.forget_provider();
             rt.rejected_at = None;
             rt.not_ready_at = None;
             rt.provider_seen = None;
@@ -264,11 +267,21 @@ impl NofapService {
         let frames = self.deps.frames.clone();
         let me = self.clone();
         let key = job.key;
+        let spot = CheckSpot {
+            key,
+            app_id: job.app_id.clone(),
+            window_id,
+            kind: job.kind,
+        };
         let frame = tokio::task::spawn_blocking(move || {
-            // Asked again here, off the async threads (it reads the host's settings and
-            // the permission): what was withdrawn since the guard asked for this check,
-            // or since its first frame, stops it before anything is captured.
-            let taken = if me.vision_allowed_in(&me.deps.env.snapshot()).is_err() {
+            // Asked again here, off the async threads (it reads the host's settings, the
+            // permission and the window in front): what was withdrawn since the guard
+            // asked for this check, or since its first frame, stops it before anything is
+            // captured, and so does a window that shows something else by now (another
+            // tab, a page that is never captured, another application in front).
+            let taken = if me.vision_allowed_in(&me.deps.env.snapshot()).is_err()
+                || !me.still_shows(&spot)
+            {
                 Ok(None)
             } else {
                 frames.frame(window_id, opts)

@@ -174,6 +174,15 @@ pub fn apply_to_config(
     change: &NofapChange,
     _now: DateTime<Utc>,
 ) -> bool {
+    let before = config.vision.clone();
+    let applied = apply_change(config, change);
+    if applied {
+        carry_tightening(config, &before);
+    }
+    applied
+}
+
+fn apply_change(config: &mut NofapConfig, change: &NofapChange) -> bool {
     match change {
         NofapChange::Disable => {
             config.enabled = false;
@@ -219,6 +228,57 @@ pub fn apply_to_config(
     }
     config.sanitize();
     true
+}
+
+/// A waiting `SetVisionScope` or `SetCaps` carries every value as it was when it was
+/// asked for, and confirming it writes all of them. A scope switch turned on, or a cap
+/// raised, after it was queued (an immediate change) would then go back to its old
+/// value with no wait of its own. So every tightening applied here is carried into the
+/// waiting requests of that kind: a switch it turned on is on in them, and a cap it raised
+/// is raised in those that did not lower it. What a request asked to loosen, and waited
+/// for, it still loosens.
+fn carry_tightening(config: &mut NofapConfig, before: &VisionPrefs) {
+    let now = config.vision.clone();
+    let turned_on = |was: bool, is: bool| !was && is;
+    for waiting in &mut config.pending {
+        match &mut waiting.change {
+            NofapChange::SetVisionScope {
+                unknown_sites,
+                media_apps,
+                messaging_apps,
+                private_windows,
+            } => {
+                for (flag, was, is) in [
+                    (unknown_sites, before.unknown_sites, now.unknown_sites),
+                    (media_apps, before.media_apps, now.media_apps),
+                    (messaging_apps, before.messaging_apps, now.messaging_apps),
+                    (private_windows, before.private_windows, now.private_windows),
+                ] {
+                    if turned_on(was, is) {
+                        *flag = true;
+                    }
+                }
+            }
+            NofapChange::SetCaps {
+                max_per_hour,
+                max_per_day,
+                monthly_cap_usd,
+            } => {
+                if now.max_per_hour > before.max_per_hour && *max_per_hour >= before.max_per_hour {
+                    *max_per_hour = (*max_per_hour).max(now.max_per_hour);
+                }
+                if now.max_per_day > before.max_per_day && *max_per_day >= before.max_per_day {
+                    *max_per_day = (*max_per_day).max(now.max_per_day);
+                }
+                if now.monthly_cap_usd > before.monthly_cap_usd
+                    && *monthly_cap_usd >= before.monthly_cap_usd
+                {
+                    *monthly_cap_usd = monthly_cap_usd.max(now.monthly_cap_usd);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// The delay a request was made under: `ready_at - requested_at`, never negative.
@@ -399,6 +459,84 @@ mod tests {
     }
 
     const WAIT: Effect = Effect::After(600);
+
+    /// Confirms a waiting request once it is ready and applies it, as the service does.
+    fn confirm_and_apply(config: &mut NofapConfig, id: &str, now: DateTime<Utc>) {
+        for waiting in &mut config.pending {
+            waiting.observed_secs = OBSERVED_CAP_SECS;
+        }
+        let change = confirm(config, id, now).unwrap();
+        assert!(apply_to_config(config, &change, now));
+    }
+
+    fn queued(config: &mut NofapConfig, change: NofapChange, id: &str) -> PendingChange {
+        match request(config, change, id.into(), at(0)).unwrap() {
+            Requested::Pending(waiting) => waiting,
+            Requested::Apply(change) => panic!("{change:?} does not wait"),
+        }
+    }
+
+    fn applied_now(config: &mut NofapConfig, change: NofapChange) {
+        match request(config, change, "now".into(), at(10)).unwrap() {
+            Requested::Apply(change) => assert!(apply_to_config(config, &change, at(10))),
+            Requested::Pending(waiting) => panic!("{:?} waits", waiting.change),
+        }
+    }
+
+    #[test]
+    fn a_switch_turned_on_while_a_scope_request_waits_stays_on_after_its_confirmation() {
+        let mut config = enabled();
+        config.vision.messaging_apps = false;
+        let waiting = queued(&mut config, scope(false, true, false, true), "scope");
+        // Turned on at once while the request waits.
+        applied_now(&mut config, scope(true, true, true, true));
+        assert!(config.vision.messaging_apps);
+
+        confirm_and_apply(&mut config, &waiting.id, at(700));
+        assert!(!config.vision.unknown_sites, "what it asked to loosen goes");
+        assert!(
+            config.vision.messaging_apps,
+            "what was turned on meanwhile stays"
+        );
+        assert!(config.vision.media_apps && config.vision.private_windows);
+    }
+
+    #[test]
+    fn a_cap_raised_while_a_caps_request_waits_stays_raised_after_its_confirmation() {
+        let mut config = enabled();
+        let defaults = config.vision.clone();
+        let hour = defaults.max_per_hour - 1;
+        let waiting = queued(
+            &mut config,
+            caps(hour, defaults.max_per_day, defaults.monthly_cap_usd),
+            "caps",
+        );
+        // A second request lowers the budget and waits too.
+        let budget = queued(
+            &mut config,
+            caps(defaults.max_per_hour, defaults.max_per_day, 1.0),
+            "budget",
+        );
+        // The budget is raised at once meanwhile.
+        applied_now(
+            &mut config,
+            caps(defaults.max_per_hour, defaults.max_per_day, 5.0),
+        );
+        assert!((config.vision.monthly_cap_usd - 5.0).abs() < f64::EPSILON);
+
+        confirm_and_apply(&mut config, &waiting.id, at(700));
+        assert_eq!(
+            config.vision.max_per_hour, hour,
+            "the lowered cap is lowered"
+        );
+        assert!(
+            (config.vision.monthly_cap_usd - 5.0).abs() < f64::EPSILON,
+            "the raised budget stays raised"
+        );
+        // A request that asked to lower the budget, and waited, still lowers it.
+        confirm_and_apply(&mut config, &budget.id, at(700));
+        assert!((config.vision.monthly_cap_usd - 1.0).abs() < f64::EPSILON);
+    }
 
     /// Every change in its tightening and its loosening direction.
     fn directions() -> Vec<(NofapChange, Effect)> {

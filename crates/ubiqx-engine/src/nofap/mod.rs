@@ -64,7 +64,7 @@ use ubiqx_nofap::matcher::{Matcher, MatcherData};
 use ubiqx_nofap::plan::SystemAssessment;
 use ubiqx_nofap::primary::Role;
 use ubiqx_nofap::sampling::{
-    SamplerMemory, WindowKind, CHECK_TIMEOUT_SECS, CONFIRM_AFTER_SECS, HIT_MEMORY_SECS,
+    SamplerMemory, WindowKind, CHECK_TIMEOUT_SECS, CONFIRM_AFTER_SECS, HIT_MEMORY_SECS, SNOOZE_SECS,
 };
 use ubiqx_nofap::{progress, sampling};
 
@@ -355,7 +355,7 @@ impl NofapService {
         };
         let matcher_data = MatcherData::embedded();
         let salt = salt_of(&config);
-        let matcher = Matcher::new(matcher_data.clone(), &sites, &salt, now)
+        let matcher = Matcher::new(matcher_data.clone(), &live_sites(&sites, now), &salt, now)
             .map(Arc::new)
             .map_err(|error| {
                 tracing::error!(
@@ -408,6 +408,12 @@ impl NofapService {
             matcher_data,
         });
         service.seed_day_count();
+        if !config_error {
+            // The retention of the counters holds from the start, also for a module that
+            // stays off (the verify pass prunes once a day from then on).
+            let mut rt = service.rt.lock();
+            service.prune_daily(&mut rt, now);
+        }
         // The first status is computed from memory alone: no platform port is touched
         // while the module is off.
         let status = service.compute_status();
@@ -504,7 +510,12 @@ impl NofapService {
             }
         }
         let salt = salt_of(&rt.config);
-        match Matcher::new(self.matcher_data.clone(), &rt.sites, &salt, now) {
+        match Matcher::new(
+            self.matcher_data.clone(),
+            &live_sites(&rt.sites, now),
+            &salt,
+            now,
+        ) {
             Ok(matcher) => rt.matcher = Some(Arc::new(matcher)),
             Err(error) => {
                 tracing::error!(
@@ -628,8 +639,29 @@ fn next_snooze_end(sites: &[NofapSite], now: DateTime<Utc>) -> Option<DateTime<U
         .iter()
         .filter(|site| site.origin == SiteOrigin::Snooze)
         .filter_map(|site| site.expires_at)
-        .filter(|ends| *ends > now)
+        .filter(|ends| !snooze_over(*ends, now))
         .min()
+}
+
+/// Whether a snooze that ends at `ends` is over at `now`: it ended, or it ends further
+/// ahead than a snooze lasts, which no snooze set under the present clock can (the clock
+/// was set back since). A snooze is never stretched by a clock change.
+pub(crate) fn snooze_over(ends: DateTime<Utc>, now: DateTime<Utc>) -> bool {
+    ends <= now || (ends - now).num_seconds() > SNOOZE_SECS
+}
+
+/// The sites the matcher is built from: all of them but the snoozes that are over by
+/// [`snooze_over`] (the matcher drops the ones that ended by itself; the rows of the
+/// others stay until their time passes, and count towards the snoozes of the day).
+fn live_sites(sites: &[NofapSite], now: DateTime<Utc>) -> Vec<NofapSite> {
+    sites
+        .iter()
+        .filter(|site| {
+            site.origin != SiteOrigin::Snooze
+                || site.expires_at.is_some_and(|ends| !snooze_over(ends, now))
+        })
+        .cloned()
+        .collect()
 }
 
 /// Whether `at` lies in the last [`HIT_MEMORY_SECS`] before `now`.

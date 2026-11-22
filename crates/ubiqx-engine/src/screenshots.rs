@@ -25,6 +25,11 @@ pub fn should_capture(state: &EngineState, block: &ActivityBlock, now: DateTime<
     if block.category_id.as_deref() == Some(system_categories::PRIVATE) {
         return false;
     }
+    // Neither product's own window: it shows the `nofap` page (the example frame of a
+    // check, the person's sentence, plans and counts), which is never stored or sent.
+    if product::is_own_app(&block.app_id, &block.app_name) {
+        return false;
+    }
     let vision_ok = s.vision_policy.allows(
         &block.app_id,
         &block.app_name,

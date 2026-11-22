@@ -73,6 +73,15 @@ principal, então o título antigo não fica legível em nenhum dos dois. Se out
 lendo o banco nesse momento (a linha de comando do ubiqX, por exemplo), essa passagem fica para a
 próxima vez, e até lá o título antigo continua no arquivo auxiliar.
 
+Com o módulo desligado no ubiqX, uma página da lista (a embutida e os sites que você bloqueou no
+ubiqX) continua registrada como privada e sem captura de tela; as regras por palavra e por
+domínio de topo só valem com o módulo ligado. O ubiqX nunca tira captura de tela da própria
+janela nem da janela do NoFap separado. **O que fica de fora:** com o NoFap separado instalado,
+o ubiqX não sabe o que só o outro app sabe (os sites que você digitou ou que a IA aprendeu lá, e
+as respostas da IA dele), porque os dois não compartilham dados. Uma página assim pode ficar no
+histórico de produtividade do ubiqX com título e endereço. Se isso importa, adicione o site
+também à lista do ubiqX.
+
 ### 2. Lista no sistema (arquivo `hosts`)
 
 **O que é escrito.** Um bloco marcado no arquivo `hosts` do sistema, entre as linhas
