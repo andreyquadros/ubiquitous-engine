@@ -3,6 +3,8 @@
 
 mod app;
 mod card;
+#[cfg(test)]
+mod tests;
 mod tray;
 
 fn main() {
