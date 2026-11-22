@@ -163,11 +163,25 @@ mod tests {
     fn nofap_shell_build_scripts_compile_in_their_own_feed() {
         // A build script cannot depend on this crate, so each shell repeats its default
         // feed URL. A shell stamped with the other product's feed would never be offered an
-        // update (the checker ignores a feed that names another product).
+        // update (the checker ignores a feed that names another product). Each script reads
+        // a variable of its own (integrator decision 35): one exported where both shells
+        // build must not compile one product's feed into the other.
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        for (script, own, other) in [
-            ("apps/desktop/src-tauri/build.rs", &UBIQX, &SHIELD),
-            ("apps/nofap/src-tauri/build.rs", &SHIELD, &UBIQX),
+        for (script, own, other, variable, other_variable) in [
+            (
+                "apps/desktop/src-tauri/build.rs",
+                &UBIQX,
+                &SHIELD,
+                "UBIQX_UPDATE_FEED_URL",
+                "UBIQX_SHIELD_UPDATE_FEED_URL",
+            ),
+            (
+                "apps/nofap/src-tauri/build.rs",
+                &SHIELD,
+                &UBIQX,
+                "UBIQX_SHIELD_UPDATE_FEED_URL",
+                "UBIQX_UPDATE_FEED_URL",
+            ),
         ] {
             let text = std::fs::read_to_string(root.join(script))
                 .unwrap_or_else(|e| panic!("{script}: {e}"));
@@ -179,6 +193,14 @@ mod tests {
             assert!(
                 !text.contains(other.feed_url),
                 "{script} names the other product's feed"
+            );
+            assert!(
+                text.contains(&format!("stamp(\"{variable}\", DEFAULT_FEED_URL")),
+                "{script} does not stamp its feed from {variable}"
+            );
+            assert!(
+                !text.contains(&format!("\"{other_variable}\"")),
+                "{script} reads the other product's variable {other_variable}"
             );
         }
     }

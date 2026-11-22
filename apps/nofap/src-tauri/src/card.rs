@@ -104,7 +104,14 @@ pub fn show_card_window(app: &AppHandle, card: &NofapCard) -> CoreResult<()> {
         let _ = window.set_position(p);
     }
     let _ = window.set_always_on_top(true);
-    window.show().map_err(platform)
+    // The card never takes the keyboard from the app the person is typing in (integrator
+    // decision 38): `show` makes the window key on macOS, and activates it on Windows from
+    // the second card on, unless it cannot take focus at that moment. It is focusable again
+    // once shown, so its buttons answer a click as before.
+    let _ = window.set_focusable(false);
+    let shown = window.show().map_err(platform);
+    let _ = window.set_focusable(true);
+    shown
 }
 
 /// [`NofapPresenter`] backed by the card window. Called from a blocking thread.

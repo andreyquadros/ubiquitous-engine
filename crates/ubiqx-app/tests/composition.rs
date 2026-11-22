@@ -159,8 +159,9 @@ fn strings(value: &serde_json::Value) -> Vec<&str> {
         .collect()
 }
 
-/// The card window may close itself, ask for its height and be dragged: what its page
-/// calls, nothing more. It never takes focus (design 5.3), so it has no set-focus; and the
+/// The card window may close itself, ask for its height and be dragged, call the module's
+/// command and read the settings: what its page calls, nothing more (`shell_access.rs`
+/// pins every window's commands). It never takes focus (design 5.3), so it has no set-focus; and the
 /// main window's and the intervention window's capabilities name only their own window.
 #[test]
 fn the_card_window_is_granted_only_what_its_page_calls() {
@@ -173,6 +174,8 @@ fn the_card_window_is_granted_only_what_its_page_calls() {
             "core:window:allow-close",
             "core:window:allow-set-size",
             "core:window:allow-start-dragging",
+            "allow-shield",
+            "allow-get-settings",
         ]
     );
     assert_eq!(strings(&capability("default.json")["windows"]), ["main"]);

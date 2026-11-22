@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewWindow, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_notification::NotificationExt;
 use ubiqx_app::nofap_app::{NofapApp, NofapAppConfig, NofapHostCommand};
@@ -80,8 +80,22 @@ async fn nofap(app: AppHandle, command: NofapCommand) -> Result<Value, IpcError>
 /// commands: the keychain can wait for the user to unlock it and a permission request can
 /// raise a system prompt; the vendor calls are awaited there. A settings write relabels the
 /// tray (the language may have changed).
+///
+/// The card window may send this command only to read the settings (its page follows the
+/// app's language, read again for every card); everything else it sends is refused here,
+/// since a capability allows a whole command (integrator decision 34).
 #[tauri::command]
-async fn nofap_host(app: AppHandle, command: NofapHostCommand) -> Result<Value, IpcError> {
+async fn nofap_host(
+    app: AppHandle,
+    window: WebviewWindow,
+    command: NofapHostCommand,
+) -> Result<Value, IpcError> {
+    if window.label() == card::CARD_WINDOW && !card_may_send(&command) {
+        return Err(IpcError::from(CoreError::Permission(format!(
+            "{} is not answered to the card window",
+            command.name()
+        ))));
+    }
     let relabel = matches!(command, NofapHostCommand::SettingsSet(_));
     let handle = app.clone();
     let reply = tauri::async_runtime::spawn_blocking(move || {
@@ -93,6 +107,11 @@ async fn nofap_host(app: AppHandle, command: NofapHostCommand) -> Result<Value, 
         tray::sync_later(&app);
     }
     Ok(reply)
+}
+
+/// What the card window's page sends through `nofap_host`: only the settings read.
+pub(crate) fn card_may_send(command: &NofapHostCommand) -> bool {
+    matches!(command, NofapHostCommand::SettingsGet)
 }
 
 /// The window's own way out (design 6.3): the page asks for the confirmation first, with
@@ -239,7 +258,7 @@ pub fn run() {
                 // so this executable can be the elevated one.
                 system_layer: true,
                 build,
-                update_feed_url: Some(env!("UBIQX_UPDATE_FEED_URL").to_string()),
+                update_feed_url: Some(env!("UBIQX_SHIELD_UPDATE_FEED_URL").to_string()),
                 ..NofapAppConfig::default()
             };
             let sink: Arc<dyn NofapSink> = Arc::new(TauriNofapSink(handle.clone()));
@@ -279,4 +298,36 @@ pub fn run() {
             }
             _ => {}
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn the_card_window_may_only_read_the_settings() {
+        let wire = [
+            json!({ "cmd": "settings_get" }),
+            json!({ "cmd": "settings_set", "args": { "ui_language": "en" } }),
+            json!({ "cmd": "api_key_set", "args": { "provider": "openai", "key": "sk-ana" } }),
+            json!({ "cmd": "api_key_clear", "args": { "provider": "openai" } }),
+            json!({ "cmd": "models", "args": { "provider": "openai" } }),
+            json!({ "cmd": "permissions" }),
+            json!({ "cmd": "permission_request", "args": { "kind": "screen_recording" } }),
+            json!({ "cmd": "update_check" }),
+            json!({ "cmd": "about" }),
+        ];
+        for value in wire {
+            let command: NofapHostCommand =
+                serde_json::from_value(value.clone()).unwrap_or_else(|e| panic!("{value}: {e}"));
+            assert_eq!(
+                card_may_send(&command),
+                command.name() == "settings_get",
+                "{}",
+                command.name()
+            );
+        }
+    }
 }

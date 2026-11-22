@@ -1,12 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "shield-card",
-  "description": "Capability for UBI's card window: it closes itself, asks for the height its content needs, and can be dragged. It never takes focus, so it has no set-focus.",
+  "description": "Capability for UBI's card window: the module's command, the host command (the shell answers only the settings read from this window, for the language), closing itself, asking for the height its content needs and being dragged. It never takes focus, so it has no set-focus.",
   "windows": ["shield-card"],
   "permissions": [
     "core:default",
     "core:window:allow-close",
     "core:window:allow-set-size",
-    "core:window:allow-start-dragging"
+    "core:window:allow-start-dragging",
+    "allow-shield",
+    "allow-shield-host"
   ]
 }
