@@ -216,7 +216,7 @@ $env:UBIQX_SHIELD_UNVERIFIED_TIERS = 'policies'; & "$env:LOCALAPPDATA\NoFap\ubiq
 organização nenhuma: é o efeito do mecanismo. Feche e reabra o navegador depois de aplicar ou remover.
 
 **Desinstalar.** O desinstalador do `-setup.exe` (os dois produtos) e o `apt remove` do `.deb` (os dois
-produtos) removem do sistema o que aquele produto aplicou antes de apagar os arquivos, e não fazem isso numa
+produtos: pacotes `ubiq-x` e `no-fap`) removem do sistema o que aquele produto aplicou antes de apagar os arquivos, e não fazem isso numa
 atualização; no Windows isso custa um pedido do UAC durante a desinstalação. **O `.msi` do ubiqX não
 remove nada do sistema.** Nenhum desses caminhos foi conferido numa máquina real ainda (item 15 da lista).
 Os comandos para cada caso estão em [`nofap/REMOVAL.md`](nofap/REMOVAL.md).

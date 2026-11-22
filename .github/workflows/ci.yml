@@ -417,7 +417,7 @@ jobs:
           test -f "$appimage" && test -f "$deb"
           # The package and executable names, for docs/nofap/REMOVAL.md (checklist item 25).
           dpkg-deb --field "$deb" Package Version
-          dpkg-deb --contents "$deb" | grep -E '/usr/bin/' || true
+          dpkg-deb --contents "$deb" | grep -E 'usr/bin/' || true
           mv "$appimage" "target/release/bundle/appimage/ubiqX-linux-${UBIQX_ARCH}.AppImage"
           mv "$deb" "target/release/bundle/deb/ubiqX-linux-${UBIQX_ARCH}.deb"
           # Unsigned, the updater artifact is deleted rather than published (ci-updater-signing.sh).
@@ -451,7 +451,7 @@ jobs:
           tgz="$appimage.tar.gz"
           test -f "$appimage" && test -f "$deb"
           dpkg-deb --field "$deb" Package Version
-          dpkg-deb --contents "$deb" | grep -E '/usr/bin/' || true
+          dpkg-deb --contents "$deb" | grep -E 'usr/bin/' || true
           mv "$appimage" "target/release/bundle/appimage/ubiqx-shield-linux-${UBIQX_ARCH}.AppImage"
           mv "$deb" "target/release/bundle/deb/ubiqx-shield-linux-${UBIQX_ARCH}.deb"
           if [ "${UBIQX_UPDATER_SIGNED:-0}" = "1" ]; then

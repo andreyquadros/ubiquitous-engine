@@ -617,7 +617,7 @@ products installed:
 | What | Expected by `REMOVAL.md` | Found |
 |---|---|---|
 | macOS executable | `/Applications/ubiqX.app/Contents/MacOS/ubiqx-desktop` (CI listing), `/Applications/NoFap.app/Contents/MacOS/ubiqx-shield` | |
-| Linux `.deb` executable and package name (`dpkg -S`) | `/usr/bin/ubiqx-desktop`, `/usr/bin/ubiqx-shield` | |
+| Linux `.deb` executable and package name (`dpkg -S`) | `/usr/bin/ubiqx-desktop`, `/usr/bin/ubiqx-shield`; packages `ubiq-x` and `no-fap` (the `Package` field CI reads) | |
 | Windows `-setup.exe` and `.msi` executable | `%LocalAppData%\ubiqX\ubiqx-desktop.exe`, `%ProgramFiles%\ubiqX\ubiqx-desktop.exe`, `%LocalAppData%\NoFap\ubiqx-shield.exe` | |
 | Autostart entry | `ubiqX.plist` / `NoFap.plist`, `ubiqX.desktop` / `NoFap.desktop`, the `Run` values `ubiqX` / `NoFap` | |
 | The command of part 2 run as written | exits 0 and removes the tiers | |
