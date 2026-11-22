@@ -1568,9 +1568,24 @@ describe('ci workflow', () => {
       }
       const bin = path.join(root, 'zz-bin');
       mkdirSync(bin);
-      // ditto writes the zip named by its last argument; dpkg-deb only prints in these steps.
+      // ditto writes the zip named by its last argument. dpkg-deb answers from zz-debroot/<deb name>, the
+      // files that .deb would install: --contents lists them as dpkg-deb does, --fsys-tarfile tars them.
       writeFileSync(path.join(bin, 'ditto'), '#!/bin/sh\nfor last; do :; done\n: > "$last"\n');
-      writeFileSync(path.join(bin, 'dpkg-deb'), '#!/bin/sh\necho "Package: stand-in"\n');
+      writeFileSync(
+        path.join(bin, 'dpkg-deb'),
+        [
+          '#!/bin/sh',
+          'for a; do case "$a" in *.deb) deb="$a" ;; esac; done',
+          'tree="$(dirname "$0")/../zz-debroot/$(basename "$deb")"',
+          'case "$1" in',
+          '  --field) echo "Package: stand-in" ;;',
+          '  --contents) (cd "$tree" && find . -type f | sort | sed "s|^|-rw-r--r-- root/root 0 2026-01-01 00:00 |") ;;',
+          '  --fsys-tarfile) tar -cf - -C "$tree" . ;;',
+          '  *) exit 2 ;;',
+          'esac',
+          '',
+        ].join('\n'),
+      );
       for (const tool of ['ditto', 'dpkg-deb']) chmodSync(path.join(bin, tool), 0o755);
       const release = path.join(root, 'target/release');
       const seed = (relative, content = relative) => {
@@ -1579,12 +1594,61 @@ describe('ci workflow', () => {
       };
       for (const product of ['ubiqx', 'shield']) for (const f of tauriOutputs(os, product)) seed(f);
       if (os === 'windows') seed('nsis/x64/installer.nsi', `!define MAINBINARYNAME "${BINARIES.ubiqx}"\n`);
+      if (os === 'linux') for (const product of ['ubiqx', 'shield']) debTree(root, product);
       return { root, release, seed };
+    }
+
+    /** What each product's .deb installs: its executable and the polkit action its tauri.conf.json ships. */
+    function debTree(root, product, policy = (text) => text) {
+      const deb = tauriOutputs('linux', product).find((f) => f.endsWith('.deb'));
+      const tree = path.join(root, 'zz-debroot', path.posix.basename(deb));
+      const conf = PRODUCTS[product].tauriConf;
+      const files = JSON.parse(readRepoFile(conf)).bundle.linux.deb.files;
+      rmSync(tree, { recursive: true, force: true });
+      mkdirSync(path.join(tree, 'usr/bin'), { recursive: true });
+      writeFileSync(path.join(tree, 'usr/bin', BINARIES[product]), '');
+      for (const [installed, source] of Object.entries(files)) {
+        const target = path.join(tree, installed.replace(/^\//, ''));
+        mkdirSync(path.dirname(target), { recursive: true });
+        writeFileSync(target, policy(readRepoFile(path.posix.join(path.posix.dirname(conf), source))));
+      }
+      return tree;
+    }
+
+    // The step extracts the action with GNU tar's --wildcards, as the Ubuntu runner has it.
+    const gnuTar = /GNU tar/.test(spawnSync('tar', ['--version'], { encoding: 'utf8' }).stdout ?? '');
+
+    for (const product of ['ubiqx', 'shield']) {
+      test(`linux: the ${product} step fails when its .deb lacks its polkit action or the action names another executable`, { skip: !gnuTar && 'needs GNU tar' }, () => {
+        const conf = PRODUCTS[product].tauriConf;
+        const breakages = [
+          (tree) => rmSync(path.join(tree, 'usr/share/polkit-1'), { recursive: true, force: true }),
+          (tree) => debTree(path.dirname(path.dirname(tree)), product, (text) => text.replaceAll(`/usr/bin/${BINARIES[product]}<`, '/usr/bin/someone-else<')),
+        ];
+        for (const breakage of breakages) {
+          const { root } = scratch('linux');
+          try {
+            const deb = tauriOutputs('linux', product).find((f) => f.endsWith('.deb'));
+            breakage(path.join(root, 'zz-debroot', path.posix.basename(deb)));
+            const file = path.join(root, 'zz-step.sh');
+            writeFileSync(file, renameStep(APP_JOBS.linux, conf));
+            const result = spawnSync('bash', ['-e', file], {
+              cwd: root,
+              encoding: 'utf8',
+              env: { PATH: [path.join(root, 'zz-bin'), path.dirname(process.execPath), process.env.PATH].join(path.delimiter), UBIQX_ARCH: 'x86_64', UBIQX_UPDATER_SIGNED: '0' },
+            });
+            assert.notEqual(result.status, 0, `${product}: a broken .deb must fail the step`);
+            assert.ok(existsSync(path.join(root, 'target/release', deb)), 'the .deb is not renamed after the check failed');
+          } finally {
+            rmSync(root, { recursive: true, force: true });
+          }
+        }
+      });
     }
 
     for (const os of Object.keys(APP_JOBS)) {
       for (const signed of [true, false]) {
-        test(`${os}, ${signed ? 'signed' : 'unsigned'}: each step renames only its own product's files, and each upload takes only them`, () => {
+        test(`${os}, ${signed ? 'signed' : 'unsigned'}: each step renames only its own product's files, and each upload takes only them`, { skip: os === 'linux' && !gnuTar && 'needs GNU tar' }, () => {
           const name = APP_JOBS[os];
           const { root, release } = scratch(os);
           try {
