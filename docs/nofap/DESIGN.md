@@ -412,7 +412,7 @@ option is one click away; the user confirms the step):
 
 > Com esta opção, todos os nomes de sites que este computador consultar passam pela
 > Cloudflare (1.1.1.3), no lugar do seu provedor de internet. É a Cloudflare que decide o
-> que barrar: sites adultos e sites que ela considera perigosos. O ubiqX não recebe nada.
+> que barrar: sites adultos e sites que ela considera perigosos. Este app não recebe nada.
 > Se preferir, escolha "só a lista neste computador".
 
 The helper accepts a `ResolverId`, never an address. There are no custom addresses.

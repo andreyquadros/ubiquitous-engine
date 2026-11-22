@@ -5,7 +5,8 @@
 #
 # Only on "remove": dpkg also runs prerm with "upgrade" on every update of the package,
 # and an update must not take the protection off. A removal that fails here never stops
-# the package removal; docs/REMOVAL.md of the source tree has the manual steps.
+# the package removal; REMOVAL.md, in the module's folder under docs/ of the source tree,
+# has the manual steps (packaging files stay neutral, so the folder is not named here).
 set -e
 
 case "$1" in

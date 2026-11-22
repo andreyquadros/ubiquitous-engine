@@ -31,7 +31,6 @@
     "targets": [
       "app",
       "dmg",
-      "msi",
       "nsis",
       "appimage",
       "deb"
@@ -54,12 +53,6 @@
       "webviewInstallMode": {
         "type": "downloadBootstrapper",
         "silent": true
-      },
-      "wix": {
-        "language": [
-          "pt-BR",
-          "en-US"
-        ]
       },
       "nsis": {
         "languages": [

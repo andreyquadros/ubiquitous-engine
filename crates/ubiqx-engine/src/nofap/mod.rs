@@ -657,9 +657,12 @@ pub(crate) fn forget_old(keys: &mut HashMap<u64, DateTime<Utc>>, now: DateTime<U
     }
 }
 
+/// The page answers this error with one action, "Restaurar padrões" (a reset that stores a
+/// fresh configuration, integrator decision 33), so the text names that way out.
 pub(crate) fn unreadable_config() -> CoreError {
     CoreError::Storage(
-        "the stored configuration of the module cannot be read; run the set-up again".into(),
+        "the stored configuration of the module cannot be read; restore the defaults to set it up again"
+            .into(),
     )
 }
 
