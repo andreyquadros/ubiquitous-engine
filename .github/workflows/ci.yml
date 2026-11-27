@@ -546,12 +546,12 @@ jobs:
     # The standalone app's own rolling release: tag shield-continuous, files ubiqx-shield-<os>-<arch>.<ext>, its own
     # latest.json (product "ubiqx-shield") and updater.json. It never touches ubiqX's release: publish-release.mjs
     # --product shield refuses ubiqX's tag, ubiqX's files and a release whose feed or files are ubiqX's, and the
-    # release is never marked "Latest". Off until the owner has cleared the display name (docs/nofap/DESIGN.md 8.6):
-    # it runs only on main and only when the repository variable NOFAP_PUBLISH is 'true'
-    # (Settings -> Secrets and variables -> Actions -> Variables).
+    # release is never marked "Latest". It runs only on main. The owner turned it on (integrator decision 41); the
+    # repository variable NOFAP_PUBLISH is now an off switch: set it to 'false' (Settings -> Secrets and variables ->
+    # Actions -> Variables) to stop publishing the standalone app without touching ubiqX's release.
     runs-on: ubuntu-latest
     needs: [macos-app, windows-app, linux-app]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.NOFAP_PUBLISH == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.NOFAP_PUBLISH != 'false'
     permissions:
       # The script moves the "shield-continuous" tag and rewrites that release's assets.
       contents: write

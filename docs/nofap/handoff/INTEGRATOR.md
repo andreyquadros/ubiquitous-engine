@@ -192,3 +192,13 @@ own `docs/nofap/handoff/<unit>.md` when it finishes (deviations, contract notes,
     frontend job runs `pnpm build:nofap`. README, ARCHITECTURE, WINDOWS-LINUX and LICENSING describe
     the module and the second product; PRIVACY.md and REMOVAL.md are re-read against the landed
     code (the open points of U5, U7, U8 and their reviews list what changed).
+
+## After the merge to main
+
+41. **The standalone app is published** (the owner asked for it on 2026-11-27, after PR #1 was
+    merged). `publish-shield` now runs on every push to `main` unless the repository variable
+    `NOFAP_PUBLISH` is `false`; the variable is an off switch, not an on switch, because this
+    session cannot write repository variables. The owner published before the open points of
+    the PR were closed: the display name (checklist item 17), the help resources nobody has
+    verified (item 16; the release-mode test is not run by CI), and the unread terms of the AI
+    providers and Cloudflare (items 4 and 12). They stay open.

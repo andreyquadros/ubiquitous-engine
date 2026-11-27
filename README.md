@@ -90,9 +90,9 @@ sistema e o DNS filtrado estão abertos nos três sistemas, e as políticas dos 
 separado saem como `ubiqx-shield-<sistema>-<arquitetura>.<ext>` nos artifacts `ubiqx-shield-macos-app`,
 `ubiqx-shield-windows-app` e `ubiqx-shield-linux-app` (`.dmg` e `.app.zip`; só `-setup.exe` no Windows, sem
 `.msi`; `.AppImage` e `.deb`). A publicação dele é separada da do ubiqX: o job `publish-shield` publica na release
-rolante `shield-continuous`, com `latest.json` e `updater.json` próprios, e só roda na `main` quando a variável
-do repositório `NOFAP_PUBLISH` é `true` (Settings → Secrets and variables → Actions → Variables). Ela fica
-desligada até o nome de exibição ser liberado. Os dois produtos nunca mexem na release um do outro
+rolante `shield-continuous`, com `latest.json` e `updater.json` próprios, e só roda na `main`. Está ligada; para
+parar de publicar o app separado sem mexer no ubiqX, crie a variável do repositório `NOFAP_PUBLISH` com o valor
+`false` (Settings → Secrets and variables → Actions → Variables). Os dois produtos nunca mexem na release um do outro
 (`scripts/publish-release.mjs --product ubiqx|shield`).
 
 ## Telas

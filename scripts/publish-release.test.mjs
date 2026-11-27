@@ -1408,13 +1408,13 @@ describe('ci workflow', () => {
     assert.ok(job('macos-app').steps.length > 10, 'the steps of a job are read');
   });
 
-  test('only a push to main publishes ubiqX, and the standalone app also needs NOFAP_PUBLISH', () => {
+  test('only a push to main publishes ubiqX and the standalone app, and NOFAP_PUBLISH=false stops the standalone app', () => {
     assert.equal(conditionOf('publish-continuous'), "github.event_name == 'push' && github.ref == 'refs/heads/main'");
     const shield = conditionOf('publish-shield');
-    assert.doesNotMatch(shield, /\|\||!|\bcontains\(|\bstartsWith\(/, 'every part of the condition is required');
+    assert.doesNotMatch(shield, /\|\||!(?!=)|\bcontains\(|\bstartsWith\(/, 'every part of the condition is required');
     assert.deepEqual(
       shield.split('&&').map((part) => part.trim()).sort(),
-      ["github.event_name == 'push'", "github.ref == 'refs/heads/main'", "vars.NOFAP_PUBLISH == 'true'"],
+      ["github.event_name == 'push'", "github.ref == 'refs/heads/main'", "vars.NOFAP_PUBLISH != 'false'"],
     );
     for (const name of ['publish-continuous', 'publish-shield']) {
       assert.deepEqual(scalar(job(name).keys.get('needs')), '[macos-app, windows-app, linux-app]', `${name} waits for the three platforms`);

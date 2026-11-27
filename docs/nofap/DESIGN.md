@@ -1828,8 +1828,9 @@ Tray: "Abrir", a neutral status line, "Preciso de um respiro", "Verificar atuali
   `shield-continuous`, own `latest.json` and `updater.json`. The ubiqX globs (`ubiqX-*`)
   never match them.
 - CI builds the standalone app on the three runners in every run, which is the only place
-  its shell is compiled. **Publishing is off** until the owner has cleared the display name:
-  the job `publish-shield` runs only when the repository variable `NOFAP_PUBLISH` is `true`.
+  its shell is compiled. **Publishing is on** since the owner turned it on (integrator
+  decision 41): the job `publish-shield` runs on every push to `main` unless the repository
+  variable `NOFAP_PUBLISH` is `false`.
 - `scripts/publish-release.mjs` and `scripts/app-version.mjs` take `--product ubiqx|shield`
   (default `ubiqx`, so today's calls are unchanged).
 
@@ -2376,8 +2377,8 @@ Owns: `.github/workflows/ci.yml`; `scripts/publish-release.mjs`,
 Accept:
 - `node --test scripts/publish-release.test.mjs` passes for both products; the ubiqX
   artefact and feed names are unchanged
-- `publish-continuous` has the `refs/heads/main` condition; `publish-shield` is conditional
-  on `vars.NOFAP_PUBLISH`; both shells are excluded from the Linux clippy and test steps
+- `publish-continuous` has the `refs/heads/main` condition; `publish-shield` runs on `main`
+  unless `vars.NOFAP_PUBLISH` is `false`; both shells are excluded from the Linux clippy and test steps
 - `bash -n scripts/nofap/system-smoke.sh` passes; the script refuses to run unless it is
   root and either `CI=true` or `UBIQX_SHIELD_SMOKE=1` is set, so it can never be started by
   accident on a developer's machine; its real runs are the job of 9.3 and, for

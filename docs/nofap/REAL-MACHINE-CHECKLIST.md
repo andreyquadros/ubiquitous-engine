@@ -495,8 +495,9 @@ unverified help resources.
 ### [ ] 17. INPI and USPTO searches for the display name
 
 **Owner.** The display name is `NoFap` (integrator decision 1). NOFAP is reported as a
-registered US mark; Brazil is unknown. The standalone product is built in CI and **not
-published** (`NOFAP_PUBLISH` is not `true`) until this is done.
+registered US mark; Brazil is unknown. The owner chose to publish the standalone product
+before this search (integrator decision 41); setting the repository variable `NOFAP_PUBLISH`
+to `false` stops publishing it.
 
 | Register | Classes searched | Date | Result |
 |---|---|---|---|
