@@ -274,7 +274,7 @@ execução verde do job `nofap-system-smoke` nele (hoje `hosts` e `resolver` abe
 | Interface | página `/nofap` dentro do ubiqX | `src/nofap-app/` sobre as mesmas páginas de `src/nofap/`, construída com `pnpm build:nofap` (`vite --mode nofap`, saída `dist-nofap`) |
 | Comandos | `nofap` | `nofap`, `nofap_host` (configurações, chave de IA, modelos, permissões, atualização, sobre) e `quit_app` |
 | Identidade | `ai.ubiqx.app`, `ubiqx.db`, cofre `ai.ubiqx` | `ai.ubiqx.shield`, `shield.db`, cofre `ai.ubiqx.shield` |
-| Atualização | release `continuous` (`ubiqX-*`), variável `UBIQX_UPDATE_FEED_URL` | release `shield-continuous` (`ubiqx-shield-*`), variável `UBIQX_SHIELD_UPDATE_FEED_URL`; publicação só com `NOFAP_PUBLISH=true` |
+| Atualização | release `continuous` (`ubiqX-*`), variável `UBIQX_UPDATE_FEED_URL` | release `shield-continuous` (`ubiqx-shield-*`), variável `UBIQX_SHIELD_UPDATE_FEED_URL`; publicação ligada; `NOFAP_PUBLISH=false` desliga |
 | IA | as três com chave própria ou a IA do Ubi | só as três com chave própria |
 
 Os dois podem estar instalados juntos. As camadas do sistema são de quem as pediu: o arquivo de estado do sistema
@@ -299,6 +299,6 @@ geram, sem rede) e o teste dos nomes; clippy e testes excluem os dois shells (se
 `apps/nofap/src-tauri`, cujo `beforeBuildCommand` gera `dist-nofap`) e renomeiam os arquivos de cada um pelo
 `productName` do seu `tauri.conf.json`, porque os dois empacotam nas mesmas pastas de `target/release/bundle`. O
 job do Windows roda clippy e testes do `ubiqx-nofap-desktop`. `publish-continuous` publica só `ubiqX-*`;
-`publish-shield` publica só `ubiqx-shield-*`, só na `main` e só com `vars.NOFAP_PUBLISH == 'true'`. O workflow
+`publish-shield` publica só `ubiqx-shield-*`, só na `main`, a menos que `vars.NOFAP_PUBLISH` seja `false`. O workflow
 `nofap-smoke.yml` aplica e remove as camadas do sistema de verdade nos três sistemas, com o auxiliar como
 administrador.
