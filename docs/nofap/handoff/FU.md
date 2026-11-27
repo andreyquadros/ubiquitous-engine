@@ -1,0 +1,394 @@
+# FU: integrator follow-ups
+
+Status: **done**. Five changes, each with its tests: decision 19 (section 1), decision 18
+(section 2), `plan::reset_targets` (section 3), decision 20 (section 4), and the page and its text
+for decisions 17, 22 and 24 (section 5). Commands and their results are in section 6, open points
+in section 7.
+
+## 1. Decision 19: the delay of a new privacy-list entry counts observed running time
+
+### What exists
+
+- `ubiqx_core::nofap::ExclusionSeen` has a third field:
+
+  ```rust
+  pub struct ExclusionSeen {
+      pub key: String,
+      pub first_seen_at: DateTime<Utc>,
+      #[serde(default)]
+      pub observed_secs: u32,
+  }
+  ```
+
+  `observed_secs` is the running time, in seconds, the app was observed for since the entry was
+  first seen. It grows by at most 150 s per verify pass and stops at 900 (the constants of
+  `commitment`: `OBSERVE_STEP_MAX_SECS`, `OBSERVED_CAP_SECS`). Data stored before the field
+  existed reads as `0` (test `an_exclusion_stored_before_the_observed_time_existed_still_reads`
+  in `ubiqx-core`).
+- `ubiqx_nofap::exclusions`:
+  - `reconcile(lists, seen, now)` and `effective(lists, seen, enabled_at, delay_secs, now)` keep
+    their signatures. `reconcile` gives a new entry `observed_secs: 0` and keeps the value of a
+    remembered one.
+  - **The rule** (`effective`): an entry is effective when it was first seen at or before
+    `enabled_at` (unchanged), or when the clock is `delay_secs` past `first_seen_at` **and**
+    `observed_secs >= min(delay_secs, 900)`. It is the rule of `commitment::is_ready`.
+  - New: `observe(seen: &mut [ExclusionSeen], elapsed_secs: u32) -> bool`. One verify pass: adds
+    `min(elapsed_secs, 150)` to every entry, up to 900. Returns whether anything changed.
+  - New: `reconcile_since(lists, seen, enabled_at: Option<DateTime<Utc>>, now)`. `reconcile`
+    with one more guard, see "Contract notes".
+
+### Contract notes for U5 (engine service)
+
+- In the verify pass, with the same `elapsed_secs` you give `commitment::tick`:
+
+  ```rust
+  let changed = exclusions::observe(&mut config.internal.exclusions_seen, elapsed_secs);
+  ```
+
+  Store the configuration when it returns `true`. It returns `false` once every entry is at 900,
+  so a standing list costs at most a handful of writes per entry, not one per pass for ever.
+  Order: `reconcile` first, then `observe` (a brand-new entry is then credited the pass in which
+  it was first seen, at most 150 s; calling them the other way round only delays that credit by
+  one pass). Both orders are safe.
+- Upgrade: entries stored by an earlier build have `observed_secs == 0`. Those first seen at or
+  before `enabled_at` stay effective at once. One that was added later and had already waited its
+  delay by the clock waits again until `min(delay, 900)` s of running time were observed. That
+  is the stricter side and ends by itself.
+- **A clock set back before the enabling instant** (found while writing the tests; it is the
+  mirror of the hole decision 19 closes). `effective` treats `first_seen_at <= enabled_at` as
+  "was there when the module was enabled". If the clock reads earlier than `enabled_at` when a
+  new entry is first reconciled, plain `reconcile` records it with that early time and the entry
+  is effective at once, and stays so after the clock is put right. `reconcile_since` closes it:
+  while `now < enabled_at` it remembers nothing new (remembered entries stay, removed ones are
+  dropped), so the new entry is not effective, and its wait starts at the first pass with a
+  clock at or past `enabled_at`. **Please call
+  `exclusions::reconcile_since(&lists, &seen, config.enabled_at, now)` in the verify pass**
+  instead of `reconcile`. At the enabling instant itself `now == enabled_at`, which is not
+  "behind": both functions do the same there. With `enabled_at == None` they are the same
+  function.
+- A sighting between `enabled_at` and the real time (clock set back by less) is covered by the
+  running-time rule: after the clock is put right the clock condition is met at once, the 15
+  minutes of observed running time are not.
+
+### Fixtures
+
+`UBIQX_BLESS=1 cargo test -p ubiqx-core nofap_ipc_golden` was run: the three fixture files did
+not change. `ExclusionSeen` lives in `Internal`, which is never sent to the page, so no IPC value
+and no TypeScript type carries it.
+
+## 2. Decision 18: checks on a standing signal are spread over the hour
+
+### What exists (`crates/ubiqx-nofap/src/sampling.rs`)
+
+- `decide`, `record`, `SampleCtx`, `SampleEvent` and `Decision` are unchanged in shape.
+- `Cadence` has one more field, `doubles: bool`; it is `true` for `CADENCE_SIGNAL` only. Nothing
+  outside `sampling.rs` builds a `Cadence` (checked with a search of the workspace).
+- `pub fn spread_gap(every_secs, checks) -> i64`: the wait after the `checks`-th check of a key
+  in its hour: `every_secs` after the first, doubled after each later one, never more than
+  3,600 s. With 45 s: 45, 90, 180, 360, 720, 1,440.
+- Each key remembers "its hour": the instant of the first frame **sent** for it, and how many
+  were sent since. The hour is over 3,600 s after it began (or when it seems to begin in the
+  future: the clock was set back); the next frame sent begins a new one, and the wait is 45 s
+  again.
+- The cap is the old one and is still a sliding hour: `PER_KEY_PER_HOUR` (6) frames of a key in
+  any 3,600 s. A new hour of the key resets the gap, never the cap.
+
+### The schedule (tested second by second with the fake clock)
+
+- Standing signal, key in front all the time: frames at **5, 50, 140, 320, 680, 1400** s, then
+  nothing until **3605**, and the same six offsets again in every following hour (test
+  `the_spread_starts_again_when_the_hour_of_the_key_rolls`, three hours).
+- After the sixth check the wait would be 24 minutes (`Skip::NotDue` until 2840); from then on
+  the answer is `Skip::KeyCap` until the first check is an hour old (test
+  `six_checks_per_key_per_hour`).
+- A look that sent nothing (`Unchanged`) and a failed call restart the wait and do not lengthen
+  it: only a frame that was sent doubles the gap.
+
+### Deviation from the design, and one consequence to know about
+
+- Design 4.3, row "Signal": "5 s, then every 45 s" becomes "5 s, then 45 s, 90 s, 3 min, 6 min,
+  12 min apart" (decision 18).
+- **The count is of all frames sent for the key in its hour, whatever the cadence was when they
+  were sent.** `record` is not told whether a check was made on a signal (the event carries no
+  such flag, and its shape was to stay), so a key that was already checked at the plain cadence
+  starts the signal cadence further along: with two earlier checks the first look on a new
+  signal comes 90 s after the last look, with three 3 minutes, with four 6 minutes, with five 12
+  minutes. Before this change it came 45 s after the last look, and was followed by the rest of
+  the six within minutes. Three assertions of the existing test `a_signal_cancels_relaxing` moved
+  accordingly (150 → 195, 750 → 885, 150 → 195). In the worst case (five checks in the hour,
+  relaxed plain cadence of 600 s) a new signal makes the next look come 2 minutes later than no
+  signal would have. If the integrator wants the first look after a new signal to stay at 45 s,
+  it needs a `signal: bool` on `SampleEvent::Checked` (an engine-facing change), so that only
+  checks made on a signal are counted.
+
+## 3. `plan::reset_targets` leaves a switched-off interface alone
+
+- `reset_targets(observation, resolver)` (same signature) now returns only interfaces that are
+  `active` (enabled on macOS, up on Windows) **and** whose servers are exactly the provider's
+  set. It used to return every interface with exactly that set, active or not (hand-off U2 says
+  so in its contract notes; that sentence is out of date).
+- `plan::preview` uses the same function for the line `RESOLVER_RESET`, so no reset is promised
+  when the only interface with the provider's servers is switched off.
+- Consequence to know: a service we set while it was enabled, which the user then switched off,
+  keeps the provider's servers after "remove". It is reset by a later "remove" run while it is
+  enabled. The Windows back-end only ever lists adapters that are up, so nothing changes there.
+- Tests: `reset_targets_leave_an_interface_the_user_changed` (the switched-off rows are left
+  out; a reordered set on an active interface is still ours) and
+  `a_switched_off_interface_is_neither_reset_nor_promised_a_reset`. The platform crate's tests
+  (169) pass unchanged.
+
+## 4. Decision 20: deleted rows are overwritten in the database file
+
+- `crates/ubiqx-storage/src/db.rs`: `PRAGMA secure_delete = ON` is the fifth connection pragma,
+  applied by `Db::init`, which both `Db::open` and `Db::open_in_memory` go through. No other
+  code of the workspace opens a connection outside tests (searched). It applies to both
+  products, and to every table, not only the module's.
+- Tests in `db.rs`:
+  - `every_connection_overwrites_what_it_deletes`: the setting reads `1` on a first connection, a
+    second one on the same file, one opened after both are gone, and an in-memory one.
+  - `a_deleted_row_and_a_replaced_value_do_not_stay_in_the_file`: after a `DELETE` and an
+    `UPDATE` (no `VACUUM`) and a checkpoint, neither the deleted key, nor the deleted value, nor
+    the replaced value is in the file or in the log; the kept text is. The file is read the way
+    the erase tests of `tests/nofap.rs` read it.
+  - `without_the_pragma_the_deleted_text_stays_in_the_file`: the same steps on a plain
+    connection with `secure_delete = OFF` leave all three texts in the file. It is the proof that
+    the test above can fail.
+- **One existing assertion had to change** (the brief asked for the existing suite unchanged; it
+  cannot be): `tests/nofap.rs`, `erased_history_does_not_stay_in_the_file`, asserted that the
+  connection's setting is `0` after an erase ("back to what it was"). What it was is now `1`.
+  Nothing else of the suite changed: 14 + 23 + 29 + 1 tests pass.
+- `repos/nofap.rs::overwriting` (U3) still switches the setting on around its statements and
+  restores what it found. With the pragma on everywhere it is a no-op and could go; it was left
+  as it is (not this unit's file, and harmless).
+- **What the pragma does not do** (unchanged limits, for whoever writes the privacy text):
+  in WAL mode the overwritten page is in the log first and reaches the main file at the next
+  checkpoint (automatic after about 1,000 pages, or when the last connection closes), and the
+  log may still hold an older copy of the page until it is reset. `erase_history` and
+  `wipe_user_data` run a `wal_checkpoint(TRUNCATE)` themselves, so they leave nothing; a single
+  deleted row (a scrubbed block) is out of the main file after the next checkpoint, not at once.
+  It also says nothing about copies the file system or a backup may keep.
+
+## 5. The page and its text: decisions 17, 22 and 24
+
+### Decision 17: "Apagar meu histórico" says what it erases
+
+`data.erase_body` (interface text, not a string of design 5.6):
+
+| | Old | New |
+|---|---|---|
+| PT-BR | Apaga as contagens e as pausas de regra. Suas listas, sua frase e a proteção ficam como estão. Não tem espera. | Apaga as contagens, as pausas de regra, a sua frase e os seus planos. Suas listas e a proteção ficam como estão. Não tem espera. |
+| EN | Erases the counts and the rule snoozes. Your lists, your sentence and the protection stay as they are. There is no wait. | Erases the counts, the rule snoozes, your sentence and your plans. Your lists and the protection stay as they are. There is no wait. |
+
+The mock (`apps/desktop/src/nofap/mock.ts`) follows: its `erase_history` now clears the sentence
+and the plans, so the page in `vite dev` and in the tests does what the dialog says. The real
+clearing is U5's, in the service.
+
+### Decision 22: a switch whose change is waiting is disabled and says so
+
+- `labels.ts`: `waitingSwitches(config) -> WaitingSwitches`. A switch is waiting when the thing is
+  **on** and a request that turns it **off** is in `config.pending` (the page reads the payloads
+  there; the status carries kinds only). A switch that is off is never waiting.
+- What is covered: "Lista do sistema" (`set_hosts`), "Regras dos navegadores" (`set_policies`),
+  the DNS choice (`set_resolver` to none: both options disabled), the switch of the AI check
+  (`set_vision`), each scope switch that a waiting `set_vision_scope` turns off (the others stay
+  usable), "Incluir meus sites na lista do sistema" on the lists tab (`set_hosts_user_sites`), and
+  the button "Desligar o {name}" (`disable`).
+- What is not: the waiting time (`set_delay`), the limits (`set_caps`) and the site lists. They
+  are not switches and a second request there carries other values, so it is another request.
+- The line under a disabled switch (`components/WaitingNote.tsx`), new interface strings:
+  - `pending.switch_waiting`: "Pedido em espera: isto continua ligado até você confirmar o
+    pedido. Se você cancelar, fica como está." / "Request waiting: this stays on until you
+    confirm the request. If you cancel it, this stays as it is."
+  - `pending.scope_waiting`: "Pedido em espera: o que está ligado aqui continua assim até você
+    confirmar o pedido. Se você cancelar, fica como está." / "Request waiting: what is on here
+    stays on until you confirm the request. If you cancel it, this stays as it is."
+    (Both reworded in the review, section 8.)
+  - next to the disabled "Desligar" button: the existing `overall.pending_hint`.
+- The mock returns the waiting request when the same change is asked for again (fields in any
+  order), as decision 22 asks of the service.
+- **For U5:** the page relies on `view.config.pending[].change` being the change as requested.
+  For `set_vision_scope` it compares each flag of the waiting change with the flag in force.
+
+### Decision 24: the consent sentence with the managed provider
+
+`vision.consent` (design 5.6) is **unchanged**, character for character, so the design and the
+copy-bank test stand as they are. A variant was added for the managed provider, as an interface
+string: `vision.consent_ubi`, chosen by `labels.ts::consentKey(provider)` and used by
+`components/VisionConsent.tsx` (the wizard and the consent dialog of the page).
+
+What was wrong with the name "IA do Ubi" in the 5.6 sentence: "pergunta a IA do Ubi" (no
+article), "IA do Ubi recebe a imagem, aplica as regras dele … os termos dele" (wrong gender, and
+the rules and terms that apply are not the managed route's own).
+
+| | `vision.consent` (5.6, unchanged), the two sentences that name the provider | `vision.consent_ubi` (new), the same two sentences |
+|---|---|---|
+| PT-BR | … o {name} tira uma foto reduzida só dessa janela e pergunta a {provider} se há pornografia nela. … {provider} recebe a imagem, aplica as regras dele ao que recebe e guarda pelo prazo que os termos dele definem. | … o {name} tira uma foto reduzida só dessa janela e pergunta à {provider} se há pornografia nela. … A {provider} envia a imagem à Anthropic, que aplica as próprias regras ao que recebe e guarda pelo prazo que os termos dela definem. |
+| EN | … asks {provider} whether it shows pornography. … {provider} receives the image, applies its own rules to what it receives and keeps it for the period its terms state. | … asks {provider} whether it shows pornography. … {provider} sends the image on to Anthropic, which applies its own rules to what it receives and keeps it for the period its terms state. |
+
+Every other sentence of the variant is the 5.6 text (a test compares them sentence by sentence).
+The variant names Anthropic because `vision.managed` (5.6), shown right under it, already says the
+managed route goes there. If the managed route ever uses another vendor, both strings change.
+
+The assertion of `NofapWizard.test.tsx` that held the old wording ("pergunta a IA do Ubi") was
+updated.
+
+### Tests added or changed in the frontend
+
+- `copy.test.ts`: four tests of the consent sentence (which key per provider, the Portuguese and
+  the English reading with the names filled in, sentence-by-sentence comparison with 5.6).
+- `NofapPage.test.tsx`: the erase dialog text in both languages and what the mock clears; six
+  tests of the waiting switches (the page, every switch, the lists tab, English, the pure
+  function, the mock's identical request). A mutation of `waitingSwitches` made three of them
+  fail, then it was restored.
+- The copy-bank, parity, forbidden-word and naming tests pass unchanged.
+
+## 6. Commands run on the final state
+
+| Command | Result |
+|---|---|
+| `cargo test -p ubiqx-core nofap` | 33 passed |
+| `UBIQX_BLESS=1 cargo test -p ubiqx-core nofap_ipc_golden` | passed; the fixtures did not change |
+| `cargo test -p ubiqx-nofap` | 295 + 22 + 12 passed |
+| `cargo test -p ubiqx-storage` | 14 + 23 + 29 + 1 passed |
+| `cargo test -p ubiqx-platform` (because of `reset_targets`) | 169 passed, 1 ignored |
+| `cargo clippy -p ubiqx-core -p ubiqx-nofap -p ubiqx-storage --all-targets -- -D warnings` | clean |
+| `cargo fmt --all -- --check` | the only difference was in `crates/ubiqx-engine/tests/zz_probe.rs`, an untracked throwaway file of the engine unit (gone since; see section 8); `rustfmt --check` on this unit's six Rust files is clean |
+| `cargo check --workspace --all-targets` | passes, with the engine unit's work in the tree |
+| `pnpm typecheck` (apps/desktop) | clean |
+| `pnpm test -- --run` (apps/desktop), twice | 33 files, 435 tests passed, both times |
+| `pnpm build` (apps/desktop) | built |
+
+Not run: `cargo clippy --workspace`, `cargo test --workspace`, the engine crate's tests, and no
+CI run was read.
+
+## 7. Open points
+
+- **Decision 18, a new signal on a key that was already checked** (section 2): the first look on
+  the new signal waits the gap the key's count gives, up to 12 minutes. Counting only checks made
+  on a signal needs a flag on `SampleEvent::Checked`.
+- **Decision 19, the clock set back before the enabling instant** (section 1): closed by
+  `reconcile_since`, which the engine's verify pass now calls. `service.rs` calls plain
+  `reconcile(&lists, &[], now)` at enable, which is the documented use.
+- **Decision 20 and the write-ahead log** (section 4): a single deleted row leaves the main file
+  at the next checkpoint, not at once.
+- **`reset_targets` and a service switched off after we set it** (section 3): it keeps the
+  provider's servers until a "remove" runs while it is enabled.
+- **The Portuguese of `vision.consent` with a vendor name** ("pergunta a Anthropic", "as regras
+  dele") was left as the design has it; decision 24 is about the managed provider only.
+- **`docs/nofap/DESIGN.md` was not edited** (not this unit's file). Its section 4.3 still says
+  "every 45 s" for a signal, and its 7.4 is now what the code and the dialog say.
+- **Hand-off U2**, contract note "`plan::reset_targets` returns every interface that is exactly
+  ours, active or not", is out of date (section 3).
+
+## 8. Review
+
+An independent review of the five changes, on 2026-11-20. One thing was changed (the wording of
+the line under a waiting switch), tests were added, and the open points below are for the
+integrator. Nothing else in the unit's code was changed.
+
+### What was run, and the result
+
+| Command | Result |
+|---|---|
+| `cargo test -p ubiqx-core nofap` | 33 passed |
+| `UBIQX_BLESS=1 cargo test -p ubiqx-core nofap_ipc_golden` | passed; the SHA-256 of the three fixture files is the same before and after, and no commit of the unit touches them: regenerated, not edited by hand |
+| `cargo test -p ubiqx-nofap` | 295 + 22 + 12 as handed over; 298 + 22 + 12 with the review's tests |
+| `cargo test -p ubiqx-storage` | 14 + 23 + 29 + 1 as handed over; 15 + 23 + 29 + 1 with the review's test |
+| `cargo test -p ubiqx-platform` | 169 passed, 1 ignored |
+| `cargo clippy -p ubiqx-core -p ubiqx-nofap -p ubiqx-storage --all-targets -- -D warnings` | clean, before and after the review's commit |
+| `cargo clippy --workspace --all-targets -- -D warnings` | clean (with the engine unit's uncommitted work in the tree) |
+| `cargo fmt --all -- --check` | first run: differences only in `crates/ubiqx-engine/tests/nofap.rs`, the engine unit's file, untracked at that moment; clean when the review's commit was pushed |
+| `cargo check --workspace --all-targets` | passes: no signature another crate uses changed |
+| `cargo check -p ubiqx-platform --target aarch64-apple-darwin` and `--target x86_64-pc-windows-msvc` | both pass |
+| `cargo test --workspace --exclude ubiqx-desktop --exclude ubiqx-nofap-desktop` | passes, the engine unit's 45 tests of the module included (`crates/ubiqx-engine/tests/nofap.rs`, untracked at that moment; the service they drive calls `observe`, `reconcile_since` and the sampler) |
+| `pnpm typecheck`, `pnpm test -- --run`, `pnpm build` (apps/desktop) | clean; 33 files, 435 tests, before and after the rewording; built |
+
+Not run: the two Tauri shells' own tests, and no CI run was read.
+
+### Checked with the review's own probes (throwaway tests, deleted)
+
+- **Decision 18.** A standing signal for two hours with a pass every second sends at 5, 50, 140,
+  320, 680, 1400, 3605, 3650, 3740, 3920, 4280 and 5000 s, with `none` answers and with
+  `suggestive` ones. With a pass every 2, 3, 5, 7, 11, 13, 30, 45 or 60 s over six hours: six per
+  hour, each at most one pass late, never two closer than 45 s, never more than six in any hour.
+  After the sixth the answer is `NotDue` until 2840, `KeyCap` until 3605, then `Capture`.
+- **Decision 19.** A configuration written without `observed_secs` reads (zero), the entry of
+  the enabling instant stays effective at once, a later one waits `min(delay, 900)` s of running
+  time. A clock set a week ahead, with the app closed and opened between passes (the list written
+  and read back each time), buys one step of 150 s per pass and no more. A clock set back before
+  the first sighting, or before the enabling instant, makes nothing effective; plain `reconcile`
+  with a clock before the enabling instant does (that is why the engine calls
+  `reconcile_since`, and it does: `engine/src/nofap/system.rs`).
+- **`reset_targets`.** An enabled service with the provider's four addresses is returned; a
+  switched-off one with the same four, an enabled one with three of the four, with the four plus
+  one, with somebody else's servers, with the same operator's other filter, and an automatic one
+  are not. The macOS back-end applies the tier to enabled services only, and the Windows back-end
+  lists only adapters that are up, as section 3 says.
+- **Decision 20.** After a delete with no checkpoint the main file has no copy of the text; the
+  write-ahead log has (two copies of a short row in the probe, the whole chain of a 20 kB
+  value). A passive checkpoint and a later write leave the log as it is; `wal_checkpoint(TRUNCATE)`
+  empties it. So section 4's limit is exact: only the two erase paths that run the checkpoint
+  leave nothing at once.
+- **The strings.** `data.erase_body` and `vision.consent_ubi` read correctly in both languages
+  and say what the service does (`erase_history` clears the sentence and the plans; design 4.4
+  and `vision.managed` send the managed route to Anthropic). The waiting line did not: see below.
+
+### What the review changed (commit `5b4296a`)
+
+- **The line under a waiting switch said something that is not so.** "Isto continua ligado até
+  você confirmar ou cancelar o pedido": cancelled, the thing stays on. `pending.switch_waiting`
+  and `pending.scope_waiting` now read "… até você confirmar o pedido. Se você cancelar, fica
+  como está." / "… until you confirm the request. If you cancel it, this stays as it is." The
+  page test now also checks that the switch is still on after "Manter proteção".
+- **Tests added**, each of which fails without the behaviour it names:
+  - `exclusions`: `the_running_time_survives_a_restart_and_a_restart_adds_none` and
+    `entries_stored_by_a_build_without_the_running_time_wait_it_out` (the verify pass in the
+    engine's order, the list written and read back between passes).
+  - `sampling`: `the_spread_does_not_depend_on_the_length_of_a_guard_pass` (the existing tests
+    step one second at a time; the guard does not).
+  - `plan`: four more rows in `reset_targets_leave_an_interface_the_user_changed` (three of the
+    four addresses, somebody else's servers on a service that is on and on one that is off, the
+    operator's other filter).
+  - `storage`: `freed_pages_do_not_keep_their_text` (a value that spans several pages, and a
+    table emptied and dropped, with the control on a connection without the pragma). The
+    existing tests covered a cell inside a page that stays; decision 20 speaks of freed pages.
+
+### Still open after the review (for the integrator)
+
+1. **Decision 18: a signal that appears on a key already checked is looked at late.** Measured:
+   a plain site checked at 15, 105, 705, 1305 and 1905 s, then a word in the title at 2001 s.
+   The next look comes at 2625 s (12 minutes after the last one). Without the signal it would
+   have come at 2505 s, and before this change it came at once. With one earlier check the wait
+   is 45 s, with two 90 s, with three 3 minutes, with four 6 minutes. A host with a standing
+   signal from its first second (the mixed platforms, a name with a signal word, a snoozed host)
+   is not affected. The fix needs the engine: `SampleEvent::Checked` gets a `signal: bool` (the
+   `signal` of `Decision::Capture`, which `guard.rs` drops today) and only checks made on a
+   signal are counted in the key's hour. The reviewer found no rule inside `sampling.rs` that
+   tells the two kinds of check apart without it.
+2. **Decision 18: a window that comes back late in its hour.** The hour of a key begins with
+   its first frame. Measured with a standing signal: frames at 5 and 50, the window away until
+   2995, then frames at 3000, 3180 and 3540; the hour that began at 5 is over, the gap is 45 s
+   again, and frames follow at 3605, 3650 and 3740; the cap then holds until 6600. Six frames in
+   twelve minutes and none for 48, the pattern the decision wanted gone, in this one sequence. The cap bounds it; a count over the sliding hour instead of the key's own
+   hour would spread it, but would also make the steady state one check about every ten minutes
+   instead of the decision's schedule. Left as the decision words it.
+3. **Decision 20 and the log.** A single deleted row (a scrubbed block, a removed site) stays
+   readable in the `-wal` file until the log is emptied: at a `wal_checkpoint(TRUNCATE)`, or when
+   the last connection closes. A tray app can run for days. If that matters, one line more in
+   `PRAGMAS` bounds it: `PRAGMA journal_size_limit = 0` cut the log at the first write after a
+   complete checkpoint in the probe. Not added: the decision names one pragma, and the automatic
+   checkpoint comes only after about 1,000 pages.
+4. **Decision 19, small things.** (a) `observe` credits a brand-new entry with the pass in which
+   it was first seen (up to 150 s it did not wait); telling them apart needs `now` in `observe`.
+   (b) An entry first seen while the clock was ahead waits until the clock catches up with that
+   time, and a module enabled while the clock was ahead remembers no new entry until then. Both
+   are the stricter side and end by themselves. (c) A clock set back to a time after the enabling
+   instant, an entry added, the clock put right: the wait is the 15 minutes of running time, as
+   for a waiting request with the clock set forward.
+5. **Decision 22 covers switches only.** The "remove" button of a site whose removal is waiting,
+   and "Esquecer sites aprendidos", can be pressed again; the service answers with the request
+   that is already waiting, and the page says "Pedido anotado" again.
+6. **`reset_targets`**: section 3's leftover (a service switched off after the tier was set
+   keeps the provider's servers, and `assess` does not count it either) stands.
+7. The open points of section 7 that concern other units' files (`DESIGN.md` 4.3, hand-off U2's
+   sentence about `reset_targets`, `repos/nofap.rs::overwriting`) stand.

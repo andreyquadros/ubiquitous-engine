@@ -1,0 +1,84 @@
+THIRD-PARTY NOTICES
+===================
+
+This application includes data compiled from the third-party sources below.
+The same notices, with the exact commits used, are in
+crates/ubiqx-nofap/data/NOTICE.txt.
+
+
+Adult-content blocklist (core tier)
+-----------------------------------
+
+The blocklist is compiled from:
+
+- StevenBlack/hosts, "porn" extension - MIT License
+  Copyright © 2026 Steven Black
+  https://github.com/StevenBlack/hosts
+  which unifies:
+    Sinfonietta/hostfiles - MIT License
+      Copyright (c) 2016 Sinfonietta
+      https://github.com/Sinfonietta/hostfiles
+    Clefspeare13/pornhosts - MIT License (the upstream repository no longer
+      exists; StevenBlack/hosts keeps a frozen copy)
+    bigdargon/hostsVN - MIT License
+      Copyright (c) 2026 BigDargon
+      https://github.com/bigdargon/hostsVN
+    brijrajparmar27/host-sources - Creative Commons Attribution 4.0
+      https://github.com/brijrajparmar27/host-sources
+    tiuxo/hosts - Creative Commons Attribution 4.0
+      https://github.com/tiuxo/hosts
+
+- ShadowWhisperer/BlockLists, "Adult" - released into the public domain
+  (The Unlicense)
+  https://github.com/ShadowWhisperer/BlockLists
+
+- 4skinSkywalker/Anti-Porn-HOSTS-File - MIT License
+  Copyright (c) 2022 4skinSkywalker
+  https://github.com/4skinSkywalker/Anti-Porn-HOSTS-File
+
+The lists were merged, filtered against an allowlist and the Public Suffix
+List, supplemented with a short list of our own, and converted to a hashed
+lookup table. The full text of the MIT License is below.
+
+Creative Commons Attribution 4.0 International:
+https://creativecommons.org/licenses/by/4.0/
+
+
+Site popularity
+---------------
+
+Site popularity ordering uses the Chrome UX Report by Google, licensed under
+Creative Commons Attribution 4.0 International
+(https://developer.chrome.com/docs/crux), via
+https://github.com/zakird/crux-top-lists. The origins were reduced to host
+names, filtered and hashed.
+
+
+Public Suffix List
+------------------
+
+The Public Suffix List (https://publicsuffix.org, Mozilla Public License 2.0)
+is used when the blocklist is built. It is not distributed with the
+application.
+
+
+The MIT License
+---------------
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

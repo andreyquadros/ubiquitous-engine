@@ -1,0 +1,122 @@
+{
+  "schema": 1,
+  "list_version": 202611221200,
+  "sources": [
+    {
+      "id": "stevenblack-porn-only",
+      "role": "list",
+      "repo": "StevenBlack/hosts",
+      "commit": "ce25ce24d6dca08fa484612091a822bc93587086",
+      "path": "alternates/porn-only/hosts",
+      "url": "https://raw.githubusercontent.com/StevenBlack/hosts/ce25ce24d6dca08fa484612091a822bc93587086/alternates/porn-only/hosts",
+      "sha256": "a75e8aec01c50bde58bbb765922443e1ae2a6d618480cbdc2c5b5716fde0cfda",
+      "bytes": 1960998,
+      "licence": "MIT (two small inputs CC BY 4.0)",
+      "format": "hosts",
+      "filter": null
+    },
+    {
+      "id": "shadowwhisperer-adult",
+      "role": "list",
+      "repo": "ShadowWhisperer/BlockLists",
+      "commit": "8ed495030a7169b626a81b45761b84b8c36bf8e5",
+      "path": "Lists/Adult",
+      "url": "https://raw.githubusercontent.com/ShadowWhisperer/BlockLists/8ed495030a7169b626a81b45761b84b8c36bf8e5/Lists/Adult",
+      "sha256": "7315f43316408ea665f966cb0de198b7ca16ca9488720fad481bc9a3fda093ba",
+      "bytes": 3474785,
+      "licence": "Unlicense",
+      "format": "plain",
+      "filter": null
+    },
+    {
+      "id": "4skinskywalker",
+      "role": "list",
+      "repo": "4skinSkywalker/Anti-Porn-HOSTS-File",
+      "commit": "e9cec3fb66cb74c7d6dd7354d7aff55cd2aee3a7",
+      "path": "HOSTS.txt",
+      "url": "https://raw.githubusercontent.com/4skinSkywalker/Anti-Porn-HOSTS-File/e9cec3fb66cb74c7d6dd7354d7aff55cd2aee3a7/HOSTS.txt",
+      "sha256": "8fe7424c7ab7f766d248235e164f179897bfcfdcaf048d434ceddfa6e7942e7a",
+      "bytes": 1954983,
+      "licence": "MIT",
+      "format": "hosts",
+      "filter": "block-grade-keyword"
+    },
+    {
+      "id": "public-suffix-list",
+      "role": "build-filter",
+      "repo": "publicsuffix/list",
+      "commit": "f7796455091118a5617cc7588523b083a8223301",
+      "path": "public_suffix_list.dat",
+      "url": "https://raw.githubusercontent.com/publicsuffix/list/f7796455091118a5617cc7588523b083a8223301/public_suffix_list.dat",
+      "sha256": "135dda6f5fbe05e0d5875c0e4428cb475f761c080133dd3d75837e08e515f29d",
+      "bytes": 342636,
+      "licence": "MPL-2.0"
+    },
+    {
+      "id": "crux-top-1m",
+      "role": "popularity",
+      "repo": "zakird/crux-top-lists",
+      "commit": "a67d0c8f09326df09739560bc43205b4f949f8e6",
+      "path": "data/global/current.csv.gz",
+      "url": "https://raw.githubusercontent.com/zakird/crux-top-lists/a67d0c8f09326df09739560bc43205b4f949f8e6/data/global/current.csv.gz",
+      "sha256": "410165bb4a6bdb735adbb0d317280dff21ad7555ea35016d0ae8d72c5ad14911",
+      "bytes": 8834006,
+      "licence": "CC BY 4.0"
+    },
+    {
+      "id": "stevenblack-sources",
+      "role": "licence-index",
+      "repo": "StevenBlack/hosts",
+      "commit": "ce25ce24d6dca08fa484612091a822bc93587086",
+      "path": "readmeData.json",
+      "url": "https://raw.githubusercontent.com/StevenBlack/hosts/ce25ce24d6dca08fa484612091a822bc93587086/readmeData.json",
+      "sha256": "7cf8d15df344497ebf1e550a76e61fa27be2f324c39bd3fc11305a2e3dd3aa82",
+      "bytes": 152248,
+      "licence": "MIT"
+    },
+    {
+      "id": "licence-stevenblack",
+      "role": "licence-text",
+      "repo": "StevenBlack/hosts",
+      "commit": "ce25ce24d6dca08fa484612091a822bc93587086",
+      "path": "license.txt",
+      "url": "https://raw.githubusercontent.com/StevenBlack/hosts/ce25ce24d6dca08fa484612091a822bc93587086/license.txt",
+      "sha256": "8fea4b3d2ea66f1186ab6a029231441d6f3a9b4a36648d63711eb25f9eb72aa5",
+      "bytes": 1086,
+      "licence": "MIT"
+    },
+    {
+      "id": "licence-sinfonietta",
+      "role": "licence-text",
+      "repo": "Sinfonietta/hostfiles",
+      "commit": "46f3097d7bcfc9eea323fe365074dfd771d0d17c",
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/Sinfonietta/hostfiles/46f3097d7bcfc9eea323fe365074dfd771d0d17c/LICENSE",
+      "sha256": "b32ce488900c449c858b636ac18aab77ae483586508e3aa2e6a916d7a6ace1ae",
+      "bytes": 1078,
+      "licence": "MIT"
+    },
+    {
+      "id": "licence-bigdargon",
+      "role": "licence-text",
+      "repo": "bigdargon/hostsVN",
+      "commit": "cf81902c19468dde6be6a293b17df16165baa427",
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/bigdargon/hostsVN/cf81902c19468dde6be6a293b17df16165baa427/LICENSE",
+      "sha256": "cc2838265743cf60eba810025e50f880cccf24e5a17768533b7f8cc5c0dc7e67",
+      "bytes": 1066,
+      "licence": "MIT"
+    },
+    {
+      "id": "licence-4skinskywalker",
+      "role": "licence-text",
+      "repo": "4skinSkywalker/Anti-Porn-HOSTS-File",
+      "commit": "e9cec3fb66cb74c7d6dd7354d7aff55cd2aee3a7",
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/4skinSkywalker/Anti-Porn-HOSTS-File/e9cec3fb66cb74c7d6dd7354d7aff55cd2aee3a7/LICENSE",
+      "sha256": "e721bf7a0770187cec95113f9fd2bb53ee6cf7cca1b5b493f67d82b3581492aa",
+      "bytes": 1071,
+      "licence": "MIT"
+    }
+  ]
+}

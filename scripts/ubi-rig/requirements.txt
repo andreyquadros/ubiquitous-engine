@@ -1,0 +1,2 @@
+# Blender como módulo Python (precisa de Python 3.11). numpy vem junto.
+bpy==5.0.1

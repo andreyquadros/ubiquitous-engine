@@ -1,0 +1,5 @@
+{
+  "DnsOverHttpsMode": "automatic",
+  "HomepageLocation": "https://intranet.example/",
+  "ForceGoogleSafeSearch": true
+}

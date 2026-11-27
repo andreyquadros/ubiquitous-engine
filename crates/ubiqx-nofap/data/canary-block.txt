@@ -1,0 +1,21 @@
+# canary-block.txt: names the embedded list must cover.
+#
+# One host name per line; "#" lines and empty lines are ignored. The build
+# script refuses to write a list that misses one of these, and the Rust test
+# tests/embedded.rs checks each one against the embedded table. They are
+# long-established adult sites named by every public list; the last line is
+# from extra-ptbr.txt, so it also proves that our own supplement was merged.
+pornhub.com
+xvideos.com
+xnxx.com
+xhamster.com
+redtube.com
+youporn.com
+spankbang.com
+eporner.com
+chaturbate.com
+stripchat.com
+onlyfans.com
+brazzers.com
+nhentai.net
+privacy.com.br

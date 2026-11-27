@@ -1,0 +1,52 @@
+# SAMPLE ONLY (first 50 lines) of ShadowWhisperer/BlockLists 'Adult', Unlicense (public domain).
+# Source: https://raw.githubusercontent.com/ShadowWhisperer/BlockLists/master/Lists/Adult (fetched 2026-11-19)
+#
+#    File: Adult
+#    Info: Porn, 18+ Content
+# Domains: 213,982
+# Updated: 11/18/2026  17:03 (5:03 PM CST)
+#
+#     RAW: https://raw.githubusercontent.com/ShadowWhisperer/BlockLists/master/Lists/Adult
+#     Git: https://github.com/ShadowWhisperer/BlockLists.git
+#
+
+0000526.com
+0001p.com
+0002xxx.com
+000354.xyz
+000372.xyz
+000382.xyz
+000385.xyz
+0003xx.com
+0003xxx.com
+000403.xyz
+0004xxx.com
+0006xxx.com
+0007xxx.com
+0008xxx.com
+0009xxx.com
+000porn.com
+000pussy69pornxxxporno.com
+00101001.com
+0011cn.cfd
+0012xxx.com
+0013xxx.com
+0014xxx.com
+0015xxx.com
+0017x.com
+0017xxx.com
+0018xxx.com
+001av.cc
+001londonescorts.com
+001mh.cc
+001ppp.com
+001seks.com
+001sucai.com
+001xnxxdesitape.com
+002318.com
+002319.com
+002322.com
+0029a.com
+003022.xyz
+003107.xyz
+003114.xyz

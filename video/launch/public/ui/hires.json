@@ -1,0 +1,58 @@
+[
+  {
+    "file": "review-queue-selected.png",
+    "hires": "review-queue-selected@3x.png",
+    "scale": 1.5,
+    "width": 4320,
+    "height": 2700
+  },
+  {
+    "file": "review-after-assign.png",
+    "hires": "review-after-assign@3x.png",
+    "scale": 1.5,
+    "width": 4320,
+    "height": 2700
+  },
+  {
+    "file": "review-settled-expanded.png",
+    "hires": "review-settled-expanded@3x.png",
+    "scale": 1.5,
+    "width": 4320,
+    "height": 2700
+  },
+  {
+    "file": "review-confirmed.png",
+    "hires": "review-confirmed@3x.png",
+    "scale": 1.5,
+    "width": 4320,
+    "height": 2700
+  },
+  {
+    "file": "categories.png",
+    "hires": "categories@3x.png",
+    "scale": 1.5,
+    "width": 4320,
+    "height": 2700
+  },
+  {
+    "file": "settings-ai.png",
+    "hires": "settings-ai@3x.png",
+    "scale": 1.5,
+    "width": 4320,
+    "height": 2700
+  },
+  {
+    "file": "settings-ai-ubi.png",
+    "hires": "settings-ai-ubi@3x.png",
+    "scale": 1.5,
+    "width": 4320,
+    "height": 2700
+  },
+  {
+    "file": "reports.png",
+    "hires": "reports@3x.png",
+    "scale": 1.5,
+    "width": 4320,
+    "height": 2700
+  }
+]

@@ -1,0 +1,18 @@
+{
+    "DNSOverHTTPS__Enabled" = 0;
+    "DNSOverHTTPS__Locked" = 1;
+    EnterprisePoliciesEnabled = 1;
+    ExtensionSettings =     {
+        "addon@example.com" =         {
+            "installation_mode" = "force_installed";
+            "install_url" = "https://example.com/addon.xpi";
+        };
+    };
+    Homepage = "https://example.com/";
+    ManagedBookmarks =     (
+                {
+            name = Example;
+            url = "example.com";
+        }
+    );
+}

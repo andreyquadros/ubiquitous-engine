@@ -1,0 +1,493 @@
+# never-block.txt: names that are never blocked.
+#
+# Used three ways (docs/nofap/DESIGN.md 2.2, 3.3, 3.4):
+#   1. the build script removes these names from the embedded list;
+#   2. the matcher treats them as the built-in allowlist: no list entry and no
+#      keyword or TLD rule blocks them;
+#   3. the elevated helper refuses to write any name under them to the hosts file.
+#
+# Syntax (the same in mixed.txt and never-capture.txt). A line that is empty or
+# starts with "#" is ignored; there are no end-of-line comments. Every other
+# line is one rule in lower-case ASCII:
+#
+#   example.com   NAME: two or more labels. Covers the name and every subdomain.
+#   gov           TLD: one label. Covers every name whose last label is it.
+#   gov.*         SECOND-LEVEL FORM: one label followed by ".*". Covers every
+#                 name that has that label immediately before its last label,
+#                 when that last label is a country code (two letters) other
+#                 than "eu": gov.br, x.gov.br, a.b.gov.uk, my.gov.uz. It does
+#                 not cover "gov" as a top-level domain (write "gov" for that),
+#                 nor xgov.br, nor gov.example.br, nor a name under a generic
+#                 or brand top-level domain (gov.com, mil.win, gov.porn) or
+#                 under "eu" (edu.eu): anybody can register those. A public
+#                 sector under such a domain is a NAME rule (gov.wales).
+#
+# A TLD or SECOND-LEVEL rule decides at every depth. For a NAME rule the
+# matcher's longest match applies: a more specific listed subdomain (the list
+# keeps adult.contents.fc2.com while fc2.com is allowed) stays blocked.
+#
+# The SECOND-LEVEL form is matched by shape, without the Public Suffix List
+# (which leaves out gov.uz, gov.hu, gov.kr and many more), so "gov.*" also
+# covers a private name under a country code that sells its second level. The
+# build prints every listed name such a rule removed (section 3 of
+# docs/nofap/research/blocklist-top10k-review.txt) so that a person can see it.
+#
+# What belongs here: names whose blocking would break the computer, sign-in,
+# updates, payments or the product itself; public-sector and academic name
+# spaces; sexual-health, education and recovery sites; ordinary sites whose name
+# happens to contain a block-grade keyword. What does not belong here: a
+# general platform that also carries adult material (that is mixed.txt), or a
+# hosting suffix where anybody can publish (blogspot, azurewebsites): an entry
+# here also switches the vision check off for the name.
+#
+# Hand-maintained. After a change run: python3 scripts/nofap/build_blocklist.py
+
+# --- Public sector, courts, armed forces, schools and universities ---------
+gov
+gov.*
+gob.*
+gouv.*
+govt.*
+edu
+edu.*
+ac.*
+mil
+mil.*
+int
+# Public sectors under a generic or geographic top-level domain, where a
+# SECOND-LEVEL rule does not reach.
+gov.wales
+gov.scot
+gov.taipei
+gov.krd
+edu.krd
+jus.br
+leg.br
+mp.br
+def.br
+tc.br
+go.jp
+go.kr
+go.id
+go.th
+go.ke
+gc.ca
+canada.ca
+europa.eu
+admin.ch
+bund.de
+nhs.uk
+police.uk
+parliament.uk
+sch.uk
+un.org
+usp.br
+unicamp.br
+unesp.br
+ufrj.br
+ufmg.br
+ufrgs.br
+ufsc.br
+ufpr.br
+unb.br
+ufba.br
+ufpe.br
+ufc.br
+uff.br
+ufscar.br
+ufg.br
+ufes.br
+ufpa.br
+uerj.br
+puc-rio.br
+pucsp.br
+pucrs.br
+pucminas.br
+fgv.br
+fapesp.br
+cnpq.br
+rnp.br
+fiocruz.br
+embrapa.br
+nic.br
+registro.br
+cgi.br
+# A university outside the name spaces above that a public list names.
+unex.es
+
+# --- Operating-system vendors: sign-in, updates, stores, connectivity checks -
+# Apple
+apple.com
+icloud.com
+icloud-content.com
+apple-cloudkit.com
+cdn-apple.com
+mzstatic.com
+aaplimg.com
+me.com
+mac.com
+# Microsoft: sign-in, update, store, mail and API hosts. bing.com is not here: like
+# google.com it is an ordinary search site, which the screen check may look at when a
+# signal fires and which the user may block.
+microsoft.com
+microsoftonline.com
+microsoft365.com
+microsoftstore.com
+windows.com
+windowsupdate.com
+login.windows.net
+live.com
+live.net
+office.com
+office.net
+office365.com
+outlook.com
+hotmail.com
+msn.com
+azure.com
+msftconnecttest.com
+msftncsi.com
+msauth.net
+msftauth.net
+msedge.net
+s-microsoft.com
+aka.ms
+onedrive.com
+onenote.com
+sharepoint.com
+skype.com
+xbox.com
+xboxlive.com
+visualstudio.com
+linkedin.com
+github.com
+# Release downloads (the products' own updates come from there). The rest of
+# githubusercontent.com is a public file host: it is on mixed.txt.
+objects.githubusercontent.com
+release-assets.githubusercontent.com
+githubassets.com
+# Google (accounts, updates, Android, Chrome; not the search pages)
+accounts.google.com
+accounts.youtube.com
+myaccount.google.com
+passwords.google.com
+support.google.com
+dl.google.com
+tools.google.com
+update.googleapis.com
+clients1.google.com
+clients2.google.com
+clients3.google.com
+clients4.google.com
+clients5.google.com
+clients6.google.com
+safebrowsing.google.com
+play.google.com
+pay.google.com
+payments.google.com
+# Sign-in, update and API hosts. The rest of googleapis.com holds public file
+# buckets (storage, firebasestorage): it is on mixed.txt.
+oauth2.googleapis.com
+openidconnect.googleapis.com
+securetoken.googleapis.com
+identitytoolkit.googleapis.com
+android.googleapis.com
+play.googleapis.com
+safebrowsing.googleapis.com
+gstatic.com
+gvt1.com
+gvt2.com
+android.com
+chromium.org
+dns.google
+# Linux distributions and desktop projects
+ubuntu.com
+canonical.com
+snapcraft.io
+snapcraftcontent.com
+launchpad.net
+launchpadcontent.net
+debian.org
+fedoraproject.org
+redhat.com
+centos.org
+archlinux.org
+opensuse.org
+suse.com
+linuxmint.com
+manjaro.org
+kernel.org
+gnome.org
+kde.org
+flathub.org
+freedesktop.org
+# Browsers
+mozilla.org
+mozilla.com
+mozilla.net
+firefox.com
+brave.com
+vivaldi.com
+opera.com
+
+# --- Name resolution, certificates and time ----------------------------------
+# The family resolver's own names (DESIGN 2.3) and other filtering resolvers
+cloudflare-dns.com
+one.one.one.one
+cloudflare.com
+cleanbrowsing.org
+quad9.net
+opendns.com
+nextdns.io
+adguard-dns.com
+# Certificate authorities and revocation
+letsencrypt.org
+lencr.org
+digicert.com
+sectigo.com
+globalsign.com
+identrust.com
+pki.goog
+entrust.net
+# Time
+ntp.org
+
+# --- The product's own hosts ---------------------------------------------------
+ubiqx.ai
+
+# --- AI providers (the screen check itself goes to them) ---------------------
+# x.ai covers api.x.ai. grok.com is not here: it is an ordinary site, like a search engine.
+anthropic.com
+claude.ai
+claude.com
+openai.com
+chatgpt.com
+oaistatic.com
+oaiusercontent.com
+x.ai
+gemini.google.com
+aistudio.google.com
+generativelanguage.googleapis.com
+mistral.ai
+perplexity.ai
+deepseek.com
+cohere.com
+groq.com
+openrouter.ai
+
+# --- Payment networks and processors -----------------------------------------
+paypal.com
+paypalobjects.com
+stripe.com
+stripe.network
+adyen.com
+braintreegateway.com
+squareup.com
+wise.com
+revolut.com
+klarna.com
+skrill.com
+payu.com
+visa.com
+visa.com.br
+mastercard.com
+mastercard.com.br
+americanexpress.com
+elo.com.br
+hipercard.com.br
+mercadopago.com
+mercadopago.com.br
+pagseguro.uol.com.br
+pagseguro.com.br
+pagbank.com.br
+picpay.com
+cielo.com.br
+userede.com.br
+stone.com.br
+getnet.com.br
+pagar.me
+ebanx.com
+asaas.com
+iugu.com
+alipay.com
+
+# --- Banks and brokers: Brazil -------------------------------------------------
+itau.com.br
+bradesco.com.br
+banco.bradesco
+bb.com.br
+bancodobrasil.com.br
+santander.com.br
+nubank.com.br
+bancointer.com.br
+inter.co
+c6bank.com.br
+btgpactual.com
+original.com.br
+safra.com.br
+sicoob.com.br
+sicredi.com.br
+banrisul.com.br
+bancopan.com.br
+bancobmg.com.br
+neon.com.br
+next.me
+xpi.com.br
+rico.com.vc
+clear.com.br
+bv.com.br
+daycoval.com.br
+agibank.com.br
+willbank.com.br
+brb.com.br
+banese.com.br
+banestes.com.br
+bancoamazonia.com.br
+modalmais.com.br
+b3.com.br
+serasa.com.br
+
+# --- Banks and brokers: other countries -----------------------------------------
+chase.com
+bankofamerica.com
+wellsfargo.com
+citi.com
+citibank.com
+capitalone.com
+usbank.com
+pnc.com
+truist.com
+discover.com
+ally.com
+schwab.com
+fidelity.com
+vanguard.com
+hsbc.com
+hsbc.co.uk
+barclays.co.uk
+barclays.com
+lloydsbank.com
+natwest.com
+monzo.com
+santander.com
+santander.co.uk
+santander.pt
+bbva.com
+bbva.es
+caixabank.es
+ing.com
+ing.nl
+ing.de
+n26.com
+deutsche-bank.de
+commerzbank.de
+bnpparibas.com
+credit-agricole.fr
+societegenerale.com
+ubs.com
+rbc.com
+rbcroyalbank.com
+td.com
+scotiabank.com
+bmo.com
+cibc.com
+commbank.com.au
+anz.com
+westpac.com.au
+nab.com.au
+millenniumbcp.pt
+cgd.pt
+novobanco.pt
+bancobpi.pt
+activobank.pt
+hdfcbank.com
+icicibank.com
+
+# --- Sexual health, education, protection and recovery -------------------------
+# Several public lists name scarleteen.com as an adult site; it is sex education.
+scarleteen.com
+plannedparenthood.org
+sexetc.org
+amaze.org
+bedsider.org
+brook.org.uk
+tht.org.uk
+siecus.org
+advocatesforyouth.org
+guttmacher.org
+ippf.org
+unaids.org
+kinseyinstitute.org
+mayoclinic.org
+webmd.com
+healthline.com
+thetrevorproject.org
+itgetsbetter.org
+loveisrespect.org
+rainn.org
+missingkids.org
+iwf.org.uk
+inhope.org
+stopitnow.org
+safernet.org.br
+childhood.org.br
+cvv.org.br
+findahelpline.com
+# Recovery and self-help (some carry a block-grade keyword in their own name)
+fightthenewdrug.org
+yourbrainonporn.com
+rebootnation.org
+covenanteyes.com
+sa.org
+saa-recovery.org
+slaafws.org
+sca-recovery.org
+nofap.com
+
+# --- Ordinary sites whose name contains a block-grade keyword -----------------
+# Each was found among the Chrome UX Report's most visited sites, or is named in
+# the design's test cases. "xxx" also appears in clothing sizes (XXXL), Roman
+# numerals (XXXIX) and brand names; "porn" in the French towns of Pornic and
+# Pornichet and in Czech "usporny"; "putas" in Latvian "atputas".
+# XXXLutz and XXXLesnina (furniture chains)
+xxxlutz.de
+xxxlutz.at
+xxxlutz.ch
+xxxlutz.cz
+xxxlutz.sk
+xxxlutz.hu
+xxxlutz.se
+xxxlutz.ro
+xxxlutz.com
+xxxlesnina.hr
+xxxlesnina.si
+xxxlesnina.rs
+xxxlgroup.com
+# Mixxx (DJ software), XXXX (beer), iXXXi (jewellery), the artist XXXTentacion
+mixxx.org
+xxxx.com.au
+ixxxi-jewelry.com
+xxxtentacion.com
+# Sizes, numerals and shop names
+plussizexxxl.gr
+explosivefibresxxxl.com
+terminalxxxix.com.br
+maxxxmoveis.com.br
+fireworxxx.de
+# The wiki of the film series "xXx" (the label alone would be read as the keyword)
+xxx.fandom.com
+# Pornic and Pornichet (France)
+pornic.fr
+pornic.com
+pornichet.fr
+cinemapornic.fr
+faiencerie-pornic.fr
+thalassopornic.com
+# Other languages
+uspornybalik.cz
+atputasvakars.lv
+# Escorts Kubota (tractors), Nudestix (cosmetics), Computas (consultancy)
+escortsgroup.com
+escortskubota.com
+nudestix.com
+computas.com

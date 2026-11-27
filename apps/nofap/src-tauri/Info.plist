@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Menu bar app: no Dock icon, no app switcher entry. The tray icon is always there. -->
+  <key>LSUIElement</key>
+  <true/>
+  <!-- App Nap must not slow the guard down while the window is hidden. -->
+  <key>NSAppSleepDisabled</key>
+  <true/>
+  <!-- Required for the Automation (Apple Events) prompt that reads the browser's active tab URL. -->
+  <key>NSAppleEventsUsageDescription</key>
+  <string>O NoFap pergunta ao seu navegador qual site está aberto, para barrar os sites que você escolheu evitar. Nenhum conteúdo de página é lido.</string>
+</dict>
+</plist>

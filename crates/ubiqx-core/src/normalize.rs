@@ -5,9 +5,31 @@ use std::collections::HashSet;
 /// Titles that carry no information about *what* the user is doing, only *where*.
 /// Blocks whose normalised title is one of these are candidates for vision classification.
 const GENERIC_TITLES: &[&str] = &[
-    "", "whatsapp", "mail", "messages", "finder", "terminal", "iterm2", "slack", "discord",
-    "telegram", "new tab", "nova guia", "untitled", "sem título", "home", "inbox", "calendar",
-    "notes", "preview", "safari", "google chrome", "arc", "firefox", "microsoft teams", "zoom",
+    "",
+    "whatsapp",
+    "mail",
+    "messages",
+    "finder",
+    "terminal",
+    "iterm2",
+    "slack",
+    "discord",
+    "telegram",
+    "new tab",
+    "nova guia",
+    "untitled",
+    "sem título",
+    "home",
+    "inbox",
+    "calendar",
+    "notes",
+    "preview",
+    "safari",
+    "google chrome",
+    "arc",
+    "firefox",
+    "microsoft teams",
+    "zoom",
 ];
 
 /// Lower-cases, strips app-name suffixes such as " - Google Chrome", collapses whitespace,
@@ -52,6 +74,25 @@ fn strip_counters(t: &str) -> String {
             return s;
         }
     }
+}
+
+/// Markers browsers put in the window title of private/incognito windows.
+const PRIVATE_BROWSING_MARKERS: &[&str] = &[
+    "(incognito)",
+    "(anônima)",
+    "(anonima)",
+    "navegação privada",
+    "navegacao privada",
+    "private browsing",
+    "inprivate",
+    "navegação anônima",
+];
+
+/// Whether the raw window title indicates a private/incognito browser window. Such windows
+/// are treated like blocked apps: time is kept, content is not.
+pub fn is_private_browsing_title(raw_title: &str) -> bool {
+    let t = raw_title.to_lowercase();
+    PRIVATE_BROWSING_MARKERS.iter().any(|m| t.contains(m))
 }
 
 /// Whether a normalised title tells us nothing about the task at hand.
@@ -136,7 +177,10 @@ mod tests {
             normalize_title("(3) Inbox - Gmail - Google Chrome", "Google Chrome"),
             "inbox - gmail"
         );
-        assert_eq!(normalize_title("  Edital  IFRO (2)", "Preview"), "edital ifro");
+        assert_eq!(
+            normalize_title("  Edital  IFRO (2)", "Preview"),
+            "edital ifro"
+        );
         assert_eq!(normalize_title("WhatsApp", "WhatsApp"), "whatsapp");
     }
 
@@ -149,8 +193,20 @@ mod tests {
     }
 
     #[test]
+    fn private_browsing() {
+        assert!(is_private_browsing_title(
+            "Google - Navegação anônima - Google Chrome"
+        ));
+        assert!(is_private_browsing_title("Apple (Private Browsing)"));
+        assert!(!is_private_browsing_title("Edital 2026"));
+    }
+
+    #[test]
     fn domains() {
-        assert_eq!(domain_of("https://www.sei.ifro.edu.br/sei/x?y=1"), Some("sei.ifro.edu.br".into()));
+        assert_eq!(
+            domain_of("https://www.sei.ifro.edu.br/sei/x?y=1"),
+            Some("sei.ifro.edu.br".into())
+        );
         assert_eq!(domain_of("not a url"), None);
         assert!(domain_matches("sei.ifro.edu.br", "ifro.edu.br"));
         assert!(domain_matches("ifro.edu.br", "*.ifro.edu.br"));

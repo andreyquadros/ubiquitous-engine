@@ -1,0 +1,4250 @@
+{
+  "title": "ubiqX AI — “O que você fez na terça?” (launch film, final)",
+  "angle": "Accountability hook → silence → brand drop → the real app answers Tuesday, one loop step at a time (registra, classifica, revisa, entrega, foco, a sua IA) → trust breather → end card. UBI goes into the app on the drop and steps back out when the review queue is empty. The Hoje, Revisão and Relatórios captures are all dated “Terça-feira, 29 de setembro”, so the product answers the hook’s own question.",
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+  "bpm": 120,
+  "durationInFrames": 1560,
+  "conventions": {
+    "frames": "Scene-relative unless marked abs. Every scene starts on a beat (multiple of 15); downbeat starts: 0, 180, 240, 360, 660, 780, 1380.",
+    "transitions": "Not overlapping. Each transition is split into an outgoing half at the end of scene N and an incoming half at the start of scene N+1, named identically; “frames” = the frames of that half inside that scene (0 = empty half). The boundary frame is the cut. Implement as TransitionIn/TransitionOut inside absolute <Sequence from> (premountFor 30), never TransitionSeries (it would shorten the film).",
+    "camera": "Screen primitive, width 1440 for every 2880-px capture: bitmap scale s = zoom × 1440/2880 = 0.5 × zoom (= the upsample factor). intervention.png (1840 px, DPR 4) is shown at width 1520: s = 0.826 × zoom. “atFrame” = the frame the camera ARRIVES; “duration” = travel frames before it; “focus” = image point (px) placed on “anchor” (canvas px). Zoom interpolates in log space. “canvas” = a scene or layer with no UI plane. Hard cap: s ≤ 1.40 on every key, including drifts.",
+    "readability": "A camera key with a readTarget puts that string at ≥ 36 px on screen: onScreenPx = captureFontPx × s × lift. captureFontPx was measured from the PNGs (cap height ÷ 0.727). Wherever s > 1.15 the read target is a live vector re-set of the exact UI string (same font, size and colour) glued to the plane as a Screen child. All other UI text is texture, and no text the viewer must read is ever blurred.",
+    "claimSafety": "patches[] are solid image-space rectangles (Screen children in the sampled card/row colour) over UI text that must never be legible: the key-range hint and the keys legend in every review capture, model-version lines in reports and settings, and continuity counts. scrims[] are solid screen-space bands. tools/validate-storyboard.py maps every sensitive region through every camera key and fails if one is visible and uncovered.",
+    "cursor": "“to” = a hotspot of the scene’s capture, or “rest:x,y” in canvas px (fade-in/rest points and off-frame entries). click:true clicks on that frame; the cursor arrives 3–4 f earlier. 30–34 px tall in screen space, scale ≤ 1.5× with the camera.",
+    "sfx": "“atFrame” = the frame where the HIT (transient / loudest point / a riser’s end) lands, relative to the scene; “fileStartFrame” = atFrame − hitOffsetFrames (from sfx-manifest.json). Build ONE master SFX track at absolute frames: cues that straddle a cut (whips, the pull-back swoosh, both risers) must not live inside a scene Sequence. gainDb is relative to the bed (BED = 0.5).",
+    "reading": "hold ≥ max(24, 2 × characters) from landFrame (last word at spring ≥ 0.9) to outFrame, for every line. Lines that land together carry a group (groupMode “together”) and are checked on the SUM of their characters from the last landing to the first exit. Lines that arrive one after another (a counter under a slam, a second headline line, a callout after a click, the end-card cascade) are read in sequence: each passes on its own, and the scene’s reading budget — max(24, 2 × all characters in the scene) — must fit between the first landing and the last exit.",
+    "ubi": "ubiTrack lists which PNG sequence plays on which scene frames: index = startIndex + (f − from); “hold” freezes the last index. Anchors in the 900-px frame: headCenter (449, 303), feet y 797, idle body ink ≈ x 262–624, y 157–797.",
+    "canvasCamera": "A camera key with target “canvas” moves the background, grid, UI planes and UBI. Type layers (headlines, kickers, labels, the CTA) stay pinned in screen space at scale 1 on whole pixels (style §3.5 resting crispness); only slam shakes (≤ 8 f) and masked entrances move them.",
+    "shots": "shots[] lists the relative frames where a new picture starts inside the scene (first entry 0): hard cuts, jump-cuts, same-camera capture swaps and the flash re-layouts of the montage.",
+    "typography": "Sora 600/700/800 + Inter 400/500/600 only. PT-BR accents kept; U+00A0 glues short words; brand casing ubiqX / UBI / “IA do Ubi”."
+  },
+  "guards": [
+    "No key range on screen: the selected review row’s hint line and the keys legend are covered by solid patches in every review capture that is framed; the only key shown pressed is “1”.",
+    "No model version names: both report meta lines and the settings model fields are patched (and framed out).",
+    "AI providers appear only as plain text (the picker’s own labels and the words Claude, OpenAI, Grok, “IA do Ubi”); no provider logo files are referenced anywhere, and no endorsement wording is used.",
+    "CTA is “Baixe em ubiqx.com.br”: download, never a purchase verb; no price on the end card.",
+    "All UI numbers are demo texture; the only counted number that is a read is the button label “Confirmar os 19”, and no other count is legible in a frame of the same dataset (the empty-state count and “(20)” header are patched or out of frame).",
+    "Privacy: timeline*.png and reports-generated.png are not used; no camera key frames a mail/Gmail row; the only address on screen is the fictional ana@example.com, turned into the real token “[email]”.",
+    "Never used: the OG social image, onboarding captures, worried/sleep UBI next to the product.",
+    "Copy traces to facts.md: §1 (Controle de tempo automático com IA.; the problem lines “Só um minutinho.” and “Chutar as horas?” restate §1’s “o ‘só um minuto’ que virou quarenta” and “planilha preenchida de memória na sexta”), §3.1, §3.3, §3.4, §3.6, §3.8, §3.14 manchetes, §6 bank lines, real UBI lines (Nada em dúvida!, Não! Foque na sua produtividade.), the real toast “Markdown copiado”, tagline and CTA. No trailer line is reused except the tagline. The closest echo is the §3.8 manchete “O relatório sai pronto.” (the trailer’s line is “Corrija com uma tecla. O relatório já sai pronto.”), which both copy judges accepted as the facts headline. Final PT-BR copy edit (before → after, why): brief/copy-edit.md."
+  ],
+  "synthesis": {
+    "base": "Draft A (top summed score, cleanest claims) is the spine: problem → silence → drop → the real loop in order → proof → end card, A’s caret across the silence, A’s same-camera “Confirmar os 19” swap, A’s 18:00 report bookend and A’s “[email]” mask proof.",
+    "grafts": [
+      "C s01 hook copy “SEXTA-FEIRA · 17:00 / O que você fez na terça?” replaces A’s 08:00→18:00 draining-day hook (A’s fatal trailer echo); B’s tilt-to-flat slam gives it motion inside the first second.",
+      "C s05 drop lockup with UBI leaping in on beat 2, and C’s match-cut of UBI into the in-app UBI on Hoje (anchored at comp x 1560 so the first frame is inside the app).",
+      "C s08 categories typing, recaptioned with the §3.3 headline, set in Brazilian register as “Suas categorias.”.",
+      "B s04 slam stack on real origin badges, with the badge hops as jump-cuts on the beat.",
+      "B s05–s07 band stop: keycap “1” pressed alone on beat 2, then the keycap → assign-key-1 match with the group leaving the queue.",
+      "B s09 “Nada em dúvida!”: UBI jumps out of the empty queue (B’s index-6 timing so contact lands on the downbeat), bubble grown from the in-app bubble (C).",
+      "B s10 “Markdown copiado” (the app’s real toast string) added to A’s 18:00 report beat.",
+      "C s14 single 3-s intervention slam replaces B’s two focus scenes.",
+      "B s15 privacy breather with UBI’s look clip, carrying A’s s14 “ana@example.com → [email]” proof and the CD’s line “Seus dados ficam com você. A IA vê só o mínimo.”.",
+      "C s16 end card with UBI dropping onto the lockup on the beat after the final hit, re-spliced rest-pose to rest-pose (raw jump → raw wave → idle 0)."
+    ],
+    "dropped": [
+      "A’s zoom-54 X zoom-through (27× bitmap, production fatal): the UBI match-cut is the single brand → product bridge, so the film has one coherent bridge instead of two.",
+      "A’s standalone OS-row scene (the platforms live only on the end card).",
+      "B’s “Você não deu play.” hook (cryptic, brand at 40 s) and B’s tabletop wall + recap montage (no room inside 52 s; the build into the final hit is the breather’s accelerating push + riser).",
+      "C’s first-person headlines and trailer-kicker echoes; UBI speaks only real app lines.",
+      "Any cursor click on the end-card CTA (flagged as gimmicky)."
+    ],
+    "fixes": [
+      {
+        "from": "CD + truth",
+        "item": "Brand and descriptor on screen by 12 s; “Ele” needs an antecedent.",
+        "resolution": "Wordmark slams at abs 240 (8.0 s); “Controle de tempo automático com IA.” lands at abs 255 (8.5 s). The first “Ele” is at abs 380, after the brand and UBI are both on screen."
+      },
+      {
+        "from": "CD + production",
+        "item": "Validator with 0 errors; every camera key carries its file; ≤ 3 SFX at once.",
+        "resolution": "tools/validate-storyboard.py: VALID. Every UI camera key has file, screenWidth, bitmap scale and readTarget; the max SFX overlap is 3."
+      },
+      {
+        "from": "CD + truth (fatal A)",
+        "item": "No 08:00→18:00 / 09:00→17:00 clock or “time leaking” hook; 18:00 only as the report time.",
+        "resolution": "Hook = C’s accountability pair on an empty timesheet. 18:00 appears only as the end of the recorded day (s06 playhead) and as the report time (s14)."
+      },
+      {
+        "from": "CD",
+        "item": "≤ 6 modules, one benefit each; fold the categories typewriter; privacy in the breather.",
+        "resolution": "registra (s06) · classifica (s07 categorias + s08 regras/memória/IA) · revisa (s09–s13) · relatório (s14) · foco (s15, one 3-s beat) · sua IA (s16); privacy is the s17 breather."
+      },
+      {
+        "from": "CD + truth",
+        "item": "A concrete trust beat that says data goes out masked.",
+        "resolution": "s17: “Seus dados ficam com você. / A IA vê só o mínimo.” with “ana@example.com” collapsing into the real “[email]” token and a line drawn to “IA”."
+      },
+      {
+        "from": "CD",
+        "item": "Vary shot lengths, reach 28–38 shots, break the 90/90/90/120 cadence, add a stop-time moment.",
+        "resolution": "31 shots (avg 1.68 s); scene lengths 15, 30, 45, 60, 75, 90, 105, 120, 150, 180; B’s keycap band stop at abs 660–689; jump-cuts on beats in s08, s09."
+      },
+      {
+        "from": "CD",
+        "item": "One true silence before the brand drop; a clear build into the final hit; frame 0 is a poster with a hit.",
+        "resolution": "Silence abs 225–239 (−∞, caret only); build abs 1320–1379 (riser + snare roll + accelerating push); frame 0 = the finished hook poster on the first downbeat."
+      },
+      {
+        "from": "CD + production",
+        "item": "UI text the camera reads ≥ 36 px and crisp; bitmap scale ≤ 1.40 including drifts.",
+        "resolution": "Pixel-measured font sizes; every read target ≥ 36 px (36.3–43.0); vector re-sets wherever scale > 1.15 (categories label, IFRO, Confirmar os 19 with a 1.08× lift, Copiar Markdown, provider labels). Max scale 1.40."
+      },
+      {
+        "from": "truth + production",
+        "item": "Never legible: the key-range legend/hint, model names, mail rows, the OG image, provider logos; the only key pressed is “1”.",
+        "resolution": "Solid image-space patches in every framed review, report and settings capture (legend re-measured at y 1023–1041 in review-after-assign/review-done, where the manifest rect is wrong); the validator maps every sensitive region through every camera key."
+      },
+      {
+        "from": "CD + truth",
+        "item": "One voice: UBI third person; first-person only in real app lines; ≤ 4 UBI beats; no worried/sleep near the product.",
+        "resolution": "Headlines use “Ele”/“o Ubi”; UBI’s only bubble is the real “Nada em dúvida!”; the intervention window carries the real “Não! Foque na sua produtividade.”. UBI beats: drop → into the app, out of the empty queue, privacy look, plus the end card."
+      },
+      {
+        "from": "CD + truth (fatal C)",
+        "item": "UI continuity: “Confirmar os 19” must not share a frame with other counts of the same dataset.",
+        "resolution": "review-done’s resolved-count paragraph and “(29)” header are patched; review-after-assign’s “(20)” header and toast stay out of frame; s12’s header after the pull-back reads “(19)”, like the button."
+      },
+      {
+        "from": "CD + truth",
+        "item": "Exact end card, ≥ 90 f legible, nothing in the bottom 120 px, no standalone OS row, no fade.",
+        "resolution": "s18: wordmark, tagline, volt pill “Baixe em ubiqx.com.br”, “macOS · Windows · Linux” with glyphs; last landing f30, 150 f fully legible; last frame is the end card."
+      },
+      {
+        "from": "truth (fatal C)",
+        "item": "No trailer lines (C’s kickers “REGISTRA SOZINHO”, “CLASSIFICA COM IA”, “Nas suas categorias.”).",
+        "resolution": "None used; categories use the §3.3 headline, set as “Suas categorias.”. Only the tagline repeats the trailer."
+      },
+      {
+        "from": "truth",
+        "item": "Demo numbers never the hero or read target.",
+        "resolution": "No push to “88 de foco” or the app headline; “40 min” is the payoff of “Só um minutinho.”; the only counted read is the button label “Confirmar os 19”."
+      },
+      {
+        "from": "production (fatal A)",
+        "item": "Zoom-54 X zoom-through, 1.425 drift, legible hint in A s09.",
+        "resolution": "The X zoom-through is dropped (the UBI match-cut is the single brand → product bridge); the report drift stays at 2.6 (s 1.3); the hint is patched."
+      },
+      {
+        "from": "production (fatal C)",
+        "item": "C s07 match frame showed 727 px of canvas; C s11 toast glide ran off the capture; C s13 showed a model id; C s16 raw-jump → idle pop.",
+        "resolution": "Match anchor (1560, 560) puts the image right edge at comp x 1933; s12 uses A’s same-camera swap + pull-back; report meta lines are patched; the end card splices raw jump → raw wave → idle 0, all on the rest pose."
+      },
+      {
+        "from": "production",
+        "item": "Audio on one master track with file start = hit − offset; transitions as halves in absolute Sequences; whole-plane blur only; still probes before the full render.",
+        "resolution": "Every SFX cue carries fileStartFrame/hitOffsetFrames; conventions spell out the Sequence build; blur is whole-plane (s10, s13, s15 backdrops) or a ≤ 4-f whip; the QA list names the still probes."
+      }
+    ]
+  },
+  "ubiMoments": [
+    {
+      "scene": "s05-drop-ubiqx → s06-ele-registra",
+      "clip": "ubi/jump-from-idle → ubi/idle",
+      "beat": "Leaps into the lockup on the drop (contact on beat 2), then shrinks INTO the real Hoje screen (match-cut)."
+    },
+    {
+      "scene": "s13-nada-em-duvida",
+      "clip": "ubi/jump-from-idle → ubi/idle",
+      "beat": "Steps OUT of the empty review queue and lands on the downbeat: “Nada em dúvida!” (real line)."
+    },
+    {
+      "scene": "s17-privacidade",
+      "clip": "ubi/idle → ubi/look",
+      "beat": "Watches the address collapse into “[email]”, then looks up at “A IA vê só o mínimo.”."
+    },
+    {
+      "scene": "s18-end-card",
+      "clip": "ubi/jump → ubi/wave → ubi/idle",
+      "beat": "Drops onto the lockup on the beat after the final hit and waves goodbye."
+    }
+  ],
+  "music": {
+    "key": "A minor (relative of C major): the risers glide to A4, shimmers and sweeps are C-major pentatonic, dings are C6/E6 and chimes C6→E6/G6 — all diatonic here.",
+    "bpm": 120,
+    "meter": "4/4",
+    "lengthFrames": 1560,
+    "lengthBars": 26,
+    "progression": "Am – F – C – G (one chord per bar) in the grooves; Am(add9) under the problem act and on the final hit, resolving to C on the end card; breakdown Fmaj7 → Am9.",
+    "style": "Modern electronic / tech-pop: tight four-on-the-floor kick, round sub, plucked A–C–E–G motif, airy pads, no vocals. Leave the frames where SFX hit free of melodic notes.",
+    "mix": "Bed nominal 0.5 (−6 dB). Problem act ≈ −18 LUFS short-term (900 Hz low-pass), drop and features ≈ −12 LUFS. Ducks (1 f attack, 2 f hold, 10 f release): −5 dB at 105, 180, 510, 525, 540, 1035; −6 dB at 240; −4 dB at 1380. Master −14 LUFS integrated, ≤ −1 dBTP.",
+    "stems": "Full mix; a low-passed copy of bars 1–4 (or the filter automated); the drop without the crash (in case the SFX stack is enough).",
+    "sections": [
+      {
+        "name": "Terça — under water",
+        "startBar": 1,
+        "bars": 4,
+        "energy": 2,
+        "description": "Whole section through a ~900 Hz low-pass: felt kick on 1 and 3, clock-like closed hats in 8ths, Am9 pad, sub on A1. Snare and filter build from bar 3 (the riser SFX sits on top). Stops dead on abs 225 — no reverb tail, no pickup.",
+        "events": [
+          {
+            "frame": 0,
+            "type": "downbeat-hit",
+            "note": "First downbeat ON frame 0 (the poster): filtered kick + sub + muted Am stab. No silent lead-in."
+          },
+          {
+            "frame": 90,
+            "type": "stinger",
+            "note": "Reversed-hat pickup lands on the cut to the chip montage (beat 3)."
+          },
+          {
+            "frame": 105,
+            "type": "stinger",
+            "note": "“Só um minutinho.” slam: muted bass stab; bed duck −5 dB."
+          },
+          {
+            "frame": 105,
+            "type": "riser-start",
+            "note": "riser-2bar.wav starts; its last sample is abs 224."
+          },
+          {
+            "frame": 150,
+            "type": "stinger",
+            "note": "Counter lands on 40 min: low piano A1 + E2."
+          },
+          {
+            "frame": 180,
+            "type": "downbeat-hit",
+            "note": "“Chutar as horas?” slam; bed duck −5 dB."
+          },
+          {
+            "frame": 180,
+            "type": "filter-sweep",
+            "note": "Low-pass opens 900 Hz → 3 kHz by 224; snare 8ths from 180, 16ths from 210."
+          },
+          {
+            "frame": 225,
+            "type": "stop",
+            "note": "Hard stop of every stem and the riser (2-f fade max)."
+          },
+          {
+            "frame": 225,
+            "type": "silence",
+            "durationFrames": 15,
+            "note": "Pre-reveal silence abs 225–239 at −∞: nothing plays, not even a reverse swell."
+          }
+        ]
+      },
+      {
+        "name": "Drop — ubiqX",
+        "startBar": 5,
+        "bars": 2,
+        "energy": 5,
+        "description": "Full range from abs 240: kick, sidechained sub on A1, claps on 2 and 4, open hats, wide supersaw Am chord; the loudest bar of the film. Bar 6 states the pluck motif.",
+        "events": [
+          {
+            "frame": 240,
+            "type": "drop",
+            "note": "Logo slam + flash; impact_deep_2 stacks on it; bed duck −6 dB."
+          },
+          {
+            "frame": 255,
+            "type": "stinger",
+            "note": "Snare accent as UBI lands and the descriptor finishes (beat 2)."
+          },
+          {
+            "frame": 300,
+            "type": "downbeat-hit",
+            "note": "Crash; the motif enters with the grid floor."
+          },
+          {
+            "frame": 345,
+            "type": "filter-sweep",
+            "note": "Quick high-pass lift 345–359 into the match-cut."
+          }
+        ]
+      },
+      {
+        "name": "Groove A — registra e classifica",
+        "startBar": 7,
+        "bars": 5,
+        "energy": 4,
+        "description": "Main groove: kick, clap 2/4, 16th hats, bass on Am–F–C–G, pluck motif. Stop-time stabs (band hits together) under the three slams, crash on the third. Mostly music-only under the typing.",
+        "events": [
+          {
+            "frame": 360,
+            "type": "downbeat-hit",
+            "note": "Crash: match-cut into the real app."
+          },
+          {
+            "frame": 420,
+            "type": "stinger",
+            "note": "Pluck C6 with the playhead landing on 18h (sits with ding_2)."
+          },
+          {
+            "frame": 450,
+            "type": "stinger",
+            "note": "Whip into Categorias."
+          },
+          {
+            "frame": 510,
+            "type": "downbeat-hit",
+            "note": "Stab under “Regras,” (beat 3); duck −5 dB."
+          },
+          {
+            "frame": 525,
+            "type": "downbeat-hit",
+            "note": "Stab under “memória,” (beat 4); duck −5 dB."
+          },
+          {
+            "frame": 540,
+            "type": "downbeat-hit",
+            "note": "Stab + crash under “IA.” (bar 10 downbeat); duck −5 dB."
+          },
+          {
+            "frame": 585,
+            "type": "stinger",
+            "note": "Tom accent on the cut to Revisão."
+          },
+          {
+            "frame": 645,
+            "type": "filter-sweep",
+            "note": "One-beat fill that sets up the stop."
+          }
+        ]
+      },
+      {
+        "name": "Groove B — revisão, com stop-time",
+        "startBar": 12,
+        "bars": 4,
+        "energy": 4,
+        "description": "Bar 12 opens with a band STOP: one stab on the downbeat, then only the sub tail and closed-hat 8ths for two beats so the key-down (675) is heard alone; the groove re-enters on 690 with a counter-melody (bell, C-major pentatonic E5–G5–A5).",
+        "events": [
+          {
+            "frame": 660,
+            "type": "stop",
+            "note": "Stab on the downbeat, then the band stops; nothing melodic on 675 so the key-down sounds alone."
+          },
+          {
+            "frame": 690,
+            "type": "downbeat-hit",
+            "note": "Groove re-enters on the key → chip morph (beat 3)."
+          },
+          {
+            "frame": 720,
+            "type": "downbeat-hit",
+            "note": "Rule chips appear (bar 13 downbeat)."
+          },
+          {
+            "frame": 780,
+            "type": "downbeat-hit",
+            "note": "Cut to “Confirmar os 19”."
+          },
+          {
+            "frame": 810,
+            "type": "stinger",
+            "note": "The click: stab + crash, chord lift Am → C — the peak of the features act."
+          },
+          {
+            "frame": 885,
+            "type": "stinger",
+            "note": "UBI steps out of the app: C-major-pentatonic sparkle (sits with shimmer_2)."
+          }
+        ]
+      },
+      {
+        "name": "Groove C — entrega e foco",
+        "startBar": 16,
+        "bars": 4,
+        "energy": 4,
+        "description": "Brighter arp, octave bass, ride on quarters; two beats of thinned drums under the clock (930–959); a low synth “no” stab for the intervention window. Same drum pattern, so it feels like a lift, not a new song.",
+        "events": [
+          {
+            "frame": 900,
+            "type": "downbeat-hit",
+            "note": "UBI lands: clap + A5 bell (bar 16 downbeat)."
+          },
+          {
+            "frame": 945,
+            "type": "stinger",
+            "note": "Bell E6 as the clock lands on 18:00 (sits with ding_1)."
+          },
+          {
+            "frame": 960,
+            "type": "downbeat-hit",
+            "note": "Soft hit: the report window rises; drums back in."
+          },
+          {
+            "frame": 990,
+            "type": "stinger",
+            "note": "Pluck with the “Copiar Markdown” click."
+          },
+          {
+            "frame": 1035,
+            "type": "stinger",
+            "note": "Full-band stab + low “no” synth for the window slam; duck −5 dB."
+          },
+          {
+            "frame": 1080,
+            "type": "downbeat-hit",
+            "note": "“Ok, foco!” click (bar 19 downbeat)."
+          },
+          {
+            "frame": 1125,
+            "type": "stinger",
+            "note": "Whip into Configurações."
+          }
+        ]
+      },
+      {
+        "name": "Lift — a sua IA",
+        "startBar": 20,
+        "bars": 2,
+        "energy": 3,
+        "description": "Drums thin to kick + hats, a warm pad enters, filter slightly closed; the drums drop out on beat 3 of bar 21 under the blur dissolve.",
+        "events": [
+          {
+            "frame": 1140,
+            "type": "downbeat-hit",
+            "note": "Lift starts (bar 20)."
+          },
+          {
+            "frame": 1200,
+            "type": "downbeat-hit",
+            "note": "“IA do Ubi” click (bar 21 downbeat)."
+          },
+          {
+            "frame": 1230,
+            "type": "stop",
+            "note": "Drums out on beat 3 at the blur-dissolve midpoint; pad and sub carry into the breather."
+          }
+        ]
+      },
+      {
+        "name": "Respiro — privacidade, then the build",
+        "startBar": 22,
+        "bars": 2,
+        "energy": 2,
+        "description": "Kick-less: pad Fmaj7 → Am9, soft plucks, sub pulse on quarters — the calmest moment. On 1320 the kick returns on quarters under the riser SFX; snare roll 8ths → 16ths from 1350, HPF + LPF sweep up into the final hit.",
+        "events": [
+          {
+            "frame": 1260,
+            "type": "downbeat-hit",
+            "note": "Breather bar: pad Fmaj7, sub pulse on quarters, no kick."
+          },
+          {
+            "frame": 1275,
+            "type": "stinger",
+            "note": "Soft pluck on the internal jump-cut as the address chip appears (beat 2); pad moves to Am9 on 1290."
+          },
+          {
+            "frame": 1320,
+            "type": "downbeat-hit",
+            "note": "Mask contact (pop); kick returns on quarters."
+          },
+          {
+            "frame": 1320,
+            "type": "riser-start",
+            "note": "riser_1bar_1.wav (glide to A4) starts; its last sample is abs 1379."
+          },
+          {
+            "frame": 1350,
+            "type": "filter-sweep",
+            "note": "Snare roll 8ths → 16ths, filters sweep up."
+          }
+        ]
+      },
+      {
+        "name": "Final — end card",
+        "startBar": 24,
+        "bars": 3,
+        "energy": 4,
+        "description": "Final hit on 1380 (kick + sub + crash, Am(add9) resolving to C), then no more drums: one sustained chord with a slow pluck echo; a two-note goodbye (C5 → A4) as UBI waves on 1440; the tail is fully decayed before the last frame.",
+        "events": [
+          {
+            "frame": 1380,
+            "type": "downbeat-hit",
+            "note": "FINAL HIT (bar 24 downbeat); bed duck −4 dB."
+          },
+          {
+            "frame": 1395,
+            "type": "stinger",
+            "note": "Soft thump as UBI lands on the lockup (sits with bloop_1)."
+          },
+          {
+            "frame": 1440,
+            "type": "stinger",
+            "note": "Two-note goodbye C5 → A4 with the wave (bar 25 downbeat)."
+          },
+          {
+            "frame": 1500,
+            "type": "filter-sweep",
+            "note": "Tail: low-pass closes, reverb decays."
+          },
+          {
+            "frame": 1555,
+            "type": "stop",
+            "note": "Last audible sample ≤ frame 1559; the picture holds the end card to the end."
+          }
+        ]
+      }
+    ]
+  },
+  "qa": [
+    "Still probes before the full render (≈ 5 s each): s05 f119 vs s06 f0 (UBI match, ±4 px); s06 f60 (playhead on the 18h tick); s07 f0 (label + typewriter re-set over the bitmap); s08 f0/f15/f30 (badge spotlight rects); s09 f0 and f30 (patches over the hint and legend, mail row under the scrim); s10 f29 vs s11 f0 (keycap rect) and s11 f12 (chip); s12 f0 (replica over the button) and f32 (swap: “você” ≈ 50 px from the button); s13 f15 (UBI match) and f27 (bubble); s14 f57; s15 f4; s16 f0 and f77; s17 f90; s18 f179.",
+    "Measure on a still before locking: the wm-X centre of brand/ubiqx-wordmark-bold.svg at 194 px height (planned (960, 520), the caret’s spot); the in-app UBI ink boxes (dashboard ≈ 2402–2615 × 552–890, review-done ≈ 1209–1350 × 461–711); the hero-card colour (#0d1424 sampled).",
+    "Recapture opportunity: review-* captures at DPR 3 would let every review read run at bitmap scale ≤ 0.94 without vector re-sets; a capture with a 1–5 legend would remove the need for legend patches. Neither is required by this board.",
+    "Music: the stop at abs 225 must be dry (no tail); nothing may sound in 225–239; the riser SFX ends by itself on 224; the final tail must end by frame 1559.",
+    "Render budget: 1 560 frames at ≈ 4.5 fps ≈ 6 min. Blur is whole-plane CSS only (no masked DOF, no backdrop-filter); whips use DirectionalBlur for ≤ 4 f per half.",
+    "Both validators pass: tools/validate-storyboard.py (VALID, 0 warnings) and the judges’ brief/storyboards/validate_storyboard.py (VALID; its one warning is s12 f32, the 9-frame capture-swap key at scale 1.4, documented as textureReason)."
+  ],
+  "scenes": [
+    {
+      "id": "s01-hook-terca",
+      "startFrame": 0,
+      "durationInFrames": 90,
+      "act": "hook",
+      "absRange": "0–89",
+      "timecode": "00.00–03.00 s",
+      "barBeat": "1.1 → 2.3",
+      "purpose": "Stop the scroll with a question every person who reports hours has been asked: Friday 17:00, and a Tuesday nobody remembers.",
+      "why": "The hook is the accountability pain (facts §1: “planilha preenchida de memória na sexta”), not the trailer’s 8→18 clock or its “tempo vazando” metaphor. Frame 0 is a finished poster, and the timesheet slams flat inside the first second so there is motion before 1 s. The Hoje, Revisão and Relatórios captures are all dated “Terça-feira, 29 de setembro”, so the film answers its own question.",
+      "thumbnail": "Near-black frame. A rose kicker “SEXTA-FEIRA · 17:00” over a big white question “O que você fez na terça?” (volt underline under “terça?”). Below it an empty, generic weekly timesheet leans back in 3D like a desk; one volt caret blinks in Tuesday’s column.",
+      "shotTypes": [
+        "S01 cold-open hook frame",
+        "S09 tilt-to-flat (compressed to 24 f, on a generic timesheet)",
+        "S17 “ANTES” look (empty timesheet)"
+      ],
+      "copy": [
+        {
+          "text": "SEXTA-FEIRA · 17:00",
+          "role": "kicker",
+          "inFrame": 0,
+          "landFrame": 0,
+          "outFrame": 90,
+          "emphasis": [],
+          "mode": "static",
+          "group": "g1",
+          "groupMode": "together",
+          "note": "Inter 600 26 px +0.14em, rose #f2555a, centred, cap-top y 168. Set on frame 0 (poster)."
+        },
+        {
+          "text": "O que você fez na terça?",
+          "role": "headline",
+          "inFrame": 0,
+          "landFrame": 0,
+          "outFrame": 90,
+          "emphasis": [
+            "terça?"
+          ],
+          "mode": "static",
+          "group": "g1",
+          "groupMode": "together",
+          "note": "Sora 700 112 px −0.035em ink, one line ≈ 1 330 px, centred, cap-top y 214. Fully set on frame 0. Emphasis = volt underline sweep under “terça?” f2–14 (E.glide)."
+        }
+      ],
+      "visual": "Background “plain”: canvas #0a0d16, rose orb bottom-left 0.06, faint volt orb top-centre 0.08, vignette 0.6, grain 0.045. Under the type: a generic, unbranded weekly timesheet drawn in vector (no product yet): 5 day columns SEG TER QUA QUI SEX (Inter 600 30 px ink-2, +0.14em) × 9 hour rows 09h…17h (Inter 500 26 px ink-3), 1 440 × 560 px, 1.5 px #1f2a40 cell lines, every cell empty, S17 “ANTES” treatment (desaturate 60 %, brightness 0.8). A volt text caret (4 × 56 px) blinks in cell TER/10h. Frame-0 pose of the timesheet plane: perspective 1 800 px, rotateX 32°, rotateZ −4°, scale 0.90, centre (960, 800) — it leans back under the headline like a desk.",
+      "assets": [
+        {
+          "kind": "none",
+          "ref": "vector",
+          "hotspots": [],
+          "note": "Timesheet, caret and type are drawn in the composition (tokens: canvas, line, ink-2, ink-3, volt, rose)."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "canvas",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 32,
+            "ry": 0
+          },
+          "ease": "hold (poster)",
+          "note": "Frame 0 = poster: plane at rotateX 32°, rotateZ −4°, scale 0.90, centre y 800. Nothing is mid-transition."
+        },
+        {
+          "atFrame": 24,
+          "target": "canvas",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 8,
+            "ry": 0
+          },
+          "ease": "E.push",
+          "duration": 24,
+          "note": "Tilt-to-flat slam of the timesheet: rotateX 32→8°, rotateZ −4→0°, scale 0.90→1, centre y 800→700 (90 % done by f6). DirectionalBlur on the plane only while it moves > 40 px/f; the type is pinned in screen space and never blurs."
+        },
+        {
+          "atFrame": 89,
+          "target": "canvas",
+          "zoom": 1.04,
+          "tilt": {
+            "rx": 8,
+            "ry": 0
+          },
+          "ease": "linear",
+          "note": "Camera push 1.00→1.04 toward the TER column, plane parallax −24 px."
+        }
+      ],
+      "spotlights": [],
+      "patches": [],
+      "scrims": [],
+      "cursor": [],
+      "ubiTrack": [],
+      "motion": "f0 poster (type set, plane leaning back, caret on). f0–24 the timesheet slams flat (E.push) — the only fast move. f2–14 volt underline sweeps under “terça?”. f30 (beat 3) spotlight on the TER column: the other four columns dim to 40 % over 8 f (S12 dim, no glow). Caret blinks 8 on / 8 off. f24–89 slow push into TER. f90: hard cut while the push is still moving.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0,
+        "note": "Film start: frame 0 is a designed, legible poster; the music’s first downbeat hits on frame 0."
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0
+      },
+      "sfx": [],
+      "shots": [
+        0
+      ],
+      "readingCheck": "“SEXTA-FEIRA · 17:00”: 19 chars → max(24, 2×19) = 38 f; held f0→f90 = 90 f → yes | “O que você fez na terça?”: 24 chars → max(24, 2×24) = 48 f; held f0→f90 = 90 f → yes | Group g1 read together: 43 chars → 86 f from the last landing (f0) to the first exit (f90) = 90 f → yes | Scene reading budget: all 43 chars → 86 f from the first landing (f0) to the last exit (f90) = 90 f → yes",
+      "sfxNote": "None: the music’s frame-0 downbeat (filtered kick + sub + Am stab) is the hit (style S01)."
+    },
+    {
+      "id": "s02-so-um-minuto",
+      "startFrame": 90,
+      "durationInFrames": 90,
+      "act": "problem",
+      "absRange": "90–179",
+      "timecode": "03.00–06.00 s",
+      "barBeat": "2.3 → 4.1",
+      "purpose": "Say why Tuesday is blank: window after window, every “só um minutinho” turns into forty.",
+      "why": "The landing page’s own idiom (facts §1: “o ‘só um minuto’ que virou quarenta”), in the diminutive Brazilians actually say out loud: “minutinho” is the self-deception, so the 40 lands as the punchline. 40 min is the payoff of the idiom, never a stat. It gives the problem act its only montage (6 micro-shots) and starts the riser toward the silence.",
+      "thumbnail": "Gray, blurred window-title chips streak right-to-left across the dark and re-shuffle on 8th notes; centred, the slam “Só um minutinho.” (“minutinho” in rose); under it a huge counter lands on “40 min”.",
+      "shotTypes": [
+        "S05 chaos montage (6 flash re-layouts on 8ths)",
+        "S02 kinetic word slam",
+        "S07 number counter"
+      ],
+      "copy": [
+        {
+          "text": "“Só um minutinho.”",
+          "role": "headline",
+          "inFrame": 11,
+          "landFrame": 15,
+          "outFrame": 90,
+          "emphasis": [
+            "minutinho"
+          ],
+          "mode": "slam",
+          "note": "Sora 800 128 px, one line ≈ 1 200 px (18 chars, so display size rather than the 200 px hero size), centred, cap-top y 330. “minutinho” rose (the diminutive is the lie; the counter is the truth). Contact f15 = abs 105 (beat 4)."
+        },
+        {
+          "text": "40 min",
+          "role": "hero",
+          "inFrame": 29,
+          "landFrame": 60,
+          "outFrame": 90,
+          "emphasis": [],
+          "mode": "static",
+          "note": "Counter 1→40 with the “ min” suffix at 50 % (ink-2), Sora 700 240 px tabular-nums, centred, cap-top y 560. Lands f60 = abs 150 (beat 3), turns rose; rose underline sweep under “min”."
+        }
+      ],
+      "visual": "Background “plain” with a rose orb bottom-left 0.08 (problem palette), grain. Layer A — texture, never read: 12 generic, unbranded window-title chips (panel-2 pills, 1 px border, 18 × 18 gray app square + Inter 500 30 px ink-2 at 70 %, desaturated 30 %, 2 px blur) in three depth rows (y 170 / 300 / 900, scale 0.8 / 1 / 0.9) flying right→left. Titles from a generic set: “Nova aba”, “Re: Re: Fwd: reunião”, “Planilha de horas — set”, “(12) Caixa de entrada”, “Proposta_v3_final.pdf”, “Sem título — Documento”. No brands, no addresses, no typing imagery. Layer B: the slam line. Layer C: the counter. Everything stays on the dark canvas (no luminance flips).",
+      "assets": [
+        {
+          "kind": "none",
+          "ref": "vector",
+          "hotspots": [],
+          "note": "Chips (vector), KineticText slam and Counter primitives."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "canvas",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "linear",
+          "note": "Each chip re-layout has its own push 1.00→1.06 (linear) and ±2° rotation from random(seed); the text layers sit outside that push."
+        },
+        {
+          "atFrame": 89,
+          "target": "canvas",
+          "zoom": 1.02,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "linear"
+        }
+      ],
+      "spotlights": [],
+      "patches": [],
+      "scrims": [],
+      "cursor": [],
+      "ubiTrack": [],
+      "motion": "f0 (abs 90) hard cut, chips already flying at 38 px/f. Chip-layer flash re-layouts on 8ths: f0 and f8 (abs 90, 98) before the slam, then f30, f38, f45, f53 (abs 120, 128, 135, 143) while the counter runs — a new random chip set each time, no white flash. f11 the slam mounts at scale 1.45, blur 12, opacity 0→1 in 2 f; SLAM spring to CONTACT f15 (abs 105), shake 6 px decaying over 8 f; chips slow to 8 px/f and dim to 40 %. f29 the counter mounts at “1 min” (SNAPPY, y 24→0). f30→60 counts 1→40 (bezier .25,.1,.25,1); lands f60 (abs 150): pulse 1→1.05→1 (the shot’s only bouncy element), ink→rose, underline sweep. f60–89 hold, chips drift at 4 px/f. f90 hard cut.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0
+      },
+      "sfx": [
+        {
+          "ref": "glitch_1.wav",
+          "atFrame": 0,
+          "gainDb": -16,
+          "fileStartFrame": 0,
+          "hitOffsetFrames": 0.03,
+          "note": "Flash re-layout 1."
+        },
+        {
+          "ref": "glitch_3.wav",
+          "atFrame": 8,
+          "gainDb": -16,
+          "fileStartFrame": 8,
+          "hitOffsetFrames": 0.02,
+          "note": "Flash re-layout 2 (8th)."
+        },
+        {
+          "ref": "impact.wav",
+          "atFrame": 15,
+          "gainDb": 0,
+          "fileStartFrame": 15,
+          "hitOffsetFrames": 0.04,
+          "note": "Slam contact; bed duck −5 dB."
+        },
+        {
+          "ref": "ui_tick_2.wav",
+          "atFrame": 33,
+          "gainDb": -22,
+          "fileStartFrame": 33,
+          "hitOffsetFrames": 0.06
+        },
+        {
+          "ref": "ui_tick_2.wav",
+          "atFrame": 36,
+          "gainDb": -22,
+          "fileStartFrame": 36,
+          "hitOffsetFrames": 0.06
+        },
+        {
+          "ref": "ui_tick_2.wav",
+          "atFrame": 39,
+          "gainDb": -22,
+          "fileStartFrame": 39,
+          "hitOffsetFrames": 0.06
+        },
+        {
+          "ref": "ui_tick_2.wav",
+          "atFrame": 42,
+          "gainDb": -22,
+          "fileStartFrame": 42,
+          "hitOffsetFrames": 0.06
+        },
+        {
+          "ref": "ui_tick_2.wav",
+          "atFrame": 45,
+          "gainDb": -22,
+          "fileStartFrame": 45,
+          "hitOffsetFrames": 0.06
+        },
+        {
+          "ref": "ui_tick_2.wav",
+          "atFrame": 48,
+          "gainDb": -22,
+          "fileStartFrame": 48,
+          "hitOffsetFrames": 0.06
+        },
+        {
+          "ref": "ui_tick_2.wav",
+          "atFrame": 51,
+          "gainDb": -22,
+          "fileStartFrame": 51,
+          "hitOffsetFrames": 0.06
+        },
+        {
+          "ref": "ui_tick_2.wav",
+          "atFrame": 54,
+          "gainDb": -22,
+          "fileStartFrame": 54,
+          "hitOffsetFrames": 0.06
+        },
+        {
+          "ref": "ui_tick_2.wav",
+          "atFrame": 57,
+          "gainDb": -22,
+          "fileStartFrame": 57,
+          "hitOffsetFrames": 0.06
+        },
+        {
+          "ref": "impact_soft_3.wav",
+          "atFrame": 60,
+          "gainDb": -2,
+          "fileStartFrame": 60,
+          "hitOffsetFrames": 0.04,
+          "note": "Counter lands on 40 min."
+        }
+      ],
+      "shots": [
+        0,
+        8,
+        30,
+        38,
+        45,
+        53
+      ],
+      "readingCheck": "““Só um minutinho.””: 18 chars → max(24, 2×18) = 36 f; held f15→f90 = 75 f → yes | “40 min”: 6 chars → max(24, 2×6) = 24 f; held f60→f90 = 30 f → yes | Scene reading budget: all 24 chars → 48 f from the first landing (f15) to the last exit (f90) = 75 f → yes",
+      "sfxNote": "The 2-bar riser (riser-2bar.wav) starts here at f15 (abs 105) on the master track; it is listed in s04 because its hit — the end of the file — lands on abs 225."
+    },
+    {
+      "id": "s03-planilha-de-memoria",
+      "startFrame": 180,
+      "durationInFrames": 45,
+      "act": "problem",
+      "absRange": "180–224",
+      "timecode": "06.00–07.50 s",
+      "barBeat": "4.1 → 4.4",
+      "purpose": "The second pain in three words: Friday’s timesheet gets filled by guesswork (facts §1: “planilha preenchida de memória na sexta”).",
+      "why": "Closes the accountability problem (facts §1). “Chutar” is the everyday Brazilian verb for filling hours in from memory, and the rose “?” popping into Tuesday’s cells are the guesses themselves; the empty timesheet under the line says “planilha” without spelling it. It hands the one surviving volt element — the caret — to the silence. The strike-through already says “not anymore” before the brand appears.",
+      "thumbnail": "The empty timesheet again, now flat. “Chutar as horas?” is slammed above it, a rose line strikes through “Chutar”, rose question marks (the guesses) pop into Tuesday’s cells, and the volt caret drifts toward frame centre.",
+      "shotTypes": [
+        "S02 kinetic word slam (the cut is the contact)",
+        "S17 “ANTES” timesheet"
+      ],
+      "copy": [
+        {
+          "text": "Chutar as horas?",
+          "role": "headline",
+          "inFrame": 0,
+          "landFrame": 0,
+          "outFrame": 45,
+          "emphasis": [
+            "Chutar"
+          ],
+          "mode": "slam",
+          "note": "Sora 800 120 px, one line ≈ 1 020 px, centred, cap-top y 170. On screen at full opacity on f0 (scale 1.06→1, SLAM): the cut is the contact on the downbeat abs 180. Emphasis = rose strike-through (0.07em bar) drawn across “Chutar” f20–30: the bad habit is struck, the hours stay."
+        }
+      ],
+      "visual": "The s01 timesheet returns flat (rotateX 6°), scale 1.0, centred y 640. Rose “?” glyphs (Inter 600 44 px) pop into empty cells. The timesheet layer drifts (linear, 0.5 px/f) so that on f44 the volt caret in TER/10h sits exactly at screen (960, 520) — the spot where the wordmark’s X lands in s05.",
+      "assets": [
+        {
+          "kind": "none",
+          "ref": "vector",
+          "hotspots": [],
+          "note": "Same vector timesheet as s01."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "canvas",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "linear"
+        },
+        {
+          "atFrame": 44,
+          "target": "canvas",
+          "zoom": 1.03,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "linear",
+          "note": "Slow push; the caret ends at (960, 520)."
+        }
+      ],
+      "spotlights": [],
+      "patches": [],
+      "scrims": [],
+      "cursor": [],
+      "ubiTrack": [],
+      "motion": "f0 (abs 180, downbeat) hard cut into the slam contact + 6 px shake decaying over 8 f. f8, f15, f23, f30 (8ths): rose “?” pop into TER/11h, SEG/15h, QUI/09h, TER/14h (opacity 0→1, scale 0.9→1, SNAPPY — no bounce in the problem act). f20–30 rose strike-through across “Chutar”. Caret solid f30–44. f45: hard cut to the drop-out — everything disappears except the caret.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0,
+        "note": "T8 drop-out: hard cut to canvas + caret; music and riser end dead on abs 225."
+      },
+      "sfx": [
+        {
+          "ref": "impact_soft_2.wav",
+          "atFrame": 0,
+          "gainDb": 0,
+          "fileStartFrame": 0,
+          "hitOffsetFrames": 0.03,
+          "note": "Slam contact; bed duck −5 dB."
+        },
+        {
+          "ref": "ui_tick_1.wav",
+          "atFrame": 8,
+          "gainDb": -22,
+          "fileStartFrame": 8,
+          "hitOffsetFrames": 0.06,
+          "note": "“?” pops."
+        },
+        {
+          "ref": "ui_tick_1.wav",
+          "atFrame": 15,
+          "gainDb": -22,
+          "fileStartFrame": 15,
+          "hitOffsetFrames": 0.06,
+          "note": "“?” pops."
+        },
+        {
+          "ref": "ui_tick_1.wav",
+          "atFrame": 23,
+          "gainDb": -22,
+          "fileStartFrame": 23,
+          "hitOffsetFrames": 0.06,
+          "note": "“?” pops."
+        },
+        {
+          "ref": "ui_tick_1.wav",
+          "atFrame": 30,
+          "gainDb": -22,
+          "fileStartFrame": 30,
+          "hitOffsetFrames": 0.06,
+          "note": "“?” pops."
+        }
+      ],
+      "shots": [
+        0
+      ],
+      "readingCheck": "“Chutar as horas?”: 16 chars → max(24, 2×16) = 32 f; held f0→f45 = 45 f → yes"
+    },
+    {
+      "id": "s04-silencio",
+      "startFrame": 225,
+      "durationInFrames": 15,
+      "act": "problem",
+      "absRange": "225–239",
+      "timecode": "07.50–08.00 s",
+      "barBeat": "4.4 → 5.1",
+      "purpose": "The drop-out: everything stops; one volt caret blinks dead centre in total silence, exactly where the X will land.",
+      "why": "The pre-reveal silence (≥ 15 f at −∞) that makes the drop land. The surviving caret makes the silence read as intent, not a black frame, and primes the X.",
+      "thumbnail": "Dark frame, grain only, a single volt caret at the centre.",
+      "shotTypes": [
+        "T8 drop-out (cut to silence)"
+      ],
+      "copy": [],
+      "visual": "Canvas #0a0d16 + grain 0.045 + vignette only. The 4 × 56 px volt caret at (960, 520), same position as s03’s last frame.",
+      "assets": [
+        {
+          "kind": "none",
+          "ref": "vector",
+          "hotspots": [],
+          "note": "Caret only."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "canvas",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "linear",
+          "note": "The film’s only deliberate freeze; grain keeps it alive."
+        }
+      ],
+      "spotlights": [],
+      "patches": [],
+      "scrims": [],
+      "cursor": [],
+      "ubiTrack": [],
+      "motion": "f0–7 caret on, f8–14 off. Nothing else moves. Music −∞ dB, no SFX, no reverb tail.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0,
+        "note": "T8 drop-out."
+      },
+      "transitionOut": {
+        "type": "flash",
+        "frames": 0,
+        "note": "The outgoing half of T7 is empty: the flash lives in s05 f0–3."
+      },
+      "sfx": [
+        {
+          "ref": "riser-2bar.wav",
+          "atFrame": 0,
+          "gainDb": -6,
+          "fileStartFrame": -120,
+          "hitOffsetFrames": 120.0,
+          "note": "Placed by its END: the riser’s last sample is abs 224, so it plays abs 105–224 (starts at s02 f15) and ends exactly as the silence begins. Master-track cue; nothing is audible at abs 225–239."
+        }
+      ],
+      "shots": [
+        0
+      ],
+      "readingCheck": "No copy in this scene."
+    },
+    {
+      "id": "s05-drop-ubiqx",
+      "startFrame": 240,
+      "durationInFrames": 120,
+      "act": "reveal",
+      "absRange": "240–359",
+      "timecode": "08.00–12.00 s",
+      "barBeat": "5.1 → 7.1",
+      "purpose": "The answer on the loudest frame: ubiqX AI, what it is in one line, and UBI landing beside it.",
+      "why": "Brand and descriptor land at 8.5 s (must be ≤ 12 s). The X pops out of the caret from the silence. UBI’s leap starts his arc: here he goes into the app, and in s13 he comes back out when the work is done.",
+      "thumbnail": "A big white “ubiq” + volt “X” wordmark with the “AI” pill; UBI stands to its right on a volt floor glow; “Controle de tempo automático com IA.” is centred underneath; a volt orb blooms behind.",
+      "shotTypes": [
+        "S08 logo reveal slam",
+        "T7 flash cut on the hit",
+        "S19 mascot entrance",
+        "S04 masked line reveal"
+      ],
+      "copy": [
+        {
+          "text": "ubiqX AI",
+          "role": "hero",
+          "inFrame": 0,
+          "landFrame": 0,
+          "outFrame": 120,
+          "emphasis": [
+            "X"
+          ],
+          "mode": "slam",
+          "group": "g1",
+          "groupMode": "together",
+          "note": "brand/ubiqx-wordmark-bold.svg at height 194 px (= Sora 700 200 px), ≈ x 440–1024, y 439–633, plus an “AI” pill (Sora 600 56 px, volt on rgba(77,141,255,0.14), radius 999) at x 1048–1194. Full opacity from f0 (contact = the drop). The X (path wm-X) is centred on (960, 520), the caret’s spot."
+        },
+        {
+          "text": "Controle de tempo automático com IA.",
+          "role": "sub",
+          "inFrame": 3,
+          "landFrame": 15,
+          "outFrame": 120,
+          "emphasis": [],
+          "mode": "mask-up",
+          "group": "g1",
+          "groupMode": "together",
+          "note": "Facts §1 short line. Inter 500 44 px ink-2, one line ≈ 830 px, centred x 960, cap-top y 752. 12-f mask (E.enter) from f3, landed f15 = abs 255 (8.5 s)."
+        }
+      ],
+      "visual": "Background “orbs”: volt orb Ø1100 behind the lockup (0→0.30 over 6 f, settles 0.18 by f30), ember orb bottom-right 0.07; grid floor fades in from f60 (0→35 %). Horizontal lockup centred by ink bounds (x 440–1491): wordmark · 24 px · “AI” pill · 56 px · UBI (frames at 600 px, k 0.667, frame box left 1075 top 129 → body ≈ x 1250–1491, y 234–660, feet on a soft volt floor-glow ellipse at y 660, volt rim light drop-shadow(0 0 30px rgba(77,141,255,0.35))). Descriptor below. Wordmark text-shadow glow 0.30 for this bar only (f0–59). f105–119 match-cut prep: the type stays crisp while the canvas behind it tints from #0a0d16 to the Hoje hero-card colour #0d1424, the app’s ember floor glow fades in under UBI, and UBI shrinks and moves onto the exact rect of the in-app UBI in s06’s first frame (frame 600→475 px, box (1075,129)→(1317,308), body → x 1455–1668, y 391–729).",
+      "assets": [
+        {
+          "kind": "brand",
+          "ref": "brand/ubiqx-wordmark-bold.svg",
+          "hotspots": [],
+          "note": "Per-letter paths wm-u/b/i/q/X; the X pops separately."
+        },
+        {
+          "kind": "ubi",
+          "ref": "ubi/jump-from-idle",
+          "hotspots": [],
+          "note": "Entered at index 6 so ground contact (index 21) lands on f15."
+        },
+        {
+          "kind": "ubi",
+          "ref": "ubi/idle",
+          "hotspots": [],
+          "note": "Continues from idle 11 (jump-from-idle’s last frame equals idle 10)."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "canvas",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "SLAM",
+          "note": "Slam shake on f0: noise2D × 6 px × exp(−t/3) for 8 f, ±0.4°."
+        },
+        {
+          "atFrame": 60,
+          "target": "canvas",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "linear"
+        },
+        {
+          "atFrame": 104,
+          "target": "canvas",
+          "zoom": 1.04,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "E.glide",
+          "duration": 45,
+          "note": "Slow push f60→104 (span) as the grid floor arrives."
+        },
+        {
+          "atFrame": 119,
+          "target": "canvas",
+          "zoom": 1.04,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "hold"
+        }
+      ],
+      "spotlights": [],
+      "patches": [],
+      "scrims": [],
+      "cursor": [],
+      "ubiTrack": [
+        {
+          "from": 0,
+          "to": 34,
+          "clip": "ubi/jump-from-idle",
+          "startIndex": 6,
+          "note": "Launches in from below: y-offset +260→−30 px f0–9 (E.push), then −30→0 f9–15 (E.exit = gravity). Apex (index 15) on f9, ground contact (index 21) on f15 = abs 255 (beat 2), squash (index 24) on f18, index 40 (== idle 10) on f34."
+        },
+        {
+          "from": 35,
+          "to": 119,
+          "clip": "ubi/idle",
+          "startIndex": 11,
+          "note": "Idle 11→95. f105–119: scale 0.667→0.528 and move onto the in-app UBI rect (E.exit, 15 f)."
+        }
+      ],
+      "motion": "f0 (abs 240, THE DROP): flash overlay #e8edf9 0.35→0 over 4 f (T7); wordmark on screen at full opacity, scale 1.10→1 (SLAM), tracking +0.02em→−0.03em over 20 f (E.push). f0–2 the caret is still at the X’s centre; f3 the X pops out of it (rotate −90°→0, scale 0→1, BOUNCY_SUBTLE — the shot’s one bouncy element). f8 “AI” pill (SNAPPY). f0–15 UBI launches in and lands on the beat (contact f15 = abs 255), 3 % squash baked into the clip. f3–15 descriptor masks up. f10–28 glint (140 px diagonal band, white 18 %, masked to the glyphs). f60 (abs 300, downbeat) grid floor fades in and a slow push begins. f105–119 match-cut prep (tint + UBI shrinks into the in-app position). f120 cut.",
+      "transitionIn": {
+        "type": "flash",
+        "frames": 4,
+        "note": "T7 on the drop: #e8edf9 at 0.35 decaying to 0 over f0–3."
+      },
+      "transitionOut": {
+        "type": "match-cut",
+        "frames": 15,
+        "note": "Out-half f105–119: UBI shrinks onto the in-app UBI’s rect while the canvas tints to the hero-card colour."
+      },
+      "sfx": [
+        {
+          "ref": "impact_deep_2.wav",
+          "atFrame": 0,
+          "gainDb": 2,
+          "fileStartFrame": 0,
+          "hitOffsetFrames": 0.03,
+          "note": "The drop (impact + 45 Hz sub in one file); bed duck −6 dB."
+        },
+        {
+          "ref": "shimmer_1.wav",
+          "atFrame": 10,
+          "gainDb": -14,
+          "fileStartFrame": 10,
+          "hitOffsetFrames": 0.04,
+          "note": "Glint."
+        },
+        {
+          "ref": "bloop_1.wav",
+          "atFrame": 15,
+          "gainDb": -12,
+          "fileStartFrame": 15,
+          "hitOffsetFrames": 0.02,
+          "note": "UBI lands."
+        },
+        {
+          "ref": "whoosh_out_3.wav",
+          "atFrame": 108,
+          "gainDb": -14,
+          "fileStartFrame": 105,
+          "hitOffsetFrames": 3.05,
+          "note": "UBI shrinks away into the app."
+        }
+      ],
+      "shots": [
+        0
+      ],
+      "readingCheck": "“ubiqX AI”: 8 chars → max(24, 2×8) = 24 f; held f0→f120 = 120 f → yes | “Controle de tempo automático com IA.”: 36 chars → max(24, 2×36) = 72 f; held f15→f120 = 105 f → yes | Group g1 read together: 44 chars → 88 f from the last landing (f15) to the first exit (f120) = 105 f → yes | Scene reading budget: all 44 chars → 88 f from the first landing (f0) to the last exit (f120) = 120 f → yes"
+    },
+    {
+      "id": "s06-ele-registra",
+      "startFrame": 360,
+      "durationInFrames": 90,
+      "act": "features",
+      "absRange": "360–449",
+      "timecode": "12.00–15.00 s",
+      "barBeat": "7.1 → 8.3",
+      "purpose": "First look at the real product — UBI lives in “Hoje” — and the first promise proved: Tuesday recorded itself, block by block, up to 18:00.",
+      "why": "The hero product reveal and module 1 (registra, facts §3.1). The sweep ends on 18:00, which the report scene pays off (facts §3.8 default time), instead of a clock hook.",
+      "thumbnail": "The real “Hoje” screen, slightly tilted, under “Ele registra. Você trabalha.”; below it the day track fills with blue, orange and green category blocks behind a volt playhead that stops on the 18h tick.",
+      "shotTypes": [
+        "T5 match-cut (3D UBI → in-app UBI)",
+        "S09 hero reveal (pull-back, tilt-to-flat)",
+        "S11 glide",
+        "S18 data build (day track)",
+        "S03 word stagger"
+      ],
+      "copy": [
+        {
+          "text": "Ele registra. Você trabalha.",
+          "role": "headline",
+          "inFrame": 5,
+          "landFrame": 20,
+          "outFrame": 90,
+          "emphasis": [
+            "registra."
+          ],
+          "mode": "stagger-words",
+          "note": "Facts §3.1 manchete. Sora 700 80 px −0.03em ink, one line ≈ 1 190 px, centred, cap-top y 88, over a top canvas scrim (solid 0–200 → 0 at 260). 4 words, 3 f stagger from f5 → landed f20. “registra.” volt."
+        }
+      ],
+      "visual": "Screen ui/dashboard.png, width 1440 (bitmap scale s = 0.5 × zoom), “mac” chrome with neutral #3a4560 dots, radius 18, shadow tier 3 + volt under-glow, float 4 px / 120 f, sheen at f24. Background “grid” (floor 30 %). f0: the frame is inside the Hoje hero card at bitmap 1:1 — the in-app UBI (with its own speech bubble and ember floor glow) sits exactly where s05’s 3D UBI stopped; a 4-f crossfade (3D → bitmap) hides any residual pose difference. Day track: an image-space cover (Screen child, empty-track colour) hides day-track (554,1178,2236×68) right of image x 1299 (08h) until f36, then retracts to x 2231 (18h) behind a 3 px volt playhead with a 24 px glow; everything right of 18h (incl. the app’s now-marker) stays covered for the rest of the scene. Legend and axis labels are texture.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/dashboard.png",
+          "hotspots": [
+            "ubi-robot",
+            "ubi-speech-bubble",
+            "hero",
+            "day-track-card",
+            "day-track",
+            "day-track-legend"
+          ],
+          "note": "Match target = in-app UBI (body ink ≈ image x 2402–2615, y 552–890). The day track is the proof of automatic recording. Hero numbers are demo texture, never a read."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "ubi-robot",
+          "zoom": 2.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "hard",
+          "file": "ui/dashboard.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.0,
+          "upsample": 1.0,
+          "anchor": {
+            "x": 1560,
+            "y": 560
+          },
+          "focus": {
+            "x": 2507,
+            "y": 721
+          },
+          "readTarget": null,
+          "note": "Match frame: in-app UBI body at ≈ x 1455–1668, y 391–729 (bitmap 1:1). Image right edge at comp x 1933 and top at y −161, so the whole frame is inside the app (no canvas beside the window)."
+        },
+        {
+          "atFrame": 24,
+          "target": "full",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 6,
+            "ry": -6
+          },
+          "ease": "E.push",
+          "file": "ui/dashboard.png",
+          "screenWidth": 1440,
+          "effectiveScale": 0.5,
+          "upsample": 0.5,
+          "anchor": {
+            "x": 960,
+            "y": 680
+          },
+          "focus": {
+            "x": 1440,
+            "y": 900
+          },
+          "readTarget": null,
+          "duration": 24,
+          "note": "Pull-back = hero reveal (perceptual zoom 2.0→1.0); window top ≈ y 186. The app’s own headline (53 px capture) shows at 27 px: texture only."
+        },
+        {
+          "atFrame": 60,
+          "target": "day-track-card",
+          "zoom": 1.5,
+          "tilt": {
+            "rx": 4,
+            "ry": -4
+          },
+          "ease": "E.glide",
+          "file": "ui/dashboard.png",
+          "screenWidth": 1440,
+          "effectiveScale": 0.75,
+          "upsample": 0.75,
+          "anchor": {
+            "x": 960,
+            "y": 690
+          },
+          "focus": {
+            "x": 1672,
+            "y": 1207
+          },
+          "readTarget": null,
+          "duration": 30,
+          "note": "Span f30→60. The top scrim thickens to solid 0–420 so the hero recedes; the card spans ≈ x 90–1830, y 555–825; spotlight on day-track-card (dim 0.62) from f45."
+        },
+        {
+          "atFrame": 89,
+          "target": "day-track-card",
+          "zoom": 1.53,
+          "tilt": {
+            "rx": 4,
+            "ry": -4
+          },
+          "ease": "linear",
+          "file": "ui/dashboard.png",
+          "screenWidth": 1440,
+          "effectiveScale": 0.765,
+          "upsample": 0.765,
+          "anchor": {
+            "x": 960,
+            "y": 690
+          },
+          "focus": {
+            "x": 1672,
+            "y": 1207
+          },
+          "readTarget": null,
+          "note": "Drift."
+        }
+      ],
+      "spotlights": [
+        {
+          "hotspot": "day-track-card",
+          "file": "ui/dashboard.png",
+          "from": 45,
+          "to": 89,
+          "dim": 0.62
+        }
+      ],
+      "patches": [],
+      "scrims": [],
+      "cursor": [],
+      "ubiTrack": [],
+      "motion": "f0 (abs 360, downbeat, crash) match-cut: same silhouette, now the real app; f0–4 crossfade 3D → bitmap. f0–24 pull-back to the whole Hoje window (E.push, 97 % done by f12); tilt settles to rx 6°, ry −6°. f5–20 headline stagger (“registra.” turns volt). f24 sheen. f30–60 glide to the day-track card (E.glide span), scrim thickens, spotlight from f45. f36–60 build: the cover retracts 08h→18h behind the volt playhead (E.glide 24 f) and the real category blocks appear left→right. f60 (abs 420, downbeat) the playhead lands on the 18h tick and pulses once. f60–85 drift; playhead glow breathes on f75. f86–89 whip-left out-half (x 0→−960, E.exit, horizontal blur 0→40).",
+      "transitionIn": {
+        "type": "match-cut",
+        "frames": 12,
+        "note": "In-half: the pull-back continues s05’s shrink; 4-f 3D→bitmap crossfade on the UBI."
+      },
+      "transitionOut": {
+        "type": "whip-left",
+        "frames": 4,
+        "note": "T2 out-half f86–89; cut at peak velocity on abs 450."
+      },
+      "sfx": [
+        {
+          "ref": "swoosh_long_3.wav",
+          "atFrame": 12,
+          "gainDb": -10,
+          "fileStartFrame": -6,
+          "hitOffsetFrames": 18.22,
+          "note": "Deep pull-back for the hero reveal; the file starts 6 f before the scene (master track)."
+        },
+        {
+          "ref": "sweep_1.wav",
+          "atFrame": 36,
+          "gainDb": -16,
+          "fileStartFrame": 36,
+          "hitOffsetFrames": 0.02,
+          "note": "One tick cluster for the whole track build."
+        },
+        {
+          "ref": "ding_2.wav",
+          "atFrame": 60,
+          "gainDb": -12,
+          "fileStartFrame": 60,
+          "hitOffsetFrames": 0.03,
+          "note": "Playhead lands on 18h (C6)."
+        }
+      ],
+      "shots": [
+        0
+      ],
+      "readingCheck": "“Ele registra. Você trabalha.”: 28 chars → max(24, 2×28) = 56 f; held f20→f90 = 70 f → yes"
+    },
+    {
+      "id": "s07-as-suas-categorias",
+      "startFrame": 450,
+      "durationInFrames": 60,
+      "act": "features",
+      "absRange": "450–509",
+      "timecode": "15.00–17.00 s",
+      "barBeat": "8.3 → 9.3",
+      "purpose": "Classification starts from your own words: you describe what counts as work for each category, and the AI follows that description.",
+      "why": "Module 2a, the §3.3 differentiator (the AI reads your description before classifying). It is 2 s long and folds into the classify module rather than being a separate feature.",
+      "thumbnail": "Close on the real Categorias editor: the field “O que conta como trabalho desta categoria” being typed live — “Docência no IFRO Campus Porto Velho Calama…” — under “Suas categorias.” (“Suas” in volt). “Horário do relatório 18:00” sits soft at the top of the frame.",
+      "shotTypes": [
+        "S15 typing (typewriter, vector re-set)",
+        "S11 zoom",
+        "S03 word stagger",
+        "T2 whip-in"
+      ],
+      "copy": [
+        {
+          "text": "Suas categorias.",
+          "role": "headline",
+          "inFrame": 3,
+          "landFrame": 15,
+          "outFrame": 60,
+          "emphasis": [
+            "Suas"
+          ],
+          "mode": "stagger-words",
+          "note": "Facts §3.3 manchete in Brazilian headline register: the article goes, like “Seus dados” in s17 (not the trailer’s “nas suas categorias”). Sora 700 96 px, left x 144, cap-top y 110, over a top canvas scrim (90 % 0–240 px → 0 at 300). 2 words at f3/6 → landed by f15 (abs 465). “Suas” volt."
+        }
+      ],
+      "visual": "Screen ui/categories.png, width 1440, rx 3° ry −3°, float 3 px. Close on the IFRO editor: “Horário do relatório 18:00” soft at the top, the field label and the description textarea in the middle. Vector re-sets pinned in image space (Screen children): (1) the label “O que conta como trabalho desta categoria” (Inter 500, 26 image px, ink-2) at (1342, 646); (2) a #121a2b patch (the textarea fill) over the textarea interior (1356,705,1418×170) hiding the captured text, and a live typewriter layer (Inter 400, 29 image px, ink) re-typing the capture’s own value: “Docência no IFRO Campus Porto Velho Calama: aulas de Programação Web, orientação de TCC,” (88 chars). Spotlight on the field block (1330,630,1470×280), dim 0.55, from f6.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/categories.png",
+          "hotspots": [
+            "category-editor",
+            "category-editor-title",
+            "category-item-1"
+          ],
+          "note": "Demo categories IFRO, Incubadora, Cidades Inteligentes; the typed text is the capture’s own description value."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "category-editor",
+          "zoom": 2.8,
+          "tilt": {
+            "rx": 3,
+            "ry": -3
+          },
+          "ease": "arrives with the whip-in",
+          "file": "ui/categories.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.4,
+          "upsample": 1.4,
+          "anchor": {
+            "x": 1060,
+            "y": 660
+          },
+          "focus": {
+            "x": 2040,
+            "y": 740
+          },
+          "readTarget": {
+            "text": "O que conta como trabalho desta categoria (vector re-set)",
+            "captureFontPx": 26,
+            "lift": 1,
+            "onScreenPx": 36.4,
+            "crisp": "vector",
+            "ok": true
+          },
+          "note": "Visible image ≈ x 1283–2654, y 269–1040; image right edge at comp x 2236 (off-frame). Typed text 29 image px → 40.6 px (vector). The 1.4× bitmap around it sits under a 0.55 dim."
+        },
+        {
+          "atFrame": 59,
+          "target": "category-editor",
+          "zoom": 2.8,
+          "tilt": {
+            "rx": 3,
+            "ry": -3
+          },
+          "ease": "linear",
+          "file": "ui/categories.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.4,
+          "upsample": 1.4,
+          "anchor": {
+            "x": 1040,
+            "y": 660
+          },
+          "focus": {
+            "x": 2040,
+            "y": 740
+          },
+          "readTarget": {
+            "text": "O que conta como trabalho desta categoria (vector re-set)",
+            "captureFontPx": 26,
+            "lift": 1,
+            "onScreenPx": 36.4,
+            "crisp": "vector",
+            "ok": true
+          },
+          "note": "Drift by a 20 px pan; zoom stays at the 1.4 cap."
+        }
+      ],
+      "spotlights": [
+        {
+          "rect": {
+            "x": 1330,
+            "y": 630,
+            "w": 1470,
+            "h": 280
+          },
+          "file": "ui/categories.png",
+          "from": 6,
+          "to": 59,
+          "dim": 0.55
+        }
+      ],
+      "patches": [],
+      "scrims": [],
+      "cursor": [],
+      "ubiTrack": [],
+      "motion": "f0–3 whip in-half (x +960→0, E.push, blur 40→0). f3–15 headline. f6 spotlight (dim 0→0.55, 12 f). f8 caret appears; f8–52 typewriter at 2 chars/f with a solid caret; then the caret blinks 8/8. f60 hard cut.",
+      "transitionIn": {
+        "type": "whip-left",
+        "frames": 4,
+        "note": "T2 in-half f0–3."
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0
+      },
+      "sfx": [
+        {
+          "ref": "whip_2.wav",
+          "atFrame": 0,
+          "gainDb": -8,
+          "fileStartFrame": -2,
+          "hitOffsetFrames": 2.0,
+          "note": "Whip pass-by on the cut abs 450; file starts 2 f earlier (master track)."
+        },
+        {
+          "ref": "type-1.wav",
+          "atFrame": 8,
+          "gainDb": -22,
+          "fileStartFrame": 8,
+          "hitOffsetFrames": 0.07
+        },
+        {
+          "ref": "type-2.wav",
+          "atFrame": 12,
+          "gainDb": -22,
+          "fileStartFrame": 12,
+          "hitOffsetFrames": 0.07
+        },
+        {
+          "ref": "type-3.wav",
+          "atFrame": 16,
+          "gainDb": -22,
+          "fileStartFrame": 16,
+          "hitOffsetFrames": 0.07
+        },
+        {
+          "ref": "type-4.wav",
+          "atFrame": 20,
+          "gainDb": -22,
+          "fileStartFrame": 20,
+          "hitOffsetFrames": 0.07
+        },
+        {
+          "ref": "type-1.wav",
+          "atFrame": 24,
+          "gainDb": -22,
+          "fileStartFrame": 24,
+          "hitOffsetFrames": 0.07
+        },
+        {
+          "ref": "type-2.wav",
+          "atFrame": 28,
+          "gainDb": -22,
+          "fileStartFrame": 28,
+          "hitOffsetFrames": 0.07
+        },
+        {
+          "ref": "type-3.wav",
+          "atFrame": 32,
+          "gainDb": -22,
+          "fileStartFrame": 32,
+          "hitOffsetFrames": 0.07
+        },
+        {
+          "ref": "type-4.wav",
+          "atFrame": 36,
+          "gainDb": -22,
+          "fileStartFrame": 36,
+          "hitOffsetFrames": 0.07
+        },
+        {
+          "ref": "type-1.wav",
+          "atFrame": 40,
+          "gainDb": -22,
+          "fileStartFrame": 40,
+          "hitOffsetFrames": 0.07
+        },
+        {
+          "ref": "type-2.wav",
+          "atFrame": 44,
+          "gainDb": -22,
+          "fileStartFrame": 44,
+          "hitOffsetFrames": 0.07
+        },
+        {
+          "ref": "type-3.wav",
+          "atFrame": 48,
+          "gainDb": -22,
+          "fileStartFrame": 48,
+          "hitOffsetFrames": 0.07
+        }
+      ],
+      "shots": [
+        0
+      ],
+      "readingCheck": "“Suas categorias.”: 16 chars → max(24, 2×16) = 32 f; held f15→f60 = 45 f → yes"
+    },
+    {
+      "id": "s08-regras-memoria-ia",
+      "startFrame": 510,
+      "durationInFrames": 75,
+      "act": "features",
+      "absRange": "510–584",
+      "timecode": "17.00–19.50 s",
+      "barBeat": "9.3 → 10.4",
+      "purpose": "How it decides: rules and memory first, AI for the rest — each slammed word lands on the matching origin badge of a real classified row.",
+      "why": "Module 2b (facts §3.4). Three hits on three beats, with “IA.” on the bar-10 downbeat; the right side jump-cuts badge to badge, so it is also three shots of rhythm.",
+      "thumbnail": "Left: a stacked slam “Regras, / memória, / IA.” (“IA.” in volt). Right: a close, tilted crop of real classified rows, a volt ring around the origin badge “IA” on the Terminal row.",
+      "shotTypes": [
+        "S02 slam stack (3 words on 3 beats, accumulating)",
+        "S12 push-in with focus dimming",
+        "jump-cuts on the beat"
+      ],
+      "copy": [
+        {
+          "text": "Regras,",
+          "role": "hero",
+          "inFrame": 0,
+          "landFrame": 0,
+          "outFrame": 75,
+          "emphasis": [],
+          "mode": "slam",
+          "group": "g1",
+          "groupMode": "together",
+          "note": "Sora 800 150 px, line 1 of a left stack x 144, cap-top y 250; ink → ink-2 (70 %) when the next word lands."
+        },
+        {
+          "text": "memória,",
+          "role": "hero",
+          "inFrame": 15,
+          "landFrame": 15,
+          "outFrame": 75,
+          "emphasis": [],
+          "mode": "slam",
+          "group": "g1",
+          "groupMode": "together",
+          "note": "Line 2, cap-top y 393; ink → ink-2 at f30."
+        },
+        {
+          "text": "IA.",
+          "role": "hero",
+          "inFrame": 30,
+          "landFrame": 30,
+          "outFrame": 75,
+          "emphasis": [
+            "IA."
+          ],
+          "mode": "slam",
+          "group": "g1",
+          "groupMode": "together",
+          "note": "Line 3, cap-top y 536; lands in volt on the downbeat abs 540."
+        }
+      ],
+      "visual": "Screen ui/review-settled-expanded.png (“Classificados neste dia (19)” open), width 1440, rx 4° ry −8°. The right-hand column of real rows: category chip, confidence bar, origin badge. Badge rects (image px, reviewed-row-1 + 114 px per row): row 1 sei.ifro.edu.br “regra” ≈ (1826,566,114,40); row 3 docs.google.com “memória” ≈ (1788,792,152,40); row 5 Terminal “IA” ≈ (1858,1020,82,40). The left 55 % carries the slam stack on a canvas scrim (85 % → 0 at x 1000). Spotlight inside the plane: badge rect + 16 px padding, dim 0.62, 2 px volt ring + 40 px glow 0.3, radius 14.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/review-settled-expanded.png",
+          "hotspots": [
+            "reviewed-row-1",
+            "reviewed-list",
+            "keys-legend"
+          ],
+          "note": "Rows 3 and 5 are reviewed-row-1 + 228 / + 456 image px. keys-legend is listed because it carries a patch."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "reviewed-row-1",
+          "zoom": 2.3,
+          "tilt": {
+            "rx": 4,
+            "ry": -8
+          },
+          "ease": "hard",
+          "file": "ui/review-settled-expanded.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.15,
+          "upsample": 1.15,
+          "anchor": {
+            "x": 1400,
+            "y": 560
+          },
+          "focus": {
+            "x": 1883,
+            "y": 586
+          },
+          "readTarget": null,
+          "note": "Texture only: badge words ≈ 26 capture px → 30 px; the 150-px slam word states each badge. Visible ≈ x 666–2335, y 99–1038."
+        },
+        {
+          "atFrame": 15,
+          "target": "reviewed-list",
+          "zoom": 2.3,
+          "tilt": {
+            "rx": 3,
+            "ry": -7
+          },
+          "ease": "hard (jump-cut on the beat)",
+          "file": "ui/review-settled-expanded.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.15,
+          "upsample": 1.15,
+          "anchor": {
+            "x": 1400,
+            "y": 560
+          },
+          "focus": {
+            "x": 1864,
+            "y": 812
+          },
+          "readTarget": null
+        },
+        {
+          "atFrame": 30,
+          "target": "reviewed-list",
+          "zoom": 2.3,
+          "tilt": {
+            "rx": 4,
+            "ry": -8
+          },
+          "ease": "hard (jump-cut on the downbeat)",
+          "file": "ui/review-settled-expanded.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.15,
+          "upsample": 1.15,
+          "anchor": {
+            "x": 1400,
+            "y": 560
+          },
+          "focus": {
+            "x": 1899,
+            "y": 1040
+          },
+          "readTarget": null
+        },
+        {
+          "atFrame": 74,
+          "target": "reviewed-list",
+          "zoom": 2.3,
+          "tilt": {
+            "rx": 3,
+            "ry": -8
+          },
+          "ease": "linear",
+          "file": "ui/review-settled-expanded.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.15,
+          "upsample": 1.15,
+          "anchor": {
+            "x": 1400,
+            "y": 560
+          },
+          "focus": {
+            "x": 1899,
+            "y": 1028
+          },
+          "readTarget": null,
+          "note": "Drift: plane y −12 px, rx 4→3°."
+        }
+      ],
+      "spotlights": [
+        {
+          "rect": {
+            "x": 1810,
+            "y": 550,
+            "w": 146,
+            "h": 72
+          },
+          "file": "ui/review-settled-expanded.png",
+          "from": 0,
+          "to": 14,
+          "dim": 0.62
+        },
+        {
+          "rect": {
+            "x": 1772,
+            "y": 776,
+            "w": 184,
+            "h": 72
+          },
+          "file": "ui/review-settled-expanded.png",
+          "from": 15,
+          "to": 29,
+          "dim": 0.62
+        },
+        {
+          "rect": {
+            "x": 1842,
+            "y": 1004,
+            "w": 114,
+            "h": 72
+          },
+          "file": "ui/review-settled-expanded.png",
+          "from": 30,
+          "to": 74,
+          "dim": 0.62
+        }
+      ],
+      "patches": [
+        {
+          "file": "ui/review-settled-expanded.png",
+          "rect": {
+            "x": 2136,
+            "y": 662,
+            "w": 640,
+            "h": 32
+          },
+          "color": "#0c1220",
+          "from": 0,
+          "to": 74,
+          "covers": "keys legend"
+        }
+      ],
+      "scrims": [],
+      "cursor": [],
+      "ubiTrack": [],
+      "motion": "f0 (abs 510) hard cut straight into the first contact: “Regras,” on screen at full opacity, scale 1.06→1 (SLAM), 6 px shake over 8 f; spotlight on “regra” (d 0→1 over 8 f). f15 (abs 525) hard jump-cut down the list to the “memória” badge as “memória,” slams in on line 2; “Regras,” dims to ink-2. f30 (abs 540, downbeat) jump-cut to the “IA” badge as “IA.” slams in volt, with a canvas lift #0a0d16→#121a2c→#0a0d16 over 3 f. Each badge ring stays drawn at 60 % after its hop (row 3’s ring is still visible in the last framing). f30–74 hold on row 5, glow breathes 0.3→0.22, drift. f75 hard cut.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0
+      },
+      "sfx": [
+        {
+          "ref": "impact_soft_1.wav",
+          "atFrame": 0,
+          "gainDb": 0,
+          "fileStartFrame": 0,
+          "hitOffsetFrames": 0.04,
+          "note": "“Regras,” — duck −5 dB."
+        },
+        {
+          "ref": "impact_soft_2.wav",
+          "atFrame": 15,
+          "gainDb": 0,
+          "fileStartFrame": 15,
+          "hitOffsetFrames": 0.03,
+          "note": "“memória,” — duck −5 dB."
+        },
+        {
+          "ref": "impact_soft_3.wav",
+          "atFrame": 30,
+          "gainDb": 2,
+          "fileStartFrame": 30,
+          "hitOffsetFrames": 0.04,
+          "note": "“IA.” on the downbeat — duck −5 dB."
+        }
+      ],
+      "shots": [
+        0,
+        15,
+        30
+      ],
+      "readingCheck": "“Regras,”: 7 chars → max(24, 2×7) = 24 f; held f0→f75 = 75 f → yes | “memória,”: 8 chars → max(24, 2×8) = 24 f; held f15→f75 = 60 f → yes | “IA.”: 3 chars → max(24, 2×3) = 24 f; held f30→f75 = 45 f → yes | Group g1 read together: 18 chars → 36 f from the last landing (f30) to the first exit (f75) = 45 f → yes | Scene reading budget: all 18 chars → 36 f from the first landing (f0) to the last exit (f75) = 75 f → yes"
+    },
+    {
+      "id": "s09-so-pergunta",
+      "startFrame": 585,
+      "durationInFrames": 75,
+      "act": "features",
+      "absRange": "585–659",
+      "timecode": "19.50–22.00 s",
+      "barBeat": "10.4 → 12.1",
+      "purpose": "Revisão: the queue only holds what the chain could not settle — rows of “Sem categoria · pendente”.",
+      "why": "Module 3a (facts §3.5: review only of the doubts). It sets up the key: the push ends on the picker whose first row is IFRO.",
+      "thumbnail": "The real Revisão page, tilted: the selected Calendário group and three Finder groups all reading “Sem categoria · 0 % · pendente”, the “Atribuir ao grupo selecionado” card on the right; “Só pergunta o que não sabe.” across the bottom band.",
+      "shotTypes": [
+        "S11 zoom (medium → close, internal jump-cut)",
+        "S12 dim",
+        "headline in the bottom band (Module A variant)"
+      ],
+      "copy": [
+        {
+          "text": "Só pergunta o que não sabe.",
+          "role": "headline",
+          "inFrame": 2,
+          "landFrame": 16,
+          "outFrame": 75,
+          "emphasis": [
+            "não sabe."
+          ],
+          "mode": "stagger-words",
+          "note": "Facts §6 bank. Sora 700 96 px, left x 144, baseline y 905 (above the 120-px player strip), over the bottom scrim. 5 units (“o que” glued), 2 f stagger from f2 → landed f16. Emphasis = volt marker highlight (16 %) swept behind “não sabe.” f18–28."
+        }
+      ],
+      "visual": "Screen ui/review-queue-selected.png, width 1440, rx 4° ry −6°. Shot A (f0–29) medium: page title “Revisão”, the queue with the selected Calendário group and three Finder groups (Sem categoria · 0 % · pendente), and the assign card with the five named categories. Shot B (f30–74) closer on rows 1–4, then a push toward the picker. Claim patches (solid Screen children): the selected row’s key-range hint line and the keys legend. A solid bottom scrim (comp y 800–1080, gradient from 700) carries the headline and hides rows 6 and below, including the mail.google.com group, which is never framed.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/review-queue-selected.png",
+          "hotspots": [
+            "queue-card",
+            "queue-row-1",
+            "queue-row-2",
+            "queue-row-3",
+            "assign-card",
+            "assign-option-1",
+            "queue-row-active-hint",
+            "keys-legend"
+          ],
+          "note": "queue-row-active-hint and keys-legend are listed because they carry patches."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "queue-card",
+          "zoom": 1.6,
+          "tilt": {
+            "rx": 4,
+            "ry": -6
+          },
+          "ease": "hard",
+          "file": "ui/review-queue-selected.png",
+          "screenWidth": 1440,
+          "effectiveScale": 0.8,
+          "upsample": 0.8,
+          "anchor": {
+            "x": 960,
+            "y": 460
+          },
+          "focus": {
+            "x": 1400,
+            "y": 560
+          },
+          "readTarget": null,
+          "note": "Medium. Visible ≈ x 200–2600, y −15–1335 (the title bar covers the top); the solid bottom scrim hides image y ≥ 985."
+        },
+        {
+          "atFrame": 30,
+          "target": "queue-row-1",
+          "zoom": 2.1,
+          "tilt": {
+            "rx": 4,
+            "ry": -5
+          },
+          "ease": "hard (internal jump-cut on beat 3)",
+          "file": "ui/review-queue-selected.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.05,
+          "upsample": 1.05,
+          "anchor": {
+            "x": 960,
+            "y": 420
+          },
+          "focus": {
+            "x": 1500,
+            "y": 520
+          },
+          "readTarget": null,
+          "note": "Closer on rows 1–4 (their “pendente” pills pulse an ember ring once on f45). Texture: row text ≈ 29 capture px → 30 px; the headline carries the message."
+        },
+        {
+          "atFrame": 74,
+          "target": "assign-option-1",
+          "zoom": 2.3,
+          "tilt": {
+            "rx": 3,
+            "ry": -5
+          },
+          "ease": "E.glide",
+          "file": "ui/review-queue-selected.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.15,
+          "upsample": 1.15,
+          "anchor": {
+            "x": 960,
+            "y": 480
+          },
+          "focus": {
+            "x": 2000,
+            "y": 500
+          },
+          "readTarget": null,
+          "duration": 30,
+          "note": "Span f44→74: anticipation push toward the picker (IFRO · 1 on top); cut while moving. Image right edge at comp x 1972."
+        }
+      ],
+      "spotlights": [
+        {
+          "rect": {
+            "x": 514,
+            "y": 238,
+            "w": 1529,
+            "h": 560
+          },
+          "file": "ui/review-queue-selected.png",
+          "from": 34,
+          "to": 74,
+          "dim": 0.5
+        }
+      ],
+      "patches": [
+        {
+          "file": "ui/review-queue-selected.png",
+          "rect": {
+            "x": 630,
+            "y": 400,
+            "w": 1222,
+            "h": 32
+          },
+          "color": "#15233f",
+          "from": 0,
+          "to": 74,
+          "covers": "key-range hint",
+          "note": "selected row: the second line that names a key range; row colour #15233f"
+        },
+        {
+          "file": "ui/review-queue-selected.png",
+          "rect": {
+            "x": 2136,
+            "y": 806,
+            "w": 640,
+            "h": 32
+          },
+          "color": "#0c1220",
+          "from": 0,
+          "to": 74,
+          "covers": "keys legend"
+        }
+      ],
+      "scrims": [
+        {
+          "rect": {
+            "x": 0,
+            "y": 800,
+            "w": 1920,
+            "h": 280
+          },
+          "solid": true,
+          "from": 0,
+          "to": 74,
+          "note": "Bottom band under the headline (canvas 100 %, gradient 700→800)."
+        }
+      ],
+      "cursor": [],
+      "ubiTrack": [],
+      "motion": "f0 (abs 585) hard cut, medium framing. f2–16 headline stagger; f18–28 marker under “não sabe.”. f30 (abs 615) jump-cut closer on rows 1–4; f34 the other rows dim (0.5); f45 the four “pendente” pills pulse an ember ring (one beat). f44–74 span push toward the picker. Cut at f75 while still moving.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0,
+        "note": "Cut on the downbeat abs 660 into the band stop."
+      },
+      "sfx": [],
+      "shots": [
+        0,
+        30
+      ],
+      "readingCheck": "“Só pergunta o que não sabe.”: 27 chars → max(24, 2×27) = 54 f; held f16→f75 = 59 f → yes",
+      "sfxNote": "None: music only (≥ 30 % of the features act stays SFX-free)."
+    },
+    {
+      "id": "s10-tecla-1",
+      "startFrame": 660,
+      "durationInFrames": 30,
+      "act": "features",
+      "absRange": "660–689",
+      "timecode": "22.00–23.00 s",
+      "barBeat": "12.1 → 12.3",
+      "purpose": "Keyboard speed: one key decides the group — the “1”, pressed alone in the band stop.",
+      "why": "B’s stop-time moment: the band stops on the downbeat and the key-down is heard alone on beat 2. It is the only key ever shown pressed.",
+      "thumbnail": "A big 3D keycap “1” centred over the blurred Revisão page; its legend flashes volt as it goes down.",
+      "shotTypes": [
+        "S14 keycap press close-up"
+      ],
+      "copy": [
+        {
+          "text": "1",
+          "role": "label",
+          "inFrame": 0,
+          "landFrame": 6,
+          "outFrame": 30,
+          "emphasis": [],
+          "mode": "static",
+          "note": "KeyCap legend, Inter 600 92 px; latched volt after the press."
+        }
+      ],
+      "visual": "Behind: the review-queue-selected plane exactly where s09 left it, rack-blurred 14 px (static whole-plane CSS blur) and dimmed 0.55, patches still applied. KeyCap centred at (960, 560): 240 × 240 px, radius 34, top face #1c2740→#141c2e, 1 px rgba(255,255,255,0.10) border, 18 px skirt #0c111d, floor shadow; perspective 1200 px, rotateX 28°, rotateZ −6°.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/review-queue-selected.png",
+          "hotspots": [
+            "assign-option-1",
+            "queue-row-active-hint",
+            "keys-legend"
+          ],
+          "note": "Blurred backdrop only."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "assign-option-1",
+          "zoom": 2.3,
+          "tilt": {
+            "rx": 3,
+            "ry": -5
+          },
+          "ease": "hold",
+          "file": "ui/review-queue-selected.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.15,
+          "upsample": 1.15,
+          "anchor": {
+            "x": 960,
+            "y": 480
+          },
+          "focus": {
+            "x": 2000,
+            "y": 500
+          },
+          "readTarget": null,
+          "note": "Backdrop only (blur 14 px). Composition push 1.00→1.04 linear over the scene."
+        },
+        {
+          "atFrame": 29,
+          "target": "assign-option-1",
+          "zoom": 2.3,
+          "tilt": {
+            "rx": 3,
+            "ry": -5
+          },
+          "ease": "hold",
+          "file": "ui/review-queue-selected.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.15,
+          "upsample": 1.15,
+          "anchor": {
+            "x": 960,
+            "y": 480
+          },
+          "focus": {
+            "x": 2000,
+            "y": 500
+          },
+          "readTarget": null
+        }
+      ],
+      "spotlights": [],
+      "patches": [
+        {
+          "file": "ui/review-queue-selected.png",
+          "rect": {
+            "x": 630,
+            "y": 400,
+            "w": 1222,
+            "h": 32
+          },
+          "color": "#15233f",
+          "from": 0,
+          "to": 29,
+          "covers": "key-range hint",
+          "note": "selected row: the second line that names a key range; row colour #15233f"
+        },
+        {
+          "file": "ui/review-queue-selected.png",
+          "rect": {
+            "x": 2136,
+            "y": 806,
+            "w": 640,
+            "h": 32
+          },
+          "color": "#0c1220",
+          "from": 0,
+          "to": 29,
+          "covers": "keys legend"
+        }
+      ],
+      "scrims": [],
+      "cursor": [],
+      "ubiTrack": [],
+      "motion": "f0 (abs 660, band stop) cut; the key mounts scale 0.94→1, y +20→0 (SNAPPY, f0–8). f12–15 press: translateY +14 px, skirt 18→4 px (E.exit 3 f). CONTACT f15 (abs 675, beat 2): legend turns volt, underglow 0 0 60px rgba(77,141,255,0.55) decaying over 8 f, 2 px micro-shake. f16–23 release (SNAPPY), legend stays volt (latched). f30 match-cut.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0
+      },
+      "transitionOut": {
+        "type": "match-cut",
+        "frames": 0,
+        "note": "The keycap’s top face keeps its rect, radius and colour on s11’s first frame."
+      },
+      "sfx": [
+        {
+          "ref": "key_down_1.wav",
+          "atFrame": 15,
+          "gainDb": -8,
+          "fileStartFrame": 15,
+          "hitOffsetFrames": 0.07,
+          "note": "Contact, heard alone in the band stop."
+        },
+        {
+          "ref": "key_up_1.wav",
+          "atFrame": 21,
+          "gainDb": -18,
+          "fileStartFrame": 21,
+          "hitOffsetFrames": 0.07,
+          "note": "Release."
+        }
+      ],
+      "shots": [
+        0
+      ],
+      "readingCheck": "“1”: 1 chars → max(24, 2×1) = 24 f; held f6→f30 = 24 f → yes"
+    },
+    {
+      "id": "s11-e-ele-aprende",
+      "startFrame": 690,
+      "durationInFrames": 90,
+      "act": "features",
+      "absRange": "690–779",
+      "timecode": "23.00–26.00 s",
+      "barBeat": "12.3 → 14.1",
+      "purpose": "The press lands in the real UI: the key flies into “IFRO · 1”, the group leaves the queue, and the app offers a rule — it learns.",
+      "why": "Module 3b (facts §3.5 + §3.7). The T5 match cut turns the physical key into UI. The rule chip is the app’s own proof of learning.",
+      "thumbnail": "A tight, tilted crop of the real assign card: the keycap has become the “1” chip beside IFRO, the queue on the left has lost its top group, and a new chip “Sempre: Calendário → IFRO” pops in; “Uma tecla. / E ele aprende.” on the left.",
+      "shotTypes": [
+        "T5 match cut (keycap → assign-key-1)",
+        "S13 UI state change",
+        "S03 word stagger"
+      ],
+      "copy": [
+        {
+          "text": "Uma tecla.\nE ele aprende.",
+          "role": "headline",
+          "inFrame": 12,
+          "landFrame": 27,
+          "outFrame": 90,
+          "emphasis": [
+            "aprende."
+          ],
+          "mode": "stagger-words",
+          "note": "Facts §6 bank. Sora 700 88 px, two lines left x 144, cap-tops 300 / 400, over a left canvas scrim (85 % → 0 at x 900). Units “Uma”, “tecla.”, “E ele”, “aprende.” at f12/15/18/21 → landed f27. “aprende.” volt."
+        }
+      ],
+      "visual": "Screen ui/review-queue-selected.png → ui/review-after-assign.png (6-f crossfade at f15), width 1440, rx 3° ry −6°. Framing on the assign card, the picker and the right half of the queue rows. Vector re-sets: the “IFRO” option label (Inter 500, 29 image px, ink) and the key chip “1” (the morph target). Claim patches on both captures (hint line, keys legend). Until f30 a #0c1220 patch covers last-suggestions (2127,800,663,150) so the rule chips can appear on the downbeat. The after-assign toast and its “Classificados neste dia (20)” header stay out of frame.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/review-queue-selected.png",
+          "hotspots": [
+            "assign-key-1",
+            "assign-option-1",
+            "queue-row-active-hint",
+            "keys-legend"
+          ],
+          "note": "Before the press."
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/review-after-assign.png",
+          "hotspots": [
+            "assign-picker",
+            "assign-option-1",
+            "last-suggestions",
+            "queue-row-active-hint",
+            "keys-legend"
+          ],
+          "note": "After “1”: the Calendário group left the queue; “Criar regra: Sempre: Calendário → IFRO” chips."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "assign-key-1",
+          "zoom": 2.6,
+          "tilt": {
+            "rx": 3,
+            "ry": -6
+          },
+          "ease": "hard",
+          "file": "ui/review-queue-selected.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.3,
+          "upsample": 1.3,
+          "anchor": {
+            "x": 960,
+            "y": 420
+          },
+          "focus": {
+            "x": 2100,
+            "y": 560
+          },
+          "readTarget": {
+            "text": "IFRO (assign-option-1, vector re-set)",
+            "captureFontPx": 29,
+            "lift": 1,
+            "onScreenPx": 37.7,
+            "crisp": "vector",
+            "ok": true
+          },
+          "note": "Visible ≈ x 1362–2838, y 237–1068; image right edge at comp x 1974 (no canvas beside the window on the match frame). The chip assign-key-1 lands at comp ≈ (1800, 215), 52 px."
+        },
+        {
+          "atFrame": 15,
+          "target": "assign-picker",
+          "zoom": 2.6,
+          "tilt": {
+            "rx": 3,
+            "ry": -6
+          },
+          "ease": "hard (state swap)",
+          "file": "ui/review-after-assign.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.3,
+          "upsample": 1.3,
+          "anchor": {
+            "x": 960,
+            "y": 420
+          },
+          "focus": {
+            "x": 2100,
+            "y": 560
+          },
+          "readTarget": {
+            "text": "IFRO (assign-option-1, vector re-set)",
+            "captureFontPx": 29,
+            "lift": 1,
+            "onScreenPx": 37.7,
+            "crisp": "vector",
+            "ok": true
+          }
+        },
+        {
+          "atFrame": 60,
+          "target": "last-suggestions",
+          "zoom": 2.3,
+          "tilt": {
+            "rx": 3,
+            "ry": -6
+          },
+          "ease": "E.glide",
+          "file": "ui/review-after-assign.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.15,
+          "upsample": 1.15,
+          "anchor": {
+            "x": 1010,
+            "y": 420
+          },
+          "focus": {
+            "x": 2080,
+            "y": 640
+          },
+          "readTarget": null,
+          "duration": 30,
+          "note": "Span f30→60: a slight pull-out (scale 1.3→1.15) down to the rule chips (≈ 25 capture px → 29 px: supporting texture; the headline says it). Visible ≈ x 1202–2871, y 275–1214; image right edge at comp x 1930. Legend at image y 1023 is patched; toast and the “(20)” header are out of frame."
+        },
+        {
+          "atFrame": 89,
+          "target": "last-suggestions",
+          "zoom": 2.3,
+          "tilt": {
+            "rx": 3,
+            "ry": -6
+          },
+          "ease": "linear",
+          "file": "ui/review-after-assign.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.15,
+          "upsample": 1.15,
+          "anchor": {
+            "x": 1010,
+            "y": 420
+          },
+          "focus": {
+            "x": 2080,
+            "y": 650
+          },
+          "readTarget": null,
+          "note": "Drift."
+        }
+      ],
+      "spotlights": [
+        {
+          "hotspot": "assign-option-1",
+          "file": "ui/review-after-assign.png",
+          "from": 12,
+          "to": 30,
+          "dim": 0.45
+        },
+        {
+          "hotspot": "last-suggestions",
+          "file": "ui/review-after-assign.png",
+          "from": 30,
+          "to": 89,
+          "dim": 0.45
+        }
+      ],
+      "patches": [
+        {
+          "file": "ui/review-queue-selected.png",
+          "rect": {
+            "x": 630,
+            "y": 400,
+            "w": 1222,
+            "h": 32
+          },
+          "color": "#15233f",
+          "from": 0,
+          "to": 20,
+          "covers": "key-range hint",
+          "note": "selected row: the second line that names a key range; row colour #15233f"
+        },
+        {
+          "file": "ui/review-queue-selected.png",
+          "rect": {
+            "x": 2136,
+            "y": 806,
+            "w": 640,
+            "h": 32
+          },
+          "color": "#0c1220",
+          "from": 0,
+          "to": 20,
+          "covers": "keys legend"
+        },
+        {
+          "file": "ui/review-after-assign.png",
+          "rect": {
+            "x": 630,
+            "y": 400,
+            "w": 1222,
+            "h": 32
+          },
+          "color": "#15233f",
+          "from": 15,
+          "to": 89,
+          "covers": "key-range hint"
+        },
+        {
+          "file": "ui/review-after-assign.png",
+          "rect": {
+            "x": 2136,
+            "y": 1016,
+            "w": 640,
+            "h": 32
+          },
+          "color": "#0c1220",
+          "from": 15,
+          "to": 89,
+          "covers": "keys legend",
+          "note": "measured at y 1023–1041 in this capture (the manifest rect for keys-legend here is wrong)"
+        },
+        {
+          "file": "ui/review-after-assign.png",
+          "rect": {
+            "x": 2127,
+            "y": 800,
+            "w": 663,
+            "h": 150
+          },
+          "color": "#0c1220",
+          "from": 15,
+          "to": 30,
+          "covers": "rule chips (reveal)",
+          "note": "Lifts on f30 so the chips appear on the downbeat abs 720."
+        }
+      ],
+      "scrims": [],
+      "cursor": [],
+      "ubiTrack": [],
+      "motion": "f0 (abs 690, beat 3) match-cut: the s10 keycap is drawn at its s10 rect over the now-sharp UI and flies/flattens into assign-key-1 over 12 f (SNAPPY: rect, rotation → plane tilt, radius 34→8, fill → chip); backdrop blur 12→0 and dim 0.4→0 (SMOOTH 12 f); the groove re-enters. f12 the IFRO row takes the pressed tint (volt 16 %, 6 f). f15 (abs 705, beat) state change: 6-f crossfade to review-after-assign — the Calendário group slides out left (x −140 px, fades 6 f) and the list closes up; the new active row flashes mint 12 % for 8 f. f12–27 headline. f30 (abs 720, downbeat) the patch lifts: “Criar regra: Sempre: Calendário → IFRO” chips morph in (y +8→0, opacity, SNAPPY); spotlight glides from the IFRO row to the chips (f30–60 span). f60–89 hold + drift.",
+      "transitionIn": {
+        "type": "match-cut",
+        "frames": 12,
+        "note": "Keycap → assign-key-1 morph (T5), 12 f SNAPPY."
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0
+      },
+      "sfx": [
+        {
+          "ref": "ui_tick_1.wav",
+          "atFrame": 12,
+          "gainDb": -18,
+          "fileStartFrame": 12,
+          "hitOffsetFrames": 0.06,
+          "note": "Chip lights."
+        },
+        {
+          "ref": "success_chime_1.wav",
+          "atFrame": 18,
+          "gainDb": -14,
+          "fileStartFrame": 18,
+          "hitOffsetFrames": 0.04,
+          "note": "Group classified (C6→E6)."
+        },
+        {
+          "ref": "pop.wav",
+          "atFrame": 30,
+          "gainDb": -16,
+          "fileStartFrame": 30,
+          "hitOffsetFrames": 0.02,
+          "note": "Rule chips appear."
+        }
+      ],
+      "shots": [
+        0
+      ],
+      "readingCheck": "“Uma tecla. / E ele aprende.”: 25 chars → max(24, 2×25) = 50 f; held f27→f90 = 63 f → yes"
+    },
+    {
+      "id": "s12-um-clique",
+      "startFrame": 780,
+      "durationInFrames": 90,
+      "act": "features",
+      "absRange": "780–869",
+      "timecode": "26.00–29.00 s",
+      "barBeat": "14.1 → 15.3",
+      "purpose": "One click turns everything the Ubi decided into your own answers — “Confirmar os 19” — and the list flips to “você”.",
+      "why": "Module 3c (facts §3.6). The click is the features-act peak. The same-camera capture swap (A’s fix) avoids C’s off-image glide to the toast.",
+      "thumbnail": "Tight on the real “Confirmar os 19” button, the cursor clicking it; then the rows below flip one by one to mint “você” badges as the camera pulls back, under “Um clique vira memória.”.",
+      "shotTypes": [
+        "S12 push-in with dimming",
+        "S13 cursor click + state change",
+        "S11 pull-back"
+      ],
+      "copy": [
+        {
+          "text": "Confirmar os 19",
+          "role": "ui-caption",
+          "inFrame": 0,
+          "landFrame": 0,
+          "outFrame": 30,
+          "emphasis": [],
+          "mode": "static",
+          "note": "The real button label as a crisp vector replica (Inter 500, 24 image px) that lifts 1.08× above the plane on hover: 24 × 1.4 × 1.08 = 36.3 px on screen. Counted as read until the click on f30 (abs 810, beat); the state change replaces it on f32."
+        },
+        {
+          "text": "Um clique vira memória.",
+          "role": "headline",
+          "inFrame": 30,
+          "landFrame": 40,
+          "outFrame": 90,
+          "emphasis": [
+            "memória."
+          ],
+          "mode": "stagger-words",
+          "note": "Facts §3.6 manchete. Sora 700 88 px, left x 144, cap-top y 110, over a top-left scrim (85 % → 0). 3 units (“Um clique” glued) at f30/32/34 → landed f40. “memória.” volt."
+        }
+      ],
+      "visual": "Screen ui/review-settled-expanded.png, hard swap to ui/review-confirmed.png at f32 with the identical camera: row 1’s mint “você” badge lands about 50 px from where the button was. The shot opens tight at 1.4× bitmap under a 0.62 dim; the button is a vector replica (same rect, radius 16, 1 px line border, label). After the swap the camera pulls back to 1.0× to show the column of mint “você” badges. Claim patch: keys legend in both captures. The toast (bottom-right) stays out of frame. The settled header visible after the pull-back reads “(19)”, the same number as the button.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/review-settled-expanded.png",
+          "hotspots": [
+            "confirm-bar",
+            "confirm-all-button",
+            "keys-legend"
+          ],
+          "note": "Before the click."
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/review-confirmed.png",
+          "hotspots": [
+            "reviewed-list",
+            "reviewed-row-1",
+            "keys-legend"
+          ],
+          "note": "After: every origin badge reads “você”."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "confirm-all-button",
+          "zoom": 2.8,
+          "tilt": {
+            "rx": 4,
+            "ry": -6
+          },
+          "ease": "hard",
+          "file": "ui/review-settled-expanded.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.4,
+          "upsample": 1.4,
+          "anchor": {
+            "x": 1250,
+            "y": 600
+          },
+          "focus": {
+            "x": 1898,
+            "y": 478
+          },
+          "readTarget": {
+            "text": "Confirmar os 19 (vector replica, lifted 1.08×)",
+            "captureFontPx": 24,
+            "lift": 1.08,
+            "onScreenPx": 36.3,
+            "crisp": "vector",
+            "ok": true
+          },
+          "note": "Visible ≈ x 1005–2377, y 49–821: the bar’s left text and the header are off-frame left; the legend’s right end is off-frame right (and patched)."
+        },
+        {
+          "atFrame": 32,
+          "target": "reviewed-row-1",
+          "zoom": 2.8,
+          "tilt": {
+            "rx": 4,
+            "ry": -6
+          },
+          "ease": "hard (capture swap, same camera)",
+          "file": "ui/review-confirmed.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.4,
+          "upsample": 1.4,
+          "anchor": {
+            "x": 1250,
+            "y": 600
+          },
+          "focus": {
+            "x": 1898,
+            "y": 478
+          },
+          "readTarget": null,
+          "textureReason": "Not a read: the swap frame is on screen for ≈ 9 f while the E.push pull-back runs (97 % done by f41); the mint “você” badges are a graphic, and row 1’s badge is drawn as a vector replica for f32–40 so the landing point stays crisp.",
+          "note": "Same camera as f0 across the capture swap."
+        },
+        {
+          "atFrame": 50,
+          "target": "reviewed-list",
+          "zoom": 2.0,
+          "tilt": {
+            "rx": 4,
+            "ry": -6
+          },
+          "ease": "E.push",
+          "file": "ui/review-confirmed.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.0,
+          "upsample": 1.0,
+          "anchor": {
+            "x": 1150,
+            "y": 640
+          },
+          "focus": {
+            "x": 1500,
+            "y": 700
+          },
+          "readTarget": null,
+          "duration": 18,
+          "note": "Pull-back f32→50. Visible ≈ x 350–2270, y 60–1140: rows 1–6 all mint “você”."
+        },
+        {
+          "atFrame": 89,
+          "target": "reviewed-list",
+          "zoom": 2.04,
+          "tilt": {
+            "rx": 4,
+            "ry": -6
+          },
+          "ease": "linear",
+          "file": "ui/review-confirmed.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.02,
+          "upsample": 1.02,
+          "anchor": {
+            "x": 1150,
+            "y": 640
+          },
+          "focus": {
+            "x": 1500,
+            "y": 700
+          },
+          "readTarget": null,
+          "note": "Drift."
+        }
+      ],
+      "spotlights": [
+        {
+          "hotspot": "confirm-bar",
+          "file": "ui/review-settled-expanded.png",
+          "from": 0,
+          "to": 31,
+          "dim": 0.62
+        }
+      ],
+      "patches": [
+        {
+          "file": "ui/review-settled-expanded.png",
+          "rect": {
+            "x": 2136,
+            "y": 662,
+            "w": 640,
+            "h": 32
+          },
+          "color": "#0c1220",
+          "from": 0,
+          "to": 31,
+          "covers": "keys legend"
+        },
+        {
+          "file": "ui/review-confirmed.png",
+          "rect": {
+            "x": 2136,
+            "y": 662,
+            "w": 640,
+            "h": 32
+          },
+          "color": "#0c1220",
+          "from": 32,
+          "to": 89,
+          "covers": "keys legend"
+        }
+      ],
+      "scrims": [],
+      "cursor": [
+        {
+          "atFrame": 4,
+          "to": "rest:1990,1140",
+          "click": false,
+          "note": "Enters from off-frame bottom-right; never teleports."
+        },
+        {
+          "atFrame": 26,
+          "to": "confirm-all-button",
+          "click": false,
+          "note": "Arc 12 %, E.cursor 22 f; hover from f24 (the replica lifts 1.08×)."
+        },
+        {
+          "atFrame": 30,
+          "to": "confirm-all-button",
+          "click": true,
+          "note": "CLICK abs 810 (beat 3): cursor 1→0.85→1, replica 0.96 + pressed colour, ripple 0→44 px + second ring 64 px."
+        },
+        {
+          "atFrame": 44,
+          "to": "rest:1700,900",
+          "click": false,
+          "note": "Drifts off and fades (f38–44)."
+        }
+      ],
+      "ubiTrack": [],
+      "motion": "f0 (abs 780, downbeat) cut in tight on “Confirmar os 19” (crisp replica, dimmed surroundings). f4–26 cursor arcs in; f24 hover lift. f30 CLICK (abs 810). f32 (C+2) hard swap: the bar is gone and row 1 reads “você” in mint almost where the button was; f33–51 a mint wave runs down the rows (row flash 12 %, 2 f stagger, spread 18 f). f30–40 headline. f32–50 pull-back (E.push) reveals the whole column of “você”. f50–89 hold, drift.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0
+      },
+      "sfx": [
+        {
+          "ref": "click.wav",
+          "atFrame": 30,
+          "gainDb": -12,
+          "fileStartFrame": 30,
+          "hitOffsetFrames": 0.07,
+          "note": "Confirmar os 19."
+        },
+        {
+          "ref": "shimmer_1.wav",
+          "atFrame": 33,
+          "gainDb": -14,
+          "fileStartFrame": 33,
+          "hitOffsetFrames": 0.04,
+          "note": "All badges flip to “você” (C+3)."
+        }
+      ],
+      "shots": [
+        0,
+        32
+      ],
+      "readingCheck": "“Confirmar os 19”: 15 chars → max(24, 2×15) = 30 f; held f0→f30 = 30 f → yes | “Um clique vira memória.”: 23 chars → max(24, 2×23) = 46 f; held f40→f90 = 50 f → yes | Scene reading budget: all 38 chars → 76 f from the first landing (f0) to the last exit (f90) = 90 f → yes"
+    },
+    {
+      "id": "s13-nada-em-duvida",
+      "startFrame": 870,
+      "durationInFrames": 60,
+      "act": "features",
+      "absRange": "870–929",
+      "timecode": "29.00–31.00 s",
+      "barBeat": "15.3 → 16.3",
+      "purpose": "Payoff: the queue is empty, and UBI steps out of the app to celebrate — “Nada em dúvida!”.",
+      "why": "The best UBI beat in the drafts (B), and the end of his arc: he went into the app on the drop and comes out when the work is done (C). The resolved-count text is patched out, so no count contradicts “19”.",
+      "thumbnail": "The empty Revisão page racks out of focus while a big 3D UBI jumps out of it, and his real line “Nada em dúvida!” grows from the in-app bubble.",
+      "shotTypes": [
+        "S11 push",
+        "T5 match (in-app UBI → 3D UBI)",
+        "S19 mascot + speech bubble"
+      ],
+      "copy": [
+        {
+          "text": "Nada em dúvida!",
+          "role": "headline",
+          "inFrame": 15,
+          "landFrame": 27,
+          "outFrame": 60,
+          "emphasis": [
+            "dúvida!"
+          ],
+          "mode": "static",
+          "note": "UBI’s real empty-state line (review.ts:83). Speech bubble: Sora 700 72 px ink, “dúvida!” volt; panel-2 #172033 at 94 %, 1 px rgba(255,255,255,0.08), radius 36, tail to his head. It grows out of the in-app bubble’s own position (scale 0.3→1 + translate, SNAPPY 12 f) and lands f27."
+        }
+      ],
+      "visual": "Screen ui/review-done.png, width 1440, near-flat (rx 2° ry −2°): the empty queue, the in-app UBI with its small “Nada em dúvida!” bubble, “Nada esperando por você”, and the subtitle “Terça-feira, 29 de setembro: a fila está vazia.”. Continuity/claim patches (#0c1220): the paragraph with the day’s resolved count, the settled header with its count, and the keys legend. From f15 a patch in the card colour hides the bitmap UBI and its bubble so only one UBI exists, and the app racks out (whole-plane blur 0→8 px, brightness 1→0.45, SMOOTH 12 f). 3D UBI: volt rim + ember floor glow.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/review-done.png",
+          "hotspots": [
+            "review-done",
+            "review-done-ubi",
+            "settled-header",
+            "keys-legend"
+          ],
+          "note": "Empty-state card; review-done-ubi is the match target (ink ≈ x 1209–1350, y 461–711)."
+        },
+        {
+          "kind": "ubi",
+          "ref": "ubi/jump-from-idle",
+          "hotspots": [],
+          "note": "From index 6 so ground contact (21) lands on the downbeat."
+        },
+        {
+          "kind": "ubi",
+          "ref": "ubi/idle",
+          "hotspots": [],
+          "note": "Continues from idle 11."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "review-done",
+          "zoom": 1.6,
+          "tilt": {
+            "rx": 2,
+            "ry": -2
+          },
+          "ease": "hard",
+          "file": "ui/review-done.png",
+          "screenWidth": 1440,
+          "effectiveScale": 0.8,
+          "upsample": 0.8,
+          "anchor": {
+            "x": 960,
+            "y": 520
+          },
+          "focus": {
+            "x": 1279,
+            "y": 560
+          },
+          "readTarget": null,
+          "note": "Empty state centred; visible ≈ x 79–2479, y −90–1260."
+        },
+        {
+          "atFrame": 15,
+          "target": "review-done-ubi",
+          "zoom": 2.0,
+          "tilt": {
+            "rx": 2,
+            "ry": -2
+          },
+          "ease": "E.push",
+          "file": "ui/review-done.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.0,
+          "upsample": 1.0,
+          "anchor": {
+            "x": 960,
+            "y": 600
+          },
+          "focus": {
+            "x": 1279,
+            "y": 540
+          },
+          "readTarget": null,
+          "duration": 15,
+          "note": "Bitmap 1:1. In-app UBI body at comp ≈ x 890–1031, y 521–771 (the 3D match rect: frame 352 px, box left 788 top 460)."
+        },
+        {
+          "atFrame": 59,
+          "target": "review-done-ubi",
+          "zoom": 2.0,
+          "tilt": {
+            "rx": 2,
+            "ry": -2
+          },
+          "ease": "hold",
+          "file": "ui/review-done.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.0,
+          "upsample": 1.0,
+          "anchor": {
+            "x": 960,
+            "y": 600
+          },
+          "focus": {
+            "x": 1279,
+            "y": 540
+          },
+          "readTarget": null,
+          "note": "The plane is now a blurred backdrop; a composition push 1.00→1.10 (E.push f15→35) follows UBI."
+        }
+      ],
+      "spotlights": [],
+      "patches": [
+        {
+          "file": "ui/review-done.png",
+          "rect": {
+            "x": 890,
+            "y": 840,
+            "w": 780,
+            "h": 80
+          },
+          "color": "#0c1220",
+          "from": 0,
+          "to": 59,
+          "covers": "resolved count",
+          "note": "The empty-state paragraph that states how many groups the Ubi resolved (a different count than “19”)."
+        },
+        {
+          "file": "ui/review-done.png",
+          "rect": {
+            "x": 520,
+            "y": 1138,
+            "w": 1500,
+            "h": 44
+          },
+          "color": "#0c1220",
+          "from": 0,
+          "to": 59,
+          "covers": "settled header count"
+        },
+        {
+          "file": "ui/review-done.png",
+          "rect": {
+            "x": 2136,
+            "y": 1016,
+            "w": 640,
+            "h": 32
+          },
+          "color": "#0c1220",
+          "from": 0,
+          "to": 59,
+          "covers": "keys legend",
+          "note": "Measured at y 1023–1041 in this capture."
+        },
+        {
+          "file": "ui/review-done.png",
+          "rect": {
+            "x": 1147,
+            "y": 330,
+            "w": 264,
+            "h": 420
+          },
+          "color": "#0c1220",
+          "from": 15,
+          "to": 59,
+          "covers": "bitmap UBI + bubble",
+          "note": "Only one UBI on screen after the match."
+        }
+      ],
+      "scrims": [],
+      "cursor": [],
+      "ubiTrack": [
+        {
+          "from": 0,
+          "to": 14,
+          "clip": "hidden",
+          "note": "Only the in-app bitmap UBI."
+        },
+        {
+          "from": 15,
+          "to": 49,
+          "clip": "ubi/jump-from-idle",
+          "startIndex": 6,
+          "note": "Match on f15: drawn at frame 352 px over the in-app body, then grows to frame 760 px with body centre x 640, feet y 900 (SMOOTH f15–35). 3-f crossfade bitmap→3D. Apex (15) on f24, ground contact (21) on f30 = abs 900 (downbeat), squash (24) on f33, index 40 on f49."
+        },
+        {
+          "from": 50,
+          "to": 59,
+          "clip": "ubi/idle",
+          "startIndex": 11
+        }
+      ],
+      "motion": "f0 (abs 870) cut on the empty queue; f0–15 push onto the in-app UBI (E.push). f15 (abs 885, beat 2) match: the 3D UBI takes the in-app UBI’s place, the app racks out, UBI grows and slides left while he crouches and jumps; the small in-app bubble grows into the big bubble (f15–27). f30 (abs 900, downbeat) feet contact, 3 px camera shake, squash baked in. f35–59 settle into idle, float 8 px. f60 hard cut.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0
+      },
+      "sfx": [
+        {
+          "ref": "shimmer_2.wav",
+          "atFrame": 15,
+          "gainDb": -12,
+          "fileStartFrame": 15,
+          "hitOffsetFrames": 0.04,
+          "note": "UBI steps out of the app."
+        },
+        {
+          "ref": "pop+2.wav",
+          "atFrame": 27,
+          "gainDb": -16,
+          "fileStartFrame": 27,
+          "hitOffsetFrames": 0.04,
+          "note": "Bubble lands."
+        },
+        {
+          "ref": "bloop_1.wav",
+          "atFrame": 30,
+          "gainDb": -12,
+          "fileStartFrame": 30,
+          "hitOffsetFrames": 0.02,
+          "note": "UBI lands on the downbeat."
+        }
+      ],
+      "shots": [
+        0,
+        15
+      ],
+      "readingCheck": "“Nada em dúvida!”: 15 chars → max(24, 2×15) = 30 f; held f27→f60 = 33 f → yes"
+    },
+    {
+      "id": "s14-relatorio",
+      "startFrame": 930,
+      "durationInFrames": 105,
+      "act": "features",
+      "absRange": "930–1034",
+      "timecode": "31.00–34.50 s",
+      "barBeat": "16.3 → 18.2",
+      "purpose": "Entrega: at 18:00 the daily report per category is already written, and one click copies it as Markdown.",
+      "why": "Module 4 (facts §3.8–3.9, Markdown export). 18:00 is used only as the report time (the default), rhyming with the day track’s 18h; the app’s own toast string proves the deliverable.",
+      "thumbnail": "A huge “18:00” lands and flies up into a volt kicker pill as the real Relatórios window rises; then tight on the “Copiar Markdown” button, a cursor click and a mint “Markdown copiado” pill. Headline: “O relatório sai pronto.”.",
+      "shotTypes": [
+        "S07 number (clock)",
+        "clock → kicker morph",
+        "S09 rise",
+        "S12 push-in",
+        "S13 click + success",
+        "S03 word stagger"
+      ],
+      "copy": [
+        {
+          "text": "18:00",
+          "role": "kicker",
+          "inFrame": 0,
+          "landFrame": 15,
+          "outFrame": 105,
+          "emphasis": [],
+          "mode": "static",
+          "group": "g1",
+          "groupMode": "together",
+          "note": "f0–29: Sora 700 240 px tabular, centred (960, 470), reads “17:59”, odometer-rolls to “18:00” landing f15 (abs 945, beat 2). f30–41 morphs (SNAPPY) into a kicker pill at x 144, y 88–136 (Inter 600 40 px, volt on volt 14 %) and stays."
+        },
+        {
+          "text": "O relatório sai pronto.",
+          "role": "headline",
+          "inFrame": 32,
+          "landFrame": 42,
+          "outFrame": 105,
+          "emphasis": [
+            "pronto."
+          ],
+          "mode": "stagger-words",
+          "group": "g1",
+          "groupMode": "together",
+          "note": "Facts §3.8 manchete. Sora 700 88 px, left x 144, cap-top y 170, over a top-left scrim. 3 units (“O relatório” glued) at f32/34/36 → landed f42. “pronto.” volt."
+        },
+        {
+          "text": "Markdown copiado",
+          "role": "ui-caption",
+          "inFrame": 62,
+          "landFrame": 66,
+          "outFrame": 105,
+          "emphasis": [],
+          "mode": "static",
+          "note": "The app’s own copy toast string (reports.ts:47) set as a callout pill under the button: Inter 600 36 px ink on rgba(46,204,143,0.16), radius 999, 1.5 px leader line drawn over 10 f."
+        }
+      ],
+      "visual": "Part A (f0–29): Background “orbs”, the big clock. Part B (f30–104): Screen ui/reports.png (Relatórios › Diário, card “IFRO”) rising tilt-to-flat, width 1440. Claim patches (#0c1220): report-1-meta (it names a model version) and the second card’s meta line. Vector re-set of the “Copiar Markdown” button (label Inter 500 28 image px, copy icon). The item row whose evidence line shows the mail domain (image y ≈ 1455) stays below the frame in every key.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/reports.png",
+          "hotspots": [
+            "report-card-1",
+            "report-1-summary",
+            "report-1-items",
+            "report-1-copy",
+            "report-1-meta"
+          ],
+          "note": "report-1-meta is listed because it carries a patch."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "canvas",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "linear",
+          "note": "Part A: the clock card, drift 1.00→1.02."
+        },
+        {
+          "atFrame": 45,
+          "target": "report-card-1",
+          "zoom": 1.6,
+          "tilt": {
+            "rx": 6,
+            "ry": -3
+          },
+          "ease": "E.push",
+          "file": "ui/reports.png",
+          "screenWidth": 1440,
+          "effectiveScale": 0.8,
+          "upsample": 0.8,
+          "anchor": {
+            "x": 1100,
+            "y": 640
+          },
+          "focus": {
+            "x": 1672,
+            "y": 840
+          },
+          "readTarget": null,
+          "duration": 15,
+          "note": "Enter “rise” f30→50 (y +220→0, rotateX 20→6°, E.push). Wide on the whole IFRO report: “Resumo do dia — IFRO”, Destaques, Atividade / Minutos / Tipo / Horário (texture ≈ 21 px). Visible ≈ x 297–2697, y 40–1390."
+        },
+        {
+          "atFrame": 57,
+          "target": "report-1-copy",
+          "zoom": 2.6,
+          "tilt": {
+            "rx": 4,
+            "ry": -3
+          },
+          "ease": "E.push",
+          "file": "ui/reports.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.3,
+          "upsample": 1.3,
+          "anchor": {
+            "x": 1340,
+            "y": 600
+          },
+          "focus": {
+            "x": 2426,
+            "y": 424
+          },
+          "readTarget": {
+            "text": "Copiar Markdown (vector re-set)",
+            "captureFontPx": 28,
+            "lift": 1,
+            "onScreenPx": 36.4,
+            "crisp": "vector",
+            "ok": true
+          },
+          "duration": 12,
+          "note": "Punch-in f45→57. Visible ≈ x 1395–2880 (image right edge at comp 1930), y −38–793 (the mac title bar covers the top): header buttons + table rows 1–2 only."
+        },
+        {
+          "atFrame": 104,
+          "target": "report-1-copy",
+          "zoom": 2.6,
+          "tilt": {
+            "rx": 4,
+            "ry": -3
+          },
+          "ease": "linear",
+          "file": "ui/reports.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.3,
+          "upsample": 1.3,
+          "anchor": {
+            "x": 1340,
+            "y": 600
+          },
+          "focus": {
+            "x": 2426,
+            "y": 424
+          },
+          "readTarget": {
+            "text": "Copiar Markdown (vector re-set)",
+            "captureFontPx": 28,
+            "lift": 1,
+            "onScreenPx": 36.4,
+            "crisp": "vector",
+            "ok": true
+          },
+          "note": "Hold; float only (zoom stays below the cap)."
+        }
+      ],
+      "spotlights": [
+        {
+          "hotspot": "report-1-copy",
+          "file": "ui/reports.png",
+          "from": 45,
+          "to": 104,
+          "dim": 0.62
+        }
+      ],
+      "patches": [
+        {
+          "file": "ui/reports.png",
+          "rect": {
+            "x": 650,
+            "y": 436,
+            "w": 1620,
+            "h": 30
+          },
+          "color": "#0c1220",
+          "from": 30,
+          "to": 104,
+          "covers": "model version (meta line 1)"
+        },
+        {
+          "file": "ui/reports.png",
+          "rect": {
+            "x": 650,
+            "y": 1696,
+            "w": 1620,
+            "h": 30
+          },
+          "color": "#0c1220",
+          "from": 30,
+          "to": 104,
+          "covers": "model version (meta line 2)"
+        }
+      ],
+      "scrims": [],
+      "cursor": [
+        {
+          "atFrame": 40,
+          "to": "rest:1750,940",
+          "click": false,
+          "note": "Fades in (6 f) at a rest point."
+        },
+        {
+          "atFrame": 56,
+          "to": "report-1-copy",
+          "click": false,
+          "note": "Arc, E.cursor; hover from f54."
+        },
+        {
+          "atFrame": 60,
+          "to": "report-1-copy",
+          "click": true,
+          "note": "CLICK abs 990 (beat 3): replica 0.96, ripple; f62 the copy icon becomes a mint check (evolvePath 10 f)."
+        },
+        {
+          "atFrame": 80,
+          "to": "rest:1700,900",
+          "click": false,
+          "note": "Drifts off and fades."
+        }
+      ],
+      "ubiTrack": [],
+      "motion": "f0 (abs 930) hard cut: “17:59” set. f10–15 the last digits roll; contact f15 (abs 945) + pulse 1→1.05→1 + volt for one beat. f30 (abs 960, downbeat) “18:00” flies to the kicker pill (SNAPPY 12 f) while the report window rises (E.push 20 f). f32–42 headline. f30–45 wide on the report. f45–57 punch-in to “Copiar Markdown” + spotlight. f40 cursor fades in, arrives f56, CLICK f60. f62 mint check; f62–66 the “Markdown copiado” callout pops (SNAPPY) and its leader line draws. f66–104 hold, float.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0
+      },
+      "sfx": [
+        {
+          "ref": "ding_1.wav",
+          "atFrame": 15,
+          "gainDb": -12,
+          "fileStartFrame": 15,
+          "hitOffsetFrames": 0.03,
+          "note": "18:00 lands (E6); rhymes with s06’s ding."
+        },
+        {
+          "ref": "whoosh-soft.wav",
+          "atFrame": 36,
+          "gainDb": -14,
+          "fileStartFrame": 27,
+          "hitOffsetFrames": 9.38,
+          "note": "Report window rises; loudest point ≈ fastest frame of the rise."
+        },
+        {
+          "ref": "click.wav",
+          "atFrame": 60,
+          "gainDb": -12,
+          "fileStartFrame": 60,
+          "hitOffsetFrames": 0.07,
+          "note": "Copiar Markdown."
+        },
+        {
+          "ref": "success_chime_2.wav",
+          "atFrame": 63,
+          "gainDb": -14,
+          "fileStartFrame": 63,
+          "hitOffsetFrames": 0.04,
+          "note": "Mint check."
+        }
+      ],
+      "shots": [
+        0,
+        30
+      ],
+      "readingCheck": "“18:00”: 5 chars → max(24, 2×5) = 24 f; held f15→f105 = 90 f → yes | “O relatório sai pronto.”: 23 chars → max(24, 2×23) = 46 f; held f42→f105 = 63 f → yes | “Markdown copiado”: 16 chars → max(24, 2×16) = 32 f; held f66→f105 = 39 f → yes | Group g1 read together: 28 chars → 56 f from the last landing (f42) to the first exit (f105) = 63 f → yes | Scene reading budget: all 44 chars → 88 f from the first landing (f15) to the last exit (f105) = 90 f → yes"
+    },
+    {
+      "id": "s15-foco",
+      "startFrame": 1035,
+      "durationInFrames": 90,
+      "act": "features",
+      "absRange": "1035–1124",
+      "timecode": "34.50–37.50 s",
+      "barBeat": "18.2 → 19.4",
+      "purpose": "Focus that defends itself: YouTube showed up during a session, UBI closed it and says why; you answer “Ok, foco!”.",
+      "why": "Module 5 (facts §3.11) as a single 3-s beat (CD fix: B’s two focus scenes compressed). The window is a DPR-4 capture shown at 0.83×, the sharpest UI in the film.",
+      "thumbnail": "The real “Aviso do UBI” window slams in over the blurred Foco page: the in-app UBI, “Não! Foque na sua produtividade.”, a rose “YouTube” badge, and a cursor clicking the volt “Ok, foco!”.",
+      "shotTypes": [
+        "S06 pop-in (window as subject, slammed)",
+        "S13 cursor click"
+      ],
+      "copy": [
+        {
+          "text": "Não! Foque na sua produtividade.",
+          "role": "ui-caption",
+          "inFrame": 0,
+          "landFrame": 4,
+          "outFrame": 90,
+          "emphasis": [],
+          "mode": "static",
+          "group": "g1",
+          "groupMode": "together",
+          "note": "UBI’s real line inside the captured window (focus.ts:128): 52 capture px (DPR 4) × 0.826 = 43 px on screen."
+        },
+        {
+          "text": "Ok, foco!",
+          "role": "ui-caption",
+          "inFrame": 0,
+          "landFrame": 4,
+          "outFrame": 90,
+          "emphasis": [],
+          "mode": "static",
+          "group": "g1",
+          "groupMode": "together",
+          "note": "The real button label: ≈ 47 capture px × 0.826 = 39 px."
+        }
+      ],
+      "visual": "Backdrop: Screen ui/focus.png framed on the Bloqueios card (YouTube, Instagram, Discord), whole-plane blur 6 px, brightness 0.45 (context, never a read). Subject: ui/intervention.png as a floating window (Screen chrome “none”, imageSize 1840×752, width 1520 → s 0.826) centred at (960, 560) → x 200–1720, y 249–871, shadow tier 3 + volt glow 0.25.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/intervention.png",
+          "hotspots": [
+            "panel",
+            "ubi",
+            "message",
+            "target-badge",
+            "ok-button"
+          ],
+          "note": "Aviso do UBI window (DPR 4, transparent)."
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/focus.png",
+          "hotspots": [
+            "targets-card"
+          ],
+          "note": "Blurred backdrop only."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "targets-card",
+          "zoom": 1.2,
+          "tilt": {
+            "rx": 4,
+            "ry": -6
+          },
+          "ease": "linear",
+          "file": "ui/focus.png",
+          "screenWidth": 1440,
+          "effectiveScale": 0.6,
+          "upsample": 0.6,
+          "anchor": {
+            "x": 960,
+            "y": 560
+          },
+          "focus": {
+            "x": 1278,
+            "y": 1072
+          },
+          "readTarget": null,
+          "layer": "backdrop",
+          "note": "Backdrop, blurred 6 px, brightness 0.45; drifts −12 px over the scene."
+        },
+        {
+          "atFrame": 0,
+          "target": "message",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "SLAM",
+          "file": "ui/intervention.png",
+          "screenWidth": 1520,
+          "effectiveScale": 0.8261,
+          "upsample": 0.8261,
+          "anchor": {
+            "x": 960,
+            "y": 560
+          },
+          "focus": {
+            "x": 920,
+            "y": 376
+          },
+          "readTarget": {
+            "text": "Não! Foque na sua produtividade.",
+            "captureFontPx": 52,
+            "lift": 1,
+            "onScreenPx": 43.0,
+            "crisp": "bitmap",
+            "ok": true
+          },
+          "layer": "subject",
+          "note": "Window on screen at f0 at scale 1.04 → 1 (SLAM, landed f4), 4 px shake over 6 f. Also legible: “YouTube” badge (≈ 44 → 36 px) and “Ok, foco!” (≈ 47 → 39 px)."
+        },
+        {
+          "atFrame": 89,
+          "target": "message",
+          "zoom": 1.04,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "E.glide",
+          "file": "ui/intervention.png",
+          "screenWidth": 1520,
+          "effectiveScale": 0.8591,
+          "upsample": 0.8591,
+          "anchor": {
+            "x": 960,
+            "y": 560
+          },
+          "focus": {
+            "x": 920,
+            "y": 376
+          },
+          "readTarget": {
+            "text": "Não! Foque na sua produtividade.",
+            "captureFontPx": 52,
+            "lift": 1,
+            "onScreenPx": 44.7,
+            "crisp": "bitmap",
+            "ok": true
+          },
+          "layer": "subject",
+          "note": "Slow push on the window."
+        }
+      ],
+      "spotlights": [],
+      "patches": [],
+      "scrims": [],
+      "cursor": [
+        {
+          "atFrame": 20,
+          "to": "rest:1560,930",
+          "click": false,
+          "note": "Fades in (6 f)."
+        },
+        {
+          "atFrame": 41,
+          "to": "ok-button",
+          "click": false,
+          "note": "Arrives 4 f early; hover."
+        },
+        {
+          "atFrame": 45,
+          "to": "ok-button",
+          "click": true,
+          "note": "CLICK abs 1080 (downbeat): button 0.96 pressed, volt ripple; the window stays up to the cut."
+        },
+        {
+          "atFrame": 70,
+          "to": "rest:1600,920",
+          "click": false,
+          "note": "Drifts off and fades."
+        }
+      ],
+      "ubiTrack": [],
+      "motion": "f0 (abs 1035, beat 4) hard cut: the window slams in over the blurred Foco page (SLAM 4 f, shake); backdrop drifts −12 px. f20 cursor fades in, arcs to “Ok, foco!”, CLICK f45 (downbeat abs 1080). f45–89 window push 1.00→1.04, the in-app UBI’s glow breathes. f90 cut.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0
+      },
+      "transitionOut": {
+        "type": "whip-left",
+        "frames": 4,
+        "note": "T2 out-half f86–89."
+      },
+      "sfx": [
+        {
+          "ref": "impact_soft_2.wav",
+          "atFrame": 0,
+          "gainDb": -2,
+          "fileStartFrame": 0,
+          "hitOffsetFrames": 0.03,
+          "note": "Window slam; bed duck −5 dB."
+        },
+        {
+          "ref": "glitch_2.wav",
+          "atFrame": 2,
+          "gainDb": -18,
+          "fileStartFrame": 2,
+          "hitOffsetFrames": 0.05,
+          "note": "The blocked tab is gone."
+        },
+        {
+          "ref": "click.wav",
+          "atFrame": 45,
+          "gainDb": -12,
+          "fileStartFrame": 45,
+          "hitOffsetFrames": 0.07,
+          "note": "Ok, foco!"
+        }
+      ],
+      "shots": [
+        0
+      ],
+      "readingCheck": "“Não! Foque na sua produtividade.”: 32 chars → max(24, 2×32) = 64 f; held f4→f90 = 86 f → yes | “Ok, foco!”: 9 chars → max(24, 2×9) = 24 f; held f4→f90 = 86 f → yes | Group g1 read together: 41 chars → 82 f from the last landing (f4) to the first exit (f90) = 86 f → yes | Scene reading budget: all 41 chars → 82 f from the first landing (f4) to the last exit (f90) = 86 f → yes"
+    },
+    {
+      "id": "s16-sua-ia",
+      "startFrame": 1125,
+      "durationInFrames": 105,
+      "act": "proof",
+      "absRange": "1125–1229",
+      "timecode": "37.50–41.00 s",
+      "barBeat": "19.4 → 21.3",
+      "purpose": "Your AI or ours: Claude, OpenAI or Grok with your own key — or leave it to the Ubi — chosen in the real settings, providers named in plain text.",
+      "why": "Module 6 (facts §3.13–3.14). Providers appear only as the picker’s plain text and as words; no logos, no endorsement wording, no model names.",
+      "thumbnail": "A tight, tilted crop of the real “Provedor de IA” picker (Anthropic Claude · OpenAI · xAI Grok · IA do Ubi); the cursor hovers each name and clicks “IA do Ubi”; bottom band: “Claude, OpenAI ou Grok. / Ou deixe com o Ubi.”.",
+      "shotTypes": [
+        "S11 zoom",
+        "S13 hover path + click + state change",
+        "S03 word stagger (two lines)",
+        "T2 whip-in"
+      ],
+      "copy": [
+        {
+          "text": "Claude, OpenAI ou Grok.",
+          "role": "headline",
+          "inFrame": 2,
+          "landFrame": 12,
+          "outFrame": 105,
+          "emphasis": [],
+          "mode": "stagger-words",
+          "note": "Facts §6 bank. Sora 700 88 px, left x 144, cap-top y 736 (bottom band) over the bottom scrim. 3 units at f2/4/6 → landed f12. No emphasis: neutral naming."
+        },
+        {
+          "text": "Ou deixe com o Ubi.",
+          "role": "headline",
+          "inFrame": 48,
+          "landFrame": 60,
+          "outFrame": 105,
+          "emphasis": [
+            "Ubi."
+          ],
+          "mode": "stagger-words",
+          "note": "Facts §3.14 manchete. Line 2, cap-top y 840 (baseline ≈ 904, above the player strip). 4 units at f48/50/52/54 → landed f60. “Ubi.” volt."
+        }
+      ],
+      "visual": "Screen ui/settings-ai.png (Configurações › IA, “Anthropic Claude” active) → hard swap to ui/settings-ai-ubi.png at f77 with the identical camera. Vector re-set of the four provider labels (“Anthropic Claude”, “OpenAI”, “xAI Grok”, “IA do Ubi”, Inter 500 28 image px) and the active-pill background, so hover and active states are crisp. Claim patches (#0c1220): the model fields in both captures. A solid bottom scrim (comp y 700–1080) hides everything below image y ≈ 630 (key box, models section). The helper line under the picker (a provider cost estimate, then the managed-plan line with its price) is texture.",
+      "assets": [
+        {
+          "kind": "ui",
+          "ref": "ui/settings-ai.png",
+          "hotspots": [
+            "provider-picker",
+            "provider-anthropic",
+            "provider-openai",
+            "provider-xai",
+            "provider-ia-do-ubi",
+            "model-fields"
+          ],
+          "note": "Before the click."
+        },
+        {
+          "kind": "ui",
+          "ref": "ui/settings-ai-ubi.png",
+          "hotspots": [
+            "provider-picker",
+            "provider-ia-do-ubi",
+            "provider-active",
+            "model-fields"
+          ],
+          "note": "After the click: IA do Ubi active."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "provider-picker",
+          "zoom": 2.6,
+          "tilt": {
+            "rx": 3,
+            "ry": -7
+          },
+          "ease": "arrives with the whip-in",
+          "file": "ui/settings-ai.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.3,
+          "upsample": 1.3,
+          "anchor": {
+            "x": 1010,
+            "y": 470
+          },
+          "focus": {
+            "x": 1583,
+            "y": 453
+          },
+          "readTarget": {
+            "text": "Anthropic Claude · OpenAI · xAI Grok · IA do Ubi (vector re-set)",
+            "captureFontPx": 28,
+            "lift": 1,
+            "onScreenPx": 36.4,
+            "crisp": "vector",
+            "ok": true
+          },
+          "note": "Visible ≈ x 806–2283, y 91–922."
+        },
+        {
+          "atFrame": 77,
+          "target": "provider-picker",
+          "zoom": 2.6,
+          "tilt": {
+            "rx": 3,
+            "ry": -7
+          },
+          "ease": "hard (state swap)",
+          "file": "ui/settings-ai-ubi.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.3,
+          "upsample": 1.3,
+          "anchor": {
+            "x": 1010,
+            "y": 470
+          },
+          "focus": {
+            "x": 1583,
+            "y": 453
+          },
+          "readTarget": {
+            "text": "Anthropic Claude · OpenAI · xAI Grok · IA do Ubi (vector re-set)",
+            "captureFontPx": 28,
+            "lift": 1,
+            "onScreenPx": 36.4,
+            "crisp": "vector",
+            "ok": true
+          }
+        },
+        {
+          "atFrame": 104,
+          "target": "provider-picker",
+          "zoom": 2.6,
+          "tilt": {
+            "rx": 3,
+            "ry": -7
+          },
+          "ease": "linear",
+          "file": "ui/settings-ai-ubi.png",
+          "screenWidth": 1440,
+          "effectiveScale": 1.3,
+          "upsample": 1.3,
+          "anchor": {
+            "x": 1000,
+            "y": 470
+          },
+          "focus": {
+            "x": 1583,
+            "y": 453
+          },
+          "readTarget": {
+            "text": "Anthropic Claude · OpenAI · xAI Grok · IA do Ubi (vector re-set)",
+            "captureFontPx": 28,
+            "lift": 1,
+            "onScreenPx": 36.4,
+            "crisp": "vector",
+            "ok": true
+          },
+          "note": "Drift by a 10 px pan."
+        }
+      ],
+      "spotlights": [],
+      "patches": [
+        {
+          "file": "ui/settings-ai.png",
+          "rect": {
+            "x": 1146,
+            "y": 961,
+            "w": 1644,
+            "h": 312
+          },
+          "color": "#0c1220",
+          "from": 0,
+          "to": 76,
+          "covers": "model names"
+        },
+        {
+          "file": "ui/settings-ai-ubi.png",
+          "rect": {
+            "x": 1146,
+            "y": 761,
+            "w": 1644,
+            "h": 312
+          },
+          "color": "#0c1220",
+          "from": 77,
+          "to": 104,
+          "covers": "model names"
+        }
+      ],
+      "scrims": [
+        {
+          "rect": {
+            "x": 0,
+            "y": 700,
+            "w": 1920,
+            "h": 380
+          },
+          "solid": true,
+          "from": 0,
+          "to": 104,
+          "note": "Bottom band under the two lines."
+        }
+      ],
+      "cursor": [
+        {
+          "atFrame": 8,
+          "to": "rest:1500,660",
+          "click": false,
+          "note": "Fades in (6 f) just below the picker."
+        },
+        {
+          "atFrame": 15,
+          "to": "provider-anthropic",
+          "click": false,
+          "note": "Hover (already active)."
+        },
+        {
+          "atFrame": 30,
+          "to": "provider-openai",
+          "click": false,
+          "note": "Hover on the beat (abs 1155)."
+        },
+        {
+          "atFrame": 45,
+          "to": "provider-xai",
+          "click": false,
+          "note": "Hover on the beat (abs 1170)."
+        },
+        {
+          "atFrame": 71,
+          "to": "provider-ia-do-ubi",
+          "click": false,
+          "note": "Arrives 4 f early; hover."
+        },
+        {
+          "atFrame": 75,
+          "to": "provider-ia-do-ubi",
+          "click": true,
+          "note": "CLICK abs 1200 (downbeat); ripple; f77 swap: “IA do Ubi” becomes the active pill (the app’s own state)."
+        }
+      ],
+      "ubiTrack": [],
+      "motion": "f0–3 whip in-half (x +960→0, blur 40→0). f2–12 line 1. The cursor hovers the pills on the beats (f15 Claude, f30 OpenAI, f45 xAI Grok): hover background fades in/out over 4 f. f48–60 line 2. f71 cursor on “IA do Ubi”; CLICK f75 (abs 1200). f77 hard swap to settings-ai-ubi. f78 shimmer. f78–98 hold, drift. f99–104 blur-dissolve out-half on the UI/background (blur 0→16, opacity 1→0, scale 1→1.03); the type hard-cuts at f105.",
+      "transitionIn": {
+        "type": "whip-left",
+        "frames": 4,
+        "note": "T2 in-half f0–3."
+      },
+      "transitionOut": {
+        "type": "blur-dissolve",
+        "frames": 6,
+        "note": "Out-half f99–104; mood change into the breather."
+      },
+      "sfx": [
+        {
+          "ref": "whip_3.wav",
+          "atFrame": 0,
+          "gainDb": -8,
+          "fileStartFrame": -3,
+          "hitOffsetFrames": 3.36,
+          "note": "Whip on the cut abs 1125; file starts 3 f earlier (master track)."
+        },
+        {
+          "ref": "ui_tick_2.wav",
+          "atFrame": 30,
+          "gainDb": -22,
+          "fileStartFrame": 30,
+          "hitOffsetFrames": 0.06,
+          "note": "Hover."
+        },
+        {
+          "ref": "ui_tick_3.wav",
+          "atFrame": 45,
+          "gainDb": -22,
+          "fileStartFrame": 45,
+          "hitOffsetFrames": 0.06,
+          "note": "Hover."
+        },
+        {
+          "ref": "click.wav",
+          "atFrame": 75,
+          "gainDb": -12,
+          "fileStartFrame": 75,
+          "hitOffsetFrames": 0.07,
+          "note": "IA do Ubi."
+        },
+        {
+          "ref": "shimmer_2.wav",
+          "atFrame": 78,
+          "gainDb": -14,
+          "fileStartFrame": 78,
+          "hitOffsetFrames": 0.04,
+          "note": "State change."
+        }
+      ],
+      "shots": [
+        0,
+        77
+      ],
+      "readingCheck": "“Claude, OpenAI ou Grok.”: 23 chars → max(24, 2×23) = 46 f; held f12→f105 = 93 f → yes | “Ou deixe com o Ubi.”: 19 chars → max(24, 2×19) = 38 f; held f60→f105 = 45 f → yes | Scene reading budget: all 42 chars → 84 f from the first landing (f12) to the last exit (f105) = 93 f → yes"
+    },
+    {
+      "id": "s17-privacidade",
+      "startFrame": 1230,
+      "durationInFrames": 150,
+      "act": "proof",
+      "absRange": "1230–1379",
+      "timecode": "41.00–46.00 s",
+      "barBeat": "21.3 → 24.1",
+      "purpose": "The breather and the trust answer: your data stays with you and the AI only sees the minimum — shown with the app’s real mask token.",
+      "why": "The trust beat that C lacked: B’s calm breather with UBI’s look, carrying A’s concrete proof — the exact token from crates/ubiqx-core/src/redact.rs. The copy says data goes out masked, never that nothing leaves. The last second is the build into the final hit.",
+      "thumbnail": "Calm, warm frame with no UI: UBI on the left glancing around; on the right “Seus dados ficam com você. / A IA vê só o mínimo.”; a window-title chip reading “ana@example.com” collapses into a volt “[email]” token, and a thin volt line runs from it up to the word “IA”.",
+      "shotTypes": [
+        "S04 masked lines",
+        "S19 mascot (idle → look)",
+        "S13 state change (address → token)",
+        "T6 blur dissolve in",
+        "internal jump-cut"
+      ],
+      "copy": [
+        {
+          "text": "Seus dados ficam com você.",
+          "role": "headline",
+          "inFrame": 0,
+          "landFrame": 8,
+          "outFrame": 150,
+          "emphasis": [],
+          "mode": "mask-up",
+          "note": "Facts §6 bank. Sora 700 72 px −0.03em ink, left x 740, cap-top y 300 (≈ 963 px wide, ends ≈ x 1703 < 1776); masked line (padding .16em/.12em), 18 f E.enter, ≥ 0.9 by f8. Kept out of the blur-dissolve (crisp)."
+        },
+        {
+          "text": "A IA vê só o mínimo.",
+          "role": "headline",
+          "inFrame": 60,
+          "landFrame": 68,
+          "outFrame": 150,
+          "emphasis": [
+            "mínimo."
+          ],
+          "mode": "mask-up",
+          "note": "Second line, cap-top y 396. “mínimo.” volt."
+        },
+        {
+          "text": "ana@example.com",
+          "role": "label",
+          "inFrame": 45,
+          "landFrame": 45,
+          "outFrame": 90,
+          "emphasis": [],
+          "mode": "static",
+          "note": "Fictional, RFC-2606-reserved address inside a generic window-title chip (panel-2, radius 22, 1.5 px border, 96 px tall, 28-px window glyph), Inter 500 48 px ink, x 740–1300, y 520–616. The only e-mail string in the film."
+        },
+        {
+          "text": "[email]",
+          "role": "label",
+          "inFrame": 90,
+          "landFrame": 92,
+          "outFrame": 150,
+          "emphasis": [],
+          "mode": "static",
+          "note": "The exact token written by crates/ubiqx-core/src/redact.rs. Inter 600 48 px, volt on volt 14 %; same chip, width morphs (SNAPPY)."
+        }
+      ],
+      "visual": "Background “plain” + orbs (volt top-right 0.16, ember bottom-left 0.07 — a warm scene), grain 0.045, vignette 0.55. No UI: the calmest frame of the film. UBI 3D on the left: frame 780 px (k 0.867), centre x 420, feet y 930 → body ≈ x 257–571, y 375–930; volt floor glow + soft shadow; float 8 px / 126 f. Text column x 740–1776. After the contact a 2 px volt line draws from the “[email]” chip up to the word “IA” in line 2: the AI receives only the token. Shot B (from f45): jump-cut to a composition scale 1.08 centred on the text column (UBI larger at the left edge).",
+      "assets": [
+        {
+          "kind": "ubi",
+          "ref": "ubi/idle",
+          "hotspots": [],
+          "note": "Idle 75→119, so it ends on 119 before the look clip."
+        },
+        {
+          "kind": "ubi",
+          "ref": "ubi/look",
+          "hotspots": [],
+          "note": "Left → centre → right (toward the chip) → up-right (toward the words)."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "canvas",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "linear"
+        },
+        {
+          "atFrame": 45,
+          "target": "canvas",
+          "zoom": 1.08,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "hard (internal jump-cut on beat 2)"
+        },
+        {
+          "atFrame": 119,
+          "target": "canvas",
+          "zoom": 1.1,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "linear"
+        },
+        {
+          "atFrame": 149,
+          "target": "canvas",
+          "zoom": 1.16,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "E.exit",
+          "duration": 30,
+          "note": "The build: the push accelerates into the final hit."
+        }
+      ],
+      "spotlights": [],
+      "patches": [],
+      "scrims": [],
+      "cursor": [],
+      "ubiTrack": [
+        {
+          "from": 0,
+          "to": 44,
+          "clip": "ubi/idle",
+          "startIndex": 75,
+          "note": "Idle 75→119."
+        },
+        {
+          "from": 45,
+          "to": 134,
+          "clip": "ubi/look",
+          "startIndex": 0,
+          "note": "Right glance ≈ look frame 43 → f88 (the address collapses on f90); up-right glance ≈ look frame 62 → f107, as the volt line reaches “IA”."
+        },
+        {
+          "from": 135,
+          "to": 149,
+          "clip": "ubi/look",
+          "startIndex": 89,
+          "hold": true,
+          "note": "Holds the settled up-right glance (look frames 75–89 are the held glance); float keeps him alive."
+        }
+      ],
+      "motion": "f0–5 blur-dissolve in-half (background + UBI: blur 16→0, opacity 0→1, scale 1.03→1); line 1 masks up from f0 (≥ 0.9 by f8). f0–44 UBI idles. f45 (abs 1275, beat 2) jump-cut tighter; the chip “ana@example.com” is set below line 1; UBI’s look clip starts (left, centre, then right toward the chip). f60 line 2 masks up (≥ 0.9 by f68). f76–88 a volt marker sweeps across the address (E.glide 12 f). f90 (abs 1320, downbeat) CONTACT: the address collapses into “[email]” (SNAPPY width morph; the old glyphs blur 0→6 px and fade over 4 f). f92–104 the volt line draws from the token to “IA” (evolvePath 12 f); “mínimo.” turns volt. f105–149 the build: the composition push accelerates (E.exit), the grid floor fades 0→30 %, the volt orb goes 0.16→0.24; UBI ends looking up-right at the words. f150: hard cut on the final hit.",
+      "transitionIn": {
+        "type": "blur-dissolve",
+        "frames": 6,
+        "note": "In-half f0–5 on background + UBI only."
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0,
+        "note": "Hard cut on the final hit abs 1380."
+      },
+      "sfx": [
+        {
+          "ref": "ui_tick_1.wav",
+          "atFrame": 76,
+          "gainDb": -22,
+          "fileStartFrame": 76,
+          "hitOffsetFrames": 0.06,
+          "note": "Marker sweep starts."
+        },
+        {
+          "ref": "pop.wav",
+          "atFrame": 90,
+          "gainDb": -14,
+          "fileStartFrame": 90,
+          "hitOffsetFrames": 0.02,
+          "note": "Mask contact."
+        }
+      ],
+      "shots": [
+        0,
+        45
+      ],
+      "readingCheck": "“Seus dados ficam com você.”: 26 chars → max(24, 2×26) = 52 f; held f8→f150 = 142 f → yes | “A IA vê só o mínimo.”: 20 chars → max(24, 2×20) = 40 f; held f68→f150 = 82 f → yes | “ana@example.com”: 15 chars → max(24, 2×15) = 30 f; held f45→f90 = 45 f → yes | “[email]”: 7 chars → max(24, 2×7) = 24 f; held f92→f150 = 58 f → yes | Scene reading budget: all 68 chars → 136 f from the first landing (f8) to the last exit (f150) = 142 f → yes",
+      "sfxNote": "riser_1bar_1.wav (1 bar, ends on A4) starts at f90 (abs 1320) on the master track; it is listed in s18 because its end is the final hit."
+    },
+    {
+      "id": "s18-end-card",
+      "startFrame": 1380,
+      "durationInFrames": 180,
+      "act": "cta",
+      "absRange": "1380–1559",
+      "timecode": "46.00–52.00 s",
+      "barBeat": "24.1 → 27.1",
+      "purpose": "Close: the brand, the tagline, one action — “Baixe em ubiqx.com.br” — the three systems, and UBI landing beside the lockup to wave goodbye.",
+      "why": "S22 end card with C’s landing (on the beat after the final hit) fixed to splice cleanly. It is the only place the platform row appears, and it is legible for 150 f after the last element lands. No fade: the last frame is the end card.",
+      "thumbnail": "Centred lockup: white “ubiq” + volt “X” + “AI” pill with UBI standing to the right; “Retome o controle do seu dia.” below; a volt pill “Baixe em ubiqx.com.br”; “macOS · Windows · Linux” with small monochrome glyphs.",
+      "shotTypes": [
+        "S22 end card (CTA)",
+        "S19 mascot (drop + wave)",
+        "S20 platform row"
+      ],
+      "copy": [
+        {
+          "text": "ubiqX AI",
+          "role": "hero",
+          "inFrame": 0,
+          "landFrame": 12,
+          "outFrame": 180,
+          "emphasis": [
+            "X"
+          ],
+          "mode": "mask-up",
+          "note": "Wordmark SVG at height 165 (font 170) ≈ x 501–998 + “AI” pill (Sora 600 52 px) x 1022–1146, row centre y 432; SMOOTH 1.06→1 + masked rise 12 f."
+        },
+        {
+          "text": "Retome o controle do seu dia.",
+          "role": "sub",
+          "inFrame": 6,
+          "landFrame": 20,
+          "outFrame": 180,
+          "emphasis": [],
+          "mode": "mask-up",
+          "note": "Tagline (facts §6). Inter 500 48 px ink-2, centred, cap-top y 610."
+        },
+        {
+          "text": "Baixe em ubiqx.com.br",
+          "role": "headline",
+          "inFrame": 12,
+          "landFrame": 18,
+          "outFrame": 180,
+          "emphasis": [],
+          "mode": "static",
+          "note": "CTA pill: Sora 600 44 px, #0a0d16 on volt #4d8dff (6.1:1), radius 999, padding 22 × 44, centred at y 720 (674–766). Pops with BOUNCY_SUBTLE (the shot’s one bouncy element). Download, not buy (checkout is not live)."
+        },
+        {
+          "text": "macOS · Windows · Linux",
+          "role": "label",
+          "inFrame": 18,
+          "landFrame": 30,
+          "outFrame": 180,
+          "emphasis": [],
+          "mode": "mask-up",
+          "note": "Inter 500 36 px ink-2 with 30-px monochrome glyphs (brand/os apple, windows, linux) before each name, centred y 850 (bottom ≈ 870 < 960)."
+        }
+      ],
+      "visual": "Background “orbs” + grid 20 %, volt orb breathing (1↔1.05 over 120 f), ember orb bottom-left 0.06. Centred lockup (rhymes with s05): wordmark · “AI” pill · UBI (frame 560 px, k 0.622, box left 1031 → body ≈ x 1194–1419, feet on the lockup’s floor line y 540 with a volt floor glow). Tagline, CTA pill and platform row stacked below; everything inside title-safe, nothing in the bottom 120 px or the corner boxes. The last frame is the end card (loop-safe, no fade).",
+      "assets": [
+        {
+          "kind": "brand",
+          "ref": "brand/ubiqx-wordmark-bold.svg",
+          "hotspots": [],
+          "note": "Wordmark; X volt."
+        },
+        {
+          "kind": "brand",
+          "ref": "brand/os/apple.svg",
+          "hotspots": [],
+          "note": "macOS glyph (monochrome)."
+        },
+        {
+          "kind": "brand",
+          "ref": "brand/os/windows.svg",
+          "hotspots": [],
+          "note": "Windows glyph (monochrome)."
+        },
+        {
+          "kind": "brand",
+          "ref": "brand/os/linux.svg",
+          "hotspots": [],
+          "note": "Linux glyph (monochrome)."
+        },
+        {
+          "kind": "ubi",
+          "ref": "ubi/jump",
+          "hotspots": [],
+          "note": "Landing half only (index 15→30); starts and ends on the rest pose."
+        },
+        {
+          "kind": "ubi",
+          "ref": "ubi/wave",
+          "hotspots": [],
+          "note": "Raw wave: starts and ends on the rest pose."
+        },
+        {
+          "kind": "ubi",
+          "ref": "ubi/idle",
+          "hotspots": [],
+          "note": "Idle 0 == rest pose."
+        }
+      ],
+      "camera": [
+        {
+          "atFrame": 0,
+          "target": "canvas",
+          "zoom": 1.0,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "SMOOTH"
+        },
+        {
+          "atFrame": 179,
+          "target": "canvas",
+          "zoom": 1.02,
+          "tilt": {
+            "rx": 0,
+            "ry": 0
+          },
+          "ease": "linear",
+          "note": "Barely-there drift keeps it alive; text rests at scale 1 on whole pixels."
+        }
+      ],
+      "spotlights": [],
+      "patches": [],
+      "scrims": [],
+      "cursor": [],
+      "ubiTrack": [
+        {
+          "from": 0,
+          "to": 8,
+          "clip": "hidden"
+        },
+        {
+          "from": 9,
+          "to": 24,
+          "clip": "ubi/jump",
+          "startIndex": 15,
+          "note": "Drops in from above the frame: y-offset −340→0 px f9–15 (E.exit = gravity) with the clip from its apex (15); ground contact (21) on f15 = abs 1395, squash (24) on f18, rest pose (30) on f24."
+        },
+        {
+          "from": 25,
+          "to": 85,
+          "clip": "ubi/wave",
+          "startIndex": 0,
+          "note": "Rest pose → rest pose, so there is no splice pop; the arm is up across the abs-1440 downbeat (two-note goodbye)."
+        },
+        {
+          "from": 86,
+          "to": 179,
+          "clip": "ubi/idle",
+          "startIndex": 0,
+          "note": "Idle 0→93."
+        }
+      ],
+      "motion": "f0 (abs 1380, FINAL HIT): the wordmark lands (SMOOTH 1.06→1 + masked rise), orb 0→0.22, glint f10–28. f6 tagline mask (landed f20). f12 CTA pill pops (landed f18). f18 platform row rises (y 16→0, blur 6→0, E.enter 14 f, glyphs 3 f apart; landed f30). f9–15 UBI drops onto the floor line, contact f15 (abs 1395, the beat after the hit). f25–85 wave (the arm peaks across abs 1440). f86–179 idle; only the orb breathes and UBI idles; the last frame is the full lockup.",
+      "transitionIn": {
+        "type": "cut",
+        "frames": 0,
+        "note": "Hard cut on the final hit."
+      },
+      "transitionOut": {
+        "type": "cut",
+        "frames": 0,
+        "note": "End of film; the last frame is the end card."
+      },
+      "sfx": [
+        {
+          "ref": "riser_1bar_1.wav",
+          "atFrame": 0,
+          "gainDb": -6,
+          "fileStartFrame": -60,
+          "hitOffsetFrames": 60.0,
+          "note": "Placed by its END (tonal glide landing on A4): plays abs 1320–1379 and ends exactly on the final hit. Master-track cue."
+        },
+        {
+          "ref": "impact_deep_1.wav",
+          "atFrame": 0,
+          "gainDb": 2,
+          "fileStartFrame": 0,
+          "hitOffsetFrames": 0.03,
+          "note": "Final hit; bed duck −4 dB."
+        },
+        {
+          "ref": "shimmer_3.wav",
+          "atFrame": 10,
+          "gainDb": -14,
+          "fileStartFrame": 10,
+          "hitOffsetFrames": 0.03,
+          "note": "Glint."
+        },
+        {
+          "ref": "bloop_1.wav",
+          "atFrame": 15,
+          "gainDb": -12,
+          "fileStartFrame": 15,
+          "hitOffsetFrames": 0.02,
+          "note": "UBI lands on the lockup."
+        }
+      ],
+      "shots": [
+        0
+      ],
+      "readingCheck": "“ubiqX AI”: 8 chars → max(24, 2×8) = 24 f; held f12→f180 = 168 f → yes | “Retome o controle do seu dia.”: 29 chars → max(24, 2×29) = 58 f; held f20→f180 = 160 f → yes | “Baixe em ubiqx.com.br”: 21 chars → max(24, 2×21) = 42 f; held f18→f180 = 162 f → yes | “macOS · Windows · Linux”: 23 chars → max(24, 2×23) = 46 f; held f30→f180 = 150 f → yes | Scene reading budget: all 81 chars → 162 f from the first landing (f12) to the last exit (f180) = 168 f → yes"
+    }
+  ]
+}

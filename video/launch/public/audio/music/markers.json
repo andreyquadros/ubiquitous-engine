@@ -1,0 +1,566 @@
+{
+ "file": "music.wav",
+ "generator": "tools/music/compose.py (deterministic; seeds = crc32(instrument, sample position))",
+ "sampleRate": 48000,
+ "channels": 2,
+ "bitDepth": 16,
+ "fps": 30,
+ "samplesPerFrame": 1600,
+ "lengthFrames": 1560,
+ "lengthSamples": 2496000,
+ "lengthSeconds": 52.0,
+ "bpm": 120,
+ "meter": "4/4",
+ "key": "A minor",
+ "beatFrames": 15,
+ "barFrames": 60,
+ "master": {
+  "integratedLUFS": -13.97,
+  "truePeakDBTP": -1.19,
+  "gainDb": -3.17,
+  "limiterMaxGainReductionDb": 1.56
+ },
+ "ducking": "Not baked in. src/shared/audio.ts DUCKS (105, 180, 240, 510, 525, 540, 1035, 1380) apply on top.",
+ "alternates": {
+  "dropWithoutCrash": "music-drop-nocrash.wav"
+ },
+ "stems": {
+  "drums": "stems/drums.wav",
+  "bass": "stems/bass.wav",
+  "harmony": "stems/harmony.wav",
+  "lead": "stems/lead.wav",
+  "fx": "stems/fx.wav"
+ },
+ "stemsNote": "Pre-master, 24-bit, summed they equal the pre-master mix x 0.5422. Same length as music.wav.",
+ "sections": [
+  {
+   "name": "Terça — under water",
+   "bars": [
+    1,
+    4
+   ],
+   "frames": [
+    0,
+    239
+   ],
+   "energy": 2,
+   "startTime": 0.0
+  },
+  {
+   "name": "Drop — ubiqX",
+   "bars": [
+    5,
+    6
+   ],
+   "frames": [
+    240,
+    359
+   ],
+   "energy": 5,
+   "startTime": 8.0
+  },
+  {
+   "name": "Groove A — registra e classifica",
+   "bars": [
+    7,
+    11
+   ],
+   "frames": [
+    360,
+    659
+   ],
+   "energy": 4,
+   "startTime": 12.0
+  },
+  {
+   "name": "Groove B — revisão, com stop-time",
+   "bars": [
+    12,
+    15
+   ],
+   "frames": [
+    660,
+    899
+   ],
+   "energy": 4,
+   "startTime": 22.0
+  },
+  {
+   "name": "Groove C — entrega e foco",
+   "bars": [
+    16,
+    19
+   ],
+   "frames": [
+    900,
+    1139
+   ],
+   "energy": 4,
+   "startTime": 30.0
+  },
+  {
+   "name": "Lift — a sua IA",
+   "bars": [
+    20,
+    21
+   ],
+   "frames": [
+    1140,
+    1259
+   ],
+   "energy": 3,
+   "startTime": 38.0
+  },
+  {
+   "name": "Respiro — privacidade, then the build",
+   "bars": [
+    22,
+    23
+   ],
+   "frames": [
+    1260,
+    1379
+   ],
+   "energy": 2,
+   "startTime": 42.0
+  },
+  {
+   "name": "Final — end card",
+   "bars": [
+    24,
+    26
+   ],
+   "frames": [
+    1380,
+    1559
+   ],
+   "energy": 4,
+   "startTime": 46.0
+  }
+ ],
+ "events": [
+  {
+   "frame": 0,
+   "section": "Terça — under water",
+   "type": "downbeat-hit",
+   "what": "Frame-0 downbeat: felt kick + sub A1 + muted Am stab (A3-C4-E4), all through the 900 Hz low-pass. No lead-in: first sample is the hit.",
+   "time": 0.0,
+   "sample": 0,
+   "barBeat": "1.1"
+  },
+  {
+   "frame": 90,
+   "section": "Terça — under water",
+   "type": "stinger",
+   "what": "Reversed open-hat pickup swells and ends exactly on 90 (the cut to the chip montage).",
+   "time": 3.0,
+   "sample": 144000,
+   "barBeat": "2.3"
+  },
+  {
+   "frame": 105,
+   "section": "Terça — under water",
+   "type": "stinger",
+   "what": "Muted bass stab A1/A2 on the “Só um minutinho.” slam (riser-2bar SFX starts here, not in the music).",
+   "time": 3.5,
+   "sample": 168000,
+   "barBeat": "2.4"
+  },
+  {
+   "frame": 150,
+   "section": "Terça — under water",
+   "type": "stinger",
+   "what": "Low piano A1 + E2 (additive, inharmonic strings) as the counter lands on 40 min.",
+   "time": 5.0,
+   "sample": 240000,
+   "barBeat": "3.3"
+  },
+  {
+   "frame": 180,
+   "section": "Terça — under water",
+   "type": "downbeat-hit",
+   "what": "Bar 4 downbeat (“Chutar as horas?”): kick; snare 8ths 180-202.5, 16ths 210-221.25, crescendo.",
+   "time": 6.0,
+   "sample": 288000,
+   "barBeat": "4.1"
+  },
+  {
+   "frame": 180,
+   "section": "Terça — under water",
+   "type": "filter-sweep",
+   "what": "Under-water low-pass opens exponentially 900 Hz -> 3 kHz between 180 and 224 (Q 1.05, every stem).",
+   "time": 6.0,
+   "sample": 288000,
+   "barBeat": "4.1"
+  },
+  {
+   "frame": 225,
+   "section": "Terça — under water",
+   "type": "stop",
+   "what": "Hard stop of every stem at sample 360000 (2 ms fade); intro reverb/delay/filter tails are truncated with it.",
+   "time": 7.5,
+   "sample": 360000,
+   "barBeat": "4.4"
+  },
+  {
+   "frame": 225,
+   "section": "Terça — under water",
+   "type": "silence",
+   "what": "Frames 225-239 are digital zero in music.wav and every stem (no tail, no pickup, no dither).",
+   "time": 7.5,
+   "sample": 360000,
+   "barBeat": "4.4"
+  },
+  {
+   "frame": 240,
+   "section": "Drop — ubiqX",
+   "type": "drop",
+   "what": "THE DROP: first sample of the main timeline. Long kick + sub A1 + crash + wide 7-voice supersaw Am (A2-A4), full range.",
+   "time": 8.0,
+   "sample": 384000,
+   "barBeat": "5.1"
+  },
+  {
+   "frame": 255,
+   "section": "Drop — ubiqX",
+   "type": "stinger",
+   "what": "Snare accent layered on the beat-2 clap (UBI lands, descriptor finishes).",
+   "time": 8.5,
+   "sample": 408000,
+   "barBeat": "5.2"
+  },
+  {
+   "frame": 300,
+   "section": "Drop — ubiqX",
+   "type": "downbeat-hit",
+   "what": "Bar 6: crash, chord to F (F2-A4 wide), the pluck hook A-C-E-G enters (FM + polyBLEP pluck, dotted-8th ping-pong).",
+   "time": 10.0,
+   "sample": 480000,
+   "barBeat": "6.1"
+  },
+  {
+   "frame": 345,
+   "section": "Drop — ubiqX",
+   "type": "filter-sweep",
+   "what": "High-pass lift on every stem, 22 Hz -> 1.1 kHz over 345-359, plus a reverse-crash swell ending on 360; snaps back to full range on 360.",
+   "time": 11.5,
+   "sample": 552000,
+   "barBeat": "6.4"
+  },
+  {
+   "frame": 360,
+   "section": "Groove A — registra e classifica",
+   "type": "downbeat-hit",
+   "what": "Crash + groove A: 4-on-the-floor kick, clap 2/4, swung 16th hats, sub + off-beat mid bass on Am-F-C-G, pluck hook.",
+   "time": 12.0,
+   "sample": 576000,
+   "barBeat": "7.1"
+  },
+  {
+   "frame": 420,
+   "section": "Groove A — registra e classifica",
+   "type": "stinger",
+   "what": "Pluck C6 accent on the bar-8 downbeat (sits with ding_2); the hook note under it is kept, the rest of the bar is the normal hook.",
+   "time": 14.0,
+   "sample": 672000,
+   "barBeat": "8.1"
+  },
+  {
+   "frame": 450,
+   "section": "Groove A — registra e classifica",
+   "type": "stinger",
+   "what": "Open-hat accent with a short band-passed noise swell ending on 450 (the whip into Categorias).",
+   "time": 15.0,
+   "sample": 720000,
+   "barBeat": "8.3"
+  },
+  {
+   "frame": 510,
+   "section": "Groove A — registra e classifica",
+   "type": "downbeat-hit",
+   "what": "STOP-TIME stab 1 (beat 3, “Regras,”): kick + clap + C-chord supersaw stab + bass stab together; the groove is silent 510-539 between stabs.",
+   "time": 17.0,
+   "sample": 816000,
+   "barBeat": "9.3"
+  },
+  {
+   "frame": 525,
+   "section": "Groove A — registra e classifica",
+   "type": "downbeat-hit",
+   "what": "Stop-time stab 2 (beat 4, “memória,”): same band hit on C.",
+   "time": 17.5,
+   "sample": 840000,
+   "barBeat": "9.4"
+  },
+  {
+   "frame": 540,
+   "section": "Groove A — registra e classifica",
+   "type": "downbeat-hit",
+   "what": "Stop-time stab 3 + crash (bar 10 downbeat, “IA.”) on G; the groove resumes from here.",
+   "time": 18.0,
+   "sample": 864000,
+   "barBeat": "10.1"
+  },
+  {
+   "frame": 585,
+   "section": "Groove A — registra e classifica",
+   "type": "stinger",
+   "what": "Floor-tom accent (G2-ish, pitch drop) with the beat-4 clap on the cut to Revisão.",
+   "time": 19.5,
+   "sample": 936000,
+   "barBeat": "10.4"
+  },
+  {
+   "frame": 645,
+   "section": "Groove A — registra e classifica",
+   "type": "filter-sweep",
+   "what": "One-beat fill 645-659: tom-snare-tom-snare 16ths, crescendo; hook, pad and hats stop at 645 to set up the stop.",
+   "time": 21.5,
+   "sample": 1032000,
+   "barBeat": "11.4"
+  },
+  {
+   "frame": 660,
+   "section": "Groove B — revisão, com stop-time",
+   "type": "stop",
+   "what": "Band STOP: one Am stab on the downbeat, then only the sub tail (A1, 0.5 s decay) and closed-hat 8ths; the 675 hat is -8 dB and nothing melodic sounds on 675 (key-down alone).",
+   "time": 22.0,
+   "sample": 1056000,
+   "barBeat": "12.1"
+  },
+  {
+   "frame": 690,
+   "section": "Groove B — revisão, com stop-time",
+   "type": "downbeat-hit",
+   "what": "Groove re-enters on beat 3 (key -> chip morph): kick, clap, hats, sub, bass, hook + bell counter-melody E5-G5-A5 (C-major pentatonic, additive bell).",
+   "time": 23.0,
+   "sample": 1104000,
+   "barBeat": "12.3"
+  },
+  {
+   "frame": 720,
+   "section": "Groove B — revisão, com stop-time",
+   "type": "downbeat-hit",
+   "what": "Bar 13 downbeat (rule chips): soft crash, chord to F.",
+   "time": 24.0,
+   "sample": 1152000,
+   "barBeat": "13.1"
+  },
+  {
+   "frame": 780,
+   "section": "Groove B — revisão, com stop-time",
+   "type": "downbeat-hit",
+   "what": "Bar 14 downbeat (cut to “Confirmar os 19”): open-hat accent; a reverse crash swell starts here and ends on 810.",
+   "time": 26.0,
+   "sample": 1248000,
+   "barBeat": "14.1"
+  },
+  {
+   "frame": 810,
+   "section": "Groove B — revisão, com stop-time",
+   "type": "stinger",
+   "what": "THE CLICK: full-band stab + crash, harmony lifts Am -> C with the pad filter opening (3.6 -> 5.2 kHz) — peak of the features act.",
+   "time": 27.0,
+   "sample": 1296000,
+   "barBeat": "14.3"
+  },
+  {
+   "frame": 885,
+   "section": "Groove B — revisão, com stop-time",
+   "type": "stinger",
+   "what": "C-major-pentatonic sparkle C6-D6-E6-G6-A6-C7 in 12ths of a beat, 885-897.5 (sits with shimmer_2).",
+   "time": 29.5,
+   "sample": 1416000,
+   "barBeat": "15.4"
+  },
+  {
+   "frame": 900,
+   "section": "Groove C — entrega e foco",
+   "type": "downbeat-hit",
+   "what": "UBI lands: clap on the downbeat + A5 bell; groove C = same drums + ride quarters, octave 8th bass, bright 16th arp over the hook.",
+   "time": 30.0,
+   "sample": 1440000,
+   "barBeat": "16.1"
+  },
+  {
+   "frame": 930,
+   "section": "Groove C — entrega e foco",
+   "type": "stop",
+   "what": "Thinned drums 930-959: kick, clap, ride and 16ths out; only soft closed-hat 8ths under the clock.",
+   "time": 31.0,
+   "sample": 1488000,
+   "barBeat": "16.3"
+  },
+  {
+   "frame": 945,
+   "section": "Groove C — entrega e foco",
+   "type": "stinger",
+   "what": "Bell E6 as the clock lands on 18:00 (sits with ding_1).",
+   "time": 31.5,
+   "sample": 1512000,
+   "barBeat": "16.4"
+  },
+  {
+   "frame": 960,
+   "section": "Groove C — entrega e foco",
+   "type": "downbeat-hit",
+   "what": "Soft hit (kick 0.8 + soft crash): drums back in as the report window rises.",
+   "time": 32.0,
+   "sample": 1536000,
+   "barBeat": "17.1"
+  },
+  {
+   "frame": 990,
+   "section": "Groove C — entrega e foco",
+   "type": "stinger",
+   "what": "Pluck C6 with the “Copiar Markdown” click.",
+   "time": 33.0,
+   "sample": 1584000,
+   "barBeat": "17.3"
+  },
+  {
+   "frame": 1035,
+   "section": "Groove C — entrega e foco",
+   "type": "stinger",
+   "what": "Full-band Am stab + low “no” synth (A1/E2/A2 saws, pitch falls a whole step, filter closes); groove holes 1035-1049 and resumes on 1050.",
+   "time": 34.5,
+   "sample": 1656000,
+   "barBeat": "18.2"
+  },
+  {
+   "frame": 1080,
+   "section": "Groove C — entrega e foco",
+   "type": "downbeat-hit",
+   "what": "Bar 19 downbeat (“Ok, foco!”): light crash, chord to G.",
+   "time": 36.0,
+   "sample": 1728000,
+   "barBeat": "19.1"
+  },
+  {
+   "frame": 1125,
+   "section": "Groove C — entrega e foco",
+   "type": "stinger",
+   "what": "Snare flam + open hat on beat 4 (the whip into Configurações).",
+   "time": 37.5,
+   "sample": 1800000,
+   "barBeat": "19.4"
+  },
+  {
+   "frame": 1140,
+   "section": "Lift — a sua IA",
+   "type": "downbeat-hit",
+   "what": "Lift: drums thin to kick + 16th hats (no clap), warm Am9 pad (1.5 kHz, slow attack) enters, hook/pads under a 5.2 kHz low-pass.",
+   "time": 38.0,
+   "sample": 1824000,
+   "barBeat": "20.1"
+  },
+  {
+   "frame": 1200,
+   "section": "Lift — a sua IA",
+   "type": "downbeat-hit",
+   "what": "Bar 21 downbeat (“IA do Ubi” click): pad moves to G(add9).",
+   "time": 40.0,
+   "sample": 1920000,
+   "barBeat": "21.1"
+  },
+  {
+   "frame": 1230,
+   "section": "Lift — a sua IA",
+   "type": "stop",
+   "what": "Drums out on beat 3 (last kick 1215, hats end 1229); pad, sub and hook carry into the breather.",
+   "time": 41.0,
+   "sample": 1968000,
+   "barBeat": "21.3"
+  },
+  {
+   "frame": 1260,
+   "section": "Respiro — privacidade, then the build",
+   "type": "downbeat-hit",
+   "what": "Breather: no kick; Fmaj9 pad (F2-C3-E3-G3-A3), sub pulse on quarters (F1).",
+   "time": 42.0,
+   "sample": 2016000,
+   "barBeat": "22.1"
+  },
+  {
+   "frame": 1275,
+   "section": "Respiro — privacidade, then the build",
+   "type": "stinger",
+   "what": "Soft pluck E5 on beat 2 (address chip); pad moves to Am9 on 1290 with A1 sub pulses.",
+   "time": 42.5,
+   "sample": 2040000,
+   "barBeat": "22.2"
+  },
+  {
+   "frame": 1320,
+   "section": "Respiro — privacidade, then the build",
+   "type": "downbeat-hit",
+   "what": "Kick returns on quarters (1320-1365) under riser_1bar_1; pad to G(add9), sub G1.",
+   "time": 44.0,
+   "sample": 2112000,
+   "barBeat": "23.1"
+  },
+  {
+   "frame": 1350,
+   "section": "Respiro — privacidade, then the build",
+   "type": "filter-sweep",
+   "what": "Snare roll 8ths (1350, 1357.5) -> 16ths (1365-1376.25); HPF 24 -> 320 Hz and LPF 1.7 -> 17 kHz sweep up on every non-drum stem into 1380.",
+   "time": 45.0,
+   "sample": 2160000,
+   "barBeat": "23.3"
+  },
+  {
+   "frame": 1380,
+   "section": "Final — end card",
+   "type": "downbeat-hit",
+   "what": "FINAL HIT: long kick + sub A1 + crash + wide Am(add9) supersaw; drums end here.",
+   "time": 46.0,
+   "sample": 2208000,
+   "barBeat": "24.1"
+  },
+  {
+   "frame": 1395,
+   "section": "Final — end card",
+   "type": "stinger",
+   "what": "Soft low thump (90 -> 46 Hz sine, no click) as UBI lands on the lockup (sits with bloop_1).",
+   "time": 46.5,
+   "sample": 2232000,
+   "barBeat": "24.2"
+  },
+  {
+   "frame": 1410,
+   "section": "Final — end card",
+   "type": "chord",
+   "what": "Am(add9) resolves to Cadd9 (C3-G3-D4-E4-G4), sub glides A1 -> C2; slow pluck echo A4 (1380), E5 (1410) on long ping-pong delay.",
+   "time": 47.0,
+   "sample": 2256000,
+   "barBeat": "24.3"
+  },
+  {
+   "frame": 1440,
+   "section": "Final — end card",
+   "type": "stinger",
+   "what": "Two-note goodbye: C5 (1440) -> A4 (1455), pluck + bell, as UBI waves.",
+   "time": 48.0,
+   "sample": 2304000,
+   "barBeat": "25.1"
+  },
+  {
+   "frame": 1500,
+   "section": "Final — end card",
+   "type": "filter-sweep",
+   "what": "Tail: low-pass closes 18 kHz -> 180 Hz on every stem while the level fades; reverb decays inside the fade.",
+   "time": 50.0,
+   "sample": 2400000,
+   "barBeat": "26.1"
+  },
+  {
+   "frame": 1556,
+   "section": "Final — end card",
+   "type": "stop",
+   "what": "Last non-zero sample is before frame 1556 (sample 2489600); frames 1556-1559 are digital zero.",
+   "time": 51.8667,
+   "sample": 2489600,
+   "barBeat": "26.4"
+  }
+ ]
+}

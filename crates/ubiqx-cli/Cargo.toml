@@ -1,5 +1,6 @@
 [package]
 name = "ubiqx-cli"
+description = "ubiqX headless CLI: run the engine with a scripted or native platform, inspect blocks, classify and generate reports"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,4 +13,12 @@ name = "ubiqx"
 path = "src/main.rs"
 
 [dependencies]
+ubiqx-app.workspace = true
 ubiqx-core.workspace = true
+ubiqx-engine.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true

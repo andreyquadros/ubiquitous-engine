@@ -1,0 +1,4 @@
+Um asterisco (*) indica que um serviço de rede está desativado.
+Wi-Fi
+Ethernet (USB-C)
+*Ponte Thunderbolt
